@@ -1,0 +1,12 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      // 완전히 공개 읽기 접근 허용 (프로젝트 멤버십 불필요)
+      allow read;
+      
+      // 쓰기는 인증된 사용자에게만 허용
+      allow write: if request.auth != null;
+    }
+  }
+}

@@ -1,0 +1,36 @@
+🌐 Firebase Storage CORS 설정 가이드
+
+Firebase Storage 403 오류의 추가 원인: CORS 정책
+
+=== Google Cloud Console에서 CORS 설정 ===
+
+1. Google Cloud Console 접속:
+   https://console.cloud.google.com/
+
+2. 프로젝트 선택: flutterproject3-af322
+
+3. Cloud Shell 활성화 (상단 터미널 아이콘)
+
+4. 다음 명령어 실행:
+
+# CORS 설정 파일 생성
+cat > cors-config.json << EOF
+[
+  {
+    "origin": ["*"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"],
+    "maxAgeSeconds": 3600
+  }
+]
+EOF
+
+# CORS 설정 적용
+gsutil cors set cors-config.json gs://flutterproject3-af322.firebasestorage.app
+
+# 설정 확인
+gsutil cors get gs://flutterproject3-af322.firebasestorage.app
+
+=== 결과 확인 ===
+설정이 성공하면 다음과 같은 출력이 나타납니다:
+[{"maxAgeSeconds": 3600, "method": ["GET", "HEAD"], "origin": ["*"], "responseHeader": ["Content-Type", "Access-Control-Allow-Origin"]}]

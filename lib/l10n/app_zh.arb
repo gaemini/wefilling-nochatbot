@@ -1,0 +1,13 @@
+{
+  "@@locale": "zh",
+  "appTitle": "连接应用",
+  "post": "帖子",
+  "comment": "评论",
+  "settings": "设置",
+  "writePost": "写帖子",
+  "search": "搜索",
+  "myPage": "我的页面",
+  "notification": "通知",
+  "language": "语言",
+  "autoTranslate": "自动翻译"
+}

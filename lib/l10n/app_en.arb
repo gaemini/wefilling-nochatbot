@@ -1,0 +1,115 @@
+{
+  "@@locale": "en",
+  "appTitle": "Connecting App",
+  "@appTitle": {
+    "description": "The title of the application"
+  },
+  "accountSettings": "Account Settings",
+  "@accountSettings": {
+    "description": "Title for the account settings screen"
+  },
+  "languageSettings": "Language Settings",
+  "@languageSettings": {
+    "description": "Title for language settings option"
+  },
+  "language": "Language",
+  "@language": {
+    "description": "Label for language selection"
+  },
+  "english": "English",
+  "@english": {
+    "description": "Name of English language"
+  },
+  "korean": "Korean",
+  "@korean": {
+    "description": "Name of Korean language"
+  },
+  "japanese": "Japanese",
+  "@japanese": {
+    "description": "Name of Japanese language"
+  },
+  "chinese": "Chinese",
+  "@chinese": {
+    "description": "Name of Chinese language"
+  },
+  "accountInfo": "Account Information",
+  "@accountInfo": {
+    "description": "Account information section title"
+  },
+  "email": "Email",
+  "@email": {
+    "description": "Email label"
+  },
+  "loginMethod": "Login Method",
+  "@loginMethod": {
+    "description": "Login method label"
+  },
+  "googleAccount": "Google Account",
+  "@googleAccount": {
+    "description": "Google account label"
+  },
+  "emailPassword": "Email/Password",
+  "@emailPassword": {
+    "description": "Email/password login method"
+  },
+  "accountSecurity": "Account Security",
+  "@accountSecurity": {
+    "description": "Account security section title"
+  },
+  "changePassword": "Change Password",
+  "@changePassword": {
+    "description": "Change password option"
+  },
+  "emailVerification": "Email Verification",
+  "@emailVerification": {
+    "description": "Email verification option"
+  },
+  "accountManagement": "Account Management",
+  "@accountManagement": {
+    "description": "Account management section title"
+  },
+  "deleteAccount": "Delete Account",
+  "@deleteAccount": {
+    "description": "Delete account option"
+  },
+  "save": "Save",
+  "@save": {
+    "description": "Save button label"
+  },
+  "cancel": "Cancel",
+  "@cancel": {
+    "description": "Cancel button label"
+  },
+  "confirm": "Confirm",
+  "@confirm": {
+    "description": "Confirm button label"
+  },
+  "resetPassword": "Reset Password",
+  "@resetPassword": {
+    "description": "Reset password title"
+  },
+  "resetPasswordConfirmation": "Do you want to send a password reset email?",
+  "@resetPasswordConfirmation": {
+    "description": "Reset password confirmation text"
+  },
+  "resetPasswordEmailSent": "Password reset email has been sent.",
+  "@resetPasswordEmailSent": {
+    "description": "Reset password email sent message"
+  },
+  "error": "Error",
+  "@error": {
+    "description": "Error message prefix"
+  },
+  "emailVerificationSent": "Verification email has been sent. Please check your inbox.",
+  "@emailVerificationSent": {
+    "description": "Email verification sent message"
+  },
+  "deleteAccountConfirmation": "Deleting your account will permanently remove all your data. Are you sure you want to delete?",
+  "@deleteAccountConfirmation": {
+    "description": "Delete account confirmation text"
+  },
+  "delete": "Delete",
+  "@delete": {
+    "description": "Delete button label"
+  }
+}

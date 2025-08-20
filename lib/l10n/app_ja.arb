@@ -1,0 +1,13 @@
+{
+  "@@locale": "ja",
+  "appTitle": "接続アプリ",
+  "post": "投稿",
+  "comment": "コメント",
+  "settings": "設定",
+  "writePost": "投稿を書く",
+  "search": "検索",
+  "myPage": "マイページ",
+  "notification": "通知",
+  "language": "言語",
+  "autoTranslate": "自動翻訳"
+}

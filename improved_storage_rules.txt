@@ -1,0 +1,56 @@
+🔧 개선된 Firebase Storage 규칙
+
+Firebase Console 주소:
+https://console.firebase.google.com/project/flutterproject3-af322/storage/rules
+
+=== 방법 1: 완전 공개 규칙 (권장) ===
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // 모든 파일에 대한 완전한 공개 읽기 접근
+    match /{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+  }
+}
+
+=== 방법 2: 더 명시적인 규칙 ===
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // posts 폴더의 이미지들 - 완전 공개 읽기
+    match /posts/{imageId} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+    
+    // 기타 모든 파일 - 공개 읽기
+    match /{allPaths=**} {
+      allow read;
+      allow write: if request.auth != null;
+    }
+  }
+}
+
+=== 방법 3: 가장 관대한 규칙 (테스트용) ===
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write;
+    }
+  }
+}
+
+⚠️ 방법 3은 보안상 권장하지 않지만, 테스트를 위해 임시로 사용 가능
+
+=== 규칙 적용 후 확인사항 ===
+
+1. 규칙 저장 후 5-10분 대기 (전파 시간)
+2. 브라우저 캐시 삭제
+3. 앱 재시작
+4. 이미지 URL 직접 브라우저에서 테스트

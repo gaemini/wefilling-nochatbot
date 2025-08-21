@@ -10,7 +10,7 @@ import '../services/post_service.dart';
 import '../widgets/country_flag_circle.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+
 import 'package:provider/provider.dart';
 import '../providers/settings_provider.dart';
 

@@ -6,13 +6,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
 import '../services/storage_service.dart';
-import '../providers/auth_provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -96,7 +96,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_isTogglingLike) return;
 
     // 로그인 상태 확인
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
     final isLoggedIn = authProvider.isLoggedIn;
     final user = authProvider.user;
 
@@ -342,7 +342,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 댓글 위젯 빌드
   Widget _buildCommentItem(Comment comment) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
     final isCommentAuthor = authProvider.user?.uid == comment.userId;
 
     return Container(
@@ -681,7 +681,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context);
+    final authProvider = Provider.of<app_auth.AuthProvider>(context);
     final isLoggedIn = authProvider.isLoggedIn;
 
     return Scaffold(
@@ -817,8 +817,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     minScale: 0.5,
                                     maxScale: 3.0,
                                                                     child: _buildRetryableImage(
-                                  imageUrl,
-                                  fit: BoxFit.contain,
+                                      imageUrl,
+                                      fit: BoxFit.contain,
                                   isFullScreen: true,
                                 ),
                                   ),
@@ -828,7 +828,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             child: Container(
                               margin: const EdgeInsets.only(right: 8),
                               width: 200,
-                                                              child: ClipRRect(
+                              child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: _buildRetryableImage(
                                   imageUrl,

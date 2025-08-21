@@ -10,7 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
 import 'screens/main_screen.dart';
-import 'providers/auth_provider.dart';
+import 'providers/auth_provider.dart' as app_auth;
 import 'providers/settings_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
@@ -75,7 +75,7 @@ void main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
       ],
       child: const MeetupApp(),
@@ -97,7 +97,7 @@ class MeetupApp extends StatelessWidget {
         scaffoldBackgroundColor: Colors.white,
         fontFamily: 'Pretendard',
       ),
-      home: Consumer<AuthProvider>(
+      home: Consumer<app_auth.AuthProvider>(
         builder: (context, authProvider, _) {
           if (authProvider.isLoading) {
             return const Scaffold(

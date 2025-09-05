@@ -55,10 +55,9 @@ dependencies:
   easy_localization: ^3.0.7+1
   translator: ^1.0.3+1
   
-  # 챗봇 기능을 위한 추가 dependencies
+  # 친구요청 시스템을 위한 의존성
   cloud_functions: ^4.7.6
-  google_fonts: ^6.2.1
-  json_annotation: ^4.9.0
+
 
 
 dev_dependencies:
@@ -72,10 +71,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^2.0.3
-  
-  # 챗봇 기능을 위한 dev dependencies
-  json_serializable: ^6.8.0
-  build_runner: ^2.4.9
+
 
 flutter_icons:
   android: true

@@ -11,10 +11,10 @@ import 'board_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'home_screen.dart';  // MeetupHomePage 클래스가 있는 파일
+import 'friends_main_page.dart';
 
 import '../utils/firebase_debug_helper.dart';
 import 'firebase_security_rules_helper.dart';
-import 'chatbot_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -32,7 +32,7 @@ class _MainScreenState extends State<MainScreen> {
     const BoardScreen(),
     const MeetupHomePage(),
     const MyPageScreen(),
-    const ChatbotScreen(),
+    const FriendsMainPage(),
   ];
   final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
@@ -236,8 +236,8 @@ service firebase.storage {
             label: AppConstants.MYPAGE,
           ),
           BottomNavigationBarItem(
-            icon: const Icon(Icons.smart_toy),
-            label: '챗봇',
+            icon: const Icon(Icons.people),
+            label: '친구',
           ),
         ],
         currentIndex: _selectedIndex,

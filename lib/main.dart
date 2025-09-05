@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import 'screens/main_screen.dart';
 import 'providers/auth_provider.dart' as app_auth;
 import 'providers/settings_provider.dart';
+import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
 import 'firebase_options.dart';
@@ -77,6 +78,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
+        ChangeNotifierProvider(create: (_) => RelationshipProvider()),
       ],
       child: const MeetupApp(),
     ),

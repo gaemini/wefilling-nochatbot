@@ -246,8 +246,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   void _showCreateMeetupDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder:
-          (context) => CreateMeetupScreen(
+      barrierColor: Colors.black.withOpacity(0.2), // 개선된 오버레이 색상
+      builder: (context) => CreateMeetupScreen(
         initialDayIndex: _tabController.index,
         onCreateMeetup: (index, meetup) {
           // 모임이 생성되면 캐시 클리어하고 목록 새로고침
@@ -255,7 +255,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           _categoryMeetupCache.clear();
           _loadMeetups();
         },
-          ),
+      ),
     );
   }
 
@@ -473,19 +473,25 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 요일
+                // 요일 (일요일은 빨간색)
                 Text(
                   _weekdayNames[weekDates[index].weekday - 1],
                   style: theme.textTheme.labelMedium?.copyWith(
                     fontWeight: FontWeight.w500,
+                    color: weekDates[index].weekday == 7 // 일요일 체크 (7 = 일요일)
+                        ? Colors.red
+                        : null, // 기본 색상 유지
                   ),
                 ),
                 const SizedBox(height: 2),
-                // 날짜
+                // 날짜 (일요일은 빨간색)
                 Text(
                   '${weekDates[index].day}',
                   style: theme.textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w400,
+                    color: weekDates[index].weekday == 7 // 일요일 체크
+                        ? Colors.red
+                        : null, // 기본 색상 유지
                   ),
                 ),
               ],

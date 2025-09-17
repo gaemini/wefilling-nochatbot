@@ -94,5 +94,104 @@ service cloud.firestore {
       allow update, delete: if request.auth != null && 
         request.auth.uid == resource.data.hostId;
     }
+    
+    // ===== 리뷰 합의 기능 추가 규칙 =====
+    
+    // 관리자 설정 (Feature Flags 등)
+    match /admin_settings/{document} {
+      // 읽기: 로그인한 사용자만 가능 (Feature Flag 확인용)
+      allow read: if request.auth != null;
+      
+      // 쓰기: 관리자만 가능
+      allow write: if 
+        request.auth != null &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true;
+    }
+
+    // 사용자 설정 (알림 설정 등 기존 기능 확장)
+    match /user_settings/{userId} {
+      // 본인만 읽기/쓰기 가능
+      allow read, write: if 
+        request.auth != null && 
+        request.auth.uid == userId;
+    }
+
+    // 모임별 리뷰 요청 (meetings/{meetupId}/pendingReviews/{reviewId})
+    match /meetings/{meetupId}/pendingReviews/{reviewId} {
+      // 리뷰 요청 읽기: 요청자 또는 수신자만 가능
+      allow read: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.requesterId || 
+         request.auth.uid == resource.data.recipientId);
+      
+      // 리뷰 요청 생성: 요청자만 가능, 해당 모임 참여자여야 함
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.requesterId &&
+        // 모임 참여자인지 확인
+        request.auth.uid in get(/databases/$(database)/documents/meetups/$(meetupId)).data.participants &&
+        // 수신자도 참여자인지 확인
+        request.resource.data.recipientId in get(/databases/$(database)/documents/meetups/$(meetupId)).data.participants &&
+        // 자기 자신에게 요청하지 않음
+        request.auth.uid != request.resource.data.recipientId &&
+        // 초기 상태는 pending이어야 함
+        request.resource.data.status == 'pending';
+      
+      // 리뷰 요청 업데이트: 수신자만 상태 변경 가능
+      allow update: if 
+        request.auth != null &&
+        request.auth.uid == resource.data.recipientId &&
+        // 기존 상태가 pending이어야 함
+        resource.data.status == 'pending' &&
+        // 새 상태는 accepted 또는 rejected만 가능
+        (request.resource.data.status == 'accepted' || 
+         request.resource.data.status == 'rejected') &&
+        // 다른 필드는 변경하지 않음 (상태와 응답 시간, 메시지만)
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'respondedAt', 'responseMessage']);
+      
+      // 삭제 금지 (상태 변경으로만 관리)
+      allow delete: if false;
+    }
+
+    // 모임별 리뷰 합의 결과 (meetings/{meetupId}/reviews/{consensusId})
+    match /meetings/{meetupId}/reviews/{consensusId} {
+      // 리뷰 합의 읽기: 해당 모임 참여자만 가능
+      allow read: if 
+        request.auth != null &&
+        request.auth.uid in get(/databases/$(database)/documents/meetups/$(meetupId)).data.participants;
+      
+      // 리뷰 합의 생성: 서버 사이드 로직으로만 생성 (Cloud Functions)
+      // 클라이언트에서 직접 생성 금지
+      allow create: if false;
+      
+      // 리뷰 합의 업데이트/삭제: 금지 (불변 데이터)
+      allow update, delete: if false;
+    }
+
+    // 알림 컬렉션 (기존 확장)
+    match /notifications/{notificationId} {
+      // 본인의 알림만 읽기 가능
+      allow read: if 
+        request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      
+      // 알림 생성: 서버 사이드 로직으로만 생성
+      allow create: if false;
+      
+      // 알림 업데이트: 본인만 읽음 상태 변경 가능
+      allow update: if 
+        request.auth != null && 
+        request.auth.uid == resource.data.userId &&
+        // 읽음 상태만 변경 가능
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isRead']);
+      
+      // 알림 삭제: 본인만 가능
+      allow delete: if 
+        request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // ===== 기존 호환성 유지 끝 =====
   }
 }

@@ -13,6 +13,7 @@ import '../services/comment_service.dart';
 import '../services/storage_service.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
+import '../ui/widgets/enhanced_comment_widget.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -292,7 +293,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  // 댓글 삭제
+  // 댓글 삭제 (대댓글 포함)
+  Future<void> _deleteCommentWithReplies(String commentId) async {
+    final success = await _commentService.deleteCommentWithReplies(commentId, _currentPost.id);
+    
+    if (success && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('댓글이 삭제되었습니다.')),
+      );
+      await _refreshPost();
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('댓글 삭제에 실패했습니다.')),
+      );
+    }
+  }
+
+  // 기존 댓글 삭제 (호환성 유지)
   Future<void> _deleteComment(String commentId) async {
     try {
       final success = await _commentService.deleteComment(
@@ -954,11 +971,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
-                  // 댓글 목록
+                  // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                   StreamBuilder<List<Comment>>(
-                    stream: _commentService.getCommentsByPostId(
-                      _currentPost.id,
-                    ),
+                    stream: _commentService.getCommentsWithReplies(_currentPost.id),
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting &&
                           !snapshot.hasData) {
@@ -978,28 +993,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         );
                       }
 
-                      final comments = snapshot.data ?? [];
+                      final allComments = snapshot.data ?? [];
 
-                      if (comments.isEmpty) {
+                      if (allComments.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.all(16.0),
                           child: Center(child: Text('첫 번째 댓글을 남겨보세요!')),
                         );
                       }
 
-                      return ListView.separated(
+                      // 댓글을 계층적으로 구조화
+                      final topLevelComments = allComments.where((c) => c.isTopLevel).toList();
+                      
+                      return ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: comments.length,
-                        separatorBuilder:
-                            (_, __) => Divider(
-                              height: 1,
-                              color: Colors.grey.shade200,
-                              indent: 8,
-                              endIndent: 8,
-                            ),
+                        itemCount: topLevelComments.length,
                         itemBuilder: (context, index) {
-                          return _buildCommentItem(comments[index]);
+                          final comment = topLevelComments[index];
+                          final replies = allComments
+                              .where((c) => c.parentCommentId == comment.id)
+                              .toList();
+                          
+                          return EnhancedCommentWidget(
+                            comment: comment,
+                            replies: replies,
+                            postId: _currentPost.id,
+                            onDeleteComment: _deleteCommentWithReplies,
+                          );
                         },
                       );
                     },

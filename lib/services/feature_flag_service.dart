@@ -1,0 +1,147 @@
+// lib/services/feature_flag_service.dart
+// Feature Flag 관리 서비스
+// 새로운 기능을 안전하게 출시하기 위한 토글 시스템
+// 환경변수 및 Firebase Remote Config 지원
+
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
+
+class FeatureFlagService {
+  static final FeatureFlagService _instance = FeatureFlagService._internal();
+  factory FeatureFlagService() => _instance;
+  FeatureFlagService._internal();
+
+  late SharedPreferences _prefs;
+  late FirebaseRemoteConfig _remoteConfig;
+  bool _isInitialized = false;
+
+  // Feature Flag Keys
+  static const String FEATURE_PROFILE_GRID = 'feature_profile_grid';
+
+  /// 서비스 초기화
+  Future<void> init() async {
+    if (_isInitialized) return;
+
+    try {
+      // SharedPreferences 초기화
+      _prefs = await SharedPreferences.getInstance();
+      
+      // Firebase Remote Config 초기화
+      _remoteConfig = FirebaseRemoteConfig.instance;
+      await _remoteConfig.setConfigSettings(RemoteConfigSettings(
+        fetchTimeout: const Duration(seconds: 10),
+        minimumFetchInterval: const Duration(hours: 1),
+      ));
+
+      // 기본값 설정 (모든 feature flag는 기본적으로 false)
+      await _remoteConfig.setDefaults({
+        FEATURE_PROFILE_GRID: false,
+      });
+
+      // Remote Config에서 최신 설정 가져오기
+      await _fetchRemoteConfig();
+      
+      _isInitialized = true;
+      print('🚩 FeatureFlagService 초기화 완료');
+    } catch (e) {
+      print('⚠️ FeatureFlagService 초기화 오류: $e');
+      // 초기화 실패 시에도 로컬 설정은 사용할 수 있도록 함
+      _isInitialized = true;
+    }
+  }
+
+  /// Feature Flag 상태 확인
+  bool isFeatureEnabled(String featureKey) {
+    if (!_isInitialized) {
+      print('⚠️ FeatureFlagService가 초기화되지 않음. 기본값(false) 반환');
+      return false;
+    }
+
+    try {
+      // 1. 환경변수 확인 (개발/테스트용)
+      final envValue = _getEnvironmentValue(featureKey);
+      if (envValue != null) {
+        print('🚩 환경변수에서 $featureKey = $envValue');
+        return envValue;
+      }
+
+      // 2. SharedPreferences 확인 (로컬 오버라이드)
+      final localValue = _prefs.getBool('local_$featureKey');
+      if (localValue != null) {
+        print('🚩 로컬 설정에서 $featureKey = $localValue');
+        return localValue;
+      }
+
+      // 3. Firebase Remote Config 확인
+      final remoteValue = _remoteConfig.getBool(featureKey);
+      print('🚩 Remote Config에서 $featureKey = $remoteValue');
+      return remoteValue;
+
+    } catch (e) {
+      print('⚠️ Feature Flag 확인 오류 ($featureKey): $e');
+      return false; // 안전한 기본값
+    }
+  }
+
+  /// 로컬에서 Feature Flag 오버라이드 (개발/테스트용)
+  Future<void> setLocalOverride(String featureKey, bool value) async {
+    if (!_isInitialized) {
+      print('⚠️ FeatureFlagService가 초기화되지 않음');
+      return;
+    }
+
+    try {
+      await _prefs.setBool('local_$featureKey', value);
+      print('🚩 로컬 오버라이드 설정: $featureKey = $value');
+    } catch (e) {
+      print('⚠️ 로컬 오버라이드 설정 오류: $e');
+    }
+  }
+
+  /// 로컬 오버라이드 제거
+  Future<void> removeLocalOverride(String featureKey) async {
+    if (!_isInitialized) return;
+
+    try {
+      await _prefs.remove('local_$featureKey');
+      print('🚩 로컬 오버라이드 제거: $featureKey');
+    } catch (e) {
+      print('⚠️ 로컬 오버라이드 제거 오류: $e');
+    }
+  }
+
+  /// Remote Config에서 최신 설정 가져오기
+  Future<void> _fetchRemoteConfig() async {
+    try {
+      await _remoteConfig.fetchAndActivate();
+      print('🚩 Remote Config 업데이트 완료');
+    } catch (e) {
+      print('⚠️ Remote Config 가져오기 오류: $e');
+      // 실패해도 캐시된 값 사용
+    }
+  }
+
+  /// 환경변수에서 값 가져오기 (개발용)
+  bool? _getEnvironmentValue(String featureKey) {
+    // Flutter에서는 const String.fromEnvironment 사용
+    const envPrefix = 'FLUTTER_';
+    final envKey = envPrefix + featureKey.toUpperCase();
+    
+    const rawValue = String.fromEnvironment(envKey);
+    if (rawValue.isEmpty) return null;
+    
+    return rawValue.toLowerCase() == 'true';
+  }
+
+  /// 모든 Feature Flag 상태 출력 (디버그용)
+  void debugPrintAllFlags() {
+    if (!_isInitialized) {
+      print('⚠️ FeatureFlagService가 초기화되지 않음');
+      return;
+    }
+
+    print('🚩 === Feature Flags 상태 ===');
+    print('🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
+    print('🚩 ========================');
+  }
+}

@@ -57,6 +57,10 @@ dependencies:
   
   # 친구요청 시스템을 위한 의존성
   cloud_functions: ^4.7.6
+  
+  # 프로필 그리드 기능을 위한 의존성
+  cached_network_image: ^3.2.3
+  firebase_remote_config: ^4.2.5
 
 
 

@@ -13,8 +13,14 @@ class CommentService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
 
-  // 댓글 추가
-  Future<bool> addComment(String postId, String content) async {
+  // 댓글 추가 (원댓글 또는 대댓글)
+  Future<bool> addComment(
+    String postId, 
+    String content, {
+    String? parentCommentId,
+    String? replyToUserId,
+    String? replyToUserNickname,
+  }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -36,6 +42,12 @@ class CommentService {
         'authorPhotoUrl': photoUrl,
         'content': content,
         'createdAt': FieldValue.serverTimestamp(),
+        'parentCommentId': parentCommentId,
+        'depth': parentCommentId != null ? 1 : 0,
+        'replyToUserId': replyToUserId,
+        'replyToUserNickname': replyToUserNickname,
+        'likeCount': 0,
+        'likedBy': [],
       };
 
       // Firestore에 저장
@@ -149,6 +161,114 @@ class CommentService {
       await _firestore.collection('comments').doc(commentId).delete();
 
       // 게시글 문서의 댓글 수 업데이트
+      await _updateCommentCount(postId);
+
+      return true;
+    } catch (e) {
+      print('댓글 삭제 오류: $e');
+      return false;
+    }
+  }
+
+  // 댓글 좋아요 토글
+  Future<bool> toggleCommentLike(String commentId, String userId) async {
+    try {
+      final commentRef = _firestore.collection('comments').doc(commentId);
+      
+      return await _firestore.runTransaction((transaction) async {
+        final commentDoc = await transaction.get(commentRef);
+        
+        if (!commentDoc.exists) {
+          throw Exception('댓글을 찾을 수 없습니다.');
+        }
+        
+        final commentData = commentDoc.data()!;
+        final List<String> likedBy = List<String>.from(commentData['likedBy'] ?? []);
+        final int currentLikeCount = commentData['likeCount'] ?? 0;
+        
+        if (likedBy.contains(userId)) {
+          // 좋아요 취소
+          likedBy.remove(userId);
+          transaction.update(commentRef, {
+            'likedBy': likedBy,
+            'likeCount': currentLikeCount - 1,
+          });
+          return false; // 좋아요 취소됨
+        } else {
+          // 좋아요 추가
+          likedBy.add(userId);
+          transaction.update(commentRef, {
+            'likedBy': likedBy,
+            'likeCount': currentLikeCount + 1,
+          });
+          return true; // 좋아요 추가됨
+        }
+      });
+    } catch (e) {
+      print('댓글 좋아요 토글 오류: $e');
+      return false;
+    }
+  }
+
+  // 댓글과 대댓글을 계층적으로 가져오기
+  Stream<List<Comment>> getCommentsWithReplies(String postId) {
+    try {
+      return _firestore
+          .collection('comments')
+          .where('postId', isEqualTo: postId)
+          .snapshots()
+          .map((snapshot) {
+            List<Comment> allComments = snapshot.docs.map((doc) {
+              return Comment.fromFirestore(doc);
+            }).toList();
+            
+            // 클라이언트 측에서 정렬 수행
+            allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+            
+            return allComments;
+          });
+    } catch (e) {
+      print('댓글 불러오기 오류: $e');
+      return Stream.empty();
+    }
+  }
+
+  // 개선된 댓글 삭제 (대댓글도 함께 삭제)
+  Future<bool> deleteCommentWithReplies(String commentId, String postId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      // 댓글 정보 가져오기
+      final commentDoc = await _firestore.collection('comments').doc(commentId).get();
+      if (!commentDoc.exists) return false;
+
+      final commentData = commentDoc.data()!;
+      final commentUserId = commentData['userId'];
+
+      // 본인이 작성한 댓글만 삭제 가능
+      if (commentUserId != user.uid) return false;
+
+      // 대댓글들도 함께 삭제
+      final repliesQuery = await _firestore
+          .collection('comments')
+          .where('parentCommentId', isEqualTo: commentId)
+          .get();
+
+      // 배치로 삭제
+      final batch = _firestore.batch();
+      
+      // 원댓글 삭제
+      batch.delete(_firestore.collection('comments').doc(commentId));
+      
+      // 대댓글들 삭제
+      for (final replyDoc in repliesQuery.docs) {
+        batch.delete(replyDoc.reference);
+      }
+      
+      await batch.commit();
+
+      // 게시글 댓글 수 업데이트
       await _updateCommentCount(postId);
 
       return true;

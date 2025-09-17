@@ -15,6 +15,16 @@ class Comment {
   final String authorPhotoUrl;
   final String content;
   final DateTime createdAt;
+  
+  // 대댓글 관련 필드
+  final String? parentCommentId; // 대댓글인 경우 부모 댓글 ID
+  final int depth; // 댓글 깊이 (0: 원댓글, 1: 대댓글)
+  final String? replyToUserId; // 답글 대상 사용자 ID
+  final String? replyToUserNickname; // 답글 대상 사용자 닉네임
+  
+  // 좋아요 관련 필드
+  final int likeCount; // 좋아요 수
+  final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
 
   // 캐시된 번역 결과
   String? _translatedContent;
@@ -27,6 +37,12 @@ class Comment {
     required this.authorPhotoUrl,
     required this.content,
     required this.createdAt,
+    this.parentCommentId,
+    this.depth = 0,
+    this.replyToUserId,
+    this.replyToUserNickname,
+    this.likeCount = 0,
+    this.likedBy = const [],
   });
 
   // Firestore 데이터로부터 Comment 객체 생성
@@ -44,6 +60,12 @@ class Comment {
           data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
               : DateTime.now(),
+      parentCommentId: data['parentCommentId'],
+      depth: data['depth'] ?? 0,
+      replyToUserId: data['replyToUserId'],
+      replyToUserNickname: data['replyToUserNickname'],
+      likeCount: data['likeCount'] ?? 0,
+      likedBy: List<String>.from(data['likedBy'] ?? []),
     );
   }
 
@@ -72,6 +94,12 @@ class Comment {
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
       'createdAt': FieldValue.serverTimestamp(),
+      'parentCommentId': parentCommentId,
+      'depth': depth,
+      'replyToUserId': replyToUserId,
+      'replyToUserNickname': replyToUserNickname,
+      'likeCount': likeCount,
+      'likedBy': likedBy,
     };
   }
 
@@ -93,6 +121,12 @@ class Comment {
     String? authorPhotoUrl,
     String? content,
     DateTime? createdAt,
+    String? parentCommentId,
+    int? depth,
+    String? replyToUserId,
+    String? replyToUserNickname,
+    int? likeCount,
+    List<String>? likedBy,
   }) {
     return Comment(
       id: id ?? this.id,
@@ -102,6 +136,19 @@ class Comment {
       authorPhotoUrl: authorPhotoUrl ?? this.authorPhotoUrl,
       content: content ?? this.content,
       createdAt: createdAt ?? this.createdAt,
+      parentCommentId: parentCommentId ?? this.parentCommentId,
+      depth: depth ?? this.depth,
+      replyToUserId: replyToUserId ?? this.replyToUserId,
+      replyToUserNickname: replyToUserNickname ?? this.replyToUserNickname,
+      likeCount: likeCount ?? this.likeCount,
+      likedBy: likedBy ?? this.likedBy,
     );
   }
+
+  // 유틸리티 메서드들
+  bool get isReply => parentCommentId != null;
+  bool get isTopLevel => parentCommentId == null;
+  
+  // 사용자가 이 댓글에 좋아요를 눌렀는지 확인
+  bool isLikedBy(String userId) => likedBy.contains(userId);
 }

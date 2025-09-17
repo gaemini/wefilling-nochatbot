@@ -81,10 +81,10 @@ class OptimizedMeetupCard extends StatelessWidget {
               // 참가자 정보
               _buildParticipantInfo(meetup, theme, colorScheme),
 
-              // 모임 이미지 (있는 경우)
-              if (meetup.imageUrl?.isNotEmpty == true) ...[
+              // 모임 이미지 (있는 경우만 표시)
+              if (_hasImage(meetup)) ...[
                 const SizedBox(height: 12),
-                _buildMeetupImage(meetup.imageUrl!),
+                _buildMeetupImage(meetup),
               ],
             ],
           ),
@@ -334,25 +334,43 @@ class OptimizedMeetupCard extends StatelessWidget {
     );
   }
 
-  /// 모임 이미지 빌드
-  Widget _buildMeetupImage(String imageUrl) {
+  /// 이미지가 있는지 확인
+  bool _hasImage(Meetup meetup) {
+    return (meetup.imageUrl?.isNotEmpty == true) ||
+           (meetup.thumbnailImageUrl?.isNotEmpty == true);
+  }
+
+  /// 모임 이미지 빌드 (조건부 크기 조정)
+  Widget _buildMeetupImage(Meetup meetup) {
+    // 우선순위: imageUrl > thumbnailImageUrl
+    final String? imageUrl = meetup.imageUrl?.isNotEmpty == true 
+        ? meetup.imageUrl 
+        : meetup.thumbnailImageUrl?.isNotEmpty == true 
+            ? meetup.thumbnailImageUrl 
+            : null;
+    
+    if (imageUrl == null) return const SizedBox.shrink();
+
+    // 리스트에서는 작은 크기로, 상세 페이지에서는 큰 크기로 표시
+    const double imageHeight = 120; // 리스트에서는 120px로 축소
+    
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: OptimizedNetworkImage(
         imageUrl: imageUrl,
-        targetSize: const Size(double.infinity, 160),
+        targetSize: const Size(double.infinity, imageHeight),
         fit: BoxFit.cover,
         preload: index < 3, // 상위 3개 카드만 프리로드
         lazy: index >= 3, // 하위 카드들은 지연 로딩
         semanticLabel: '모임 이미지',
         placeholder: Container(
-          height: 160,
+          height: imageHeight,
           decoration: BoxDecoration(
             color: Colors.grey.shade200,
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Center(
-            child: Icon(Icons.image_outlined, size: 48, color: Colors.grey),
+            child: Icon(Icons.image_outlined, size: 32, color: Colors.grey),
           ),
         ),
       ),

@@ -1,0 +1,180 @@
+# Firestore 인덱스 생성 가이드
+# 리뷰 합의 기능을 위한 필수 인덱스들
+
+# 수동으로 Firebase 콘솔에서 생성해야 하는 복합 인덱스들
+
+## 1. 리뷰 요청 관련 인덱스
+
+### 수신자별 대기 중인 리뷰 요청 조회
+Collection ID: pendingReviews
+Fields indexed:
+  - recipientId (Ascending)
+  - status (Ascending) 
+  - createdAt (Descending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: pendingReviews
+- Field 1: recipientId (Ascending)
+- Field 2: status (Ascending)
+- Field 3: createdAt (Descending)
+
+### 요청자별 보낸 리뷰 요청 조회
+Collection ID: pendingReviews  
+Fields indexed:
+  - requesterId (Ascending)
+  - createdAt (Descending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: pendingReviews
+- Field 1: requesterId (Ascending)  
+- Field 2: createdAt (Descending)
+
+## 2. 알림 관련 인덱스
+
+### 사용자별 읽지 않은 알림 조회
+Collection ID: notifications
+Fields indexed:
+  - userId (Ascending)
+  - isRead (Ascending)
+  - createdAt (Descending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: notifications
+- Field 1: userId (Ascending)
+- Field 2: isRead (Ascending)
+- Field 3: createdAt (Descending)
+
+### 사용자별 모든 알림 조회
+Collection ID: notifications
+Fields indexed:
+  - userId (Ascending)
+  - createdAt (Descending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: notifications
+- Field 1: userId (Ascending)
+- Field 2: createdAt (Descending)
+
+## 3. 모임 관련 인덱스 (기존 확장)
+
+### 참여자별 모임 조회
+Collection ID: meetups
+Fields indexed:
+  - participants (Array)
+  - date (Ascending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: meetups
+- Field 1: participants (Array)
+- Field 2: date (Ascending)
+
+## 4. 만료 요청 정리용 인덱스
+
+### 만료된 리뷰 요청 배치 처리
+Collection ID: pendingReviews
+Fields indexed:
+  - status (Ascending)
+  - expiresAt (Ascending)
+
+Firebase CLI 명령어:
+firebase firestore:indexes
+
+또는 수동 생성:
+Firebase Console > Firestore > Indexes > Create Index
+- Collection ID: pendingReviews
+- Field 1: status (Ascending)
+- Field 2: expiresAt (Ascending)
+
+## 인덱스 생성 확인 방법
+
+1. Firebase Console에서 확인:
+   - Firebase Console > Firestore > Indexes
+   - 모든 인덱스가 "Building" → "Enabled" 상태인지 확인
+
+2. CLI로 확인:
+   ```bash
+   firebase firestore:indexes
+   ```
+
+3. 앱에서 테스트:
+   ```dart
+   // 쿼리 실행하여 오류 없이 동작하는지 확인
+   final reviews = await FirebaseFirestore.instance
+       .collectionGroup('pendingReviews')
+       .where('recipientId', isEqualTo: userId)
+       .where('status', isEqualTo: 'pending')
+       .orderBy('createdAt', descending: true)
+       .get();
+   ```
+
+## 인덱스 생성 시 주의사항
+
+1. **점진적 생성**: 한 번에 모든 인덱스를 생성하지 말고 단계적으로 생성
+2. **크기 고려**: 기존 데이터가 많은 경우 인덱스 생성 시간이 오래 걸릴 수 있음
+3. **비용 확인**: 인덱스는 스토리지 비용이 발생함
+4. **성능 모니터링**: 인덱스 생성 후 쿼리 성능 개선 확인
+
+## 인덱스 삭제 방법 (롤백 시)
+
+Firebase Console에서 수동 삭제:
+- Firebase Console > Firestore > Indexes
+- 해당 인덱스 선택 > Delete
+
+또는 CLI 사용:
+```bash
+firebase firestore:indexes:delete
+```
+
+## 예상 비용
+
+인덱스 스토리지 비용 (예상):
+- pendingReviews 인덱스: ~$0.02/월 (1000개 문서 기준)
+- notifications 인덱스: ~$0.05/월 (5000개 문서 기준)  
+- meetups 인덱스: ~$0.01/월 (500개 문서 기준)
+
+총 예상 비용: ~$0.08/월
+
+실제 비용은 데이터 양과 쿼리 빈도에 따라 달라집니다.
+
+## 성능 최적화 팁
+
+1. **필요한 인덱스만 생성**: 사용하지 않는 쿼리의 인덱스는 생성하지 않음
+2. **단일 필드 인덱스 활용**: 복합 인덱스 전에 단일 필드 인덱스로 해결 가능한지 확인
+3. **쿼리 최적화**: 인덱스에 맞게 쿼리 순서 조정
+4. **정기적 검토**: 사용되지 않는 인덱스 정기적 삭제
+
+## 트러블슈팅
+
+### 인덱스 생성 실패 시
+1. Firebase 프로젝트 권한 확인
+2. 필드명 오타 확인  
+3. 데이터 타입 일치 확인
+4. Firebase 콘솔에서 오류 메시지 확인
+
+### 쿼리 성능 저하 시
+1. 인덱스 상태 확인 (Building/Enabled)
+2. 쿼리와 인덱스 필드 순서 일치 확인
+3. 복합 인덱스 필요성 재검토
+4. 쿼리 실행 계획 분석
+
+이 가이드를 따라 인덱스를 생성하면 리뷰 합의 기능의 쿼리 성능을 최적화할 수 있습니다.

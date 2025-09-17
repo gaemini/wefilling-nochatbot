@@ -148,95 +148,127 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final nationality = authProvider.userData?['nationality'] ?? '';
 
     return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+      alignment: Alignment.bottomCenter,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(20),
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '새로운 모임 생성',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
-                  ],
-                ),
-                const Divider(),
-                const SizedBox(height: 16),
+        height: MediaQuery.of(context).size.height * 0.82, // 82vh 높이
+        decoration: BoxDecoration(
+          color: const Color(0xFFFAFBFC), // 연한 배경색
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 18,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(20),
+            topRight: Radius.circular(20),
+          ),
+          child: Column(
+            children: [
+              // 헤더 고정
+              _buildHeader(),
+              // 스크롤 가능한 컨텐츠
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                const SizedBox(height: 18),
 
-                // 주최자 정보
+                // 개선된 주최자 정보 카드
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  height: 56,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
+                    color: const Color(0xFFF3FAFF), // 연한 프라이머리 틴트
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.shade100),
+                    border: Border.all(color: const Color(0xFFE1E6EE)),
                   ),
                   child: Row(
                     children: [
-                      CircleAvatar(
-                        radius: 24,
-                        backgroundColor: Colors.blue.shade200,
-                        child: Text(
-                          nickname.isNotEmpty ? nickname[0].toUpperCase() : '?',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
+                      // 개선된 프로필 아바타
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(20),
+                          gradient: LinearGradient(
+                            colors: [
+                              const Color(0xFF4A90E2).withOpacity(0.8),
+                              const Color(0xFF7DD3FC).withOpacity(0.8),
+                            ],
+                          ),
+                        ),
+                        child: CircleAvatar(
+                          backgroundColor: Colors.transparent,
+                          child: Text(
+                            nickname.isNotEmpty ? nickname[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            '주최자',
-                            style: TextStyle(fontSize: 12, color: Colors.grey),
-                          ),
-                          Row(
-                            children: [
-                              Text(
-                                nickname,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (nationality.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 8.0),
-                                  child: CountryFlagCircle(
-                                    nationality: nationality,
-                                    size: 20,
+                      // 호스트 정보 (왼쪽 정렬)
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Row(
+                              children: [
+                                Text(
+                                  nickname,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                    color: Color(0xFF1A1A1A),
                                   ),
                                 ),
-                            ],
-                          ),
-                        ],
+                                if (nationality.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 6.0),
+                                    child: CountryFlagCircle(
+                                      nationality: nationality,
+                                      size: 16,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            Text(
+                              '주최자',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
                 ),
 
-                const SizedBox(height: 20),
+                const SizedBox(height: 22),
 
-                // 날짜 및 요일 선택
+                // 개선된 날짜 및 요일 선택
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -248,10 +280,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         color: Colors.grey[800],
                       ),
                     ),
-                    const SizedBox(height: 10),
-                    // 요일 선택 칩
+                    const SizedBox(height: 12),
+                    // 개선된 요일 선택 칩
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Row(
                         children: List.generate(weekDates.length, (index) {
                           final bool isSelected = index == _selectedDayIndex;
@@ -260,7 +294,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               _weekdayNames[date.weekday - 1];
 
                           return Padding(
-                            padding: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.only(right: 10), // 칩 간격 10dp
                             child: InkWell(
                               onTap: () {
                                 setState(() {
@@ -269,39 +303,55 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 _updateTimeOptions();
                               },
                               borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 12,
-                                  horizontal: 16,
-                                ),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 150),
+                                height: 52, // 터치 타겟 확보
+                                width: 64, // 적절한 칩 너비
                                 decoration: BoxDecoration(
-                                  color:
-                                      isSelected
-                                          ? Colors.blue
-                                          : Colors.grey.shade100,
+                                  color: isSelected
+                                      ? const Color(0xFF4A90E2) // 프라이머리 컬러
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: isSelected 
+                                        ? const Color(0xFF4A90E2)
+                                        : const Color(0xFFE1E6EE),
+                                    width: 1,
+                                  ),
+                                  boxShadow: isSelected ? [
+                                    BoxShadow(
+                                      color: const Color(0xFF4A90E2).withOpacity(0.2),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ] : null,
                                 ),
                                 child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
                                       weekday,
                                       style: TextStyle(
-                                        color:
-                                            isSelected
-                                                ? Colors.white
-                                                : Colors.grey[700],
-                                        fontWeight: FontWeight.bold,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : (date.weekday == 7 // 일요일 체크
+                                                ? Colors.red
+                                                : const Color(0xFF666666)),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 2),
                                     Text(
                                       '${date.day}',
                                       style: TextStyle(
-                                        color:
-                                            isSelected
-                                                ? Colors.white
-                                                : Colors.grey[700],
+                                        color: isSelected
+                                            ? Colors.white
+                                            : (date.weekday == 7 // 일요일 체크
+                                                ? Colors.red
+                                                : const Color(0xFF1A1A1A)),
                                         fontSize: 16,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
                                   ],
@@ -316,293 +366,394 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // 썸네일 설정
+                // 개선된 썸네일 설정
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '썸네일 설정',
+                    const Text(
+                      '썸네일 설정 (선택사항)',
                       style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF666666),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
+
+                    // 썸네일 컨테이너
+                    Container(
+                      height: 130,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFE6EAF0),
+                          width: 1,
+                        ),
+                      ),
+                      child: _thumbnailImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Stack(
+                                children: [
+                                  Image.file(
+                                    _thumbnailImage!,
+                                    width: double.infinity,
+                                    height: 130,
+                                    fit: BoxFit.cover,
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _thumbnailImage = null;
+                                        });
+                                      },
+                                      child: Container(
+                                        width: 28,
+                                        height: 28,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.image_outlined,
+                                  size: 32,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  '썸네일 이미지',
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+
+                    const SizedBox(height: 12),
 
                     // 썸네일 텍스트 입력 필드
                     TextFormField(
                       controller: _thumbnailTextController,
                       decoration: InputDecoration(
-                        labelText: '썸네일 텍스트 (선택사항)',
                         hintText: '모임을 대표할 텍스트를 입력하세요',
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
-                        contentPadding: const EdgeInsets.fromLTRB(
-                          16,
-                          24,
-                          16,
-                          40,
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.all(16),
                         counterText: '',
                       ),
+                      style: const TextStyle(fontSize: 14),
                       maxLength: 30,
                       maxLines: 2,
                     ),
 
+                    const SizedBox(height: 8),
+
                     // 이미지 첨부 버튼
-                    Container(
-                      padding: const EdgeInsets.only(top: 4),
-                      transform: Matrix4.translationValues(
-                        0,
-                        -10,
-                        0,
-                      ), // 위로 10픽셀 이동
-                      child: Row(
-                        children: [
-                          IconButton(
-                            icon: Icon(
-                              Icons.add_photo_alternate,
-                              color: Colors.blue.shade700,
-                              size: 24,
-                            ),
-                            onPressed: () async {
-                              final XFile? image = await _picker.pickImage(
-                                source: ImageSource.gallery,
-                                maxWidth: 800,
-                                maxHeight: 800,
-                              );
-                              if (image != null) {
-                                setState(() {
-                                  _thumbnailImage = File(image.path);
-                                });
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('이미지가 선택되었습니다'),
-                                    duration: Duration(seconds: 1),
-                                  ),
-                                );
-                              }
-                            },
-                            tooltip: '이미지 첨부',
-                            padding: EdgeInsets.zero,
+                    SizedBox(
+                      height: 48,
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final XFile? image = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            maxWidth: 800,
+                            maxHeight: 800,
+                          );
+                          if (image != null) {
+                            setState(() {
+                              _thumbnailImage = File(image.path);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('이미지가 선택되었습니다'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          Icons.add_photo_alternate,
+                          size: 20,
+                          color: const Color(0xFF4A90E2),
+                        ),
+                        label: Text(
+                          _thumbnailImage != null ? '이미지 변경' : '이미지 첨부',
+                          style: const TextStyle(
+                            color: Color(0xFF4A90E2),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
                           ),
-                          const Text(
-                            '이미지 첨부',
-                            style: TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(width: 16),
-                          // 선택된 이미지 표시
-                          if (_thumbnailImage != null)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.check_circle,
-                                    size: 16,
-                                    color: Colors.green,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    '이미지 첨부됨',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.black87,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    icon: const Icon(Icons.close, size: 16),
-                                    constraints: const BoxConstraints(),
-                                    padding: const EdgeInsets.only(left: 4),
-                                    onPressed: () {
-                                      setState(() {
-                                        _thumbnailImage = null;
-                                      });
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        ),
                       ),
                     ),
-
-                    // 아래쪽 공간 (버튼 아래)
-                    const SizedBox(height: 10),
                   ],
                 ),
                 const SizedBox(height: 20),
 
-                // 모임 제목
+                // 개선된 모임 정보 입력
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       '모임 정보',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
+                        color: Color(0xFF1A1A1A),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
+                    
+                    // 제목 필드
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '제목',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF666666),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _titleController,
+                          decoration: InputDecoration(
+                            hintText: '모임 제목을 입력하세요',
+                            filled: true,
+                            fillColor: Colors.white,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+                            ),
+                            contentPadding: const EdgeInsets.all(16),
+                          ),
+                          style: const TextStyle(fontSize: 14),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return '모임 제목을 입력해주세요';
+                            }
+                            return null;
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // 설명 필드
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '설명',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
                     TextFormField(
-                      controller: _titleController,
+                      controller: _descriptionController,
                       decoration: InputDecoration(
-                        labelText: '제목',
+                        hintText: '모임에 대한 설명을 입력해주세요',
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
                         enabledBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
                         focusedBorder: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.blue.shade400),
+                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
-                        ),
+                        contentPadding: const EdgeInsets.all(16),
                       ),
+                      style: const TextStyle(fontSize: 14),
+                      minLines: 4,
+                      maxLines: 6,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return '모임 제목을 입력해주세요';
+                          return '모임 설명을 입력해주세요';
                         }
                         return null;
                       },
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
-                // 모임 설명
-                TextFormField(
-                  controller: _descriptionController,
-                  decoration: InputDecoration(
-                    labelText: '설명',
-                    hintText: '모임에 대한 설명을 입력해주세요',
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.blue.shade400),
-                    ),
-                  ),
-                  maxLines: 3,
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return '모임 설명을 입력해주세요';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
-
-                // 카테고리 선택
+                // 개선된 카테고리 선택
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       '카테고리',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
+                        color: Color(0xFF1A1A1A),
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Row(
-                        children:
-                            _categories.map((category) {
-                              final isSelected = _selectedCategory == category;
-                              return Padding(
-                                padding: const EdgeInsets.only(right: 10),
-                                child: ChoiceChip(
-                                  label: Text(category),
-                                  selected: isSelected,
-                                  selectedColor: Colors.blue.shade100,
-                                  backgroundColor: Colors.grey.shade100,
-                                  labelStyle: TextStyle(
-                                    color:
-                                        isSelected
-                                            ? Colors.blue.shade700
-                                            : Colors.black87,
-                                    fontWeight:
-                                        isSelected
-                                            ? FontWeight.bold
-                                            : FontWeight.normal,
+                        children: _categories.map((category) {
+                          final isSelected = _selectedCategory == category;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              child: InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    _selectedCategory = category;
+                                  });
+                                },
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  height: 44,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: isSelected 
+                                        ? const Color(0xFF4A90E2)
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                      color: isSelected 
+                                          ? const Color(0xFF4A90E2)
+                                          : const Color(0xFFE1E6EE),
+                                      width: 1,
+                                    ),
+                                    boxShadow: isSelected ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF4A90E2).withOpacity(0.2),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ] : null,
                                   ),
-                                  onSelected: (selected) {
-                                    if (selected) {
-                                      setState(() {
-                                        _selectedCategory = category;
-                                      });
-                                    }
-                                  },
+                                  child: Text(
+                                    category,
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
                                 ),
-                              );
-                            }).toList(),
+                              ),
+                            ),
+                          );
+                        }).toList(),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
-                // 모임 장소
-                TextFormField(
-                  controller: _locationController,
-                  decoration: InputDecoration(
-                    labelText: '장소',
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                // 장소 필드
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '장소',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF666666),
+                      ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _locationController,
+                      decoration: InputDecoration(
+                        hintText: '모임 장소를 입력하세요',
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.all(16),
+                      ),
+                      style: const TextStyle(fontSize: 14),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '장소를 입력해주세요';
+                        }
+                        return null;
+                      },
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.blue.shade400),
-                    ),
-                  ),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return '장소를 입력해주세요';
-                    }
-                    return null;
-                  },
+                  ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
                 // 시간 선택 영역
                 Column(
@@ -708,28 +859,62 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 const SizedBox(height: 24),
 
                 // 하단 버튼
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+                // 개선된 하단 버튼 (고정)
+                const SizedBox(height: 24),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // 하단 고정 버튼 영역
+              Container(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).padding.bottom + 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    top: BorderSide(
+                      color: const Color(0xFFE6EAF0),
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: Row(
                   children: [
-                    TextButton(
-                      onPressed:
-                          _isSubmitting
-                              ? null
-                              : () {
-                                Navigator.of(context).pop();
-                              },
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
+                    // 취소 버튼
+                    Expanded(
+                      flex: 1,
+                      child: SizedBox(
+                        height: 52,
+                        child: OutlinedButton(
+                          onPressed: _isSubmitting ? null : () {
+                            Navigator.of(context).pop();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Color(0xFF6B6B6B)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                          ),
+                          child: const Text(
+                            '취소',
+                            style: TextStyle(
+                              color: Color(0xFF6B6B6B),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                         ),
                       ),
-                      child: const Text('취소'),
                     ),
-                    const SizedBox(width: 8),
-                    ElevatedButton(
-                      onPressed:
-                          (_isSubmitting ||
+                    const SizedBox(width: 12),
+                    // 생성 버튼
+                    Expanded(
+                      flex: 2,
+                      child: SizedBox(
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: (_isSubmitting ||
                                   _timeOptions.isEmpty ||
                                   _selectedTime == null)
                               ? null
@@ -805,25 +990,84 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   }
                                 }
                               },
-                      child:
-                          _isSubmitting
-                              ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                              : const Text('생성'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    elevation: 2,
+                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text(
+                          '생성',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        ),
+                      ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
-  }
+}
+
+// 개선된 헤더 빌더
+Widget _buildHeader() {
+return Container(
+  color: const Color(0xFFFAFBFC),
+  padding: const EdgeInsets.fromLTRB(16, 18, 8, 12),
+  child: Column(
+    children: [
+      Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Text(
+            '새로운 모임 생성',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1A1A1A),
+            ),
+          ),
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(22),
+              color: Colors.transparent,
+            ),
+            child: IconButton(
+              icon: const Icon(Icons.close, size: 24),
+              onPressed: () => Navigator.of(context).pop(),
+              color: const Color(0xFF666666),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 12),
+      Container(
+        height: 1,
+        color: const Color(0xFFE6EAF0),
+      ),
+    ],
+  ),
+);
+}
 }

@@ -20,13 +20,54 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   // 국적 목록 (필요에 따라 확장)
   final List<String> _nationalities = [
-    '한국', '미국', '일본', '중국', '영국', '프랑스', '독일', '캐나다', '호주', 
-    '러시아', '이탈리아', '스페인', '브라질', '멕시코', '인도', '인도네시아', 
-    '필리핀', '베트남', '태국', '싱가포르', '말레이시아', '아르헨티나', 
-    '네덜란드', '벨기에', '스웨덴', '노르웨이', '덴마크', '핀란드', '폴란드',
-    '오스트리아', '스위스', '그리스', '터키', '이스라엘', '이집트', 
-    '사우디아라비아', '남아프리카공화국', '뉴질랜드', '포르투갈', '아일랜드',
-    '체코', '헝가리', '우크라이나', '몽골', '북한', '대만', '홍콩', '기타'
+    '한국',
+    '미국',
+    '일본',
+    '중국',
+    '영국',
+    '프랑스',
+    '독일',
+    '캐나다',
+    '호주',
+    '러시아',
+    '이탈리아',
+    '스페인',
+    '브라질',
+    '멕시코',
+    '인도',
+    '인도네시아',
+    '필리핀',
+    '베트남',
+    '태국',
+    '싱가포르',
+    '말레이시아',
+    '아르헨티나',
+    '네덜란드',
+    '벨기에',
+    '스웨덴',
+    '노르웨이',
+    '덴마크',
+    '핀란드',
+    '폴란드',
+    '오스트리아',
+    '스위스',
+    '그리스',
+    '터키',
+    '이스라엘',
+    '이집트',
+    '사우디아라비아',
+    '남아프리카공화국',
+    '뉴질랜드',
+    '포르투갈',
+    '아일랜드',
+    '체코',
+    '헝가리',
+    '우크라이나',
+    '몽골',
+    '북한',
+    '대만',
+    '홍콩',
+    '기타',
   ];
 
   bool _isSubmitting = false;
@@ -78,20 +119,20 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         );
 
         if (success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('프로필이 업데이트되었습니다')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('프로필이 업데이트되었습니다')));
           Navigator.of(context).pop(); // 편집 화면 닫기
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('프로필 업데이트에 실패했습니다')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('프로필 업데이트에 실패했습니다')));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('오류가 발생했습니다: $e')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
         }
       } finally {
         if (mounted) {
@@ -112,26 +153,23 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           // 저장 버튼
           _isSubmitting
               ? const Padding(
-            padding: EdgeInsets.all(16.0),
-            child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.blue,
-              ),
-            ),
-          )
+                padding: EdgeInsets.all(16.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.blue,
+                  ),
+                ),
+              )
               : TextButton(
-            onPressed: _updateProfile,
-            child: const Text(
-              '저장',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
+                onPressed: _updateProfile,
+                child: const Text(
+                  '저장',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
-            ),
-          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -144,27 +182,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               // 프로필 안내
               const Text(
                 '프로필 정보 수정',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               const Text(
                 '앱에서 사용할 이름과 국적을 설정하세요.',
-                style: TextStyle(
-                  color: Colors.grey,
-                ),
+                style: TextStyle(color: Colors.grey),
               ),
               const SizedBox(height: 32),
 
               // 닉네임 입력
               const Text(
                 '닉네임',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
               TextFormField(
@@ -192,10 +222,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               // 국적 선택
               const Text(
                 '국적',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
@@ -207,12 +234,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   fillColor: Colors.white,
                 ),
                 value: _selectedNationality,
-                items: _nationalities.map((nationality) {
-                  return DropdownMenuItem(
-                    value: nationality,
-                    child: Text(nationality),
-                  );
-                }).toList(),
+                items:
+                    _nationalities.map((nationality) {
+                      return DropdownMenuItem(
+                        value: nationality,
+                        child: Text(nationality),
+                      );
+                    }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -236,23 +264,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
-                  )
-                      : const Text(
-                    '수정하기',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
+                  child:
+                      _isSubmitting
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                          : const Text(
+                            '수정하기',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                          ),
                 ),
               ),
             ],

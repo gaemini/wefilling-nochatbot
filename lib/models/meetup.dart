@@ -3,7 +3,6 @@
 // 모임 관련 속성 포함(제목,설명,작성자,작성일,좋아요 수 등)
 // 모임 정보 포맷팅을 위한 유틸리티 메서드 제공
 
-
 import 'package:intl/intl.dart';
 
 class Meetup {
@@ -110,24 +109,36 @@ class Meetup {
     final now = DateTime.now();
 
     // 날짜와 시간 문자열을 결합하여 DateTime 객체 생성
-    final meetupTimeStr = time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
+    final meetupTimeStr =
+        time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
     final hour = int.tryParse(meetupTimeStr.split(':')[0]) ?? 0;
     final minute = int.tryParse(meetupTimeStr.split(':')[1]) ?? 0;
 
     final meetupDateTime = DateTime(
-        date.year, date.month, date.day, hour, minute
+      date.year,
+      date.month,
+      date.day,
+      hour,
+      minute,
     );
 
     // 종료 시간 추정 (시작으로부터 2시간 후로 가정)
-    final endHour = (time.contains('~'))
-        ? int.tryParse(time.split('~')[1].trim().split(':')[0]) ?? (hour + 2)
-        : (hour + 2);
-    final endMinute = (time.contains('~'))
-        ? int.tryParse(time.split('~')[1].trim().split(':')[1]) ?? minute
-        : minute;
+    final endHour =
+        (time.contains('~'))
+            ? int.tryParse(time.split('~')[1].trim().split(':')[0]) ??
+                (hour + 2)
+            : (hour + 2);
+    final endMinute =
+        (time.contains('~'))
+            ? int.tryParse(time.split('~')[1].trim().split(':')[1]) ?? minute
+            : minute;
 
     final meetupEndDateTime = DateTime(
-        date.year, date.month, date.day, endHour, endMinute
+      date.year,
+      date.month,
+      date.day,
+      endHour,
+      endMinute,
     );
 
     if (now.isBefore(meetupDateTime)) {

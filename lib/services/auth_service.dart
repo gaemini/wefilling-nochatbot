@@ -4,8 +4,6 @@
 // 사용자 프로필 정보 저장 및 검색
 // 닉네임 업데이트 기능
 
-
-
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -29,7 +27,8 @@ class AuthService {
       if (googleUser == null) return null;
 
       // 인증 정보 가져오기
-      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
@@ -87,7 +86,8 @@ class AuthService {
   // 사용자 프로필 정보 가져오기
   Future<Map<String, dynamic>?> getUserProfile() async {
     if (currentUser != null) {
-      final docSnapshot = await _firestore.collection('users').doc(currentUser!.uid).get();
+      final docSnapshot =
+          await _firestore.collection('users').doc(currentUser!.uid).get();
       if (docSnapshot.exists) {
         return docSnapshot.data();
       }

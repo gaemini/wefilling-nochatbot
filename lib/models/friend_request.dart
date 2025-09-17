@@ -6,10 +6,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// 친구요청 상태 열거형
 enum FriendRequestStatus {
-  pending,    // 대기 중
-  accepted,   // 수락됨
-  rejected,   // 거절됨
-  canceled,   // 취소됨
+  pending, // 대기 중
+  accepted, // 수락됨
+  rejected, // 거절됨
+  canceled, // 취소됨
 }
 
 /// 친구요청 상태를 문자열로 변환
@@ -92,12 +92,14 @@ class FriendRequest {
   // Firestore 문서에서 FriendRequest 객체 생성
   factory FriendRequest.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     return FriendRequest(
       id: doc.id,
       fromUid: data['fromUid'] ?? '',
       toUid: data['toUid'] ?? '',
-      status: FriendRequestStatusExtension.fromString(data['status'] ?? 'PENDING'),
+      status: FriendRequestStatusExtension.fromString(
+        data['status'] ?? 'PENDING',
+      ),
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
     );
@@ -135,10 +137,7 @@ class FriendRequest {
   bool get isCompleted => !isPending;
 
   // 요청 복사본 생성 (상태 변경용)
-  FriendRequest copyWith({
-    FriendRequestStatus? status,
-    DateTime? updatedAt,
-  }) {
+  FriendRequest copyWith({FriendRequestStatus? status, DateTime? updatedAt}) {
     return FriendRequest(
       id: id,
       fromUid: fromUid,

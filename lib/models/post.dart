@@ -13,10 +13,11 @@ class Post {
   final String content;
   final String author;
   final String authorNationality; // 작성자 국적
+  final String category; // 카테고리
   final DateTime createdAt;
   final String userId;
   final int commentCount;
-  final int likes;           // 좋아요 수
+  final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
 
@@ -30,6 +31,7 @@ class Post {
     required this.content,
     required this.author,
     this.authorNationality = '', // 국적 정보 (기본값은 빈 문자열)
+    this.category = '일반', // 카테고리 (기본값은 '일반')
     required this.createdAt,
     required this.userId,
     this.commentCount = 0,
@@ -37,8 +39,6 @@ class Post {
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
   });
-
-
 
   // 모델 디버깅을 위한 문자열 표현
   @override
@@ -113,6 +113,7 @@ class Post {
     String? content,
     String? author,
     String? authorNationality,
+    String? category,
     DateTime? createdAt,
     String? userId,
     int? commentCount,
@@ -126,6 +127,7 @@ class Post {
       content: content ?? this.content,
       author: author ?? this.author,
       authorNationality: authorNationality ?? this.authorNationality,
+      category: category ?? this.category,
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,

@@ -39,10 +39,10 @@ class _RequestsPageState extends State<RequestsPage>
   /// 데이터 초기화
   Future<void> _initializeData() async {
     if (_isInitialized) return;
-    
+
     final provider = context.read<RelationshipProvider>();
     await provider.initialize();
-    
+
     setState(() {
       _isInitialized = true;
     });
@@ -52,7 +52,7 @@ class _RequestsPageState extends State<RequestsPage>
   Future<void> _acceptRequest(String fromUid) async {
     final provider = context.read<RelationshipProvider>();
     final success = await provider.acceptFriendRequest(fromUid);
-    
+
     if (success) {
       _showSnackBar('친구요청을 수락했습니다.', Colors.green);
     } else {
@@ -66,11 +66,11 @@ class _RequestsPageState extends State<RequestsPage>
       '친구요청 거절',
       '정말로 이 친구요청을 거절하시겠습니까?',
     );
-    
+
     if (confirmed) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.rejectFriendRequest(fromUid);
-      
+
       if (success) {
         _showSnackBar('친구요청을 거절했습니다.', Colors.orange);
       } else {
@@ -85,11 +85,11 @@ class _RequestsPageState extends State<RequestsPage>
       '친구요청 취소',
       '정말로 이 친구요청을 취소하시겠습니까?',
     );
-    
+
     if (confirmed) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.cancelFriendRequest(toUid);
-      
+
       if (success) {
         _showSnackBar('친구요청을 취소했습니다.', Colors.orange);
       } else {
@@ -113,26 +113,27 @@ class _RequestsPageState extends State<RequestsPage>
   Future<bool> _showConfirmDialog(String title, String message) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('취소'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('확인'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('확인'),
-          ),
-        ],
-      ),
     );
-    
+
     return result ?? false;
   }
 
@@ -141,33 +142,30 @@ class _RequestsPageState extends State<RequestsPage>
     return !_isInitialized
         ? const Center(child: CircularProgressIndicator())
         : Column(
-            children: [
-              // 탭바
-              Container(
-                color: Colors.white,
-                child: TabBar(
-                  controller: _tabController,
-                  labelColor: Colors.blue,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.blue,
-                  tabs: const [
-                    Tab(text: '받은 요청'),
-                    Tab(text: '보낸 요청'),
-                  ],
-                ),
+          children: [
+            // 탭바
+            Container(
+              color: Colors.white,
+              child: TabBar(
+                controller: _tabController,
+                labelColor: Colors.blue,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: Colors.blue,
+                tabs: const [Tab(text: '받은 요청'), Tab(text: '보낸 요청')],
               ),
-              // 탭 내용
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildIncomingRequestsTab(),
-                    _buildOutgoingRequestsTab(),
-                  ],
-                ),
+            ),
+            // 탭 내용
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildIncomingRequestsTab(),
+                  _buildOutgoingRequestsTab(),
+                ],
               ),
-            ],
-          );
+            ),
+          ],
+        );
   }
 
   /// 받은 요청 탭
@@ -285,25 +283,25 @@ class _RequestsPageState extends State<RequestsPage>
             CircleAvatar(
               radius: 24,
               backgroundColor: Colors.grey[300],
-              backgroundImage: user.hasProfileImage
-                  ? NetworkImage(user.photoURL!)
-                  : null,
-              child: !user.hasProfileImage
-                  ? Text(
-                      user.displayNameOrNickname.isNotEmpty
-                          ? user.displayNameOrNickname[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    )
-                  : null,
+              backgroundImage:
+                  user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
+              child:
+                  !user.hasProfileImage
+                      ? Text(
+                        user.displayNameOrNickname.isNotEmpty
+                            ? user.displayNameOrNickname[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      )
+                      : null,
             ),
-            
+
             const SizedBox(width: 16),
-            
+
             // 사용자 정보
             Expanded(
               child: Column(
@@ -316,28 +314,22 @@ class _RequestsPageState extends State<RequestsPage>
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (user.nickname != null && 
+                  if (user.nickname != null &&
                       user.nickname != user.displayName &&
                       user.nickname!.isNotEmpty)
                     Text(
                       user.displayName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                     ),
                   const SizedBox(height: 4),
                   Text(
                     _getTimeAgo(request.createdAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                   ),
                 ],
               ),
             ),
-            
+
             // 액션 버튼들
             Column(
               children: [
@@ -381,25 +373,25 @@ class _RequestsPageState extends State<RequestsPage>
             CircleAvatar(
               radius: 24,
               backgroundColor: Colors.grey[300],
-              backgroundImage: user.hasProfileImage
-                  ? NetworkImage(user.photoURL!)
-                  : null,
-              child: !user.hasProfileImage
-                  ? Text(
-                      user.displayNameOrNickname.isNotEmpty
-                          ? user.displayNameOrNickname[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    )
-                  : null,
+              backgroundImage:
+                  user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
+              child:
+                  !user.hasProfileImage
+                      ? Text(
+                        user.displayNameOrNickname.isNotEmpty
+                            ? user.displayNameOrNickname[0].toUpperCase()
+                            : '?',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      )
+                      : null,
             ),
-            
+
             const SizedBox(width: 16),
-            
+
             // 사용자 정보
             Expanded(
               child: Column(
@@ -412,28 +404,22 @@ class _RequestsPageState extends State<RequestsPage>
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  if (user.nickname != null && 
+                  if (user.nickname != null &&
                       user.nickname != user.displayName &&
                       user.nickname!.isNotEmpty)
                     Text(
                       user.displayName,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey[600],
-                      ),
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
                     ),
                   const SizedBox(height: 4),
                   Text(
                     _getTimeAgo(request.createdAt),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey[500],
-                    ),
+                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                   ),
                 ],
               ),
             ),
-            
+
             // 취소 버튼
             OutlinedButton(
               onPressed: () => _cancelRequest(request.toUid),
@@ -456,11 +442,7 @@ class _RequestsPageState extends State<RequestsPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            icon,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(icon, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             title,
@@ -474,10 +456,7 @@ class _RequestsPageState extends State<RequestsPage>
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -490,11 +469,7 @@ class _RequestsPageState extends State<RequestsPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red[400],
-          ),
+          Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
           const SizedBox(height: 16),
           Text(
             '오류가 발생했습니다',
@@ -508,10 +483,7 @@ class _RequestsPageState extends State<RequestsPage>
           Text(
             errorMessage,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.red[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.red[500]),
           ),
           const SizedBox(height: 16),
           ElevatedButton(

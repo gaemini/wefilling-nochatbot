@@ -2,7 +2,6 @@
 // 알림 배지 위젯 구현
 //읽지 않은 알림 개수 표시
 
-
 import 'package:flutter/material.dart';
 
 class NotificationBadge extends StatelessWidget {
@@ -33,32 +32,27 @@ class NotificationBadge extends StatelessWidget {
             right: 0,
             child: Container(
               padding: EdgeInsets.all(size < 16 ? 1.0 : 2.0),
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-              ),
-              constraints: BoxConstraints(
-                minWidth: size,
-                minHeight: size,
-              ),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+              constraints: BoxConstraints(minWidth: size, minHeight: size),
               child: Center(
-                child: count > 99
-                    ? Text(
-                  '99+',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.bold,
-                  ),
-                )
-                    : Text(
-                  count.toString(),
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                child:
+                    count > 99
+                        ? Text(
+                          '99+',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        )
+                        : Text(
+                          count.toString(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: fontSize,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
               ),
             ),
           ),

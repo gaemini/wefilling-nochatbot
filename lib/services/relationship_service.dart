@@ -44,9 +44,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('sendFriendRequest');
-      final result = await callable.call({
-        'toUid': toUid,
-      });
+      final result = await callable.call({'toUid': toUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -71,9 +69,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('cancelFriendRequest');
-      final result = await callable.call({
-        'toUid': toUid,
-      });
+      final result = await callable.call({'toUid': toUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -98,9 +94,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('acceptFriendRequest');
-      final result = await callable.call({
-        'fromUid': fromUid,
-      });
+      final result = await callable.call({'fromUid': fromUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -125,9 +119,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('rejectFriendRequest');
-      final result = await callable.call({
-        'fromUid': fromUid,
-      });
+      final result = await callable.call({'fromUid': fromUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -152,9 +144,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('unfriend');
-      final result = await callable.call({
-        'otherUid': otherUid,
-      });
+      final result = await callable.call({'otherUid': otherUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -183,9 +173,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('blockUser');
-      final result = await callable.call({
-        'targetUid': targetUid,
-      });
+      final result = await callable.call({'targetUid': targetUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -210,9 +198,7 @@ class RelationshipService {
 
       // Cloud Functions 호출
       final callable = _functions.httpsCallable('unblockUser');
-      final result = await callable.call({
-        'targetUid': targetUid,
-      });
+      final result = await callable.call({'targetUid': targetUid});
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {

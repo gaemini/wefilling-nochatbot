@@ -22,13 +22,54 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
 
   // 국적 목록 (필요에 따라 확장)
   final List<String> _nationalities = [
-    '한국', '미국', '일본', '중국', '영국', '프랑스', '독일', '캐나다', '호주', 
-    '러시아', '이탈리아', '스페인', '브라질', '멕시코', '인도', '인도네시아', 
-    '필리핀', '베트남', '태국', '싱가포르', '말레이시아', '아르헨티나', 
-    '네덜란드', '벨기에', '스웨덴', '노르웨이', '덴마크', '핀란드', '폴란드',
-    '오스트리아', '스위스', '그리스', '터키', '이스라엘', '이집트', 
-    '사우디아라비아', '남아프리카공화국', '뉴질랜드', '포르투갈', '아일랜드',
-    '체코', '헝가리', '우크라이나', '몽골', '북한', '대만', '홍콩', '기타'
+    '한국',
+    '미국',
+    '일본',
+    '중국',
+    '영국',
+    '프랑스',
+    '독일',
+    '캐나다',
+    '호주',
+    '러시아',
+    '이탈리아',
+    '스페인',
+    '브라질',
+    '멕시코',
+    '인도',
+    '인도네시아',
+    '필리핀',
+    '베트남',
+    '태국',
+    '싱가포르',
+    '말레이시아',
+    '아르헨티나',
+    '네덜란드',
+    '벨기에',
+    '스웨덴',
+    '노르웨이',
+    '덴마크',
+    '핀란드',
+    '폴란드',
+    '오스트리아',
+    '스위스',
+    '그리스',
+    '터키',
+    '이스라엘',
+    '이집트',
+    '사우디아라비아',
+    '남아프리카공화국',
+    '뉴질랜드',
+    '포르투갈',
+    '아일랜드',
+    '체코',
+    '헝가리',
+    '우크라이나',
+    '몽골',
+    '북한',
+    '대만',
+    '홍콩',
+    '기타',
   ];
 
   // 폼 제출
@@ -163,12 +204,13 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                   fillColor: Colors.white,
                 ),
                 value: _selectedNationality,
-                items: _nationalities.map((nationality) {
-                  return DropdownMenuItem(
-                    value: nationality,
-                    child: Text(nationality),
-                  );
-                }).toList(),
+                items:
+                    _nationalities.map((nationality) {
+                      return DropdownMenuItem(
+                        value: nationality,
+                        child: Text(nationality),
+                      );
+                    }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -189,22 +231,23 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                 ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 3,
+                child:
+                    _isLoading
+                        ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 3,
+                          ),
+                        )
+                        : const Text(
+                          '시작하기',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      )
-                    : const Text(
-                        '시작하기',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
               ),
             ],
           ),

@@ -40,9 +40,10 @@ class Comment {
       authorNickname: data['authorNickname'] ?? '익명',
       authorPhotoUrl: data['authorPhotoUrl'] ?? '',
       content: data['content'] ?? '',
-      createdAt: data['createdAt'] != null
-          ? (data['createdAt'] as Timestamp).toDate()
-          : DateTime.now(),
+      createdAt:
+          data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
     );
   }
 

@@ -3,8 +3,6 @@
 // Google 로그인 기능 제공
 // 인증 후 화면 전환 처리
 
-
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -18,7 +16,8 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen>
+    with SingleTickerProviderStateMixin {
   late AnimationController _animationController;
   late Animation<double> _fadeInAnimation;
   late Animation<Offset> _slideAnimation;
@@ -30,21 +29,24 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    
+
     _fadeInAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: const Interval(0.0, 0.7, curve: Curves.easeInOut),
       ),
     );
-    
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero).animate(
+
+    _slideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.2),
+      end: Offset.zero,
+    ).animate(
       CurvedAnimation(
         parent: _animationController,
         curve: const Interval(0.2, 0.8, curve: Curves.easeInOut),
       ),
     );
-    
+
     _animationController.forward();
   }
 
@@ -61,16 +63,12 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     return Scaffold(
       body: Container(
-        width: double.infinity, 
+        width: double.infinity,
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.blue.shade100,
-              Colors.blue.shade50,
-              Colors.white,
-            ],
+            colors: [Colors.blue.shade100, Colors.blue.shade50, Colors.white],
           ),
         ),
         child: SafeArea(
@@ -85,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     SizedBox(height: size.height * 0.08),
-                    
+
                     // 앱 로고 및 이름
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
@@ -123,13 +121,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ),
                       ],
                     ),
-                    
+
                     const Spacer(),
-                    
+
                     // 로그인 안내 메시지
                     Container(
-                      width: double.infinity, 
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 20,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white,
                         borderRadius: BorderRadius.circular(16),
@@ -164,10 +165,16 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             ),
                           ),
                           const SizedBox(height: 24),
-                          
+
                           // Google 로그인 버튼
                           MaterialButton(
-                            onPressed: authProvider.isLoading ? null : () => _handleGoogleLogin(context, authProvider),
+                            onPressed:
+                                authProvider.isLoading
+                                    ? null
+                                    : () => _handleGoogleLogin(
+                                      context,
+                                      authProvider,
+                                    ),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(30),
                             ),
@@ -177,14 +184,17 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                             disabledColor: Colors.grey.shade200,
                             padding: EdgeInsets.zero,
                             child: Container(
-                              width: double.infinity, 
-                              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 16,
+                              ),
                               decoration: BoxDecoration(
                                 borderRadius: BorderRadius.circular(30),
                                 border: Border.all(color: Colors.grey.shade300),
                               ),
                               child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center, 
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Container(
                                     width: 24,
@@ -247,7 +257,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                                             decoration: const BoxDecoration(
                                               color: Colors.blue,
                                               borderRadius: BorderRadius.only(
-                                                bottomRight: Radius.circular(12),
+                                                bottomRight: Radius.circular(
+                                                  12,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -269,7 +281,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               ),
                             ),
                           ),
-                          
+
                           // 로딩 표시
                           if (authProvider.isLoading)
                             Container(
@@ -277,7 +289,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                               child: Column(
                                 children: [
                                   const CircularProgressIndicator(
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.blue,
+                                    ),
                                   ),
                                   const SizedBox(height: 12),
                                   Text(
@@ -293,9 +307,9 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         ],
                       ),
                     ),
-                    
+
                     const SizedBox(height: 32),
-                    
+
                     // 하단 텍스트
                     Text(
                       '로그인하면 서비스 이용약관 및 개인정보 보호정책에 동의하게 됩니다.',
@@ -305,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
                         color: Colors.grey.shade600,
                       ),
                     ),
-                    
+
                     SizedBox(height: size.height * 0.08),
                   ],
                 ),
@@ -318,7 +332,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   }
 
   // 구글 로그인 처리 함수
-  Future<void> _handleGoogleLogin(BuildContext context, AuthProvider authProvider) async {
+  Future<void> _handleGoogleLogin(
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
     try {
       // Google 로그인 처리
       await authProvider.signInWithGoogle();

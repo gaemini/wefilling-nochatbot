@@ -11,10 +11,10 @@ enum SupportedLanguage {
 
   /// 언어 코드 (예: 'ko', 'en')
   final String code;
-  
+
   /// 해당 언어로 표시되는 언어명
   final String nativeName;
-  
+
   /// 영어로 표시되는 언어명
   final String englishName;
 

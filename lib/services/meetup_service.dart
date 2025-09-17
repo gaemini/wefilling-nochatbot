@@ -17,18 +17,23 @@ class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
+  
+  // Firestore 인스턴스 getter 추가
+  FirebaseFirestore get firestore => _firestore;
 
-  // 현재 날짜부터 7일간의 날짜 계산 (오늘 포함)
+  // 현재 주의 월요일부터 일요일까지 날짜 계산
   List<DateTime> getWeekDates() {
     final DateTime now = DateTime.now();
+    
+    // 현재 주의 월요일 찾기 (월요일=1, 일요일=7)
+    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    final DateTime startOfWeekDay = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
+    
     final List<DateTime> weekDates = [];
-
-    // 오늘 날짜를 시작으로 7일 생성
-    final DateTime today = DateTime(now.year, now.month, now.day);
-
-    // 오늘부터 6일 후까지 날짜 생성
+    
+    // 월요일부터 일요일까지 7일 생성
     for (int i = 0; i < 7; i++) {
-      weekDates.add(today.add(Duration(days: i)));
+      weekDates.add(startOfWeekDay.add(Duration(days: i)));
     }
 
     return weekDates;
@@ -37,7 +42,7 @@ class MeetupService {
   // 날짜 포맷 문자열 반환 (요일도 포함)
   String getFormattedDate(DateTime date) {
     final List<String> weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
-    final int weekdayIndex = date.weekday - 1;  // 0: 월요일, 6: 일요일
+    final int weekdayIndex = date.weekday - 1; // 0: 월요일, 6: 일요일
     return '${date.month}월 ${date.day}일 (${weekdayNames[weekdayIndex]})';
   }
 
@@ -75,7 +80,7 @@ class MeetupService {
         'location': location,
         'time': time,
         'maxParticipants': maxParticipants,
-        'currentParticipants': 1,  // 주최자 포함
+        'currentParticipants': 1, // 주최자 포함
         'participants': [user.uid], // 주최자 ID
         'date': date,
         'createdAt': now,
@@ -87,23 +92,25 @@ class MeetupService {
 
       // Firestore에 저장
       final docRef = await _firestore.collection('meetups').add(meetupData);
-      
+
       // 이미지 업로드 처리
       if (thumbnailImage != null) {
         try {
           final storage = FirebaseStorage.instance;
-          final Reference storageRef = storage.ref().child('meetup_thumbnails/${docRef.id}');
-          
+          final Reference storageRef = storage.ref().child(
+            'meetup_thumbnails/${docRef.id}',
+          );
+
           await storageRef.putFile(thumbnailImage);
           final imageUrl = await storageRef.getDownloadURL();
-          
+
           // 이미지 URL 업데이트
           await docRef.update({'thumbnailImageUrl': imageUrl});
         } catch (e) {
           print('썸네일 이미지 업로드 오류: $e');
         }
       }
-      
+
       return true;
     } catch (e) {
       print('모임 생성 오류: $e');
@@ -118,8 +125,14 @@ class MeetupService {
     final DateTime targetDate = weekDates[dayIndex];
 
     // 날짜 범위 설정 (해당 날짜의 00:00:00부터 23:59:59까지)
-    final startOfDay = DateTime(targetDate.year, targetDate.month, targetDate.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
+    final startOfDay = DateTime(
+      targetDate.year,
+      targetDate.month,
+      targetDate.day,
+    );
+    final endOfDay = startOfDay
+        .add(const Duration(days: 1))
+        .subtract(const Duration(microseconds: 1));
 
     return _firestore
         .collection('meetups')
@@ -127,36 +140,41 @@ class MeetupService {
         .where('date', isLessThanOrEqualTo: endOfDay)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
+          return snapshot.docs.map((doc) {
+            final data = doc.data();
 
-        // Timestamp에서 DateTime으로 변환
-        DateTime meetupDate;
-        if (data['date'] is Timestamp) {
-          meetupDate = (data['date'] as Timestamp).toDate();
-        } else {
-          // 기본값으로 현재 날짜 사용
-          meetupDate = startOfDay;
-        }
+            // Timestamp에서 DateTime으로 변환
+            DateTime meetupDate;
+            if (data['date'] is Timestamp) {
+              meetupDate = (data['date'] as Timestamp).toDate();
+            } else {
+              // 기본값으로 현재 날짜 사용
+              meetupDate = startOfDay;
+            }
 
-        return Meetup(
-          id: doc.id, // ID를 문자열로 직접 사용
-          title: data['title'] ?? '',
-          description: data['description'] ?? '',
-          location: data['location'] ?? '',
-          time: data['time'] ?? '',
-          maxParticipants: data['maxParticipants'] ?? 0,
-          currentParticipants: data['currentParticipants'] ?? 1,
-          host: data['hostNickname'] ?? '익명',
-          hostNationality: data['hostNickname'] == 'dev99' ? '한국' : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-          imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
-          thumbnailContent: data['thumbnailContent'] ?? '',
-          thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-          date: meetupDate,
-          category: data['category'] ?? '기타', // 카테고리 필드 추가
-        );
-      }).toList();
-    });
+            return Meetup(
+              id: doc.id, // ID를 문자열로 직접 사용
+              title: data['title'] ?? '',
+              description: data['description'] ?? '',
+              location: data['location'] ?? '',
+              time: data['time'] ?? '',
+              maxParticipants: data['maxParticipants'] ?? 0,
+              currentParticipants: data['currentParticipants'] ?? 1,
+              host: data['hostNickname'] ?? '익명',
+              hostNationality:
+                  data['hostNickname'] == 'dev99'
+                      ? '한국'
+                      : (data['hostNationality'] ??
+                          ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+              imageUrl:
+                  data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+              thumbnailContent: data['thumbnailContent'] ?? '',
+              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+              date: meetupDate,
+              category: data['category'] ?? '기타', // 카테고리 필드 추가
+            );
+          }).toList();
+        });
   }
 
   // 카테고리별 모임 가져오기 (새로운 메서드)
@@ -189,7 +207,9 @@ class MeetupService {
   Stream<List<Meetup>> getTodayMeetups() {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
+    final endOfDay = startOfDay
+        .add(const Duration(days: 1))
+        .subtract(const Duration(microseconds: 1));
 
     return _firestore
         .collection('meetups')
@@ -221,7 +241,10 @@ class MeetupService {
         maxParticipants: data['maxParticipants'] ?? 0,
         currentParticipants: data['currentParticipants'] ?? 1,
         host: data['hostNickname'] ?? '익명',
-        hostNationality: data['hostNickname'] == 'dev99' ? '한국' : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+        hostNationality:
+            data['hostNickname'] == 'dev99'
+                ? '한국'
+                : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
         imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
@@ -260,7 +283,10 @@ class MeetupService {
         maxParticipants: data['maxParticipants'] ?? 0,
         currentParticipants: data['currentParticipants'] ?? 1,
         host: data['hostNickname'] ?? '익명',
-        hostNationality: data['hostNickname'] == 'dev99' ? '한국' : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+        hostNationality:
+            data['hostNickname'] == 'dev99'
+                ? '한국'
+                : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
         imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
@@ -291,14 +317,14 @@ class MeetupService {
       // 빈 검색어인 경우 모든 모임 반환
       return getMeetupsByCategory('전체');
     }
-    
+
     // 소문자로 변환하여 대소문자 구분 없이 검색
     final lowercaseQuery = query.toLowerCase();
-    
+
     // 현재 날짜 이후의 모임 중에서 검색
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    
+
     return _firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: today)
@@ -308,17 +334,18 @@ class MeetupService {
           return snapshot.docs
               .map((doc) {
                 final data = doc.data();
-                
+
                 // 검색어와 일치하는지 확인 (제목, 내용, 위치만 사용)
                 final title = (data['title'] as String? ?? '').toLowerCase();
-                final description = (data['description'] as String? ?? '').toLowerCase();
-                final location = (data['location'] as String? ?? '').toLowerCase();
-                
+                final description =
+                    (data['description'] as String? ?? '').toLowerCase();
+                final location =
+                    (data['location'] as String? ?? '').toLowerCase();
+
                 // 제목, 내용, 위치에서만 검색
-                if (title.contains(lowercaseQuery) || 
-                    description.contains(lowercaseQuery) || 
+                if (title.contains(lowercaseQuery) ||
+                    description.contains(lowercaseQuery) ||
                     location.contains(lowercaseQuery)) {
-                  
                   // Timestamp에서 DateTime으로 변환
                   DateTime meetupDate;
                   if (data['date'] is Timestamp) {
@@ -326,7 +353,7 @@ class MeetupService {
                   } else {
                     meetupDate = DateTime.now();
                   }
-                  
+
                   return Meetup(
                     id: doc.id,
                     title: data['title'] ?? '',
@@ -336,8 +363,14 @@ class MeetupService {
                     maxParticipants: data['maxParticipants'] ?? 0,
                     currentParticipants: data['currentParticipants'] ?? 1,
                     host: data['hostNickname'] ?? '익명',
-                    hostNationality: data['hostNickname'] == 'dev99' ? '한국' : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-                    imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+                    hostNationality:
+                        data['hostNickname'] == 'dev99'
+                            ? '한국'
+                            : (data['hostNationality'] ??
+                                ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+                    imageUrl:
+                        data['thumbnailImageUrl'] ??
+                        AppConstants.DEFAULT_IMAGE_URL,
                     thumbnailContent: data['thumbnailContent'] ?? '',
                     thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
                     date: meetupDate,
@@ -350,6 +383,77 @@ class MeetupService {
               .whereType<Meetup>() // null이 아닌 항목만 필터링
               .toList();
         });
+  }
+
+  // 모임 검색 (Future 버전 - SearchResultPage용)
+  Future<List<Meetup>> searchMeetupsAsync(String query) async {
+    try {
+      if (query.isEmpty) return [];
+
+      final lowercaseQuery = query.toLowerCase();
+      
+      // 현재 날짜 이후의 모임 중에서 검색
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      final snapshot = await _firestore
+          .collection('meetups')
+          .where('date', isGreaterThanOrEqualTo: today)
+          .orderBy('date', descending: false)
+          .get();
+
+      return snapshot.docs
+          .map((doc) {
+            try {
+              final data = doc.data();
+
+              // 검색어와 일치하는지 확인
+              final title = (data['title'] as String? ?? '').toLowerCase();
+              final description = (data['description'] as String? ?? '').toLowerCase();
+              final location = (data['location'] as String? ?? '').toLowerCase();
+
+              if (title.contains(lowercaseQuery) ||
+                  description.contains(lowercaseQuery) ||
+                  location.contains(lowercaseQuery)) {
+                
+                // Timestamp에서 DateTime으로 변환
+                DateTime meetupDate;
+                if (data['date'] is Timestamp) {
+                  meetupDate = (data['date'] as Timestamp).toDate();
+                } else {
+                  meetupDate = DateTime.now();
+                }
+
+                return Meetup(
+                  id: doc.id,
+                  title: data['title'] ?? '',
+                  description: data['description'] ?? '',
+                  location: data['location'] ?? '',
+                  time: data['time'] ?? '',
+                  maxParticipants: data['maxParticipants'] ?? 0,
+                  currentParticipants: data['currentParticipants'] ?? 1,
+                  host: data['hostNickname'] ?? '익명',
+                  hostNationality: data['hostNationality'] ?? '',
+                  imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+                  thumbnailContent: data['thumbnailContent'] ?? '',
+                  thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+                  date: meetupDate,
+                  category: data['category'] ?? '기타',
+                );
+              }
+              return null;
+            } catch (e) {
+              print('모임 검색 파싱 오류: $e');
+              return null;
+            }
+          })
+          .where((meetup) => meetup != null)
+          .cast<Meetup>()
+          .toList();
+    } catch (e) {
+      print('모임 검색 오류: $e');
+      return [];
+    }
   }
 
   // 특정 요일에 해당하는 날짜 계산
@@ -385,7 +489,9 @@ class MeetupService {
         if (!updatedDoc.exists) return false;
 
         final updatedData = updatedDoc.data()!;
-        final List<dynamic> participants = List.from(updatedData['participants'] ?? []);
+        final List<dynamic> participants = List.from(
+          updatedData['participants'] ?? [],
+        );
 
         // 이미 참여 중인지 확인
         if (participants.contains(user.uid)) {
@@ -419,20 +525,21 @@ class MeetupService {
       if (success) {
         // 현재 참여자 수 확인을 위해 다시 문서 조회
         final updatedDoc = await meetupRef.get();
-        final currentParticipants = updatedDoc.data()?['currentParticipants'] ?? 1;
+        final currentParticipants =
+            updatedDoc.data()?['currentParticipants'] ?? 1;
 
         if (currentParticipants >= maxParticipants) {
           // 모임 객체 생성
           final meetup = Meetup(
             id: meetupId,
             title: meetupTitle ?? '',
-            description: '',  // 알림에 사용되지 않음
-            location: '',     // 알림에 사용되지 않음
-            time: '',         // 알림에 사용되지 않음
+            description: '', // 알림에 사용되지 않음
+            location: '', // 알림에 사용되지 않음
+            time: '', // 알림에 사용되지 않음
             maxParticipants: maxParticipants,
             currentParticipants: currentParticipants,
-            host: '',         // 알림에 사용되지 않음
-            imageUrl: '',     // 알림에 사용되지 않음
+            host: '', // 알림에 사용되지 않음
+            imageUrl: '', // 알림에 사용되지 않음
             date: DateTime.now(), // 알림에 사용되지 않음
           );
 
@@ -455,7 +562,8 @@ class MeetupService {
       if (user == null) return false;
 
       // 모임 문서 가져오기
-      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      final meetupDoc =
+          await _firestore.collection('meetups').doc(meetupId).get();
 
       // 문서가 없거나 사용자가 주최자가 아닌 경우
       if (!meetupDoc.exists) return false;
@@ -480,7 +588,8 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      final meetupDoc =
+          await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) return false;
 
       final data = meetupDoc.data()!;

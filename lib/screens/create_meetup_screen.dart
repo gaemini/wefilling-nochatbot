@@ -41,7 +41,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final List<String> _categories = ['스터디', '식사', '취미', '문화', '기타'];
 
   // 썸네일 관련 변수
-  final TextEditingController _thumbnailTextController = TextEditingController();
+  final TextEditingController _thumbnailTextController =
+      TextEditingController();
   File? _thumbnailImage;
   final ImagePicker _picker = ImagePicker();
 
@@ -71,7 +72,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final selectedDate = _meetupService.getWeekDates()[_selectedDayIndex];
 
     // 선택한 날짜가 오늘인지 확인
-    final bool isToday = selectedDate.year == now.year &&
+    final bool isToday =
+        selectedDate.year == now.year &&
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
 
@@ -136,11 +138,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final DateTime selectedDate = weekDates[_selectedDayIndex];
     // 요일 이름 가져오기 (월, 화, 수, ...)
     final String weekdayName = _weekdayNames[selectedDate.weekday - 1];
-    final String dateStr = '${selectedDate.month}월 ${selectedDate.day}일 ($weekdayName)';
+    final String dateStr =
+        '${selectedDate.month}월 ${selectedDate.day}일 ($weekdayName)';
 
     // 사용자 닉네임 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final nickname = authProvider.userData?['nickname'] ?? AppConstants.DEFAULT_HOST;
+    final nickname =
+        authProvider.userData?['nickname'] ?? AppConstants.DEFAULT_HOST;
     final nationality = authProvider.userData?['nationality'] ?? '';
 
     return Dialog(
@@ -174,7 +178,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const Divider(),
                 const SizedBox(height: 16),
-                
+
                 // 주최자 정보
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -203,10 +207,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         children: [
                           const Text(
                             '주최자',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
                           ),
                           Row(
                             children: [
@@ -217,7 +218,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
-                              if (nationality.isNotEmpty) 
+                              if (nationality.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(left: 8.0),
                                   child: CountryFlagCircle(
@@ -232,7 +233,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 20),
 
                 // 날짜 및 요일 선택
@@ -252,53 +253,63 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
-                        children: List.generate(
-                          weekDates.length,
-                          (index) {
-                            final bool isSelected = index == _selectedDayIndex;
-                            final DateTime date = weekDates[index];
-                            final String weekday = _weekdayNames[date.weekday - 1];
-                            
-                            return Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedDayIndex = index;
-                                  });
-                                  _updateTimeOptions();
-                                },
-                                borderRadius: BorderRadius.circular(16),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                                  decoration: BoxDecoration(
-                                    color: isSelected ? Colors.blue : Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(16),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        weekday,
-                                        style: TextStyle(
-                                          color: isSelected ? Colors.white : Colors.grey[700],
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                        children: List.generate(weekDates.length, (index) {
+                          final bool isSelected = index == _selectedDayIndex;
+                          final DateTime date = weekDates[index];
+                          final String weekday =
+                              _weekdayNames[date.weekday - 1];
+
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  _selectedDayIndex = index;
+                                });
+                                _updateTimeOptions();
+                              },
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                  horizontal: 16,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      isSelected
+                                          ? Colors.blue
+                                          : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Column(
+                                  children: [
+                                    Text(
+                                      weekday,
+                                      style: TextStyle(
+                                        color:
+                                            isSelected
+                                                ? Colors.white
+                                                : Colors.grey[700],
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${date.day}',
-                                        style: TextStyle(
-                                          color: isSelected ? Colors.white : Colors.grey[700],
-                                          fontSize: 16,
-                                        ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${date.day}',
+                                      style: TextStyle(
+                                        color:
+                                            isSelected
+                                                ? Colors.white
+                                                : Colors.grey[700],
+                                        fontSize: 16,
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            );
-                          },
-                        ),
+                            ),
+                          );
+                        }),
                       ),
                     ),
                   ],
@@ -318,7 +329,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    
+
                     // 썸네일 텍스트 입력 필드
                     TextFormField(
                       controller: _thumbnailTextController,
@@ -331,24 +342,33 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.grey.shade300),
                         ),
-                        contentPadding: const EdgeInsets.fromLTRB(16, 24, 16, 40), 
+                        contentPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          24,
+                          16,
+                          40,
+                        ),
                         counterText: '',
                       ),
                       maxLength: 30,
-                      maxLines: 2, 
+                      maxLines: 2,
                     ),
-                    
+
                     // 이미지 첨부 버튼
                     Container(
                       padding: const EdgeInsets.only(top: 4),
-                      transform: Matrix4.translationValues(0, -10, 0), // 위로 10픽셀 이동
+                      transform: Matrix4.translationValues(
+                        0,
+                        -10,
+                        0,
+                      ), // 위로 10픽셀 이동
                       child: Row(
                         children: [
                           IconButton(
                             icon: Icon(
                               Icons.add_photo_alternate,
                               color: Colors.blue.shade700,
-                              size: 24, 
+                              size: 24,
                             ),
                             onPressed: () async {
                               final XFile? image = await _picker.pickImage(
@@ -373,27 +393,34 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           ),
                           const Text(
                             '이미지 첨부',
-                            style: TextStyle(
-                              color: Colors.grey,
-                              fontSize: 14,
-                            ),
+                            style: TextStyle(color: Colors.grey, fontSize: 14),
                           ),
                           const SizedBox(width: 16),
                           // 선택된 이미지 표시
                           if (_thumbnailImage != null)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.blue.shade100,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
                                 children: [
-                                  const Icon(Icons.check_circle, size: 16, color: Colors.green),
+                                  const Icon(
+                                    Icons.check_circle,
+                                    size: 16,
+                                    color: Colors.green,
+                                  ),
                                   const SizedBox(width: 4),
                                   const Text(
                                     '이미지 첨부됨',
-                                    style: TextStyle(fontSize: 12, color: Colors.black87),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
+                                    ),
                                   ),
                                   IconButton(
                                     icon: const Icon(Icons.close, size: 16),
@@ -411,7 +438,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         ],
                       ),
                     ),
-                    
+
                     // 아래쪽 공간 (버튼 아래)
                     const SizedBox(height: 10),
                   ],
@@ -449,7 +476,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.blue.shade400),
                         ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
                       ),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
@@ -509,29 +539,36 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
                       child: Row(
-                        children: _categories.map((category) {
-                          final isSelected = _selectedCategory == category;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 10),
-                            child: ChoiceChip(
-                              label: Text(category),
-                              selected: isSelected,
-                              selectedColor: Colors.blue.shade100,
-                              backgroundColor: Colors.grey.shade100,
-                              labelStyle: TextStyle(
-                                color: isSelected ? Colors.blue.shade700 : Colors.black87,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                              ),
-                              onSelected: (selected) {
-                                if (selected) {
-                                  setState(() {
-                                    _selectedCategory = category;
-                                  });
-                                }
-                              },
-                            ),
-                          );
-                        }).toList(),
+                        children:
+                            _categories.map((category) {
+                              final isSelected = _selectedCategory == category;
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 10),
+                                child: ChoiceChip(
+                                  label: Text(category),
+                                  selected: isSelected,
+                                  selectedColor: Colors.blue.shade100,
+                                  backgroundColor: Colors.grey.shade100,
+                                  labelStyle: TextStyle(
+                                    color:
+                                        isSelected
+                                            ? Colors.blue.shade700
+                                            : Colors.black87,
+                                    fontWeight:
+                                        isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                  ),
+                                  onSelected: (selected) {
+                                    if (selected) {
+                                      setState(() {
+                                        _selectedCategory = category;
+                                      });
+                                    }
+                                  },
+                                ),
+                              );
+                            }).toList(),
                       ),
                     ),
                   ],
@@ -574,10 +611,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     const SizedBox(height: 16),
                     Text(
                       '시간 선택',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
 
@@ -587,7 +621,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         padding: const EdgeInsets.only(bottom: 8.0),
                         child: Text(
                           '오늘은 이미 지난 시간입니다. 다른 날짜를 선택해주세요.',
-                          style: TextStyle(color: Colors.red[700], fontSize: 14),
+                          style: TextStyle(
+                            color: Colors.red[700],
+                            fontSize: 14,
+                          ),
                         ),
                       )
                     // 시간 선택 드롭다운
@@ -596,17 +633,21 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         value: _selectedTime,
                         isExpanded: true, // 드롭다운을 전체 너비로 확장
                         decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(8),
                           ),
                         ),
-                        items: _timeOptions.map((String time) {
-                          return DropdownMenuItem<String>(
-                            value: time,
-                            child: Text(time),
-                          );
-                        }).toList(),
+                        items:
+                            _timeOptions.map((String time) {
+                              return DropdownMenuItem<String>(
+                                value: time,
+                                child: Text(time),
+                              );
+                            }).toList(),
                         onChanged: (value) {
                           if (value != null) {
                             setState(() {
@@ -632,27 +673,28 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   children: [
                     Text(
                       '최대 인원',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
                     DropdownButtonFormField<int>(
                       value: _maxParticipants,
                       isExpanded: true,
                       decoration: InputDecoration(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
                       ),
-                      items: _participantOptions.map((int value) {
-                        return DropdownMenuItem<int>(
-                          value: value,
-                          child: Text('$value명'),
-                        );
-                      }).toList(),
+                      items:
+                          _participantOptions.map((int value) {
+                            return DropdownMenuItem<int>(
+                              value: value,
+                              child: Text('$value명'),
+                            );
+                          }).toList(),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() {
@@ -670,76 +712,110 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     TextButton(
-                      onPressed: _isSubmitting ? null : () {
-                        Navigator.of(context).pop();
-                      },
+                      onPressed:
+                          _isSubmitting
+                              ? null
+                              : () {
+                                Navigator.of(context).pop();
+                              },
                       style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
                       child: const Text('취소'),
                     ),
                     const SizedBox(width: 8),
                     ElevatedButton(
-                      onPressed: (_isSubmitting || _timeOptions.isEmpty || _selectedTime == null) ? null : () async {
-                        if (_formKey.currentState!.validate()) {
-                          setState(() {
-                            _isSubmitting = true;
-                          });
+                      onPressed:
+                          (_isSubmitting ||
+                                  _timeOptions.isEmpty ||
+                                  _selectedTime == null)
+                              ? null
+                              : () async {
+                                if (_formKey.currentState!.validate()) {
+                                  setState(() {
+                                    _isSubmitting = true;
+                                  });
 
-                          _formKey.currentState!.save();
+                                  _formKey.currentState!.save();
 
-                          try {
-                            // Firebase에 모임 생성
-                            final success = await _meetupService.createMeetup(
-                              title: _titleController.text.trim(),
-                              description: _descriptionController.text.trim(),
-                              location: _locationController.text.trim(),
-                              time: _selectedTime!, // 선택된 시간 사용
-                              maxParticipants: _maxParticipants,
-                              date: selectedDate,
-                              category: _selectedCategory, // 선택된 카테고리 전달
-                              thumbnailContent: _thumbnailTextController.text.trim(),
-                              thumbnailImage: _thumbnailImage, // 이미지 전달
-                            );
+                                  try {
+                                    // Firebase에 모임 생성
+                                    final success = await _meetupService
+                                        .createMeetup(
+                                          title: _titleController.text.trim(),
+                                          description:
+                                              _descriptionController.text
+                                                  .trim(),
+                                          location:
+                                              _locationController.text.trim(),
+                                          time: _selectedTime!, // 선택된 시간 사용
+                                          maxParticipants: _maxParticipants,
+                                          date: selectedDate,
+                                          category:
+                                              _selectedCategory, // 선택된 카테고리 전달
+                                          thumbnailContent:
+                                              _thumbnailTextController.text
+                                                  .trim(),
+                                          thumbnailImage:
+                                              _thumbnailImage, // 이미지 전달
+                                        );
 
-                            if (success) {
-                              if (mounted) {
-                                // 콜백은 호출하지 않고 창만 닫음 (Firebase에서 이미 데이터가 생성됨)
-                                Navigator.of(context).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('모임이 생성되었습니다!')),
-                                );
-                              }
-                            } else if (mounted) {
-                              setState(() {
-                                _isSubmitting = false;
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('모임 생성에 실패했습니다. 다시 시도해주세요.')),
-                              );
-                            }
-                          } catch (e) {
-                            if (mounted) {
-                              setState(() {
-                                _isSubmitting = false;
-                              });
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('오류가 발생했습니다: $e')),
-                              );
-                            }
-                          }
-                        }
-                      },
-                      child: _isSubmitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('생성'),
+                                    if (success) {
+                                      if (mounted) {
+                                        // 콜백은 호출하지 않고 창만 닫음 (Firebase에서 이미 데이터가 생성됨)
+                                        Navigator.of(context).pop();
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('모임이 생성되었습니다!'),
+                                          ),
+                                        );
+                                      }
+                                    } else if (mounted) {
+                                      setState(() {
+                                        _isSubmitting = false;
+                                      });
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text(
+                                            '모임 생성에 실패했습니다. 다시 시도해주세요.',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (mounted) {
+                                      setState(() {
+                                        _isSubmitting = false;
+                                      });
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text('오류가 발생했습니다: $e'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                }
+                              },
+                      child:
+                          _isSubmitting
+                              ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                              : const Text('생성'),
                     ),
                   ],
                 ),

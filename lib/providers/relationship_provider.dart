@@ -90,7 +90,9 @@ class RelationshipProvider with ChangeNotifier {
   /// 특정 사용자의 관계 상태 업데이트
   Future<void> updateRelationshipStatus(String otherUserId) async {
     try {
-      final status = await _relationshipService.getRelationshipStatus(otherUserId);
+      final status = await _relationshipService.getRelationshipStatus(
+        otherUserId,
+      );
       _relationshipStatuses[otherUserId] = status;
       notifyListeners();
     } catch (e) {
@@ -207,7 +209,8 @@ class RelationshipProvider with ChangeNotifier {
         _friends.removeWhere((friend) => friend.uid == otherUid);
         // 검색 결과에 해당 사용자 다시 추가
         final userProfile = await _relationshipService.getUserProfile(otherUid);
-        if (userProfile != null && !_searchResults.any((u) => u.uid == otherUid)) {
+        if (userProfile != null &&
+            !_searchResults.any((u) => u.uid == otherUid)) {
           _searchResults.add(userProfile);
         }
         notifyListeners();
@@ -260,8 +263,11 @@ class RelationshipProvider with ChangeNotifier {
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
         // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(targetUid);
-        if (userProfile != null && !_searchResults.any((u) => u.uid == targetUid)) {
+        final userProfile = await _relationshipService.getUserProfile(
+          targetUid,
+        );
+        if (userProfile != null &&
+            !_searchResults.any((u) => u.uid == targetUid)) {
           _searchResults.add(userProfile);
         }
         notifyListeners();
@@ -357,21 +363,20 @@ class RelationshipProvider with ChangeNotifier {
 
   /// 특정 사용자와의 관계 정보 가져오기
   RelationshipInfo? getRelationshipInfo(String otherUserId) {
-    final status = _relationshipStatuses[otherUserId] ?? RelationshipStatus.none;
+    final status =
+        _relationshipStatuses[otherUserId] ?? RelationshipStatus.none;
     final currentUserId = _relationshipService.currentUserId;
-    
+
     if (currentUserId == null) return null;
 
     FriendRequest? friendRequest;
     if (status == RelationshipStatus.pendingOut) {
-      final outgoingList = _outgoingRequests
-          .where((req) => req.toUid == otherUserId)
-          .toList();
+      final outgoingList =
+          _outgoingRequests.where((req) => req.toUid == otherUserId).toList();
       friendRequest = outgoingList.isNotEmpty ? outgoingList.first : null;
     } else if (status == RelationshipStatus.pendingIn) {
-      final incomingList = _incomingRequests
-          .where((req) => req.fromUid == otherUserId)
-          .toList();
+      final incomingList =
+          _incomingRequests.where((req) => req.fromUid == otherUserId).toList();
       friendRequest = incomingList.isNotEmpty ? incomingList.first : null;
     }
 

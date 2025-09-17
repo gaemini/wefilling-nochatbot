@@ -27,10 +27,8 @@ class UsersRepository {
   /// 사용자 프로필 조회
   Future<UserProfile?> getUserProfile(String userId) async {
     try {
-      final doc = await _firestore
-          .collection(_usersCollection)
-          .doc(userId)
-          .get();
+      final doc =
+          await _firestore.collection(_usersCollection).doc(userId).get();
 
       if (doc.exists) {
         return UserProfile.fromFirestore(doc);
@@ -51,20 +49,22 @@ class UsersRepository {
       if (currentUid == null) return [];
 
       // 닉네임으로 검색
-      final nicknameQuery = await _firestore
-          .collection(_usersCollection)
-          .where('nickname', isGreaterThanOrEqualTo: query)
-          .where('nickname', isLessThan: query + '\uf8ff')
-          .limit(limit)
-          .get();
+      final nicknameQuery =
+          await _firestore
+              .collection(_usersCollection)
+              .where('nickname', isGreaterThanOrEqualTo: query)
+              .where('nickname', isLessThan: query + '\uf8ff')
+              .limit(limit)
+              .get();
 
       // displayName으로 검색
-      final displayNameQuery = await _firestore
-          .collection(_usersCollection)
-          .where('displayName', isGreaterThanOrEqualTo: query)
-          .where('displayName', isLessThan: query + '\uf8ff')
-          .limit(limit)
-          .get();
+      final displayNameQuery =
+          await _firestore
+              .collection(_usersCollection)
+              .where('displayName', isGreaterThanOrEqualTo: query)
+              .where('displayName', isLessThan: query + '\uf8ff')
+              .limit(limit)
+              .get();
 
       // 결과 합치기 및 중복 제거
       final allDocs = <DocumentSnapshot>[];
@@ -78,10 +78,11 @@ class UsersRepository {
       }
 
       // 현재 사용자 제외하고 UserProfile로 변환
-      final profiles = uniqueDocs.values
-          .where((doc) => doc.id != currentUid)
-          .map((doc) => UserProfile.fromFirestore(doc))
-          .toList();
+      final profiles =
+          uniqueDocs.values
+              .where((doc) => doc.id != currentUid)
+              .map((doc) => UserProfile.fromFirestore(doc))
+              .toList();
 
       return profiles;
     } catch (e) {
@@ -109,7 +110,10 @@ class UsersRepository {
       if (isFriends) return RelationshipStatus.friends;
 
       // 친구요청 상태 확인
-      final requestStatus = await _getFriendRequestStatus(currentUid, otherUserId);
+      final requestStatus = await _getFriendRequestStatus(
+        currentUid,
+        otherUserId,
+      );
       if (requestStatus != null) {
         return requestStatus;
       }
@@ -125,10 +129,8 @@ class UsersRepository {
   Future<bool> _isUserBlocked(String blockerId, String blockedId) async {
     try {
       final blockId = '${blockerId}_$blockedId';
-      final doc = await _firestore
-          .collection(_blocksCollection)
-          .doc(blockId)
-          .get();
+      final doc =
+          await _firestore.collection(_blocksCollection).doc(blockId).get();
       return doc.exists;
     } catch (e) {
       print('차단 상태 확인 오류: $e');
@@ -141,12 +143,10 @@ class UsersRepository {
     try {
       final sortedIds = [uid1, uid2]..sort();
       final pairId = '${sortedIds[0]}__${sortedIds[1]}';
-      
-      final doc = await _firestore
-          .collection(_friendshipsCollection)
-          .doc(pairId)
-          .get();
-      
+
+      final doc =
+          await _firestore.collection(_friendshipsCollection).doc(pairId).get();
+
       return doc.exists;
     } catch (e) {
       print('친구 관계 확인 오류: $e');
@@ -155,14 +155,18 @@ class UsersRepository {
   }
 
   /// 친구요청 상태 조회
-  Future<RelationshipStatus?> _getFriendRequestStatus(String fromUid, String toUid) async {
+  Future<RelationshipStatus?> _getFriendRequestStatus(
+    String fromUid,
+    String toUid,
+  ) async {
     try {
       // 내가 보낸 요청 확인
       final outgoingId = '${fromUid}_$toUid';
-      final outgoingDoc = await _firestore
-          .collection(_friendRequestsCollection)
-          .doc(outgoingId)
-          .get();
+      final outgoingDoc =
+          await _firestore
+              .collection(_friendRequestsCollection)
+              .doc(outgoingId)
+              .get();
 
       if (outgoingDoc.exists) {
         final data = outgoingDoc.data() as Map<String, dynamic>;
@@ -174,10 +178,11 @@ class UsersRepository {
 
       // 내가 받은 요청 확인
       final incomingId = '${toUid}_$fromUid';
-      final incomingDoc = await _firestore
-          .collection(_friendRequestsCollection)
-          .doc(incomingId)
-          .get();
+      final incomingDoc =
+          await _firestore
+              .collection(_friendRequestsCollection)
+              .doc(incomingId)
+              .get();
 
       if (incomingDoc.exists) {
         final data = incomingDoc.data() as Map<String, dynamic>;
@@ -207,10 +212,10 @@ class UsersRepository {
           .orderBy('createdAt', descending: true)
           .snapshots()
           .map((snapshot) {
-        return snapshot.docs
-            .map((doc) => FriendRequest.fromFirestore(doc))
-            .toList();
-      });
+            return snapshot.docs
+                .map((doc) => FriendRequest.fromFirestore(doc))
+                .toList();
+          });
     } catch (e) {
       print('받은 친구요청 조회 오류: $e');
       return Stream.value([]);
@@ -230,10 +235,10 @@ class UsersRepository {
           .orderBy('createdAt', descending: true)
           .snapshots()
           .map((snapshot) {
-        return snapshot.docs
-            .map((doc) => FriendRequest.fromFirestore(doc))
-            .toList();
-      });
+            return snapshot.docs
+                .map((doc) => FriendRequest.fromFirestore(doc))
+                .toList();
+          });
     } catch (e) {
       print('보낸 친구요청 조회 오류: $e');
       return Stream.value([]);
@@ -251,30 +256,30 @@ class UsersRepository {
           .where('uids', arrayContains: currentUid)
           .snapshots()
           .asyncMap((snapshot) async {
-        final friendIds = <String>[];
-        
-        for (final doc in snapshot.docs) {
-          final data = doc.data() as Map<String, dynamic>;
-          final uids = List<String>.from(data['uids'] ?? []);
-          // 현재 사용자 제외한 상대방 ID 추가
-          for (final uid in uids) {
-            if (uid != currentUid) {
-              friendIds.add(uid);
+            final friendIds = <String>[];
+
+            for (final doc in snapshot.docs) {
+              final data = doc.data() as Map<String, dynamic>;
+              final uids = List<String>.from(data['uids'] ?? []);
+              // 현재 사용자 제외한 상대방 ID 추가
+              for (final uid in uids) {
+                if (uid != currentUid) {
+                  friendIds.add(uid);
+                }
+              }
             }
-          }
-        }
 
-        // 친구 프로필 정보 조회
-        final profiles = <UserProfile>[];
-        for (final friendId in friendIds) {
-          final profile = await getUserProfile(friendId);
-          if (profile != null) {
-            profiles.add(profile);
-          }
-        }
+            // 친구 프로필 정보 조회
+            final profiles = <UserProfile>[];
+            for (final friendId in friendIds) {
+              final profile = await getUserProfile(friendId);
+              if (profile != null) {
+                profiles.add(profile);
+              }
+            }
 
-        return profiles;
-      });
+            return profiles;
+          });
     } catch (e) {
       print('친구 목록 조회 오류: $e');
       return Stream.value([]);
@@ -295,7 +300,8 @@ class UsersRepository {
   }
 
   /// 사용자 카운터 업데이트 (friendsCount, incomingCount, outgoingCount)
-  Future<void> updateUserCounters(String userId, {
+  Future<void> updateUserCounters(
+    String userId, {
     int? friendsCount,
     int? incomingCount,
     int? outgoingCount,
@@ -307,10 +313,7 @@ class UsersRepository {
       if (outgoingCount != null) updates['outgoingCount'] = outgoingCount;
       updates['updatedAt'] = FieldValue.serverTimestamp();
 
-      await _firestore
-          .collection(_usersCollection)
-          .doc(userId)
-          .update(updates);
+      await _firestore.collection(_usersCollection).doc(userId).update(updates);
     } catch (e) {
       print('사용자 카운터 업데이트 오류: $e');
       rethrow;

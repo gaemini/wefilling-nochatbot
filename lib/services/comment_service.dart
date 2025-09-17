@@ -3,7 +3,6 @@
 // 게시글에 댓글 추가 및 삭제
 // 댓글 수 관리
 
-
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
@@ -52,11 +51,11 @@ class CommentService {
         // 게시글 작성자에게 알림 전송 (자기 자신이 댓글을 단 경우 제외)
         if (postAuthorId != null && postAuthorId != user.uid) {
           await _notificationService.sendNewCommentNotification(
-              postId,
-              postTitle,
-              postAuthorId,
-              nickname,
-              user.uid
+            postId,
+            postTitle,
+            postAuthorId,
+            nickname,
+            user.uid,
           );
         }
       }
@@ -75,10 +74,11 @@ class CommentService {
   Future<void> _updateCommentCount(String postId) async {
     try {
       // 해당 게시글의 댓글 수 계산
-      final querySnapshot = await _firestore
-          .collection('comments')
-          .where('postId', isEqualTo: postId)
-          .get();
+      final querySnapshot =
+          await _firestore
+              .collection('comments')
+              .where('postId', isEqualTo: postId)
+              .get();
 
       final commentCount = querySnapshot.docs.length;
 
@@ -97,19 +97,20 @@ class CommentService {
       return _firestore
           .collection('comments')
           .where('postId', isEqualTo: postId)
-      // 정렬 부분 제거 - 인덱스 문제의 원인
-      // .orderBy('createdAt', descending: false)
+          // 정렬 부분 제거 - 인덱스 문제의 원인
+          // .orderBy('createdAt', descending: false)
           .snapshots()
           .map((snapshot) {
-        List<Comment> comments = snapshot.docs.map((doc) {
-          return Comment.fromFirestore(doc);
-        }).toList();
+            List<Comment> comments =
+                snapshot.docs.map((doc) {
+                  return Comment.fromFirestore(doc);
+                }).toList();
 
-        // 클라이언트 측에서 정렬 수행
-        comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+            // 클라이언트 측에서 정렬 수행
+            comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-        return comments;
-      });
+            return comments;
+          });
     } catch (e) {
       print('댓글 불러오기 오류: $e');
       // 오류 발생 시 빈 리스트 반환
@@ -127,7 +128,8 @@ class CommentService {
       }
 
       // 댓글 문서 가져오기
-      final commentDoc = await _firestore.collection('comments').doc(commentId).get();
+      final commentDoc =
+          await _firestore.collection('comments').doc(commentId).get();
 
       // 문서가 없는 경우
       if (!commentDoc.exists) {

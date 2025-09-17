@@ -3,7 +3,6 @@
 // 게시글 내용, 좋아요, 댓글 표시
 // 댓글 작성 및 게시글 삭제 기능
 
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,10 +17,7 @@ import '../widgets/country_flag_circle.dart';
 class PostDetailScreen extends StatefulWidget {
   final Post post;
 
-  const PostDetailScreen({
-    Key? key,
-    required this.post,
-  }) : super(key: key);
+  const PostDetailScreen({Key? key, required this.post}) : super(key: key);
 
   @override
   State<PostDetailScreen> createState() => _PostDetailScreenState();
@@ -37,7 +33,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isLiked = false;
   bool _isTogglingLike = false;
   late Post _currentPost;
-  
+
   // 이미지 재시도 관련 상태
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
   Map<String, bool> _imageRetrying = {}; // URL별 재시도 중 상태
@@ -96,14 +92,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (_isTogglingLike) return;
 
     // 로그인 상태 확인
-    final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<app_auth.AuthProvider>(
+      context,
+      listen: false,
+    );
     final isLoggedIn = authProvider.isLoggedIn;
     final user = authProvider.user;
 
     if (!isLoggedIn || user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('좋아요를 누르려면 로그인이 필요합니다.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('좋아요를 누르려면 로그인이 필요합니다.')));
       return;
     }
 
@@ -112,30 +111,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _isTogglingLike = true;
       _isLiked = !_isLiked; // 즉시 좋아요 상태 토글
 
-      // 좋아요 수와 목록 업데이트
+      // 좋아요 수와 목록 업데이트 - copyWith 사용하여 모든 필드 보존
       if (_isLiked) {
         // 좋아요 추가
-        _currentPost = Post(
-          id: _currentPost.id,
-          title: _currentPost.title,
-          content: _currentPost.content,
-          author: _currentPost.author,
-          createdAt: _currentPost.createdAt,
-          userId: _currentPost.userId,
-          commentCount: _currentPost.commentCount,
+        _currentPost = _currentPost.copyWith(
           likes: _currentPost.likes + 1,
           likedBy: [..._currentPost.likedBy, user.uid],
         );
       } else {
         // 좋아요 제거
-        _currentPost = Post(
-          id: _currentPost.id,
-          title: _currentPost.title,
-          content: _currentPost.content,
-          author: _currentPost.author,
-          createdAt: _currentPost.createdAt,
-          userId: _currentPost.userId,
-          commentCount: _currentPost.commentCount,
+        _currentPost = _currentPost.copyWith(
           likes: _currentPost.likes - 1,
           likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
         );
@@ -150,36 +135,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // 실패 시 UI 롤백
         setState(() {
           _isLiked = !_isLiked;
-          // 좋아요 수와 목록 롤백
-          if (_isLiked) {
-            _currentPost = Post(
-              id: _currentPost.id,
-              title: _currentPost.title,
-              content: _currentPost.content,
-              author: _currentPost.author,
-              createdAt: _currentPost.createdAt,
-              userId: _currentPost.userId,
-              commentCount: _currentPost.commentCount,
-              likes: _currentPost.likes + 1,
-              likedBy: [..._currentPost.likedBy, user.uid],
-            );
-          } else {
-            _currentPost = Post(
-              id: _currentPost.id,
-              title: _currentPost.title,
-              content: _currentPost.content,
-              author: _currentPost.author,
-              createdAt: _currentPost.createdAt,
-              userId: _currentPost.userId,
-              commentCount: _currentPost.commentCount,
-              likes: _currentPost.likes - 1,
-              likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
-            );
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('좋아요 업데이트에 실패했습니다.')),
+        // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
+        if (_isLiked) {
+          _currentPost = _currentPost.copyWith(
+            likes: _currentPost.likes + 1,
+            likedBy: [..._currentPost.likedBy, user.uid],
           );
+        } else {
+          _currentPost = _currentPost.copyWith(
+            likes: _currentPost.likes - 1,
+            likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
+          );
+        }
+
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('좋아요 업데이트에 실패했습니다.')));
         });
       }
 
@@ -190,9 +161,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } catch (e) {
       print('좋아요 토글 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
       }
     } finally {
       if (mounted) {
@@ -205,24 +176,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _deletePost() async {
     // 삭제 확인 다이얼로그 표시
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('게시글 삭제'),
-        content: const Text('정말 이 게시글을 삭제하시겠습니까?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('삭제'),
-          ),
-        ],
-      ),
-    ) ?? false;
+    final shouldDelete =
+        await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text('게시글 삭제'),
+                content: const Text('정말 이 게시글을 삭제하시겠습니까?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('취소'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    style: TextButton.styleFrom(foregroundColor: Colors.red),
+                    child: const Text('삭제'),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
 
     if (!shouldDelete || !mounted) return;
 
@@ -236,22 +210,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success && mounted) {
         // 삭제 성공 시 화면 닫기
         Navigator.of(context).pop(true); // true를 반환하여 삭제되었음을 알림
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('게시글이 삭제되었습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('게시글이 삭제되었습니다.')));
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('게시글 삭제에 실패했습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('게시글 삭제에 실패했습니다.')));
         setState(() {
           _isDeleting = false;
         });
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
         setState(() {
           _isDeleting = false;
         });
@@ -267,7 +241,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
     print('💬 댓글 작성 시작');
-    print('💬 Auth 상태 (작성 전): ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}');
+    print(
+      '💬 Auth 상태 (작성 전): ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
+    );
     print('💬 Timestamp (작성 전): ${DateTime.now()}');
 
     setState(() {
@@ -280,7 +256,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // 댓글 작성 후 상태 로깅
       final authUserAfter = FirebaseAuth.instance.currentUser;
       print('💬 댓글 작성 완료');
-      print('💬 Auth 상태 (작성 후): ${authUserAfter != null ? "Authenticated (${authUserAfter.uid})" : "Not Authenticated"}');
+      print(
+        '💬 Auth 상태 (작성 후): ${authUserAfter != null ? "Authenticated (${authUserAfter.uid})" : "Not Authenticated"}',
+      );
       print('💬 Timestamp (작성 후): ${DateTime.now()}');
       print('💬 댓글 작성 성공: $success');
 
@@ -294,16 +272,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         await _refreshPost();
         print('💬 게시글 새로고침 완료');
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('댓글 등록에 실패했습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('댓글 등록에 실패했습니다.')));
       }
     } catch (e) {
       print('❌ 댓글 작성 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
       }
     } finally {
       if (mounted) {
@@ -317,32 +295,38 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 댓글 삭제
   Future<void> _deleteComment(String commentId) async {
     try {
-      final success = await _commentService.deleteComment(commentId, widget.post.id);
+      final success = await _commentService.deleteComment(
+        commentId,
+        widget.post.id,
+      );
 
       if (success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('댓글이 삭제되었습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('댓글이 삭제되었습니다.')));
 
         // 게시글 정보 새로고침 (댓글 수 업데이트)
         await _refreshPost();
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('댓글 삭제에 실패했습니다.')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('댓글 삭제에 실패했습니다.')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
       }
     }
   }
 
   // 댓글 위젯 빌드
   Widget _buildCommentItem(Comment comment) {
-    final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<app_auth.AuthProvider>(
+      context,
+      listen: false,
+    );
     final isCommentAuthor = authProvider.user?.uid == comment.userId;
 
     return Container(
@@ -353,24 +337,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           // 프로필 이미지
           CircleAvatar(
             radius: 18,
-            backgroundColor: comment.authorPhotoUrl.isEmpty
-                ? _getAvatarColor(comment.authorNickname)
-                : Colors.grey[200],
-            backgroundImage: comment.authorPhotoUrl.isNotEmpty
-                ? NetworkImage(comment.authorPhotoUrl)
-                : null,
-            child: comment.authorPhotoUrl.isEmpty
-                ? Text(
-                    comment.authorNickname.isNotEmpty
-                        ? comment.authorNickname[0].toUpperCase()
-                        : '?',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  )
-                : null,
+            backgroundColor:
+                comment.authorPhotoUrl.isEmpty
+                    ? _getAvatarColor(comment.authorNickname)
+                    : Colors.grey[200],
+            backgroundImage:
+                comment.authorPhotoUrl.isNotEmpty
+                    ? NetworkImage(comment.authorPhotoUrl)
+                    : null,
+            child:
+                comment.authorPhotoUrl.isEmpty
+                    ? Text(
+                      comment.authorNickname.isNotEmpty
+                          ? comment.authorNickname[0].toUpperCase()
+                          : '?',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    )
+                    : null,
           ),
           const SizedBox(width: 12),
 
@@ -393,23 +380,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     const SizedBox(width: 8),
                     // 작성 시간
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey[100],
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         _formatNotificationTime(comment.createdAt),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 11,
-                        ),
+                        style: TextStyle(color: Colors.grey[600], fontSize: 11),
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 6),
-                
+
                 // 댓글 내용 - 간격과 스타일 개선
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 4.0),
@@ -490,11 +477,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _imageRetryCount[imageUrl] = currentRetryCount + 1;
     });
 
-    print('🔄 이미지 재시도 시작: $imageUrl (${currentRetryCount + 1}/${_maxRetryCount}회)');
+    print(
+      '🔄 이미지 재시도 시작: $imageUrl (${currentRetryCount + 1}/${_maxRetryCount}회)',
+    );
 
     // 재시도 지연 시간 (점진적으로 증가)
     final delaySeconds = (currentRetryCount + 1) * 2; // 2초, 4초, 6초
-    
+
     Future.delayed(Duration(seconds: delaySeconds), () {
       if (mounted) {
         setState(() {
@@ -517,10 +506,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   // 재시도 가능한 이미지 위젯 빌더
-  Widget _buildRetryableImage(String imageUrl, {required BoxFit fit, required bool isFullScreen}) {
+  Widget _buildRetryableImage(
+    String imageUrl, {
+    required BoxFit fit,
+    required bool isFullScreen,
+  }) {
     final isRetrying = _imageRetrying[imageUrl] ?? false;
     final retryCount = _imageRetryCount[imageUrl] ?? 0;
-    
+
     // 재시도 중이면 로딩 인디케이터 표시
     if (isRetrying) {
       return Container(
@@ -535,10 +528,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             const SizedBox(height: 8),
             Text(
               '재시도 중... (${retryCount}/${_maxRetryCount})',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -549,30 +539,37 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       imageUrl,
       fit: fit,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+        'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
         'Accept': 'image/*',
       },
       loadingBuilder: (context, child, loadingProgress) {
         final authUser = FirebaseAuth.instance.currentUser;
         print('📸 이미지 로딩 시도: $imageUrl');
-        print('📸 Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}');
+        print(
+          '📸 Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
+        );
         print('📸 Timestamp: ${DateTime.now()}');
-        
+
         if (loadingProgress != null) {
-          print('📸 로딩 진행률: ${loadingProgress.cumulativeBytesLoaded} / ${loadingProgress.expectedTotalBytes ?? 'unknown'}');
+          print(
+            '📸 로딩 진행률: ${loadingProgress.cumulativeBytesLoaded} / ${loadingProgress.expectedTotalBytes ?? 'unknown'}',
+          );
         }
-        
+
         if (loadingProgress == null) {
           // 이미지 로딩 성공
           _onImageLoadSuccess(imageUrl);
           return child;
         }
-        
+
         return Center(
           child: CircularProgressIndicator(
-            value: loadingProgress.expectedTotalBytes != null 
-                ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                : null,
+            value:
+                loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded /
+                        loadingProgress.expectedTotalBytes!
+                    : null,
             strokeWidth: isFullScreen ? 3 : 2,
           ),
         );
@@ -581,9 +578,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final authUser = FirebaseAuth.instance.currentUser;
         print('❌ 이미지 로드 오류: $imageUrl');
         print('❌ Error: $error');
-        print('❌ Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}');
+        print(
+          '❌ Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
+        );
         print('❌ Timestamp: ${DateTime.now()}');
-        
+
         // 403 오류이고 재시도 가능한 경우 자동 재시도
         if (error.toString().contains('403') && retryCount < _maxRetryCount) {
           print('🔄 403 오류 감지, 자동 재시도 시작: $imageUrl');
@@ -591,7 +590,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _retryImageLoad(imageUrl);
           });
-          
+
           return Container(
             color: Colors.grey.shade100,
             child: Column(
@@ -614,7 +613,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           );
         }
-        
+
         // 최대 재시도 횟수 초과하거나 403이 아닌 오류
         return Container(
           color: Colors.grey.shade200,
@@ -622,15 +621,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                retryCount >= _maxRetryCount ? Icons.error_outline : Icons.broken_image,
+                retryCount >= _maxRetryCount
+                    ? Icons.error_outline
+                    : Icons.broken_image,
                 color: Colors.grey[600],
                 size: isFullScreen ? 32 : 24,
               ),
               const SizedBox(height: 8),
               Text(
-                retryCount >= _maxRetryCount 
-                    ? '이미지를 불러올 수 없습니다'
-                    : '이미지 오류',
+                retryCount >= _maxRetryCount ? '이미지를 불러올 수 없습니다' : '이미지 오류',
                 style: TextStyle(
                   fontSize: isFullScreen ? 14 : 12,
                   color: Colors.grey[600],
@@ -641,10 +640,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 const SizedBox(height: 4),
                 Text(
                   '${_maxRetryCount}회 재시도 실패',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: Colors.grey[500],
-                  ),
+                  style: TextStyle(fontSize: 10, color: Colors.grey[500]),
                 ),
                 const SizedBox(height: 8),
                 // 수동 재시도 버튼 (최대 재시도 후에만 표시)
@@ -658,10 +654,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     print('🔄 수동 재시도: $imageUrl');
                   },
                   icon: Icon(Icons.refresh, size: 16),
-                  label: Text(
-                    '다시 시도',
-                    style: TextStyle(fontSize: 12),
-                  ),
+                  label: Text('다시 시도', style: TextStyle(fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     foregroundColor: Colors.white,
@@ -677,8 +670,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<app_auth.AuthProvider>(context);
@@ -692,20 +683,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           if (_isAuthor)
             _isDeleting
                 ? Container(
-              margin: const EdgeInsets.all(10.0),
-              width: 20,
-              height: 20,
-              child: const CircularProgressIndicator(
-                color: Colors.red,
-                strokeWidth: 2,
-              ),
-            )
+                  margin: const EdgeInsets.all(10.0),
+                  width: 20,
+                  height: 20,
+                  child: const CircularProgressIndicator(
+                    color: Colors.red,
+                    strokeWidth: 2,
+                  ),
+                )
                 : IconButton(
-              icon: const Icon(Icons.delete_outline),
-              color: Colors.red,
-              tooltip: '게시글 삭제',
-              onPressed: _deletePost,
-            ),
+                  icon: const Icon(Icons.delete_outline),
+                  color: Colors.red,
+                  tooltip: '게시글 삭제',
+                  onPressed: _deletePost,
+                ),
         ],
       ),
       body: Column(
@@ -729,7 +720,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                   ),
-                  
+
                   // 작성자 정보 영역
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -745,9 +736,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           radius: 20,
                           backgroundColor: _getAvatarColor(_currentPost.author),
                           child: Text(
-                            _currentPost.author.isNotEmpty 
-                              ? _currentPost.author[0].toUpperCase() 
-                              : '?',
+                            _currentPost.author.isNotEmpty
+                                ? _currentPost.author[0].toUpperCase()
+                                : '?',
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.bold,
@@ -803,26 +794,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           final imageUrl = _currentPost.imageUrls[index];
                           print('이미지 표시 시도: $imageUrl');
                           print('이미지 번호: $index, URL 길이: ${imageUrl.length}');
-                          
+
                           return GestureDetector(
                             onTap: () {
                               // 이미지 전체 화면으로 보기
                               showDialog(
                                 context: context,
-                                builder: (context) => Dialog(
-                                  insetPadding: const EdgeInsets.all(8),
-                                  child: InteractiveViewer(
-                                    panEnabled: true,
-                                    boundaryMargin: const EdgeInsets.all(20),
-                                    minScale: 0.5,
-                                    maxScale: 3.0,
-                                                                    child: _buildRetryableImage(
-                                      imageUrl,
-                                      fit: BoxFit.contain,
-                                  isFullScreen: true,
-                                ),
-                                  ),
-                                ),
+                                builder:
+                                    (context) => Dialog(
+                                      insetPadding: const EdgeInsets.all(8),
+                                      child: InteractiveViewer(
+                                        panEnabled: true,
+                                        boundaryMargin: const EdgeInsets.all(
+                                          20,
+                                        ),
+                                        minScale: 0.5,
+                                        maxScale: 3.0,
+                                        child: _buildRetryableImage(
+                                          imageUrl,
+                                          fit: BoxFit.contain,
+                                          isFullScreen: true,
+                                        ),
+                                      ),
+                                    ),
                               );
                             },
                             child: Container(
@@ -867,10 +861,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           color: _isLiked ? Colors.red : Colors.grey,
                           size: 28, // 버튼 크기 증가
                         ),
-                        onPressed: _isTogglingLike ? null : () {
-                          // 버튼 클릭 시 좋아요 토글 함수 호출
-                          _toggleLike();
-                        },
+                        onPressed:
+                            _isTogglingLike
+                                ? null
+                                : () {
+                                  // 버튼 클릭 시 좋아요 토글 함수 호출
+                                  _toggleLike();
+                                },
                         splashColor: Colors.red.withAlpha(76), // 눌렀을 때 효과 추가
                         splashRadius: 24,
                       ),
@@ -880,7 +877,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         style: TextStyle(
                           fontSize: 16,
                           color: _isLiked ? Colors.red : Colors.grey[700],
-                          fontWeight: _isLiked ? FontWeight.bold : FontWeight.normal,
+                          fontWeight:
+                              _isLiked ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                       const Spacer(),
@@ -893,10 +891,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       const SizedBox(width: 4),
                       Text(
                         '${_currentPost.commentCount}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[700],
-                        ),
+                        style: TextStyle(fontSize: 16, color: Colors.grey[700]),
                       ),
                     ],
                   ),
@@ -930,13 +925,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.grey.shade200,
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: StreamBuilder<List<Comment>>(
-                            stream: _commentService.getCommentsByPostId(_currentPost.id),
+                            stream: _commentService.getCommentsByPostId(
+                              _currentPost.id,
+                            ),
                             builder: (context, snapshot) {
                               final count = snapshot.data?.length ?? 0;
                               return Text(
@@ -956,9 +956,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                   // 댓글 목록
                   StreamBuilder<List<Comment>>(
-                    stream: _commentService.getCommentsByPostId(_currentPost.id),
+                    stream: _commentService.getCommentsByPostId(
+                      _currentPost.id,
+                    ),
                     builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                      if (snapshot.connectionState == ConnectionState.waiting &&
+                          !snapshot.hasData) {
                         return const Center(
                           child: Padding(
                             padding: EdgeInsets.all(16.0),
@@ -969,7 +972,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                       if (snapshot.hasError) {
                         return Center(
-                          child: Text('댓글을 불러오는 중 오류가 발생했습니다: ${snapshot.error}'),
+                          child: Text(
+                            '댓글을 불러오는 중 오류가 발생했습니다: ${snapshot.error}',
+                          ),
                         );
                       }
 
@@ -978,9 +983,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (comments.isEmpty) {
                         return const Padding(
                           padding: EdgeInsets.all(16.0),
-                          child: Center(
-                            child: Text('첫 번째 댓글을 남겨보세요!'),
-                          ),
+                          child: Center(child: Text('첫 번째 댓글을 남겨보세요!')),
                         );
                       }
 
@@ -988,12 +991,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
                         itemCount: comments.length,
-                        separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: Colors.grey.shade200,
-                          indent: 8,
-                          endIndent: 8,
-                        ),
+                        separatorBuilder:
+                            (_, __) => Divider(
+                              height: 1,
+                              color: Colors.grey.shade200,
+                              indent: 8,
+                              endIndent: 8,
+                            ),
                         itemBuilder: (context, index) {
                           return _buildCommentItem(comments[index]);
                         },
@@ -1018,7 +1022,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ],
             ),
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16.0,
+              vertical: 8.0,
+            ),
             child: Row(
               children: [
                 // 현재 사용자 프로필 이미지 (로그인 상태인 경우에만)
@@ -1026,20 +1033,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   CircleAvatar(
                     radius: 16,
                     backgroundColor: Colors.grey[200],
-                    backgroundImage: authProvider.user?.photoURL != null
-                        ? NetworkImage(authProvider.user!.photoURL!)
-                        : null,
-                    child: authProvider.user?.photoURL == null
-                        ? Text(
-                      authProvider.userData?['nickname'] != null
-                          ? (authProvider.userData!['nickname'] as String)[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
-                        : null,
+                    backgroundImage:
+                        authProvider.user?.photoURL != null
+                            ? NetworkImage(authProvider.user!.photoURL!)
+                            : null,
+                    child:
+                        authProvider.user?.photoURL == null
+                            ? Text(
+                              authProvider.userData?['nickname'] != null
+                                  ? (authProvider.userData!['nickname']
+                                          as String)[0]
+                                      .toUpperCase()
+                                  : '?',
+                              style: const TextStyle(
+                                color: Colors.black54,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                            : null,
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -1049,7 +1060,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   child: TextField(
                     controller: _commentController,
                     decoration: InputDecoration(
-                      hintText: isLoggedIn ? '댓글을 입력하세요...' : '로그인 후 댓글을 작성할 수 있습니다',
+                      hintText:
+                          isLoggedIn ? '댓글을 입력하세요...' : '로그인 후 댓글을 작성할 수 있습니다',
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                         borderSide: BorderSide.none,
@@ -1071,18 +1083,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // 댓글 전송 버튼
                 const SizedBox(width: 8),
                 IconButton(
-                  icon: _isSubmittingComment
-                      ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                    ),
-                  )
-                      : const Icon(Icons.send),
-                  onPressed: (isLoggedIn && !_isSubmittingComment)
-                      ? _submitComment
-                      : null,
+                  icon:
+                      _isSubmittingComment
+                          ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const Icon(Icons.send),
+                  onPressed:
+                      (isLoggedIn && !_isSubmittingComment)
+                          ? _submitComment
+                          : null,
                   color: Colors.blue,
                 ),
               ],
@@ -1104,7 +1116,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       Colors.pink.shade700,
       Colors.teal.shade700,
     ];
-    
+
     // 이름의 첫 글자 아스키 코드를 기준으로 색상 결정
     final index = text.codeUnitAt(0) % colors.length;
     return colors[index];

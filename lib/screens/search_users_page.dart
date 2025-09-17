@@ -9,6 +9,7 @@ import '../providers/relationship_provider.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../widgets/user_tile.dart';
+import '../ui/widgets/app_icon_button.dart';
 
 class SearchUsersPage extends StatefulWidget {
   const SearchUsersPage({super.key});
@@ -39,10 +40,10 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   /// 데이터 초기화
   Future<void> _initializeData() async {
     if (_isInitialized) return;
-    
+
     final provider = context.read<RelationshipProvider>();
     await provider.initialize();
-    
+
     setState(() {
       _isInitialized = true;
     });
@@ -64,7 +65,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _sendFriendRequest(String toUid) async {
     final provider = context.read<RelationshipProvider>();
     final success = await provider.sendFriendRequest(toUid);
-    
+
     if (success) {
       _showSnackBar('친구요청을 보냈습니다.', Colors.green);
     } else {
@@ -76,7 +77,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _cancelFriendRequest(String toUid) async {
     final provider = context.read<RelationshipProvider>();
     final success = await provider.cancelFriendRequest(toUid);
-    
+
     if (success) {
       _showSnackBar('친구요청을 취소했습니다.', Colors.orange);
     } else {
@@ -90,11 +91,11 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       '친구 삭제',
       '정말로 이 사용자를 친구에서 삭제하시겠습니까?',
     );
-    
+
     if (confirmed) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.unfriend(otherUid);
-      
+
       if (success) {
         _showSnackBar('친구를 삭제했습니다.', Colors.red);
       } else {
@@ -109,11 +110,11 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       '사용자 차단',
       '정말로 이 사용자를 차단하시겠습니까?\n차단된 사용자는 더 이상 친구요청을 보낼 수 없습니다.',
     );
-    
+
     if (confirmed) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.blockUser(targetUid);
-      
+
       if (success) {
         _showSnackBar('사용자를 차단했습니다.', Colors.red);
       } else {
@@ -128,11 +129,11 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       '차단 해제',
       '정말로 이 사용자의 차단을 해제하시겠습니까?',
     );
-    
+
     if (confirmed) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.unblockUser(targetUid);
-      
+
       if (success) {
         _showSnackBar('사용자 차단을 해제했습니다.', Colors.green);
       } else {
@@ -178,69 +179,66 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<bool> _showConfirmDialog(String title, String message) async {
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
+      builder:
+          (context) => AlertDialog(
+            title: Text(title),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('취소'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('확인'),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('확인'),
-          ),
-        ],
-      ),
     );
-    
+
     return result ?? false;
   }
 
   @override
   Widget build(BuildContext context) {
     return Column(
-        children: [
-          // 검색바
-          _buildSearchBar(),
-          
-          // 검색 결과 또는 안내 메시지
-          Expanded(
-            child: Consumer<RelationshipProvider>(
-              builder: (context, provider, child) {
-                if (!_isInitialized) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
+      children: [
+        // 검색바
+        _buildSearchBar(),
 
-                if (provider.isLoading) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
+        // 검색 결과 또는 안내 메시지
+        Expanded(
+          child: Consumer<RelationshipProvider>(
+            builder: (context, provider, child) {
+              if (!_isInitialized) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                if (provider.errorMessage != null) {
-                  return _buildErrorState(provider.errorMessage!);
-                }
+              if (provider.isLoading) {
+                return const Center(child: CircularProgressIndicator());
+              }
 
-                if (_searchController.text.trim().isEmpty) {
-                  return _buildEmptyState();
-                }
+              if (provider.errorMessage != null) {
+                return _buildErrorState(provider.errorMessage!);
+              }
 
-                if (provider.searchResults.isEmpty) {
-                  return _buildNoResultsState();
-                }
+              if (_searchController.text.trim().isEmpty) {
+                return _buildEmptyState();
+              }
 
-                return _buildSearchResults(provider);
-              },
-            ),
+              if (provider.searchResults.isEmpty) {
+                return _buildNoResultsState();
+              }
+
+              return _buildSearchResults(provider);
+            },
           ),
-        ],
+        ),
+      ],
     );
   }
 
@@ -264,15 +262,18 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         decoration: InputDecoration(
           hintText: '닉네임 또는 이름으로 검색',
           prefixIcon: const Icon(Icons.search),
-          suffixIcon: _searchController.text.isNotEmpty
-              ? IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    _searchController.clear();
-                    context.read<RelationshipProvider>().clearSearchResults();
-                  },
-                )
-              : null,
+          suffixIcon:
+              _searchController.text.isNotEmpty
+                  ? AppIconButton(
+                    icon: Icons.clear,
+                    onPressed: () {
+                      _searchController.clear();
+                      context.read<RelationshipProvider>().clearSearchResults();
+                    },
+                    semanticLabel: '검색어 지우기',
+                    tooltip: '지우기',
+                  )
+                  : null,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(25),
             borderSide: BorderSide.none,
@@ -298,7 +299,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       itemBuilder: (context, index) {
         final user = provider.searchResults[index];
         final status = provider.getRelationshipStatus(user.uid);
-        
+
         return UserTile(
           user: user,
           relationshipStatus: status,
@@ -320,11 +321,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.search, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             '사용자를 검색해보세요',
@@ -338,10 +335,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           Text(
             '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -354,11 +348,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.person_off,
-            size: 64,
-            color: Colors.grey[400],
-          ),
+          Icon(Icons.person_off, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
             '검색 결과가 없습니다',
@@ -371,10 +361,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           const SizedBox(height: 8),
           Text(
             '다른 검색어를 시도해보세요',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
       ),
@@ -387,11 +374,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red[400],
-          ),
+          Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
           const SizedBox(height: 16),
           Text(
             '오류가 발생했습니다',
@@ -405,10 +388,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           Text(
             errorMessage,
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.red[500],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.red[500]),
           ),
           const SizedBox(height: 16),
           ElevatedButton(

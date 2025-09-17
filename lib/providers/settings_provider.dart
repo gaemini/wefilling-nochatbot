@@ -86,8 +86,8 @@ class SettingsProvider with ChangeNotifier {
 
     try {
       return await TranslationService.translateText(
-          text: text,
-          targetLanguage: _locale.languageCode
+        text: text,
+        targetLanguage: _locale.languageCode,
       );
     } catch (e) {
       print('번역 오류: $e');

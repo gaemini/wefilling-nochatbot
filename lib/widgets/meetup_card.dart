@@ -2,8 +2,6 @@
 // 모임 카드 위젯 구현
 // 모임 정보 표시 및 참여 버튼 제공
 
-
-
 import 'package:flutter/material.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
@@ -53,11 +51,12 @@ class MeetupCard extends StatelessWidget {
         // 모임 상세 화면 표시
         showDialog(
           context: context,
-          builder: (context) => MeetupDetailScreen(
-            meetup: meetup,
-            meetupId: meetupId, // meetup.id.toString() 변환 제거
-            onMeetupDeleted: onMeetupDeleted,
-          ),
+          builder:
+              (context) => MeetupDetailScreen(
+                meetup: meetup,
+                meetupId: meetupId, // meetup.id.toString() 변환 제거
+                onMeetupDeleted: onMeetupDeleted,
+              ),
         );
       },
       child: Padding(
@@ -113,11 +112,15 @@ class MeetupCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    
+
                     // 모임 위치
                     Row(
                       children: [
-                        Icon(Icons.location_on, size: 14, color: Colors.grey[600]),
+                        Icon(
+                          Icons.location_on,
+                          size: 14,
+                          color: Colors.grey[600],
+                        ),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -133,11 +136,15 @@ class MeetupCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    
+
                     // 참가자 정보
                     Row(
                       children: [
-                        Icon(Icons.person, size: 14, color: Colors.blue.shade600),
+                        Icon(
+                          Icons.person,
+                          size: 14,
+                          color: Colors.blue.shade600,
+                        ),
                         const SizedBox(width: 4),
                         Text(
                           '${meetup.currentParticipants}/${meetup.maxParticipants}명',
@@ -148,7 +155,7 @@ class MeetupCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        
+
                         // 주최자 정보
                         Icon(Icons.star, size: 14, color: Colors.amber[600]),
                         const SizedBox(width: 4),
@@ -164,15 +171,22 @@ class MeetupCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    
+
                     Container(
                       margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
                       decoration: BoxDecoration(
-                        color: _getCategoryColor(meetup.category).withOpacity(0.1),
+                        color: _getCategoryColor(
+                          meetup.category,
+                        ).withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(
-                          color: _getCategoryColor(meetup.category).withOpacity(0.5),
+                          color: _getCategoryColor(
+                            meetup.category,
+                          ).withOpacity(0.5),
                           width: 1,
                         ),
                       ),
@@ -192,11 +206,15 @@ class MeetupCard extends StatelessWidget {
               SizedBox(
                 width: 70,
                 child: ElevatedButton(
-                  onPressed: isFull ? null : () {
-                    onJoinMeetup(meetup);
-                  },
+                  onPressed:
+                      isFull
+                          ? null
+                          : () {
+                            onJoinMeetup(meetup);
+                          },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isFull ? Colors.grey[300] : Colors.blue.shade600,
+                    backgroundColor:
+                        isFull ? Colors.grey[300] : Colors.blue.shade600,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     shape: RoundedRectangleBorder(
@@ -206,10 +224,7 @@ class MeetupCard extends StatelessWidget {
                   ),
                   child: Text(
                     status,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 ),
               ),

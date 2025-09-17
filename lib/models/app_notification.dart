@@ -38,9 +38,10 @@ class AppNotification {
       message: data['message'] ?? '',
       type: data['type'] ?? '',
       meetupId: data['meetupId'],
-      createdAt: data['createdAt'] != null
-          ? (data['createdAt'] as Timestamp).toDate()
-          : DateTime.now(),
+      createdAt:
+          data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
       isRead: data['isRead'] ?? false,
     );
   }

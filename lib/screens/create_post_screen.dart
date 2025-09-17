@@ -12,10 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
 
-  const CreatePostScreen({
-    super.key,
-    required this.onPostCreated,
-  });
+  const CreatePostScreen({super.key, required this.onPostCreated});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -72,7 +69,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           _selectedImages.add(File(xFile.path));
         }
       });
-      
+
       // 이미지 선택 후 용량 확인 및 경고
       _checkImagesSize();
     }
@@ -84,14 +81,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     for (final image in _selectedImages) {
       totalSize += await image.length();
     }
-    
+
     // 총 용량이 10MB를 초과하면 경고
     final sizeInMB = totalSize / (1024 * 1024);
     if (sizeInMB > 10) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('경고: 총 이미지 크기가 ${sizeInMB.toStringAsFixed(1)}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.'),
+            content: Text(
+              '경고: 총 이미지 크기가 ${sizeInMB.toStringAsFixed(1)}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.',
+            ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
           ),
@@ -139,9 +138,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           // 화면 닫기
           if (mounted) {
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('게시글이 등록되었습니다.')),
-            );
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('게시글이 등록되었습니다.')));
           }
         } else {
           throw Exception("게시글 등록 실패");
@@ -200,19 +199,26 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             margin: const EdgeInsets.only(right: 8),
             child: TextButton.icon(
               onPressed: (_canSubmit && !_isSubmitting) ? _submitPost : null,
-              icon: _isSubmitting
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: _canSubmit ? Colors.blue.shade700 : Colors.grey[400],
+              icon:
+                  _isSubmitting
+                      ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color:
+                              _canSubmit
+                                  ? Colors.blue.shade700
+                                  : Colors.grey[400],
+                        ),
+                      )
+                      : Icon(
+                        Icons.check_circle,
+                        color:
+                            _canSubmit
+                                ? Colors.blue.shade700
+                                : Colors.grey[400],
                       ),
-                    )
-                  : Icon(
-                      Icons.check_circle,
-                      color: _canSubmit ? Colors.blue.shade700 : Colors.grey[400],
-                    ),
               label: Text(
                 _isSubmitting ? '등록 중...' : '등록',
                 style: TextStyle(
@@ -240,7 +246,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             children: [
               // 작성자 정보 표시
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
                   color: Colors.grey.shade50,
@@ -270,7 +279,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                     ),
                     const Spacer(),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.blue.shade50,
                         borderRadius: BorderRadius.circular(20),
@@ -302,9 +314,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
+                    borderSide: BorderSide(
+                      color: Colors.blue.shade400,
+                      width: 2,
+                    ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 16,
+                  ),
                   fillColor: Colors.white,
                   filled: true,
                 ),
@@ -326,7 +344,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 12,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -390,7 +411,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: _contentFocusNode.hasFocus ? Colors.blue.shade400 : Colors.grey.shade300,
+                    color:
+                        _contentFocusNode.hasFocus
+                            ? Colors.blue.shade400
+                            : Colors.grey.shade300,
                     width: _contentFocusNode.hasFocus ? 2 : 1,
                   ),
                   color: Colors.white,
@@ -407,10 +431,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ),
                   maxLines: null, // 여러 줄 입력 가능
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    height: 1.5,
-                  ),
+                  style: const TextStyle(fontSize: 16, height: 1.5),
                 ),
               ),
               const SizedBox(height: 16),

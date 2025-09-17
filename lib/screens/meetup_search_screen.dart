@@ -52,32 +52,37 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
 
     try {
       // 모임 서비스를 통해 검색 실행
-      _meetupService.searchMeetups(_searchQuery).listen((results) {
-        if (mounted) {
-          setState(() {
-            _searchResults = results;
-            _isLoading = false;
-          });
-        }
-      }, onError: (e) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('검색 중 오류가 발생했습니다: $e')),
+      _meetupService
+          .searchMeetups(_searchQuery)
+          .listen(
+            (results) {
+              if (mounted) {
+                setState(() {
+                  _searchResults = results;
+                  _isLoading = false;
+                });
+              }
+            },
+            onError: (e) {
+              if (mounted) {
+                setState(() {
+                  _isLoading = false;
+                });
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(SnackBar(content: Text('검색 중 오류가 발생했습니다: $e')));
+              }
+            },
           );
-        }
-      });
     } catch (e) {
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('검색 중 오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('검색 중 오류가 발생했습니다: $e')));
       }
     }
   }
@@ -117,10 +122,10 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                 // 검색 입력 영역
                 Padding(
                   padding: EdgeInsets.only(
-                      left: 16.0,
-                      right: 16.0,
-                      top: 8.0,
-                      bottom: 8.0
+                    left: 16.0,
+                    right: 16.0,
+                    top: 8.0,
+                    bottom: 8.0,
                   ),
                   child: Column(
                     children: [
@@ -131,24 +136,27 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                         decoration: InputDecoration(
                           hintText: '모임 이름, 장소, 내용으로 검색',
                           prefixIcon: const Icon(Icons.search),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {
-                                _searchQuery = '';
-                              });
-                            },
-                          )
-                              : null,
+                          suffixIcon:
+                              _searchQuery.isNotEmpty
+                                  ? IconButton(
+                                    icon: const Icon(Icons.clear),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() {
+                                        _searchQuery = '';
+                                      });
+                                    },
+                                  )
+                                  : null,
                           filled: true,
                           fillColor: Colors.grey[200],
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(color: Colors.grey[300]!),
                           ),
-                          contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
                         ),
                         onChanged: (value) {
                           setState(() {
@@ -167,10 +175,14 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                         scrollDirection: Axis.horizontal,
                         child: Row(
                           children: [
-                            const Text('요일: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const Text(
+                              '요일: ',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
                             const SizedBox(width: 8),
                             ..._dayOptions.map((day) {
-                              final isSelected = _selectedDay == day ||
+                              final isSelected =
+                                  _selectedDay == day ||
                                   (_selectedDay == null && day == '전체');
                               return Padding(
                                 padding: const EdgeInsets.only(right: 8.0),
@@ -196,26 +208,30 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _searchQuery.isNotEmpty ? () {
-                            _searchFocusNode.unfocus(); // 키보드 숨기기
-                            _performSearch();
-                          } : null,
+                          onPressed:
+                              _searchQuery.isNotEmpty
+                                  ? () {
+                                    _searchFocusNode.unfocus(); // 키보드 숨기기
+                                    _performSearch();
+                                  }
+                                  : null,
                           style: ElevatedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          child: _isLoading
-                              ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                              : const Text('검색하기'),
+                          child:
+                              _isLoading
+                                  ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                  : const Text('검색하기'),
                         ),
                       ),
                     ],
@@ -225,49 +241,48 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                 // 검색 결과 영역
                 _isLoading
                     ? Container(
-                  height: 200,
-                  alignment: Alignment.center,
-                  child: const CircularProgressIndicator(),
-                )
+                      height: 200,
+                      alignment: Alignment.center,
+                      child: const CircularProgressIndicator(),
+                    )
                     : _searchResults.isEmpty
                     ? Container(
-                  height: 200,
-                  alignment: Alignment.center,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _searchQuery.isEmpty
-                            ? Icons.search
-                            : Icons.search_off,
-                        size: 64,
-                        color: Colors.grey[400],
+                      height: 200,
+                      alignment: Alignment.center,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            _searchQuery.isEmpty
+                                ? Icons.search
+                                : Icons.search_off,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            _searchQuery.isEmpty ? '검색어를 입력하세요' : '검색 결과가 없습니다',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 16),
-                      Text(
-                        _searchQuery.isEmpty
-                            ? '검색어를 입력하세요'
-                            : '검색 결과가 없습니다',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
+                    )
                     : ListView.separated(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                  itemCount: _searchResults.length,
-                  separatorBuilder: (context, index) => const Divider(),
-                  itemBuilder: (context, index) {
-                    final meetup = _searchResults[index];
-                    return MeetupCard(meetup: meetup);
-                  },
-                ),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      itemCount: _searchResults.length,
+                      separatorBuilder: (context, index) => const Divider(),
+                      itemBuilder: (context, index) {
+                        final meetup = _searchResults[index];
+                        return MeetupCard(meetup: meetup);
+                      },
+                    ),
 
                 // 키보드 패딩 추가 - 키보드가 올라왔을 때 컨텐츠가 가려지지 않도록
                 SizedBox(height: bottomPadding > 0 ? bottomPadding : 16),
@@ -289,38 +304,49 @@ class MeetupCard extends StatelessWidget {
   // 썸네일 위젯 생성
   Widget _buildThumbnail() {
     // 썸네일 이미지가 있는 경우 (URL이 있는 경우)
-    if (meetup.thumbnailImageUrl != null && meetup.thumbnailImageUrl.isNotEmpty) {
+    if (meetup.thumbnailImageUrl != null &&
+        meetup.thumbnailImageUrl.isNotEmpty) {
       return Container(
         height: 120,
         decoration: BoxDecoration(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           image: DecorationImage(
-            image: NetworkImage(StorageService.correctFirebaseStorageUrl(meetup.thumbnailImageUrl)),
+            image: NetworkImage(
+              StorageService.correctFirebaseStorageUrl(
+                meetup.thumbnailImageUrl,
+              ),
+            ),
             fit: BoxFit.cover,
           ),
         ),
         alignment: Alignment.center,
-        child: meetup.thumbnailContent != null && meetup.thumbnailContent.isNotEmpty
-            ? Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.7),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            meetup.thumbnailContent,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        )
-            : null,
+        child:
+            meetup.thumbnailContent != null &&
+                    meetup.thumbnailContent.isNotEmpty
+                ? Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    meetup.thumbnailContent,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                )
+                : null,
       );
     }
     // 썸네일 이미지가 없고 텍스트만 있는 경우
-    else if (meetup.thumbnailContent != null && meetup.thumbnailContent.isNotEmpty) {
+    else if (meetup.thumbnailContent != null &&
+        meetup.thumbnailContent.isNotEmpty) {
       return Container(
         height: 120,
         decoration: BoxDecoration(
@@ -374,22 +400,32 @@ class MeetupCard extends StatelessWidget {
   // 카테고리별 아이콘
   IconData _getCategoryIcon(String category) {
     switch (category) {
-      case '스터디': return Icons.book;
-      case '식사': return Icons.restaurant;
-      case '취미': return Icons.sports_basketball;
-      case '문화': return Icons.theater_comedy;
-      default: return Icons.category;
+      case '스터디':
+        return Icons.book;
+      case '식사':
+        return Icons.restaurant;
+      case '취미':
+        return Icons.sports_basketball;
+      case '문화':
+        return Icons.theater_comedy;
+      default:
+        return Icons.category;
     }
   }
 
   // 카테고리별 색상
   Color _getCategoryColor(String category) {
     switch (category) {
-      case '스터디': return Colors.blue;
-      case '식사': return Colors.orange;
-      case '취미': return Colors.green;
-      case '문화': return Colors.purple;
-      default: return Colors.grey;
+      case '스터디':
+        return Colors.blue;
+      case '식사':
+        return Colors.orange;
+      case '취미':
+        return Colors.green;
+      case '문화':
+        return Colors.purple;
+      default:
+        return Colors.grey;
     }
   }
 
@@ -403,9 +439,7 @@ class MeetupCard extends StatelessWidget {
       child: Card(
         elevation: 2,
         margin: const EdgeInsets.symmetric(vertical: 4),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         clipBehavior: Clip.antiAlias, // 모서리가 잘리지 않도록 설정
         child: Column(
           children: [
@@ -431,7 +465,10 @@ class MeetupCard extends StatelessWidget {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: _getStatusColor(meetup.getStatus()),
                           borderRadius: BorderRadius.circular(4),
@@ -502,28 +539,21 @@ class MeetupCard extends StatelessWidget {
                   // 인원 및 주최자
                   Row(
                     children: [
-                      Icon(
-                        Icons.group,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
+                      Icon(Icons.group, size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
                         '${meetup.currentParticipants}/${meetup.maxParticipants}명',
                         style: TextStyle(color: Colors.grey[700]),
                       ),
                       const SizedBox(width: 12),
-                      Icon(
-                        Icons.person,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
+                      Icon(Icons.person, size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
                       Text(
                         '주최: ${meetup.host}',
                         style: TextStyle(color: Colors.grey[700]),
                       ),
-                      if (meetup.hostNationality != null && meetup.hostNationality.isNotEmpty) ...[
+                      if (meetup.hostNationality != null &&
+                          meetup.hostNationality.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         SizedBox(
                           width: 18,
@@ -555,10 +585,14 @@ class MeetupCard extends StatelessWidget {
   // 상태에 따른 색상
   Color _getStatusColor(String status) {
     switch (status) {
-      case '예정': return Colors.blue;
-      case '진행중': return Colors.green;
-      case '종료': return Colors.grey;
-      default: return Colors.blue;
+      case '예정':
+        return Colors.blue;
+      case '진행중':
+        return Colors.green;
+      case '종료':
+        return Colors.grey;
+      default:
+        return Colors.blue;
     }
   }
 }

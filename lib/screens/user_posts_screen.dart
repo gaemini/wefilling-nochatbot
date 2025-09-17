@@ -1,7 +1,6 @@
 // lib/screens/user_posts_screen.dart
 // 마이페이지에서 게시글 목록 확인 용도
 
-
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/user_stats_service.dart';
@@ -20,9 +19,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('내 게시글'),
-      ),
+      appBar: AppBar(title: const Text('내 게시글')),
       body: StreamBuilder<List<Post>>(
         stream: _userStatsService.getUserPosts(),
         builder: (context, snapshot) {
@@ -31,17 +28,13 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(
-              child: Text('오류가 발생했습니다: ${snapshot.error}'),
-            );
+            return Center(child: Text('오류가 발생했습니다: ${snapshot.error}'));
           }
 
           final posts = snapshot.data ?? [];
 
           if (posts.isEmpty) {
-            return const Center(
-              child: Text('작성한 게시글이 없습니다'),
-            );
+            return const Center(child: Text('작성한 게시글이 없습니다'));
           }
 
           return Column(
@@ -72,15 +65,14 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
               Expanded(
                 child: ListView.separated(
                   itemCount: posts.length,
-                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  separatorBuilder:
+                      (context, index) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final post = posts[index];
                     return ListTile(
                       title: Text(
                         post.title,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                        ),
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,

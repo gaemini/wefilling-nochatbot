@@ -8,9 +8,9 @@ import '../utils/country_flag_helper.dart';
 class CountryFlagCircle extends StatelessWidget {
   final String nationality;
   final double size;
-  
+
   const CountryFlagCircle({
-    Key? key, 
+    Key? key,
     required this.nationality,
     this.size = 24.0,
   }) : super(key: key);
@@ -18,17 +18,14 @@ class CountryFlagCircle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final countryCode = CountryFlagHelper.getCountryCode(nationality);
-    
+
     return Container(
       width: size,
       height: size,
-      clipBehavior: Clip.antiAlias, 
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: Colors.grey.shade200,
-          width: 0.5,
-        ),
+        border: Border.all(color: Colors.grey.shade200, width: 0.5),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
@@ -40,14 +37,16 @@ class CountryFlagCircle extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ColoredBox(
-            color: _getCountryBaseColor(countryCode),
-          ),
-          CountryFlag.fromCountryCode(
-            countryCode,
-            height: size,
-            width: size,
-            borderRadius: 0, 
+          // 안정적인 배경색 제공
+          ColoredBox(color: _getCountryBaseColor(countryCode)),
+          // 국기 이미지 - 로딩 실패 시에도 배경색이 보이도록
+          ClipOval(
+            child: CountryFlag.fromCountryCode(
+              countryCode,
+              height: size,
+              width: size,
+              borderRadius: 0,
+            ),
           ),
         ],
       ),
@@ -61,7 +60,7 @@ class CountryFlagCircle extends StatelessWidget {
       'US': const Color(0xFFB22234), // 미국 - 빨간색
       'JP': const Color(0xFFFFFFFF), // 일본 - 흰색
       'CN': const Color(0xFFDE2910), // 중국 - 빨간색
-      'GB': const Color(0xFF012169), // 영국 - 파란색 
+      'GB': const Color(0xFF012169), // 영국 - 파란색
       'FR': const Color(0xFF0055A4), // 프랑스 - 파란색
       'DE': const Color(0xFF000000), // 독일 - 검정색
       'CA': const Color(0xFFFFFFFF), // 캐나다 - 흰색

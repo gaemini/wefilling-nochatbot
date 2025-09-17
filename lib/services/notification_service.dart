@@ -12,7 +12,8 @@ import 'notification_settings_service.dart';
 class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final NotificationSettingsService _settingsService = NotificationSettingsService();
+  final NotificationSettingsService _settingsService =
+      NotificationSettingsService();
 
   // 알림 생성
   Future<bool> createNotification({
@@ -61,7 +62,8 @@ class NotificationService {
       return await createNotification(
         userId: hostId,
         title: '모임 정원이 다 찼습니다',
-        message: '${meetup.title} 모임의 정원(${meetup.maxParticipants}명)이 모두 채워졌습니다.',
+        message:
+            '${meetup.title} 모임의 정원(${meetup.maxParticipants}명)이 모두 채워졌습니다.',
         type: NotificationSettingKeys.meetupFull,
         meetupId: meetup.id,
       );
@@ -72,7 +74,10 @@ class NotificationService {
   }
 
   // 모임이 취소되었을 때 참가자들에게 알림 보내기
-  Future<bool> sendMeetupCancelledNotification(Meetup meetup, List<String> participantIds) async {
+  Future<bool> sendMeetupCancelledNotification(
+    Meetup meetup,
+    List<String> participantIds,
+  ) async {
     try {
       bool allSuccess = true;
       for (final userId in participantIds) {
@@ -97,12 +102,12 @@ class NotificationService {
 
   // 게시글에 새 댓글이 달렸을 때 작성자에게 알림 보내기
   Future<bool> sendNewCommentNotification(
-      String postId,
-      String postTitle,
-      String postAuthorId,
-      String commenterName,
-      String commenterId,
-      ) async {
+    String postId,
+    String postTitle,
+    String postAuthorId,
+    String commenterName,
+    String commenterId,
+  ) async {
     // 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
     if (postAuthorId == commenterId) {
       return true;
@@ -126,12 +131,12 @@ class NotificationService {
 
   // 게시글에 좋아요가 눌렸을 때 작성자에게 알림 보내기
   Future<bool> sendNewLikeNotification(
-      String postId,
-      String postTitle,
-      String postAuthorId,
-      String likerName,
-      String likerId,
-      ) async {
+    String postId,
+    String postTitle,
+    String postAuthorId,
+    String likerName,
+    String likerId,
+  ) async {
     // 자기 게시글에 자신이 좋아요를 누른 경우는 알림 제외
     if (postAuthorId == likerId) {
       return true;
@@ -167,10 +172,10 @@ class NotificationService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs
-          .map((doc) => AppNotification.fromFirestore(doc))
-          .toList();
-    });
+          return snapshot.docs
+              .map((doc) => AppNotification.fromFirestore(doc))
+              .toList();
+        });
   }
 
   // 현재 사용자의 안 읽은 알림 수 가져오기
@@ -191,10 +196,9 @@ class NotificationService {
   // 알림 읽음 상태로 변경
   Future<bool> markNotificationAsRead(String notificationId) async {
     try {
-      await _firestore
-          .collection('notifications')
-          .doc(notificationId)
-          .update({'isRead': true});
+      await _firestore.collection('notifications').doc(notificationId).update({
+        'isRead': true,
+      });
       return true;
     } catch (e) {
       print('알림 읽음 처리 오류: $e');
@@ -209,11 +213,12 @@ class NotificationService {
 
     try {
       // 현재 사용자의 모든 안 읽은 알림 찾기
-      final querySnapshot = await _firestore
-          .collection('notifications')
-          .where('userId', isEqualTo: user.uid)
-          .where('isRead', isEqualTo: false)
-          .get();
+      final querySnapshot =
+          await _firestore
+              .collection('notifications')
+              .where('userId', isEqualTo: user.uid)
+              .where('isRead', isEqualTo: false)
+              .get();
 
       // 배치 작업으로 모든 알림 업데이트
       final batch = _firestore.batch();

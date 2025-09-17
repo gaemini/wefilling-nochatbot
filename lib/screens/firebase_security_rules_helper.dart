@@ -5,10 +5,8 @@ import 'package:url_launcher/url_launcher.dart';
 class FirebaseSecurityRulesHelper extends StatelessWidget {
   final String projectId;
 
-  const FirebaseSecurityRulesHelper({
-    Key? key,
-    required this.projectId,
-  }) : super(key: key);
+  const FirebaseSecurityRulesHelper({Key? key, required this.projectId})
+    : super(key: key);
 
   final String securityRules = '''
 rules_version = '2';
@@ -25,9 +23,7 @@ service firebase.storage {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Firebase Storage 문제 해결'),
-      ),
+      appBar: AppBar(title: const Text('Firebase Storage 문제 해결')),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -36,10 +32,7 @@ service firebase.storage {
             // 문제 설명
             const Text(
               '게시글 이미지가 표시되지 않는 문제',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -48,14 +41,11 @@ service firebase.storage {
               style: TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 24),
-            
+
             // 해결 방법
             const Text(
               '해결 방법',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
             const Text(
@@ -63,7 +53,7 @@ service firebase.storage {
               style: TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 8),
-            
+
             // Firebase 콘솔 링크
             ElevatedButton.icon(
               onPressed: () {
@@ -76,14 +66,14 @@ service firebase.storage {
                 foregroundColor: Colors.white,
               ),
             ),
-            
+
             const SizedBox(height: 24),
             const Text(
               '2. 아래 보안 규칙을 복사하여 Firebase 콘솔의 규칙 편집기에 붙여넣기 하세요.',
               style: TextStyle(fontSize: 16),
             ),
             const SizedBox(height: 16),
-            
+
             // 보안 규칙 코드 블록
             Container(
               padding: const EdgeInsets.all(16),
@@ -117,7 +107,7 @@ service firebase.storage {
                 ],
               ),
             ),
-            
+
             const SizedBox(height: 24),
             const Text(
               '3. "규칙 게시" 버튼을 클릭하여 변경사항을 저장하세요.',
@@ -128,7 +118,7 @@ service firebase.storage {
               '4. 앱을 다시 시작하면 이미지가 정상적으로 표시될 것입니다.',
               style: TextStyle(fontSize: 16),
             ),
-            
+
             const SizedBox(height: 32),
             // 주의사항
             Container(
@@ -160,7 +150,8 @@ service firebase.storage {
   }
 
   void _launchFirebaseConsole() async {
-    final url = 'https://console.firebase.google.com/project/$projectId/storage/rules';
+    final url =
+        'https://console.firebase.google.com/project/$projectId/storage/rules';
     final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
@@ -171,8 +162,8 @@ service firebase.storage {
 
   void _copyToClipboard(BuildContext context) {
     Clipboard.setData(ClipboardData(text: securityRules));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('보안 규칙이 클립보드에 복사되었습니다.')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('보안 규칙이 클립보드에 복사되었습니다.')));
   }
 }

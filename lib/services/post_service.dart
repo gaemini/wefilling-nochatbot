@@ -18,7 +18,11 @@ class PostService {
   final StorageService _storageService = StorageService();
 
   // 이미지를 포함한 게시글 추가
-  Future<bool> addPost(String title, String content, {List<File>? imageFiles}) async {
+  Future<bool> addPost(
+    String title,
+    String content, {
+    List<File>? imageFiles,
+  }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -30,42 +34,47 @@ class PostService {
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final nationality = userData?['nationality'] ?? ''; // 국적 정보 가져오기
-      
-      print("AddPost - 사용자 데이터: ${userData?.toString()} | 닉네임: $nickname | 국적: $nationality");
-      
+
+      print(
+        "AddPost - 사용자 데이터: ${userData?.toString()} | 닉네임: $nickname | 국적: $nationality",
+      );
+
       // 게시글 작성 시간
       final now = FieldValue.serverTimestamp();
-      
+
       // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
       List<String> imageUrls = [];
       if (imageFiles != null && imageFiles.isNotEmpty) {
         print('이미지 업로드 시작: ${imageFiles.length}개 파일');
-        
+
         // 파일 사이즈 로깅
         for (int i = 0; i < imageFiles.length; i++) {
           final fileSize = await imageFiles[i].length();
           print('이미지 #$i 크기: ${(fileSize / 1024).round()}KB');
         }
-        
+
         // 한번에 하나씩 순차적으로 업로드하지 않고, 병렬로 처리
-        final futures = imageFiles.map((imageFile) => _storageService.uploadImage(imageFile));
-        
+        final futures = imageFiles.map(
+          (imageFile) => _storageService.uploadImage(imageFile),
+        );
+
         try {
           // 모든 이미지 업로드 작업 동시 실행 후 결과 수집
           final results = await Future.wait(
             futures,
             eagerError: false, // 하나가 실패해도 다른 이미지 계속 업로드
           );
-          
+
           // null이 아닌 URL만 추가
-          imageUrls = results.where((url) => url != null).cast<String>().toList();
-          
+          imageUrls =
+              results.where((url) => url != null).cast<String>().toList();
+
           print('이미지 업로드 완료: ${imageUrls.length}개 (요청: ${imageFiles.length}개)');
           // 성공한 URL 로깅
           for (int i = 0; i < imageUrls.length; i++) {
             print('이미지 URL #$i: ${imageUrls[i]}');
           }
-          
+
           // 모든 이미지 업로드에 실패한 경우
           if (imageUrls.isEmpty && imageFiles.isNotEmpty) {
             print('모든 이미지 업로드 실패');
@@ -90,14 +99,14 @@ class PostService {
         'likedBy': [],
         'commentCount': 0,
       };
-      
+
       // Firestore 데이터 저장 로깅
       print('게시글 저장: title=${title}, imageUrls=${imageUrls.length}개');
 
       // Firestore에 저장
       final docRef = await _firestore.collection('posts').add(postData);
       print('게시글 저장 완료: ${docRef.id}');
-      
+
       return true;
     } catch (e) {
       print('게시글 작성 오류: $e');
@@ -112,25 +121,26 @@ class PostService {
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return Post(
-          id: doc.id,
-          title: data['title'] ?? '',
-          content: data['content'] ?? '',
-          author: data['authorNickname'] ?? '익명',
-          authorNationality: data['authorNationality'] ?? '알 수 없음', 
-          createdAt: data['createdAt'] != null
-              ? (data['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
-          userId: data['userId'] ?? '',
-          commentCount: data['commentCount'] ?? 0,
-          likes: data['likes'] ?? 0,
-          likedBy: List<String>.from(data['likedBy'] ?? []),
-          imageUrls: List<String>.from(data['imageUrls'] ?? []),
-        );
-      }).toList();
-    });
+          return snapshot.docs.map((doc) {
+            final data = doc.data();
+            return Post(
+              id: doc.id,
+              title: data['title'] ?? '',
+              content: data['content'] ?? '',
+              author: data['authorNickname'] ?? '익명',
+              authorNationality: data['authorNationality'] ?? '알 수 없음',
+              createdAt:
+                  data['createdAt'] != null
+                      ? (data['createdAt'] as Timestamp).toDate()
+                      : DateTime.now(),
+              userId: data['userId'] ?? '',
+              commentCount: data['commentCount'] ?? 0,
+              likes: data['likes'] ?? 0,
+              likedBy: List<String>.from(data['likedBy'] ?? []),
+              imageUrls: List<String>.from(data['imageUrls'] ?? []),
+            );
+          }).toList();
+        });
   }
 
   // 특정 게시글 가져오기
@@ -140,17 +150,20 @@ class PostService {
       if (!doc.exists) return null;
 
       final data = doc.data()!;
-      print("PostService.getPostById - 게시글 데이터: ${data['id']} | 작성자: ${data['authorNickname']} | 국적: ${data['authorNationality'] ?? '없음'}");
-      
+      print(
+        "PostService.getPostById - 게시글 데이터: ${data['id']} | 작성자: ${data['authorNickname']} | 국적: ${data['authorNationality'] ?? '없음'}",
+      );
+
       return Post(
         id: doc.id,
         title: data['title'] ?? '',
         content: data['content'] ?? '',
         author: data['authorNickname'] ?? '익명',
-        authorNationality: data['authorNationality'] ?? '알 수 없음', 
-        createdAt: data['createdAt'] != null
-            ? (data['createdAt'] as Timestamp).toDate()
-            : DateTime.now(),
+        authorNationality: data['authorNationality'] ?? '알 수 없음',
+        createdAt:
+            data['createdAt'] != null
+                ? (data['createdAt'] as Timestamp).toDate()
+                : DateTime.now(),
         userId: data['userId'] ?? '',
         commentCount: data['commentCount'] ?? 0,
         likes: data['likes'] ?? 0,
@@ -213,17 +226,18 @@ class PostService {
         // 좋아요 알림 전송 (자신의 게시글이 아닌 경우에만)
         if (authorId != null && authorId != user.uid) {
           // 사용자 정보 가져오기
-          final userDoc = await _firestore.collection('users').doc(user.uid).get();
+          final userDoc =
+              await _firestore.collection('users').doc(user.uid).get();
           final userData = userDoc.data();
           final nickname = userData?['nickname'] ?? '익명';
 
           // 좋아요 알림 전송
           await _notificationService.sendNewLikeNotification(
-              postId,
-              postTitle,
-              authorId,
-              nickname,
-              user.uid
+            postId,
+            postTitle,
+            authorId,
+            nickname,
+            user.uid,
           );
         }
       }
@@ -299,6 +313,49 @@ class PostService {
     }
   }
 
+  // 게시글 스트림 가져오기
+  Stream<List<Post>> getPostsStream() {
+    return _firestore
+        .collection('posts')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        try {
+          final data = doc.data();
+          return Post(
+            id: doc.id,
+            title: data['title'] ?? '제목 없음',
+            content: data['content'] ?? '내용 없음',
+            author: data['authorNickname'] ?? '알 수 없음',
+            authorNationality: data['authorNationality'] ?? '',
+            category: data['category'] ?? '일반',
+            createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            userId: data['userId'] ?? '',
+            commentCount: data['commentCount'] ?? 0,
+            likes: data['likes'] ?? 0,
+            likedBy: List<String>.from(data['likedBy'] ?? []),
+            imageUrls: List<String>.from(data['imageUrls'] ?? []),
+          );
+        } catch (e) {
+          print('게시글 파싱 오류: $e');
+          // 오류 발생 시 기본 Post 객체 반환
+          return Post(
+            id: doc.id,
+            title: '제목 없음',
+            content: '내용을 불러올 수 없습니다.',
+            author: '알 수 없음',
+            category: '일반',
+            createdAt: DateTime.now(),
+            userId: '',
+            imageUrls: [],
+            likes: 0,
+          );
+        }
+      }).toList();
+    });
+  }
+
   // 현재 사용자가 게시글 작성자인지 확인
   Future<bool> isCurrentUserAuthor(String postId) async {
     try {
@@ -313,6 +370,68 @@ class PostService {
     } catch (e) {
       print('작성자 확인 오류: $e');
       return false;
+    }
+  }
+
+  // 게시글 검색 (카테고리별)
+  Future<List<Post>> searchPosts(String query, {String? category}) async {
+    try {
+      if (query.isEmpty) return [];
+
+      final lowercaseQuery = query.toLowerCase();
+      
+      // 기본 쿼리
+      Query<Map<String, dynamic>> queryRef = _firestore
+          .collection('posts')
+          .orderBy('createdAt', descending: true);
+
+      // 카테고리 필터 추가
+      if (category != null && category.isNotEmpty) {
+        queryRef = queryRef.where('category', isEqualTo: category);
+      }
+
+      final snapshot = await queryRef.get();
+      
+      return snapshot.docs
+          .map((doc) {
+            try {
+              final data = doc.data();
+              
+              // 검색어와 일치하는지 확인
+              final title = (data['title'] as String? ?? '').toLowerCase();
+              final content = (data['content'] as String? ?? '').toLowerCase();
+              final author = (data['authorNickname'] as String? ?? '').toLowerCase();
+              
+              if (title.contains(lowercaseQuery) ||
+                  content.contains(lowercaseQuery) ||
+                  author.contains(lowercaseQuery)) {
+                return Post(
+                  id: doc.id,
+                  title: data['title'] ?? '제목 없음',
+                  content: data['content'] ?? '내용 없음',
+                  author: data['authorNickname'] ?? '알 수 없음',
+                  authorNationality: data['authorNationality'] ?? '',
+                  category: data['category'] ?? '일반',
+                  createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  userId: data['userId'] ?? '',
+                  commentCount: data['commentCount'] ?? 0,
+                  likes: data['likes'] ?? 0,
+                  likedBy: List<String>.from(data['likedBy'] ?? []),
+                  imageUrls: List<String>.from(data['imageUrls'] ?? []),
+                );
+              }
+              return null;
+            } catch (e) {
+              print('게시글 검색 파싱 오류: $e');
+              return null;
+            }
+          })
+          .where((post) => post != null)
+          .cast<Post>()
+          .toList();
+    } catch (e) {
+      print('게시글 검색 오류: $e');
+      return [];
     }
   }
 }

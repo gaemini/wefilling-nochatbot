@@ -9,10 +9,12 @@ class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({Key? key}) : super(key: key);
 
   @override
-  State<NotificationSettingsScreen> createState() => _NotificationSettingsScreenState();
+  State<NotificationSettingsScreen> createState() =>
+      _NotificationSettingsScreenState();
 }
 
-class _NotificationSettingsScreenState extends State<NotificationSettingsScreen> {
+class _NotificationSettingsScreenState
+    extends State<NotificationSettingsScreen> {
   final _notificationSettingsService = NotificationSettingsService();
   bool _isLoading = true;
   Map<String, bool> _settings = {};
@@ -29,7 +31,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     });
 
     try {
-      final settings = await _notificationSettingsService.getNotificationSettings();
+      final settings =
+          await _notificationSettingsService.getNotificationSettings();
       if (mounted) {
         setState(() {
           _settings = settings;
@@ -41,9 +44,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('설정을 불러오는 중 오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('설정을 불러오는 중 오류가 발생했습니다: $e')));
       }
     }
   }
@@ -63,9 +66,9 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
         _settings[key] = !value;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('설정을 저장하는 중 오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('설정을 저장하는 중 오류가 발생했습니다: $e')));
       }
     }
   }
@@ -73,67 +76,66 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('알림 설정'),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : ListView(
-        children: [
-          // 설정 카테고리 - 모임 알림
-          _buildSettingCategory(
-            title: '모임 알림',
-            icon: Icons.group,
-            color: Colors.blue,
-            children: [
-              _buildSettingItem(
-                title: '모임 정원 마감 알림',
-                subtitle: '내가 주최한 모임의 정원이 마감되면 알림',
-                settingKey: NotificationSettingKeys.meetupFull,
-              ),
-              _buildSettingItem(
-                title: '모임 취소 알림',
-                subtitle: '참여 신청한 모임이 취소되면 알림',
-                settingKey: NotificationSettingKeys.meetupCancelled,
-              ),
-            ],
-          ),
+      appBar: AppBar(title: const Text('알림 설정')),
+      body:
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : ListView(
+                children: [
+                  // 설정 카테고리 - 모임 알림
+                  _buildSettingCategory(
+                    title: '모임 알림',
+                    icon: Icons.group,
+                    color: Colors.blue,
+                    children: [
+                      _buildSettingItem(
+                        title: '모임 정원 마감 알림',
+                        subtitle: '내가 주최한 모임의 정원이 마감되면 알림',
+                        settingKey: NotificationSettingKeys.meetupFull,
+                      ),
+                      _buildSettingItem(
+                        title: '모임 취소 알림',
+                        subtitle: '참여 신청한 모임이 취소되면 알림',
+                        settingKey: NotificationSettingKeys.meetupCancelled,
+                      ),
+                    ],
+                  ),
 
-          // 설정 카테고리 - 게시글 알림
-          _buildSettingCategory(
-            title: '게시글 알림',
-            icon: Icons.article,
-            color: Colors.green,
-            children: [
-              _buildSettingItem(
-                title: '댓글 알림',
-                subtitle: '내 게시글에 댓글이 작성되면 알림',
-                settingKey: NotificationSettingKeys.newComment,
-              ),
-              _buildSettingItem(
-                title: '좋아요 알림',
-                subtitle: '내 게시글에 좋아요가 추가되면 알림',
-                settingKey: NotificationSettingKeys.newLike,
-              ),
-            ],
-          ),
+                  // 설정 카테고리 - 게시글 알림
+                  _buildSettingCategory(
+                    title: '게시글 알림',
+                    icon: Icons.article,
+                    color: Colors.green,
+                    children: [
+                      _buildSettingItem(
+                        title: '댓글 알림',
+                        subtitle: '내 게시글에 댓글이 작성되면 알림',
+                        settingKey: NotificationSettingKeys.newComment,
+                      ),
+                      _buildSettingItem(
+                        title: '좋아요 알림',
+                        subtitle: '내 게시글에 좋아요가 추가되면 알림',
+                        settingKey: NotificationSettingKeys.newLike,
+                      ),
+                    ],
+                  ),
 
-          // 추가 설정 - 알림 전체 ON/OFF
-          _buildSettingCategory(
-            title: '전체 설정',
-            icon: Icons.settings,
-            color: Colors.orange,
-            children: [
-              _buildSettingItem(
-                title: '모든 알림',
-                subtitle: '모든 알림 활성화/비활성화',
-                settingKey: NotificationSettingKeys.allNotifications,
-                isMainToggle: true,
+                  // 추가 설정 - 알림 전체 ON/OFF
+                  _buildSettingCategory(
+                    title: '전체 설정',
+                    icon: Icons.settings,
+                    color: Colors.orange,
+                    children: [
+                      _buildSettingItem(
+                        title: '모든 알림',
+                        subtitle: '모든 알림 활성화/비활성화',
+                        settingKey: NotificationSettingKeys.allNotifications,
+                        isMainToggle: true,
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
-          ),
-        ],
-      ),
     );
   }
 
@@ -150,11 +152,7 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Row(
             children: [
-              Icon(
-                icon,
-                color: color,
-                size: 20,
-              ),
+              Icon(icon, color: color, size: 20),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -179,7 +177,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
     bool isMainToggle = false,
   }) {
     // 모든 알림이 꺼져 있으면 다른 토글은 비활성화
-    final bool allNotificationsOff = !(_settings[NotificationSettingKeys.allNotifications] ?? true);
+    final bool allNotificationsOff =
+        !(_settings[NotificationSettingKeys.allNotifications] ?? true);
 
     // 전체 알림 토글이 아니고, 전체 알림이 꺼져 있으면 비활성화
     final bool disabled = !isMainToggle && allNotificationsOff;
@@ -188,18 +187,16 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
       title: Text(title),
       subtitle: Text(
         subtitle,
-        style: TextStyle(
-          fontSize: 12,
-          color: Colors.grey[600],
-        ),
+        style: TextStyle(fontSize: 12, color: Colors.grey[600]),
       ),
       trailing: Switch(
         value: disabled ? false : (_settings[settingKey] ?? true),
-        onChanged: disabled
-            ? null
-            : (value) {
-          _updateSetting(settingKey, value);
-        },
+        onChanged:
+            disabled
+                ? null
+                : (value) {
+                  _updateSetting(settingKey, value);
+                },
         activeColor: isMainToggle ? Colors.orange : Colors.blue,
       ),
       enabled: !disabled,

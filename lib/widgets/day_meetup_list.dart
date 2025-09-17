@@ -2,7 +2,6 @@
 // 특정 날짜의 모임 목록 위젯 구현
 // 모임 목록 표시 및 빈 상태 처리
 
-
 import 'package:flutter/material.dart';
 import '../models/meetup.dart';
 import 'meetup_card.dart';
@@ -35,10 +34,7 @@ class DayMeetupList extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               AppConstants.NO_MEETUPS,
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
@@ -57,10 +53,8 @@ class DayMeetupList extends StatelessWidget {
     return ListView.separated(
       itemCount: meetups.length,
       padding: const EdgeInsets.symmetric(vertical: 8),
-      separatorBuilder: (context, index) => Divider(
-        color: Colors.grey[200],
-        height: 1,
-      ),
+      separatorBuilder:
+          (context, index) => Divider(color: Colors.grey[200], height: 1),
       itemBuilder: (context, index) {
         final meetup = meetups[index];
         return MeetupCard(

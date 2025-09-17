@@ -58,9 +58,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
           widget.onMeetupDeleted();
 
           Navigator.of(context).pop();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('모임이 취소되었습니다.')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('모임이 취소되었습니다.')));
         }
       } else if (mounted) {
         setState(() {
@@ -75,9 +75,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
       }
     }
   }
@@ -87,7 +87,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
     final status = widget.meetup.getStatus();
     final isUpcoming = status == '예정';
     final size = MediaQuery.of(context).size;
-    
+
     return Dialog(
       backgroundColor: Colors.white,
       elevation: 0,
@@ -119,7 +119,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
@@ -156,14 +159,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.calendar_today, size: 14, color: Colors.white70),
+                      const Icon(
+                        Icons.calendar_today,
+                        size: 14,
+                        color: Colors.white70,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '${widget.meetup.date.month}월 ${widget.meetup.date.day}일',
                         style: const TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(width: 16),
-                      const Icon(Icons.access_time, size: 14, color: Colors.white70),
+                      const Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: Colors.white70,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         widget.meetup.time,
@@ -174,7 +185,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                 ],
               ),
             ),
-            
+
             // 내용
             Flexible(
               child: ListView(
@@ -204,12 +215,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     Colors.green,
                     '주최자',
                     "${widget.meetup.host} (국적: ${widget.meetup.hostNationality.isEmpty ? '없음' : widget.meetup.hostNationality})",
-                    suffix: widget.meetup.hostNationality.isNotEmpty
-                      ? CountryFlagCircle(
-                          nationality: widget.meetup.hostNationality,
-                          size: 20,
-                        )
-                      : null,
+                    suffix:
+                        widget.meetup.hostNationality.isNotEmpty
+                            ? CountryFlagCircle(
+                              nationality: widget.meetup.hostNationality,
+                              size: 20,
+                            )
+                            : null,
                   ),
                   _buildInfoItem(
                     Icons.category,
@@ -217,7 +229,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     '카테고리',
                     widget.meetup.category,
                   ),
-                  
+
                   // 모임 설명
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -244,45 +256,52 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                 ],
               ),
             ),
-            
+
             // 하단 버튼
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: _isHost
-                  ? ElevatedButton(
-                      onPressed: _isLoading ? null : _deleteMeetup,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+              child:
+                  _isHost
+                      ? ElevatedButton(
+                        onPressed: _isLoading ? null : _deleteMeetup,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child:
+                            _isLoading
+                                ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                                : const Text('모임 취소'),
+                      )
+                      : ElevatedButton(
+                        onPressed:
+                            isUpcoming && !widget.meetup.isFull()
+                                ? () async {
+                                  await _meetupService.joinMeetup(
+                                    widget.meetupId,
+                                  );
+                                  if (mounted) {
+                                    Navigator.of(context).pop();
+                                  }
+                                }
+                                : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                        ),
+                        child: Text(
+                          widget.meetup.isFull() ? '참여 불가 (정원 초과)' : '참여하기',
+                        ),
                       ),
-                      child: _isLoading
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text('모임 취소'),
-                    )
-                  : ElevatedButton(
-                      onPressed: isUpcoming && !widget.meetup.isFull() ? () async {
-                        await _meetupService.joinMeetup(widget.meetupId);
-                        if (mounted) {
-                          Navigator.of(context).pop();
-                        }
-                      } : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: Text(
-                        widget.meetup.isFull() ? '참여 불가 (정원 초과)' : '참여하기',
-                      ),
-                    ),
             ),
           ],
         ),
@@ -290,7 +309,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
     );
   }
 
-  Widget _buildInfoItem(IconData icon, Color color, String title, String content, {Widget? suffix}) {
+  Widget _buildInfoItem(
+    IconData icon,
+    Color color,
+    String title,
+    String content, {
+    Widget? suffix,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       child: Row(
@@ -302,11 +327,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
               color: color.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: color,
-              size: 16,
-            ),
+            child: Icon(icon, color: color, size: 16),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -315,10 +336,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
                 ),
                 Row(
                   children: [

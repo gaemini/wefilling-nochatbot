@@ -3,7 +3,6 @@
 // 로그인 상태, 사용자 정보 제공
 // 다른 화면에서 인증 정보 접근 가능하게 함
 
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -59,7 +58,10 @@ class AuthProvider with ChangeNotifier {
   bool get isLoggedIn => _user != null;
 
   // 닉네임 설정 여부
-  bool get hasNickname => _userData != null && _userData!.containsKey('nickname') && _userData!['nickname'] != null;
+  bool get hasNickname =>
+      _userData != null &&
+      _userData!.containsKey('nickname') &&
+      _userData!['nickname'] != null;
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
@@ -76,7 +78,8 @@ class AuthProvider with ChangeNotifier {
         // 문서가 없으면 기본 문서 생성
         await _checkAndCreateUserDocument();
         // 다시 로드 시도
-        final newDoc = await _firestore.collection('users').doc(_user!.uid).get();
+        final newDoc =
+            await _firestore.collection('users').doc(_user!.uid).get();
         _userData = newDoc.exists ? newDoc.data() : null;
       }
     } catch (e) {
@@ -88,9 +91,7 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-
-
-// 구글 로그인
+  // 구글 로그인
   Future<bool> signInWithGoogle() async {
     try {
       _isLoading = true;
@@ -111,7 +112,7 @@ class AuthProvider with ChangeNotifier {
 
       // 구글 인증 정보 가져오기
       final GoogleSignInAuthentication googleAuth =
-      await googleUser.authentication;
+          await googleUser.authentication;
 
       // Firebase 인증용 크레덴셜 생성
       final OAuthCredential credential = GoogleAuthProvider.credential(
@@ -120,8 +121,9 @@ class AuthProvider with ChangeNotifier {
       );
 
       // Firebase 로그인
-      final UserCredential userCredential =
-      await _auth.signInWithCredential(credential);
+      final UserCredential userCredential = await _auth.signInWithCredential(
+        credential,
+      );
 
       // 사용자 정보 업데이트
       _user = userCredential.user;
@@ -160,9 +162,7 @@ class AuthProvider with ChangeNotifier {
         });
       } else {
         // 기존 사용자 마지막 로그인 시간 업데이트
-        await docRef.update({
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
+        await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
       }
     } catch (e) {
       print('사용자 문서 생성 오류: $e');

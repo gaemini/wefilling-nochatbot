@@ -7,12 +7,12 @@ import 'friend_request.dart';
 
 /// 사용자 간 관계 상태 열거형
 enum RelationshipStatus {
-  none,           // 관계 없음
-  pendingOut,     // 내가 보낸 친구요청 (대기 중)
-  pendingIn,      // 내가 받은 친구요청 (대기 중)
-  friends,        // 친구 관계
-  blocked,        // 차단됨 (내가 차단)
-  blockedBy,      // 차단당함 (상대가 나를 차단)
+  none, // 관계 없음
+  pendingOut, // 내가 보낸 친구요청 (대기 중)
+  pendingIn, // 내가 받은 친구요청 (대기 중)
+  friends, // 친구 관계
+  blocked, // 차단됨 (내가 차단)
+  blockedBy, // 차단당함 (상대가 나를 차단)
 }
 
 /// 관계 상태를 문자열로 변환
@@ -154,7 +154,8 @@ extension RelationshipStatusExtension on RelationshipStatus {
 
   /// 차단할 수 있는 상태인지 확인
   bool get canBlock {
-    return this != RelationshipStatus.blocked && this != RelationshipStatus.blockedBy;
+    return this != RelationshipStatus.blocked &&
+        this != RelationshipStatus.blockedBy;
   }
 }
 
@@ -196,8 +197,8 @@ class RelationshipInfo {
   bool get isFriends => status == RelationshipStatus.friends;
 
   /// 친구요청이 대기 중인지 확인
-  bool get hasPendingRequest => 
-      status == RelationshipStatus.pendingOut || 
+  bool get hasPendingRequest =>
+      status == RelationshipStatus.pendingOut ||
       status == RelationshipStatus.pendingIn;
 
   /// 관계 정보 복사본 생성

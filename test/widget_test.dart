@@ -11,10 +11,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: '요일별 모임',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        fontFamily: 'Pretendard',
-      ),
+      theme: ThemeData(primarySwatch: Colors.blue, fontFamily: 'Pretendard'),
       home: const MeetupHomePage(),
       debugShowCheckedModeBanner: false,
     );
@@ -28,76 +25,77 @@ class MeetupHomePage extends StatefulWidget {
   State<MeetupHomePage> createState() => _MeetupHomePageState();
 }
 
-class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProviderStateMixin {
+class _MeetupHomePageState extends State<MeetupHomePage>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final List<String> _days = ['월', '화', '수', '목', '금', '토', '일'];
 
   // 모임 데이터 모델
   final List<List<Meetup>> _meetupsByDay = List.generate(
-      7,
-          (dayIndex) => [
-        if (dayIndex == 0) ...[
-          Meetup(
-            id: 1,
-            title: '아침 조깅 모임',
-            description: '한강에서 함께 달려요! 초보자도 환영합니다.',
-            location: '잠실한강공원',
-            time: '오전 7:00',
-            maxParticipants: 10,
-            currentParticipants: 3,
-            host: '러너김',
-            imageUrl: 'https://via.placeholder.com/150',
-          ),
-          Meetup(
-            id: 2,
-            title: '직장인 독서 모임',
-            description: '이번 주 책: 사피엔스',
-            location: '강남 카페',
-            time: '오후 7:30',
-            maxParticipants: 8,
-            currentParticipants: 5,
-            host: '책벌레',
-            imageUrl: 'https://via.placeholder.com/150',
-          ),
-        ],
-        if (dayIndex == 2) ...[
-          Meetup(
-            id: 3,
-            title: '수요일 코딩 스터디',
-            description: 'Flutter 스터디 모임입니다. 기초부터 함께해요!',
-            location: '선릉역 근처 스터디카페',
-            time: '오후 8:00',
-            maxParticipants: 6,
-            currentParticipants: 2,
-            host: '개발자박',
-            imageUrl: 'https://via.placeholder.com/150',
-          ),
-        ],
-        if (dayIndex == 5) ...[
-          Meetup(
-            id: 4,
-            title: '주말 등산 모임',
-            description: '북한산 등산! 도시락 챙겨오세요~',
-            location: '북한산 국립공원 입구',
-            time: '오전 9:00',
-            maxParticipants: 15,
-            currentParticipants: 7,
-            host: '산돌이',
-            imageUrl: 'https://via.placeholder.com/150',
-          ),
-          Meetup(
-            id: 5,
-            title: '보드게임 번개',
-            description: '다양한 보드게임을 즐겨봐요',
-            location: '홍대 보드게임 카페',
-            time: '오후 3:00',
-            maxParticipants: 12,
-            currentParticipants: 4,
-            host: '게임마스터',
-            imageUrl: 'https://via.placeholder.com/150',
-          ),
-        ],
-      ]
+    7,
+    (dayIndex) => [
+      if (dayIndex == 0) ...[
+        Meetup(
+          id: 1,
+          title: '아침 조깅 모임',
+          description: '한강에서 함께 달려요! 초보자도 환영합니다.',
+          location: '잠실한강공원',
+          time: '오전 7:00',
+          maxParticipants: 10,
+          currentParticipants: 3,
+          host: '러너김',
+          imageUrl: 'https://via.placeholder.com/150',
+        ),
+        Meetup(
+          id: 2,
+          title: '직장인 독서 모임',
+          description: '이번 주 책: 사피엔스',
+          location: '강남 카페',
+          time: '오후 7:30',
+          maxParticipants: 8,
+          currentParticipants: 5,
+          host: '책벌레',
+          imageUrl: 'https://via.placeholder.com/150',
+        ),
+      ],
+      if (dayIndex == 2) ...[
+        Meetup(
+          id: 3,
+          title: '수요일 코딩 스터디',
+          description: 'Flutter 스터디 모임입니다. 기초부터 함께해요!',
+          location: '선릉역 근처 스터디카페',
+          time: '오후 8:00',
+          maxParticipants: 6,
+          currentParticipants: 2,
+          host: '개발자박',
+          imageUrl: 'https://via.placeholder.com/150',
+        ),
+      ],
+      if (dayIndex == 5) ...[
+        Meetup(
+          id: 4,
+          title: '주말 등산 모임',
+          description: '북한산 등산! 도시락 챙겨오세요~',
+          location: '북한산 국립공원 입구',
+          time: '오전 9:00',
+          maxParticipants: 15,
+          currentParticipants: 7,
+          host: '산돌이',
+          imageUrl: 'https://via.placeholder.com/150',
+        ),
+        Meetup(
+          id: 5,
+          title: '보드게임 번개',
+          description: '다양한 보드게임을 즐겨봐요',
+          location: '홍대 보드게임 카페',
+          time: '오후 3:00',
+          maxParticipants: 12,
+          currentParticipants: 4,
+          host: '게임마스터',
+          imageUrl: 'https://via.placeholder.com/150',
+        ),
+      ],
+    ],
   );
 
   @override
@@ -133,9 +131,9 @@ class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProvid
             icon: const Icon(Icons.search),
             onPressed: () {
               // 검색 기능 구현 예정
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('검색 기능은 준비 중입니다.')),
-              );
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('검색 기능은 준비 중입니다.')));
             },
           ),
         ],
@@ -144,12 +142,14 @@ class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProvid
         controller: _tabController,
         children: List.generate(
           _days.length,
-              (dayIndex) => DayMeetupList(
+          (dayIndex) => DayMeetupList(
             dayIndex: dayIndex,
             meetups: _meetupsByDay[dayIndex],
             onJoinMeetup: (meetup) {
               setState(() {
-                final index = _meetupsByDay[dayIndex].indexWhere((m) => m.id == meetup.id);
+                final index = _meetupsByDay[dayIndex].indexWhere(
+                  (m) => m.id == meetup.id,
+                );
                 if (index != -1) {
                   _meetupsByDay[dayIndex][index] = meetup.copyWith(
                     currentParticipants: meetup.currentParticipants + 1,
@@ -176,7 +176,9 @@ class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProvid
     TextEditingController descriptionController = TextEditingController();
     TextEditingController locationController = TextEditingController();
     TextEditingController timeController = TextEditingController();
-    TextEditingController maxParticipantsController = TextEditingController(text: '5');
+    TextEditingController maxParticipantsController = TextEditingController(
+      text: '5',
+    );
     int selectedDayIndex = _tabController.index;
 
     showDialog(
@@ -195,7 +197,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProvid
                     decoration: const InputDecoration(labelText: '요일'),
                     items: List.generate(
                       _days.length,
-                          (index) => DropdownMenuItem(
+                      (index) => DropdownMenuItem(
                         value: index,
                         child: Text('${_days[index]}요일'),
                       ),
@@ -254,7 +256,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with SingleTickerProvid
                       description: descriptionController.text,
                       location: locationController.text,
                       time: timeController.text,
-                      maxParticipants: int.tryParse(maxParticipantsController.text) ?? 5,
+                      maxParticipants:
+                          int.tryParse(maxParticipantsController.text) ?? 5,
                       currentParticipants: 1, // 호스트 포함
                       host: '나',
                       imageUrl: 'https://via.placeholder.com/150',
@@ -297,10 +300,7 @@ class DayMeetupList extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               '아직 모임이 없습니다',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             ElevatedButton.icon(
@@ -310,7 +310,7 @@ class DayMeetupList extends StatelessWidget {
                 // FAB과 동일한 기능
                 final scaffoldContext = Scaffold.of(context);
                 scaffoldContext.showBottomSheet(
-                      (context) => Container(
+                  (context) => Container(
                     padding: const EdgeInsets.all(16),
                     child: const Text('새 모임 만들기 기능은 준비 중입니다.'),
                   ),
@@ -327,10 +327,7 @@ class DayMeetupList extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemBuilder: (context, index) {
         final meetup = meetups[index];
-        return MeetupCard(
-          meetup: meetup,
-          onJoinMeetup: onJoinMeetup,
-        );
+        return MeetupCard(meetup: meetup, onJoinMeetup: onJoinMeetup);
       },
     );
   }
@@ -353,9 +350,7 @@ class MeetupCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -374,7 +369,11 @@ class MeetupCard extends StatelessWidget {
                       height: 120,
                       width: double.infinity,
                       color: Colors.grey[300],
-                      child: const Icon(Icons.image, size: 50, color: Colors.grey),
+                      child: const Icon(
+                        Icons.image,
+                        size: 50,
+                        color: Colors.grey,
+                      ),
                     );
                   },
                 ),
@@ -382,9 +381,14 @@ class MeetupCard extends StatelessWidget {
                   top: 8,
                   right: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 179), // withOpacity(0.7)를 withValues(alpha: 179)로 수정
+                      color: Colors.black.withValues(
+                        alpha: 179,
+                      ), // withOpacity(0.7)를 withValues(alpha: 179)로 수정
                       borderRadius: BorderRadius.circular(15),
                     ),
                     child: Text(
@@ -420,9 +424,7 @@ class MeetupCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       '주최자: ${meetup.host}',
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(color: Colors.grey[700]),
                     ),
                   ],
                 ),
@@ -433,9 +435,7 @@ class MeetupCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       meetup.location,
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(color: Colors.grey[700]),
                     ),
                   ],
                 ),
@@ -446,17 +446,12 @@ class MeetupCard extends StatelessWidget {
                     const SizedBox(width: 4),
                     Text(
                       meetup.time,
-                      style: TextStyle(
-                        color: Colors.grey[700],
-                      ),
+                      style: TextStyle(color: Colors.grey[700]),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  meetup.description,
-                  style: const TextStyle(fontSize: 14),
-                ),
+                Text(meetup.description, style: const TextStyle(fontSize: 14)),
               ],
             ),
           ),
@@ -466,17 +461,18 @@ class MeetupCard extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ElevatedButton(
-              onPressed: isFull
-                  ? null
-                  : () {
-                onJoinMeetup(meetup);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('${meetup.title}에 참여했습니다!'),
-                    duration: const Duration(seconds: 2),
-                  ),
-                );
-              },
+              onPressed:
+                  isFull
+                      ? null
+                      : () {
+                        onJoinMeetup(meetup);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${meetup.title}에 참여했습니다!'),
+                            duration: const Duration(seconds: 2),
+                          ),
+                        );
+                      },
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(

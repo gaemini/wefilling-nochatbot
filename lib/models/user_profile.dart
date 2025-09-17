@@ -11,8 +11,8 @@ class UserProfile {
   final String? nickname;
   final String? nationality;
   final int friendsCount;
-  final int incomingCount;  // 받은 친구요청 수
-  final int outgoingCount;  // 보낸 친구요청 수
+  final int incomingCount; // 받은 친구요청 수
+  final int outgoingCount; // 보낸 친구요청 수
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -32,7 +32,7 @@ class UserProfile {
   // Firestore 문서에서 UserProfile 객체 생성
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
-    
+
     return UserProfile(
       uid: doc.id,
       displayName: data['displayName'] ?? '',

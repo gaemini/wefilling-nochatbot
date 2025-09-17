@@ -9,6 +9,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:provider/provider.dart';
+import 'design/theme.dart';
 import 'screens/main_screen.dart';
 import 'providers/auth_provider.dart' as app_auth;
 import 'providers/settings_provider.dart';
@@ -20,9 +21,7 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugDefaultTargetPlatformOverride = TargetPlatform.android;
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
   // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
   // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
@@ -30,20 +29,23 @@ void main() async {
     print('🔥 Firebase 초기화 시작: ${DateTime.now()}');
     print('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
     print('🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
-    
+
     // Firebase Auth 상태 변화 로깅
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      print('🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}');
+      print(
+        '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
+      );
       print('🔐 User ID: ${user?.uid ?? "null"}');
       print('🔐 Timestamp: ${DateTime.now()}');
     });
-    
+
     print('🔐 인증 초기화 대기 중...');
-    
+
     // 인증 상태를 최대 5초간 기다림
     User? currentUser;
     int attempts = 0;
-    while (attempts < 10) { // 0.5초씩 10번 = 5초
+    while (attempts < 10) {
+      // 0.5초씩 10번 = 5초
       currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser != null) {
         print('🔐 사용자 로그인 확인: ${currentUser.email}');
@@ -53,9 +55,9 @@ void main() async {
       attempts++;
       print('🔐 인증 대기 중... (${attempts}/10)');
     }
-    
+
     print('🔐 인증 초기화 완료: ${DateTime.now()}');
-    
+
     // Firebase Storage 접근 테스트
     try {
       print('🗄️ Storage 접근 테스트 시작');
@@ -91,22 +93,18 @@ class MeetupApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settingsProvider = Provider.of<SettingsProvider>(context);
-    
+
     return MaterialApp(
       title: 'David C.',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        scaffoldBackgroundColor: Colors.white,
-        fontFamily: 'Pretendard',
-      ),
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
       home: Consumer<app_auth.AuthProvider>(
         builder: (context, authProvider, _) {
           if (authProvider.isLoading) {
             return const Scaffold(
               backgroundColor: Color(0xFFDEEFFF),
-              body: Center(
-                child: CircularProgressIndicator(),
-              ),
+              body: Center(child: CircularProgressIndicator()),
             );
           }
 
@@ -128,5 +126,3 @@ class MeetupApp extends StatelessWidget {
     );
   }
 }
-
-dfadfad

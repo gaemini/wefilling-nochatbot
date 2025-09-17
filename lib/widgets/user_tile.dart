@@ -37,12 +37,10 @@ class UserTile extends StatelessWidget {
               // 프로필 이미지
               _buildProfileImage(),
               const SizedBox(width: 16),
-              
+
               // 사용자 정보
-              Expanded(
-                child: _buildUserInfo(),
-              ),
-              
+              Expanded(child: _buildUserInfo()),
+
               // 액션 버튼
               _buildActionButton(),
             ],
@@ -57,21 +55,21 @@ class UserTile extends StatelessWidget {
     return CircleAvatar(
       radius: 24,
       backgroundColor: Colors.grey[300],
-      backgroundImage: user.hasProfileImage
-          ? NetworkImage(user.photoURL!)
-          : null,
-      child: !user.hasProfileImage
-          ? Text(
-              user.displayNameOrNickname.isNotEmpty
-                  ? user.displayNameOrNickname[0].toUpperCase()
-                  : '?',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            )
-          : null,
+      backgroundImage:
+          user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
+      child:
+          !user.hasProfileImage
+              ? Text(
+                user.displayNameOrNickname.isNotEmpty
+                    ? user.displayNameOrNickname[0].toUpperCase()
+                    : '?',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              )
+              : null,
     );
   }
 
@@ -83,69 +81,49 @@ class UserTile extends StatelessWidget {
         // 사용자 이름
         Text(
           user.displayNameOrNickname,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-          ),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        
+
         const SizedBox(height: 4),
-        
+
         // 닉네임 (displayName과 다른 경우에만 표시)
-        if (user.nickname != null && 
+        if (user.nickname != null &&
             user.nickname != user.displayName &&
             user.nickname!.isNotEmpty)
           Text(
             user.displayName,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        
+
         const SizedBox(height: 4),
-        
+
         // 국적 정보
         if (user.nationality != null && user.nationality!.isNotEmpty)
           Row(
             children: [
-              Icon(
-                Icons.flag,
-                size: 16,
-                color: Colors.grey[600],
-              ),
+              Icon(Icons.flag, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 4),
               Text(
                 user.nationality!,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
           ),
-        
+
         const SizedBox(height: 4),
-        
+
         // 친구 수
         Row(
           children: [
-            Icon(
-              Icons.people,
-              size: 16,
-              color: Colors.grey[600],
-            ),
+            Icon(Icons.people, size: 16, color: Colors.grey[600]),
             const SizedBox(width: 4),
             Text(
               '친구 ${user.friendsCount}명',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey[600],
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],
         ),
@@ -173,35 +151,27 @@ class UserTile extends StatelessWidget {
         ),
         child: Text(
           '차단됨',
-          style: TextStyle(
-            fontSize: 12,
-            color: Colors.grey[600],
-          ),
+          style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
       );
     }
 
     // 관계 상태에 따른 버튼 스타일
     final buttonStyle = _getButtonStyle(relationshipStatus);
-    
+
     return ElevatedButton(
       onPressed: relationshipStatus.isActionable ? onActionPressed : null,
       style: ElevatedButton.styleFrom(
         backgroundColor: Color(buttonStyle['color'] as int),
         foregroundColor: Color(buttonStyle['textColor'] as int),
         elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         minimumSize: const Size(80, 36),
       ),
       child: Text(
         relationshipStatus.actionButtonText,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }
@@ -262,40 +232,35 @@ class SimpleUserTile extends StatelessWidget {
       leading: CircleAvatar(
         radius: 20,
         backgroundColor: Colors.grey[300],
-        backgroundImage: user.hasProfileImage
-            ? NetworkImage(user.photoURL!)
-            : null,
-        child: !user.hasProfileImage
-            ? Text(
-                user.displayNameOrNickname.isNotEmpty
-                    ? user.displayNameOrNickname[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              )
-            : null,
+        backgroundImage:
+            user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
+        child:
+            !user.hasProfileImage
+                ? Text(
+                  user.displayNameOrNickname.isNotEmpty
+                      ? user.displayNameOrNickname[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                )
+                : null,
       ),
       title: Text(
         user.displayNameOrNickname,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
-      subtitle: user.nickname != null && 
-                user.nickname != user.displayName &&
-                user.nickname!.isNotEmpty
-          ? Text(
-              user.displayName,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey[600],
-              ),
-            )
-          : null,
+      subtitle:
+          user.nickname != null &&
+                  user.nickname != user.displayName &&
+                  user.nickname!.isNotEmpty
+              ? Text(
+                user.displayName,
+                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+              )
+              : null,
       trailing: trailing,
       onTap: onPressed,
     );

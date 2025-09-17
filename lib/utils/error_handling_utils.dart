@@ -3,8 +3,6 @@
 // 에러 메시지 표시, 데이터 로딩 실패 위젯, 데이터 없음 위젯 등을 제공
 // 앱 전체에서 일관된 에러처리 목적
 
-
-
 import 'package:flutter/material.dart';
 
 class ErrorHandlingUtils {
@@ -55,10 +53,7 @@ class ErrorHandlingUtils {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
-          ElevatedButton(
-            onPressed: onRetry,
-            child: const Text('다시 시도'),
-          ),
+          ElevatedButton(onPressed: onRetry, child: const Text('다시 시도')),
         ],
       ),
     );

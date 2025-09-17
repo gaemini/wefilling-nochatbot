@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
+import '../ui/widgets/app_fab.dart';
 import 'search_users_page.dart';
 import 'requests_page.dart';
 import 'friends_page.dart';
@@ -24,6 +25,9 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _tabController.addListener(() {
+      setState(() {}); // FAB 표시 상태 업데이트
+    });
   }
 
   @override
@@ -46,10 +50,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
           unselectedLabelColor: Colors.grey,
           indicatorColor: Colors.blue,
           tabs: [
-            const Tab(
-              icon: Icon(Icons.search),
-              text: '검색',
-            ),
+            const Tab(icon: Icon(Icons.search), text: '검색'),
             Tab(
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
@@ -58,10 +59,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                     children: [
                       const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.mail),
-                          Text('요청'),
-                        ],
+                        children: [Icon(Icons.mail), Text('요청')],
                       ),
                       if (incomingCount > 0)
                         Positioned(
@@ -78,7 +76,9 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                               minHeight: 16,
                             ),
                             child: Text(
-                              incomingCount > 99 ? '99+' : incomingCount.toString(),
+                              incomingCount > 99
+                                  ? '99+'
+                                  : incomingCount.toString(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 10,
@@ -112,12 +112,22 @@ class _FriendsMainPageState extends State<FriendsMainPage>
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [
-          SearchUsersPage(),
-          RequestsPage(),
-          FriendsPage(),
-        ],
+        children: const [SearchUsersPage(), RequestsPage(), FriendsPage()],
       ),
+      // 친구 찾기 FAB (검색 탭에서만 표시)
+      floatingActionButton:
+          _tabController.index == 0
+              ? AppFab(
+                icon: Icons.person_search,
+                onPressed: () {
+                  // 검색 탭으로 포커스 이동 또는 검색 기능 실행
+                  _tabController.animateTo(0);
+                },
+                semanticLabel: '친구 찾기',
+                tooltip: '친구 찾기',
+                heroTag: 'friends_search_fab',
+              )
+              : null,
     );
   }
 }

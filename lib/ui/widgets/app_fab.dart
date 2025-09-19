@@ -6,15 +6,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
 import '../../utils/accessibility_utils.dart';
+import '../../constants/app_constants.dart';
 
-/// 앱 전체에서 사용하는 표준 FAB
+/// 2024-2025 트렌드 기반 모던 FAB
 ///
-/// 특징:
+/// ✨ 새로운 특징:
 /// - 56dp 고정 크기
-/// - 브랜드 보조색(블루) 사용
+/// - Vibrant gradient 배경 (Primary/Secondary)
+/// - Enhanced 그림자와 elevation
 /// - 120-180ms 스케일+페이드 애니메이션
 /// - 햅틱 피드백 지원
 /// - 고대비 아이콘/라벨 (WCAG AA 이상)
+/// - Gen Z 친화적 vibrant colors
 class AppFab extends StatefulWidget {
   /// FAB 아이콘
   final IconData icon;
@@ -49,6 +52,12 @@ class AppFab extends StatefulWidget {
   /// 확장형 FAB 여부
   final bool extended;
 
+  /// 2024-2025 트렌드 그라디언트 스타일 사용 여부
+  final bool useGradient;
+
+  /// 그라디언트 타입 ('primary', 'secondary', 'emerald', 'amber')
+  final String gradientType;
+
   const AppFab({
     super.key,
     required this.icon,
@@ -62,41 +71,47 @@ class AppFab extends StatefulWidget {
     this.enabled = true,
     this.mini = false,
     this.extended = false,
+    this.useGradient = true, // 기본적으로 그라디언트 사용
+    this.gradientType = 'secondary', // 기본은 secondary gradient (Pink-Orange)
   }) : assert(!extended || label != null, 'Extended FAB requires a label');
 
-  /// 글쓰기 FAB (프리셋)
+  /// ✨ 글쓰기 FAB (2024-2025 트렌드 업데이트)
   factory AppFab.write({
     required VoidCallback onPressed,
     Object? heroTag,
     bool enabled = true,
   }) {
     return AppFab(
-      icon: Icons.edit,
+      icon: Icons.edit_rounded, // Rounded 아이콘으로 모던화
       onPressed: onPressed,
       semanticLabel: '새 글 작성하기',
       tooltip: '글쓰기',
       heroTag: heroTag ?? 'write_fab',
       enabled: enabled,
+      useGradient: true,
+      gradientType: 'secondary', // Pink-Orange gradient
     );
   }
 
-  /// 새 모임 만들기 FAB (프리셋)
+  /// ✨ 새 모임 만들기 FAB (2024-2025 트렌드 업데이트)
   factory AppFab.createMeetup({
     required VoidCallback onPressed,
     Object? heroTag,
     bool enabled = true,
   }) {
     return AppFab(
-      icon: Icons.add,
+      icon: Icons.add_rounded, // Rounded 아이콘으로 모던화
       onPressed: onPressed,
       semanticLabel: '새 모임 만들기',
       tooltip: '모임 만들기',
       heroTag: heroTag ?? 'create_meetup_fab',
       enabled: enabled,
+      useGradient: true,
+      gradientType: 'emerald', // Emerald gradient for positive action
     );
   }
 
-  /// 확장형 FAB (프리셋)
+  /// ✨ 확장형 FAB (2024-2025 트렌드 업데이트)
   factory AppFab.extended({
     required IconData icon,
     required String label,
@@ -104,6 +119,7 @@ class AppFab extends StatefulWidget {
     required String semanticLabel,
     Object? heroTag,
     bool enabled = true,
+    String gradientType = 'primary',
   }) {
     return AppFab(
       icon: icon,
@@ -113,6 +129,77 @@ class AppFab extends StatefulWidget {
       heroTag: heroTag,
       enabled: enabled,
       extended: true,
+      useGradient: true,
+      gradientType: gradientType,
+    );
+  }
+
+  /// 🎨 Modern Primary FAB (Indigo-Purple gradient)
+  factory AppFab.modernPrimary({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String semanticLabel,
+    String? tooltip,
+    Object? heroTag,
+    bool enabled = true,
+    bool mini = false,
+  }) {
+    return AppFab(
+      icon: icon,
+      onPressed: onPressed,
+      semanticLabel: semanticLabel,
+      tooltip: tooltip,
+      heroTag: heroTag,
+      enabled: enabled,
+      mini: mini,
+      useGradient: true,
+      gradientType: 'primary',
+    );
+  }
+
+  /// 💎 Vibrant Emerald FAB (Success actions)
+  factory AppFab.vibrantEmerald({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String semanticLabel,
+    String? tooltip,
+    Object? heroTag,
+    bool enabled = true,
+    bool mini = false,
+  }) {
+    return AppFab(
+      icon: icon,
+      onPressed: onPressed,
+      semanticLabel: semanticLabel,
+      tooltip: tooltip,
+      heroTag: heroTag,
+      enabled: enabled,
+      mini: mini,
+      useGradient: true,
+      gradientType: 'emerald',
+    );
+  }
+
+  /// ⚡ Dynamic Amber FAB (Warning/Attention actions)
+  factory AppFab.dynamicAmber({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String semanticLabel,
+    String? tooltip,
+    Object? heroTag,
+    bool enabled = true,
+    bool mini = false,
+  }) {
+    return AppFab(
+      icon: icon,
+      onPressed: onPressed,
+      semanticLabel: semanticLabel,
+      tooltip: tooltip,
+      heroTag: heroTag,
+      enabled: enabled,
+      mini: mini,
+      useGradient: true,
+      gradientType: 'amber',
     );
   }
 
@@ -175,16 +262,38 @@ class _AppFabState extends State<AppFab> with SingleTickerProviderStateMixin {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    // 접근성을 고려한 색상 결정 (고대비 보장)
-    final baseBackgroundColor = widget.backgroundColor ?? colorScheme.primary;
-    final baseForegroundColor = widget.foregroundColor ?? colorScheme.onPrimary;
+    // 2024-2025 트렌드: 그라디언트 색상 결정
+    LinearGradient? gradient;
+    Color fallbackColor;
+    
+    if (widget.useGradient) {
+      switch (widget.gradientType) {
+        case 'primary':
+          gradient = AppTheme.primaryGradient;
+          fallbackColor = AppTheme.primary;
+          break;
+        case 'secondary':
+          gradient = AppTheme.secondaryGradient;
+          fallbackColor = AppTheme.secondary;
+          break;
+        case 'emerald':
+          gradient = AppTheme.emeraldGradient;
+          fallbackColor = AppTheme.accentEmerald;
+          break;
+        case 'amber':
+          gradient = AppTheme.amberGradient;
+          fallbackColor = AppTheme.accentAmber;
+          break;
+        default:
+          gradient = AppTheme.secondaryGradient;
+          fallbackColor = AppTheme.secondary;
+      }
+    } else {
+      fallbackColor = widget.backgroundColor ?? colorScheme.primary;
+    }
 
-    final effectiveBackgroundColor = baseBackgroundColor;
-    final effectiveForegroundColor = AccessibilityUtils.ensureAccessibleColor(
-      foreground: baseForegroundColor,
-      background: baseBackgroundColor,
-      fallbackForeground: colorScheme.onPrimary,
-    );
+    final effectiveBackgroundColor = fallbackColor;
+    final effectiveForegroundColor = Colors.white; // 그라디언트에서는 항상 흰색
 
     // FAB 크기 결정
     final fabSize =
@@ -222,26 +331,64 @@ class _AppFabState extends State<AppFab> with SingleTickerProviderStateMixin {
         ),
       );
     } else {
-      // 일반 원형 FAB
-      fab = FloatingActionButton(
-        onPressed: widget.enabled ? _handleTap : null,
-        backgroundColor: effectiveBackgroundColor,
-        foregroundColor: effectiveForegroundColor,
-        elevation: DesignTokens.elevation3,
-        focusElevation: DesignTokens.elevation4,
-        hoverElevation: DesignTokens.elevation4,
-        highlightElevation: DesignTokens.elevation5,
-        disabledElevation: 0,
-        mini: widget.mini,
-        heroTag: widget.heroTag,
-        tooltip: widget.tooltip,
-        shape: const CircleBorder(),
-        child: Icon(
-          widget.icon,
-          size: widget.mini ? 20 : DesignTokens.icon,
-          color: effectiveForegroundColor,
-        ),
-      );
+      // 2024-2025 트렌드: 그라디언트 원형 FAB
+      if (widget.useGradient && gradient != null) {
+        fab = Container(
+          width: fabSize,
+          height: fabSize,
+          decoration: BoxDecoration(
+            gradient: gradient,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: fallbackColor.withOpacity(0.3),
+                offset: const Offset(0, 8),
+                blurRadius: 20,
+                spreadRadius: 0,
+              ),
+            ],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: widget.enabled ? _handleTap : null,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: fabSize,
+                height: fabSize,
+                alignment: Alignment.center,
+                child: Icon(
+                  widget.icon,
+                  size: widget.mini ? 20 : DesignTokens.icon,
+                  color: effectiveForegroundColor,
+                ),
+              ),
+            ),
+          ),
+        );
+      } else {
+        // 기본 FAB (그라디언트 미사용)
+        fab = FloatingActionButton(
+          onPressed: widget.enabled ? _handleTap : null,
+          backgroundColor: effectiveBackgroundColor,
+          foregroundColor: effectiveForegroundColor,
+          elevation: DesignTokens.elevation3,
+          focusElevation: DesignTokens.elevation4,
+          hoverElevation: DesignTokens.elevation4,
+          highlightElevation: DesignTokens.elevation5,
+          disabledElevation: 0,
+          mini: widget.mini,
+          heroTag: widget.heroTag,
+          tooltip: widget.tooltip,
+          shape: const CircleBorder(),
+          child: Icon(
+            widget.icon,
+            size: widget.mini ? 20 : DesignTokens.icon,
+            color: effectiveForegroundColor,
+          ),
+        );
+      }
     }
 
     // 애니메이션 적용

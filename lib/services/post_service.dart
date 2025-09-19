@@ -434,4 +434,124 @@ class PostService {
       return [];
     }
   }
+
+  // 게시글 저장 상태 확인
+  Future<bool> isPostSaved(String postId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      final savedDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPosts')
+          .doc(postId)
+          .get();
+
+      return savedDoc.exists;
+    } catch (e) {
+      print('게시글 저장 상태 확인 오류: $e');
+      return false;
+    }
+  }
+
+  // 게시글 저장/저장 취소 토글
+  Future<bool> toggleSavePost(String postId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      final savedPostRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPosts')
+          .doc(postId);
+
+      final savedDoc = await savedPostRef.get();
+
+      if (savedDoc.exists) {
+        // 이미 저장된 게시글이면 저장 취소
+        await savedPostRef.delete();
+        print('게시글 저장 취소: $postId');
+        return false;
+      } else {
+        // 저장되지 않은 게시글이면 저장
+        await savedPostRef.set({
+          'postId': postId,
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+        print('게시글 저장: $postId');
+        return true;
+      }
+    } catch (e) {
+      print('게시글 저장 토글 오류: $e');
+      return false;
+    }
+  }
+
+  // 사용자가 저장한 게시글 목록 스트림
+  Stream<List<Post>> getSavedPosts() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream.value([]);
+    }
+
+    return _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('savedPosts')
+        .orderBy('savedAt', descending: true)
+        .snapshots()
+        .asyncMap((savedSnapshot) async {
+      List<Post> savedPosts = [];
+
+      for (var savedDoc in savedSnapshot.docs) {
+        try {
+          final postId = savedDoc.data()['postId'] as String;
+          final postDoc = await _firestore.collection('posts').doc(postId).get();
+
+          if (postDoc.exists) {
+            final data = postDoc.data()!;
+            savedPosts.add(Post(
+              id: postDoc.id,
+              title: data['title'] ?? '제목 없음',
+              content: data['content'] ?? '내용 없음',
+              author: data['authorNickname'] ?? '알 수 없음',
+              authorNationality: data['authorNationality'] ?? '',
+              category: data['category'] ?? '일반',
+              createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+              userId: data['userId'] ?? '',
+              commentCount: data['commentCount'] ?? 0,
+              likes: data['likes'] ?? 0,
+              likedBy: List<String>.from(data['likedBy'] ?? []),
+              imageUrls: List<String>.from(data['imageUrls'] ?? []),
+            ));
+          }
+        } catch (e) {
+          print('저장된 게시글 로드 오류: $e');
+        }
+      }
+
+      return savedPosts;
+    });
+  }
+
+  // 사용자가 저장한 게시글 수 가져오기
+  Future<int> getSavedPostCount() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return 0;
+
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('savedPosts')
+          .get();
+
+      return snapshot.docs.length;
+    } catch (e) {
+      print('저장된 게시글 수 조회 오류: $e');
+      return 0;
+    }
+  }
 }

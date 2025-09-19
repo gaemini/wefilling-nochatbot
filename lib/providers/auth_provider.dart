@@ -66,25 +66,58 @@ class AuthProvider with ChangeNotifier {
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
 
-  // 사용자 데이터 로드
+  // 사용자 데이터 로드 (재시도 로직 포함)
   Future<void> _loadUserData() async {
     if (_user == null) return;
 
-    try {
-      final doc = await _firestore.collection('users').doc(_user!.uid).get();
-      if (doc.exists) {
-        _userData = doc.data();
-      } else {
-        // 문서가 없으면 기본 문서 생성
-        await _checkAndCreateUserDocument();
-        // 다시 로드 시도
-        final newDoc =
-            await _firestore.collection('users').doc(_user!.uid).get();
-        _userData = newDoc.exists ? newDoc.data() : null;
+    int retryCount = 0;
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 2);
+
+    while (retryCount < maxRetries) {
+      try {
+        final doc = await _firestore
+            .collection('users')
+            .doc(_user!.uid)
+            .get(const GetOptions(source: Source.serverAndCache));
+            
+        if (doc.exists) {
+          _userData = doc.data();
+          break; // 성공시 루프 종료
+        } else {
+          // 문서가 없으면 기본 문서 생성
+          await _checkAndCreateUserDocument();
+          // 다시 로드 시도
+          final newDoc = await _firestore
+              .collection('users')
+              .doc(_user!.uid)
+              .get(const GetOptions(source: Source.serverAndCache));
+          _userData = newDoc.exists ? newDoc.data() : null;
+          break; // 성공시 루프 종료
+        }
+      } catch (e) {
+        retryCount++;
+        print('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
+        
+        if (retryCount >= maxRetries) {
+          print('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
+          try {
+            // 마지막으로 캐시에서만 시도
+            final cachedDoc = await _firestore
+                .collection('users')
+                .doc(_user!.uid)
+                .get(const GetOptions(source: Source.cache));
+            _userData = cachedDoc.exists ? cachedDoc.data() : null;
+          } catch (cacheError) {
+            print('캐시에서도 데이터 로드 실패: $cacheError');
+            _userData = null;
+          }
+          break;
+        }
+        
+        // 재시도 전 대기
+        await Future.delayed(retryDelay);
       }
-    } catch (e) {
-      print('사용자 데이터 로드 오류: $e');
-      _userData = null;
     }
 
     _isLoading = false;
@@ -192,12 +225,16 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // 닉네임 및 국적 설정
+  // 닉네임 및 국적 설정 (재시도 로직 포함)
   Future<bool> updateUserProfile({
     required String nickname,
     required String nationality,
   }) async {
     if (_user == null) return false;
+
+    int retryCount = 0;
+    const maxRetries = 3;
+    const retryDelay = Duration(seconds: 1);
 
     try {
       _isLoading = true;
@@ -205,19 +242,53 @@ class AuthProvider with ChangeNotifier {
 
       print("Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality");
 
-      await _firestore.collection('users').doc(_user!.uid).update({
-        'nickname': nickname,
-        'nationality': nationality,
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      await _loadUserData();
-      return true;
+      while (retryCount < maxRetries) {
+        try {
+          await _firestore.collection('users').doc(_user!.uid).update({
+            'nickname': nickname,
+            'nationality': nationality,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
+          
+          await _loadUserData();
+          return true;
+        } catch (e) {
+          retryCount++;
+          print('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
+          
+          if (retryCount >= maxRetries) {
+            throw e; // 마지막 시도에서 실패하면 예외 발생
+          }
+          
+          // 재시도 전 대기
+          await Future.delayed(retryDelay);
+        }
+      }
+      
+      return false;
     } catch (e) {
-      print('프로필 업데이트 오류: $e');
+      print('프로필 업데이트 최종 실패: $e');
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  // 사용자 정보 새로고침 (Firebase Auth와 Firestore 데이터 동기화)
+  Future<void> refreshUser() async {
+    if (_user == null) return;
+
+    try {
+      // Firebase Auth 사용자 정보 새로고침
+      await _user!.reload();
+      _user = _auth.currentUser;
+      
+      // Firestore 사용자 데이터 다시 로드
+      await _loadUserData();
+      
+      print('사용자 정보 새로고침 완료');
+    } catch (e) {
+      print('사용자 정보 새로고침 오류: $e');
     }
   }
 

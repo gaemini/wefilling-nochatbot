@@ -7,7 +7,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as app_provider;
-import '../providers/settings_provider.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -24,7 +23,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<app_provider.AuthProvider>(context);
-    final settingsProvider = Provider.of<SettingsProvider>(context);
     final user = _auth.currentUser;
     final isGoogleLogin =
         user?.providerData.any((info) => info.providerId == 'google.com') ??
@@ -131,22 +129,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
                       const SizedBox(height: 24),
 
-                      // 언어 설정 섹션
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '언어 설정',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-
-                      _buildLanguageSettings(context),
-
-                      const SizedBox(height: 24),
-
                       // 계정 관리 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
@@ -207,62 +189,6 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     );
   }
 
-  // 언어 설정 항목 위젯
-  Widget _buildLanguageSettings(BuildContext context) {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(vertical: 8.0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            // 언어 선택
-            Row(
-              children: [
-                const Icon(Icons.language),
-                const SizedBox(width: 16),
-                const Text('언어', style: TextStyle(fontSize: 16)),
-                const Spacer(),
-                DropdownButton<String>(
-                  value: settingsProvider.locale.languageCode,
-                  items: [
-                    DropdownMenuItem(value: 'ko', child: const Text('한국어')),
-                    DropdownMenuItem(value: 'en', child: const Text('English')),
-                    DropdownMenuItem(value: 'ja', child: const Text('日本語')),
-                    DropdownMenuItem(value: 'zh', child: const Text('中文')),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      settingsProvider.setLocale(Locale(value));
-                    }
-                  },
-                ),
-              ],
-            ),
-
-            // 자동 번역 전환 스위치 추가
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.translate),
-                const SizedBox(width: 16),
-                const Text('자동 번역', style: TextStyle(fontSize: 16)),
-                const Spacer(),
-                Switch(
-                  value: settingsProvider.autoTranslate,
-                  onChanged: (value) {
-                    settingsProvider.setAutoTranslate(value);
-                  },
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   // 비밀번호 재설정 이메일 전송 다이얼로그
   void _showResetPasswordDialog() {

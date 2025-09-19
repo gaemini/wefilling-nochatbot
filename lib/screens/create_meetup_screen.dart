@@ -77,8 +77,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
 
-    // 새로운 시간 옵션 리스트
-    List<String> newOptions = [];
+    // 새로운 시간 옵션 리스트 - '미정' 옵션을 먼저 추가
+    List<String> newOptions = ['미정'];
 
     // 오늘이면 현재 시간 이후만, 아니면 하루 전체 시간
     for (int hour = 0; hour < 24; hour++) {
@@ -111,12 +111,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     setState(() {
       _timeOptions = newOptions;
 
-      // 옵션이 있으면 첫 번째를 선택, 없으면 null
-      if (_timeOptions.isNotEmpty) {
-        _selectedTime = _timeOptions.first;
-      } else {
-        _selectedTime = null;
-      }
+      // 항상 '미정'을 기본 선택으로 설정
+      _selectedTime = '미정';
     });
   }
 
@@ -766,20 +762,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                     const SizedBox(height: 8),
 
-                    // 시간 옵션이 없는 경우
-                    if (_timeOptions.isEmpty)
+                    // 시간 옵션이 미정만 있는 경우 안내 메시지
+                    if (_timeOptions.length <= 1)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8.0),
                         child: Text(
-                          '오늘은 이미 지난 시간입니다. 다른 날짜를 선택해주세요.',
+                          '오늘은 이미 지난 시간입니다. \'미정\'으로 모임을 생성하거나 다른 날짜를 선택해주세요.',
                           style: TextStyle(
-                            color: Colors.red[700],
+                            color: Colors.orange[700],
                             fontSize: 14,
                           ),
                         ),
-                      )
-                    // 시간 선택 드롭다운
-                    else
+                      ),
+                    
+                    // 시간 선택 드롭다운 (항상 표시)
                       DropdownButtonFormField<String>(
                         value: _selectedTime,
                         isExpanded: true, // 드롭다운을 전체 너비로 확장
@@ -915,7 +911,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         height: 52,
                         child: ElevatedButton(
                           onPressed: (_isSubmitting ||
-                                  _timeOptions.isEmpty ||
                                   _selectedTime == null)
                               ? null
                               : () async {

@@ -8,11 +8,11 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
 import 'providers/auth_provider.dart' as app_auth;
-import 'providers/settings_provider.dart';
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
@@ -58,6 +58,30 @@ void main() async {
 
     print('🔐 인증 초기화 완료: ${DateTime.now()}');
 
+    // Firestore 설정 개선 (연결 안정성 향상)
+    try {
+      print('🗃️ Firestore 설정 시작');
+      final firestore = FirebaseFirestore.instance;
+      
+      // 오프라인 지속성 활성화 (이미 활성화되어 있을 수 있음)
+      try {
+        await firestore.enablePersistence();
+        print('✅ Firestore 오프라인 지속성 활성화 성공');
+      } catch (persistenceError) {
+        print('⚠️ Firestore 오프라인 지속성 이미 활성화됨 또는 실패: $persistenceError');
+      }
+      
+      // Firestore 설정 조정
+      firestore.settings = const Settings(
+        persistenceEnabled: true,
+        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      );
+      
+      print('✅ Firestore 설정 완료');
+    } catch (firestoreError) {
+      print('❌ Firestore 설정 중 오류: $firestoreError');
+    }
+
     // Firebase Storage 접근 테스트
     try {
       print('🗄️ Storage 접근 테스트 시작');
@@ -79,7 +103,6 @@ void main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
         ChangeNotifierProvider(create: (_) => RelationshipProvider()),
       ],
       child: const MeetupApp(),
@@ -92,8 +115,6 @@ class MeetupApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settingsProvider = Provider.of<SettingsProvider>(context);
-
     return MaterialApp(
       title: 'David C.',
       theme: AppTheme.light(),

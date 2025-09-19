@@ -5,14 +5,16 @@
 import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import 'app_fab.dart';
+import '../../constants/app_constants.dart';
 
-/// 빈 상태를 표시하는 기본 위젯
+/// 2024-2025 트렌드 기반 빈 상태 위젯
 ///
-/// 특징:
-/// - 로고 스타일 일러스트
-/// - 친절한 안내 문구
-/// - 명확한 CTA 버튼
-/// - 1초 내 다음 행동 인지 가능
+/// ✨ 새로운 특징:
+/// - Vibrant gradient 아이콘 배경
+/// - Modern typography with enhanced spacing
+/// - Dynamic CTA buttons with gradients
+/// - Gen Z 친화적 micro-interactions
+/// - Enhanced visual hierarchy
 class AppEmptyState extends StatelessWidget {
   /// 표시할 아이콘 (로고 스타일)
   final IconData icon;

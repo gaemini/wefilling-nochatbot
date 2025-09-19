@@ -4,42 +4,47 @@
 
 import 'package:flutter/material.dart';
 import 'tokens.dart';
+import '../constants/app_constants.dart';
 
 /// 앱 테마 클래스
 class AppTheme {
   const AppTheme._();
 
-  // === 색상 정의 (WCAG AA 준수) ===
+  // === 2024-2025 트렌드 기반 색상 정의 (WCAG AA 준수) ===
 
-  // 브랜드 블루 (Wefilling 로고 색상 - 요구사항 반영)
-  static const Color _brandBlue = Color(0xFF4A90E2); // Primary
-  static const Color _brandBlueLight = Color(0xFF7DD3FC); // Secondary  
-  static const Color _brandBlueDark = Color(0xFF2563EB);
-  static const Color _brandBlueAccent = Color(0xFFBFDBFE); // Accent
+  // Modern Primary Colors (Indigo-Purple Gradient)
+  static const Color _primaryColor = AppColors.primaryMain; // Indigo-500
+  static const Color _primaryLight = AppColors.primaryLight; // Indigo-400
+  static const Color _primaryDark = AppColors.primaryDark; // Indigo-600
 
-  // 강조 색상 (코랄 선택)
-  static const Color _accentCoral = Color(0xFFFF6B6B);
-  static const Color _accentCoralLight = Color(0xFFFFB3B3);
-  static const Color _accentCoralDark = Color(0xFFE55555);
-  static const Color _accentCoralAccessible = Color(
-    0xFFD32F2F,
-  ); // 더 어두운 코랄 (대비 개선)
+  // Modern Secondary Colors (Pink-Orange Gradient) 
+  static const Color _secondaryColor = AppColors.secondaryMain; // Pink-500
+  static const Color _secondaryLight = AppColors.secondaryLight; // Pink-400
 
-  // Future Dusk (다크 모드 배경)
-  static const Color _futureDuskDark = Color(0xFF0A0E1A);
-  static const Color _futureDuskMedium = Color(0xFF1A1F2E);
-  static const Color _futureDuskLight = Color(0xFF2A2F3E);
+  // Modern Accent Colors
+  static const Color _accentEmerald = AppColors.accentEmerald; // Emerald-500
+  static const Color _accentAmber = AppColors.accentAmber; // Amber-500
+  static const Color _accentRed = AppColors.accentRed; // Red-500
 
-  // 고대비 텍스트 색상
-  static const Color _highContrastLight = Color(0xFF000000); // 순수 검정
-  static const Color _highContrastDark = Color(0xFFFFFFFF); // 순수 흰색
-  static const Color _mediumContrastLight = Color(0xFF424242); // 중간 회색
-  static const Color _mediumContrastDark = Color(0xFFE0E0E0); // 밝은 회색
+  // Enhanced backgrounds
+  static const Color _backgroundPrimary = AppColors.backgroundPrimary;
+  static const Color _backgroundSecondary = AppColors.backgroundSecondary;
 
-  /// 라이트 모드 테마
+  // Dark mode backgrounds (Future Dusk Enhanced)
+  static const Color _darkBackgroundPrimary = AppColors.darkBackgroundPrimary;
+  static const Color _darkBackgroundSecondary = AppColors.darkBackgroundSecondary;
+  static const Color _darkBackgroundTertiary = AppColors.darkBackgroundTertiary;
+
+  // High contrast colors (WCAG compliance)
+  static const Color _highContrastLight = Color(0xFF000000); // Pure black
+  static const Color _highContrastDark = Color(0xFFFFFFFF); // Pure white
+  static const Color _mediumContrastLight = Color(0xFF424242); // Medium gray
+  static const Color _mediumContrastDark = Color(0xFFE0E0E0); // Light gray
+
+  /// 라이트 모드 테마 (2024-2025 트렌드 적용)
   static ThemeData light() {
     final cs = ColorScheme.fromSeed(
-      seedColor: _brandBlue,
+      seedColor: _primaryColor, // Modern Indigo primary
       brightness: Brightness.light,
     );
 
@@ -59,10 +64,10 @@ class AppTheme {
     );
   }
 
-  /// 다크 모드 테마
+  /// 다크 모드 테마 (2024-2025 트렌드 적용)
   static ThemeData dark() {
     final cs = ColorScheme.fromSeed(
-      seedColor: _brandBlueLight,
+      seedColor: _primaryLight, // Modern bright indigo for dark mode
       brightness: Brightness.dark,
     );
 
@@ -133,9 +138,9 @@ class AppTheme {
 
   static FloatingActionButtonThemeData _fabTheme(ColorScheme cs) =>
       FloatingActionButtonThemeData(
-        backgroundColor: _accentCoral,
+        backgroundColor: _secondaryColor, // Modern pink accent
         foregroundColor: Colors.white,
-        elevation: 4,
+        elevation: 6, // Enhanced elevation for modern feel
         shape: const CircleBorder(),
         sizeConstraints: const BoxConstraints.tightFor(width: 56, height: 56),
       );

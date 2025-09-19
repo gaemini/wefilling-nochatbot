@@ -33,6 +33,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSubmittingComment = false;
   bool _isLiked = false;
   bool _isTogglingLike = false;
+  bool _isSaved = false;
+  bool _isTogglingSave = false;
   late Post _currentPost;
 
   // 이미지 재시도 관련 상태
@@ -46,6 +48,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _currentPost = widget.post;
     _checkIfUserIsAuthor();
     _checkIfUserLikedPost();
+    _checkIfUserSavedPost();
     // 디버그용: 이미지 URL 확인
     _logImageUrls();
   }
@@ -71,6 +74,76 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       setState(() {
         _isLiked = hasLiked;
       });
+    }
+  }
+
+  Future<void> _checkIfUserSavedPost() async {
+    final isSaved = await _postService.isPostSaved(widget.post.id);
+    if (mounted) {
+      setState(() {
+        _isSaved = isSaved;
+      });
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    if (_isTogglingSave) return;
+
+    // 로그인 상태 확인
+    final authProvider = Provider.of<app_auth.AuthProvider>(
+      context,
+      listen: false,
+    );
+    final isLoggedIn = authProvider.isLoggedIn;
+
+    if (!isLoggedIn) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('로그인이 필요한 기능입니다'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isTogglingSave = true;
+    });
+
+    try {
+      final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
+      
+      if (mounted) {
+        setState(() {
+          _isSaved = newSavedStatus;
+          _isTogglingSave = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newSavedStatus ? '게시글이 저장되었습니다' : '게시글 저장이 취소되었습니다'
+            ),
+            backgroundColor: newSavedStatus ? Colors.green : Colors.grey,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTogglingSave = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('저장 처리 중 오류가 발생했습니다'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -696,6 +769,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       appBar: AppBar(
         title: const Text('게시글'),
         actions: [
+          // 게시글 저장 버튼
+          _isTogglingSave
+              ? Container(
+                margin: const EdgeInsets.all(10.0),
+                width: 20,
+                height: 20,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
+                ),
+              )
+              : IconButton(
+                icon: Icon(
+                  _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                ),
+                tooltip: _isSaved ? '저장 취소' : '게시글 저장',
+                onPressed: _toggleSave,
+              ),
           // 게시글 삭제 버튼 (작성자인 경우에만)
           if (_isAuthor)
             _isDeleting

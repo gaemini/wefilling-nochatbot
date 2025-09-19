@@ -6,13 +6,16 @@ import 'package:flutter/material.dart';
 import '../../models/post.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
+import '../../constants/app_constants.dart';
+import '../../services/post_service.dart';
 
-/// 최적화된 게시글 카드
-class OptimizedPostCard extends StatelessWidget {
+/// 2024-2025 트렌드 기반 최적화된 게시글 카드
+class OptimizedPostCard extends StatefulWidget {
   final Post post;
   final int index;
   final VoidCallback onTap;
   final bool preloadImage;
+  final bool useGlassmorphism;
 
   const OptimizedPostCard({
     super.key,
@@ -20,69 +23,150 @@ class OptimizedPostCard extends StatelessWidget {
     required this.index,
     required this.onTap,
     this.preloadImage = false,
+    this.useGlassmorphism = false,
   });
+
+  factory OptimizedPostCard.glassmorphism({
+    Key? key,
+    required Post post,
+    required int index,
+    required VoidCallback onTap,
+    bool preloadImage = false,
+  }) {
+    return OptimizedPostCard(
+      key: key,
+      post: post,
+      index: index,
+      onTap: onTap,
+      preloadImage: preloadImage,
+      useGlassmorphism: true,
+    );
+  }
+
+  @override
+  State<OptimizedPostCard> createState() => _OptimizedPostCardState();
+}
+
+class _OptimizedPostCardState extends State<OptimizedPostCard> {
+  final PostService _postService = PostService();
+  bool _isSaved = false;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedStatus();
+  }
+
+  Future<void> _checkSavedStatus() async {
+    final isSaved = await _postService.isPostSaved(widget.post.id);
+    if (mounted) {
+      setState(() {
+        _isSaved = isSaved;
+      });
+    }
+  }
+
+  Future<void> _toggleSave() async {
+    if (_isLoading) return;
+    
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
+      if (mounted) {
+        setState(() {
+          _isSaved = newSavedStatus;
+          _isLoading = false;
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newSavedStatus ? '게시물이 저장되었습니다' : '저장이 취소되었습니다'),
+            duration: Duration(seconds: 1),
+            backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('오류가 발생했습니다'),
+            backgroundColor: AppTheme.accentRed,
+          ),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return Card(
-      elevation: 1,
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: const Color(0xFFF5F8FF),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.blue.shade50, width: 0.5),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: AppTheme.backgroundGradient,
+        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withOpacity(0.1),
+            offset: const Offset(0, 4),
+            blurRadius: 20,
+            spreadRadius: 0,
+          ),
+        ],
+        border: Border.all(
+          color: AppTheme.primary.withOpacity(0.1),
+          width: 1,
+        ),
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 작성자 정보
-              _buildAuthorInfo(post, theme, colorScheme),
-
-              const SizedBox(height: 12),
-
-              // 게시글 제목
-              Text(
-                post.title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              const SizedBox(height: 8),
-
-              // 게시글 내용
-              Text(
-                post.content,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                  height: 1.4,
-                ),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
-
-              // 이미지 (있는 경우)
-              if (post.imageUrls?.isNotEmpty == true) ...[
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          onTap: widget.onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 작성자 정보
+                _buildAuthorInfo(widget.post, theme, colorScheme),
+                
                 const SizedBox(height: 12),
-                _buildPostImages(post.imageUrls!),
+
+                // 게시글 내용
+                Text(
+                  widget.post.content,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                    height: 1.4,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+
+                // 이미지 (있는 경우)
+                if (widget.post.imageUrls.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  _buildPostImages(widget.post.imageUrls),
+                ],
+
+                const SizedBox(height: 12),
+
+                // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
+                _buildPostMeta(widget.post, theme, colorScheme),
               ],
-
-              const SizedBox(height: 12),
-
-              // 게시글 메타 정보 (날짜, 좋아요, 댓글)
-              _buildPostMeta(post, theme, colorScheme),
-            ],
+            ),
           ),
         ),
       ),
@@ -92,62 +176,62 @@ class OptimizedPostCard extends StatelessWidget {
   /// 작성자 정보 빌드
   Widget _buildAuthorInfo(Post post, ThemeData theme, ColorScheme colorScheme) {
     // 안전한 작성자 정보 추출
-    final authorName =
-        (post.author is String)
-            ? (post.author as String)
-            : ((post.author as dynamic)?.displayName ?? '익명');
-    final authorImage =
-        (post.author is String)
-            ? null
-            : ((post.author as dynamic)?.profileImageUrl);
-    final authorCountry =
-        (post.author is String) ? null : ((post.author as dynamic)?.country);
+    final String authorName = post.author;
+    final String? authorImageUrl = null; // Post 모델에 imageUrl이 없으므로 null
 
     return Row(
       children: [
-        // 작성자 아바타
-        OptimizedAvatarImage(
-          imageUrl: authorImage,
-          size: 32,
-          fallbackText: authorName,
-          preload: index < 3, // 상위 3개만 프리로드
+        // 프로필 이미지
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: colorScheme.primaryContainer,
+          ),
+          child: authorImageUrl?.isNotEmpty == true
+              ? ClipOval(
+                  child: Image.network(
+                    authorImageUrl!,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.person,
+                      color: colorScheme.onPrimaryContainer,
+                      size: 20,
+                    ),
+                  ),
+                )
+              : Icon(
+                  Icons.person,
+                  color: colorScheme.onPrimaryContainer,
+                  size: 20,
+                ),
         ),
-
-        const SizedBox(width: 8),
-
-        // 작성자 이름과 국가
+        
+        const SizedBox(width: 12),
+        
+        // 작성자 이름과 시간
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 authorName,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: theme.textTheme.titleSmall?.copyWith(
                   color: colorScheme.onSurface,
+                  fontWeight: FontWeight.w600,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
               ),
-
-              if (authorCountry?.isNotEmpty == true)
-                Text(
-                  authorCountry!,
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 2),
+              Text(
+                _formatTimeAgo(post.createdAt),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
                 ),
+              ),
             ],
-          ),
-        ),
-
-        // 작성 시간
-        Text(
-          _formatPostTime(post.createdAt),
-          style: theme.textTheme.labelSmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
           ),
         ),
       ],
@@ -159,169 +243,163 @@ class OptimizedPostCard extends StatelessWidget {
     if (imageUrls.isEmpty) return const SizedBox.shrink();
 
     if (imageUrls.length == 1) {
-      // 단일 이미지
       return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: OptimizedNetworkImage(
-          imageUrl: imageUrls.first,
-          targetSize: const Size(double.infinity, 200),
-          fit: BoxFit.cover,
-          preload: index < 3,
-          lazy: index >= 3,
-          semanticLabel: '게시글 이미지',
+        borderRadius: BorderRadius.circular(12),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Image.network(
+            imageUrls.first,
+            fit: BoxFit.cover,
+            loadingBuilder: (context, child, loadingProgress) {
+              if (loadingProgress == null) return child;
+              return Container(
+                color: Colors.grey[300],
+                child: const Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
+            },
+            errorBuilder: (_, __, ___) => Container(
+              color: Colors.grey[300],
+              child: const Icon(Icons.image_not_supported),
+            ),
+          ),
         ),
       );
     }
 
-    // 다중 이미지 (최대 4개까지 그리드로 표시)
-    final displayImages = imageUrls.take(4).toList();
+    // 여러 이미지의 경우 그리드로 표시
     return SizedBox(
       height: 120,
-      child: Row(
-        children: [
-          for (int i = 0; i < displayImages.length && i < 4; i++) ...[
-            Expanded(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: OptimizedNetworkImage(
-                  imageUrl: displayImages[i],
-                  targetSize: const Size(80, 120),
-                  fit: BoxFit.cover,
-                  preload: index < 3 && i == 0, // 첫 번째 이미지만 프리로드
-                  lazy: !(index < 3 && i == 0),
-                  semanticLabel: '게시글 이미지 ${i + 1}',
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: imageUrls.length,
+        itemBuilder: (context, index) {
+          return Container(
+            width: 120,
+            margin: EdgeInsets.only(right: index < imageUrls.length - 1 ? 8 : 0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                imageUrls[index],
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  color: Colors.grey[300],
+                  child: const Icon(Icons.image_not_supported),
                 ),
               ),
             ),
-            if (i < displayImages.length - 1 && i < 3) const SizedBox(width: 4),
-          ],
-
-          // 더 많은 이미지가 있는 경우 "+N" 표시
-          if (imageUrls.length > 4)
-            Container(
-              width: 40,
-              margin: const EdgeInsets.only(left: 4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.5),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  '+${imageUrls.length - 4}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-        ],
+          );
+        },
       ),
     );
   }
 
   /// 게시글 메타 정보 빌드
   Widget _buildPostMeta(Post post, ThemeData theme, ColorScheme colorScheme) {
-    // 안전한 메타 정보 추출
-    final likes = post.likes;
-    final comments = post.commentCount;
-    final views = 0; // Post 모델에 viewCount가 없으므로 기본값 0
-
     return Row(
       children: [
-        // 좋아요 수 (0이 아닌 경우만 표시)
-        if (likes > 0)
-          _buildMetaItem(
-            icon: Icons.favorite_outline,
-            count: likes,
-            theme: theme,
-            colorScheme: colorScheme,
+        // 좋아요 수
+        if (post.likes > 0) ...[
+          Icon(
+            Icons.favorite,
+            size: 16,
+            color: Colors.red,
           ),
-
-        if (likes > 0 && comments > 0) const SizedBox(width: 16),
-
-        // 댓글 수 (0이 아닌 경우만 표시)
-        if (comments > 0)
-          _buildMetaItem(
-            icon: Icons.chat_bubble_outline,
-            count: comments,
-            theme: theme,
-            colorScheme: colorScheme,
+          const SizedBox(width: 4),
+          Text(
+            '${post.likes}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
           ),
-
-        const Spacer(),
-
-        // 조회수 (0이 아닌 경우만 표시)
-        if (views > 0)
-          _buildMetaItem(
-            icon: Icons.visibility_outlined,
-            count: views,
-            theme: theme,
-            colorScheme: colorScheme,
-          ),
-      ],
-    );
-  }
-
-  /// 메타 아이템 빌드
-  Widget _buildMetaItem({
-    required IconData icon,
-    required int count,
-    required ThemeData theme,
-    required ColorScheme colorScheme,
-  }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: colorScheme.onSurfaceVariant),
-        const SizedBox(width: 4),
-        Text(
-          _formatCount(count),
-          style: theme.textTheme.labelSmall?.copyWith(
+          const SizedBox(width: 16),
+        ],
+        
+        // 댓글 수
+        if (post.commentCount > 0) ...[
+          Icon(
+            Icons.chat_bubble_outline,
+            size: 16,
             color: colorScheme.onSurfaceVariant,
           ),
+          const SizedBox(width: 4),
+          Text(
+            '${post.commentCount}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+        
+        const Spacer(),
+        
+        // 저장 버튼
+        GestureDetector(
+          onTap: _toggleSave,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            child: _isLoading
+                ? SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                    ),
+                  )
+                : Icon(
+                    _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    size: 20,
+                    color: _isSaved ? AppTheme.accentEmerald : colorScheme.onSurfaceVariant,
+                  ),
+          ),
         ),
+        
+        // 카테고리 (있는 경우)
+        if (post.category.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              post.category,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onPrimaryContainer,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  /// 게시 시간 포맷팅
-  String _formatPostTime(DateTime createdAt) {
+  /// 시간 포맷팅
+  String _formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
-    final difference = now.difference(createdAt);
+    final difference = now.difference(dateTime);
 
-    if (difference.inMinutes < 1) {
-      return '방금 전';
-    } else if (difference.inHours < 1) {
-      return '${difference.inMinutes}분 전';
-    } else if (difference.inDays < 1) {
-      return '${difference.inHours}시간 전';
-    } else if (difference.inDays < 7) {
+    if (difference.inDays > 0) {
       return '${difference.inDays}일 전';
+    } else if (difference.inHours > 0) {
+      return '${difference.inHours}시간 전';
+    } else if (difference.inMinutes > 0) {
+      return '${difference.inMinutes}분 전';
     } else {
-      return '${createdAt.month}/${createdAt.day}';
-    }
-  }
-
-  /// 숫자 포맷팅 (1K, 1M 등)
-  String _formatCount(int count) {
-    if (count < 1000) {
-      return count.toString();
-    } else if (count < 1000000) {
-      return '${(count / 1000).toStringAsFixed(1)}K';
-    } else {
-      return '${(count / 1000000).toStringAsFixed(1)}M';
+      return '방금 전';
     }
   }
 
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
-    return other is OptimizedPostCard &&
-        other.post.id == post.id &&
-        other.index == index;
+    return other is _OptimizedPostCardState &&
+        other.widget.post.id == widget.post.id &&
+        other.widget.index == widget.index;
   }
 
   @override
-  int get hashCode => Object.hash(post.id, index);
+  int get hashCode => Object.hash(widget.post.id, widget.index);
 }

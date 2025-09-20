@@ -1,5 +1,5 @@
 # Uncomment this line to define a global platform for your project
-platform :ios, '13.0'
+platform :ios, '15.0'
 
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
@@ -29,7 +29,11 @@ flutter_ios_podfile_setup
 
 target 'Runner' do
   use_frameworks!
-
+  
+  # 의존성 충돌 방지를 위한 명시적 버전 지정
+  # Firebase SDK 12.2.0과 호환되는 GoogleUtilities 버전 고정
+  pod 'GoogleUtilities', '~> 8.1'
+  
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -40,13 +44,13 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # iOS 13.0 최소 버전 강제 설정
+    # iOS 15.0 최소 버전 강제 설정
     target.build_configurations.each do |config|
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       
       # 컴파일러 오류 해결을 위한 설정
       config.build_settings.delete 'IPHONEOS_DEPLOYMENT_TARGET'
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       
       # Apple Silicon Mac에서 시뮬레이터 아키텍처 제외 (중요!)
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386 x86_64'

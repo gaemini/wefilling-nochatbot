@@ -3,6 +3,7 @@
 // 알림 생성, 읽음 처리, 삭제 기능
 // 읽지 않은 알림 수 계산
 
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_notification.dart';
@@ -14,6 +15,19 @@ class NotificationService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationSettingsService _settingsService =
       NotificationSettingsService();
+  
+  // 활성 스트림 구독 관리
+  final List<StreamSubscription> _activeSubscriptions = [];
+
+  // 모든 스트림 구독 정리
+  void dispose() {
+    print('NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
+    for (final subscription in _activeSubscriptions) {
+      subscription.cancel();
+    }
+    _activeSubscriptions.clear();
+    print('NotificationService: 모든 스트림 정리 완료');
+  }
 
   // 알림 생성
   Future<bool> createNotification({

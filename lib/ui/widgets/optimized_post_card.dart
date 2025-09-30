@@ -204,7 +204,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 )
               : Icon(
-                  Icons.person,
+                  IconStyles.person,
                   color: colorScheme.onPrimaryContainer,
                   size: 20,
                 ),
@@ -302,9 +302,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 좋아요 수
         if (post.likes > 0) ...[
           Icon(
-            Icons.favorite,
+            IconStyles.favorite,
             size: 16,
-            color: Colors.red,
+            color: BrandColors.error,
           ),
           const SizedBox(width: 4),
           Text(
@@ -321,7 +321,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           Icon(
             Icons.chat_bubble_outline,
             size: 16,
-            color: colorScheme.onSurfaceVariant,
+            color: BrandColors.neutral500,
           ),
           const SizedBox(width: 4),
           Text(
@@ -349,9 +349,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                   )
                 : Icon(
-                    _isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                    _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
                     size: 20,
-                    color: _isSaved ? AppTheme.accentEmerald : colorScheme.onSurfaceVariant,
+                    color: _isSaved ? BrandColors.success : BrandColors.neutral500,
                   ),
           ),
         ),

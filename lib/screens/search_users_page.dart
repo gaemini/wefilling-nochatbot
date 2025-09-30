@@ -227,11 +227,23 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
               }
 
               if (_searchController.text.trim().isEmpty) {
-                return _buildEmptyState();
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.6,
+                    child: _buildEmptyState(),
+                  ),
+                );
               }
 
               if (provider.searchResults.isEmpty) {
-                return _buildNoResultsState();
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.6,
+                    child: _buildNoResultsState(),
+                  ),
+                );
               }
 
               return _buildSearchResults(provider);
@@ -260,7 +272,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: '닉네임 또는 이름으로 검색',
+          hintText: '검색어를 입력하세요',
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty

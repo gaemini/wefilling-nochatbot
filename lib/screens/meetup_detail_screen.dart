@@ -4,9 +4,15 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meetup.dart';
 import '../services/meetup_service.dart';
 import '../widgets/country_flag_circle.dart';
+import '../design/tokens.dart';
+import '../ui/dialogs/report_dialog.dart';
+import '../ui/dialogs/block_dialog.dart';
+import 'meetup_participants_screen.dart';
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -44,7 +50,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
     }
   }
 
-  Future<void> _deleteMeetup() async {
+  Future<void> _cancelMeetup() async {
     setState(() {
       _isLoading = true;
     });
@@ -60,7 +66,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('모임이 취소되었습니다.')));
+          ).showSnackBar(const SnackBar(content: Text('모임이 성공적으로 취소되었습니다.')));
         }
       } else if (mounted) {
         setState(() {
@@ -137,12 +143,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                         ),
                       ),
                       const Spacer(),
-                      IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(Icons.close, color: Colors.white),
-                        onPressed: () => Navigator.of(context).pop(),
-                      ),
+                      _buildHeaderButtons(),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -230,6 +231,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     widget.meetup.category,
                   ),
 
+                  // 모임 이미지
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: _buildMeetupImage(),
+                  ),
+                  
                   // 모임 설명
                   Padding(
                     padding: const EdgeInsets.all(16.0),
@@ -257,52 +264,30 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
               ),
             ),
 
-            // 하단 버튼
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child:
-                  _isHost
-                      ? ElevatedButton(
-                        onPressed: _isLoading ? null : _deleteMeetup,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
+            // 하단 버튼 (모임장만 취소 버튼 표시)
+            if (_isHost) 
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                child: ElevatedButton(
+                  onPressed: _isLoading ? null : () => _showCancelConfirmation(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: _isLoading
+                      ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
                         ),
-                        child:
-                            _isLoading
-                                ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                                : const Text('모임 취소'),
                       )
-                      : ElevatedButton(
-                        onPressed:
-                            isUpcoming && !widget.meetup.isFull()
-                                ? () async {
-                                  await _meetupService.joinMeetup(
-                                    widget.meetupId,
-                                  );
-                                  if (mounted) {
-                                    Navigator.of(context).pop();
-                                  }
-                                }
-                                : null,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                        ),
-                        child: Text(
-                          widget.meetup.isFull() ? '참여 불가 (정원 초과)' : '참여하기',
-                        ),
-                      ),
-            ),
+                      : const Text('모임 취소'),
+                ),
+              ),
           ],
         ),
       ),
@@ -375,5 +360,438 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
       default:
         return Colors.grey;
     }
+  }
+
+  /// 모임 이미지 빌드 (기본 이미지 포함)
+  Widget _buildMeetupImage() {
+    const double imageHeight = 200; // 상세화면에서는 더 큰 크기
+    
+    // 모임에서 표시할 이미지 URL 가져오기 (기본 이미지 포함)
+    final String displayImageUrl = widget.meetup.getDisplayImageUrl();
+    final bool isDefaultImage = widget.meetup.isDefaultImage();
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: isDefaultImage
+            ? _buildDefaultImage(displayImageUrl, imageHeight)
+            : _buildNetworkImage(displayImageUrl, imageHeight),
+      ),
+    );
+  }
+
+  /// 기본 이미지 빌드 (이제 아이콘 기반 이미지를 직접 생성)
+  Widget _buildDefaultImage(String assetPath, double height) {
+    // asset 이미지 대신 카테고리별 아이콘 이미지를 직접 생성
+    return _buildCategoryIconImage(height);
+  }
+
+  /// 네트워크 이미지 빌드
+  Widget _buildNetworkImage(String imageUrl, double height) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Image.network(
+        imageUrl,
+        height: height,
+        fit: BoxFit.cover,
+        loadingBuilder: (context, child, loadingProgress) {
+          if (loadingProgress == null) return child;
+          return Container(
+            height: height,
+            child: Center(
+              child: CircularProgressIndicator(
+                value: loadingProgress.expectedTotalBytes != null
+                    ? loadingProgress.cumulativeBytesLoaded / 
+                      loadingProgress.expectedTotalBytes!
+                    : null,
+              ),
+            ),
+          );
+        },
+        errorBuilder: (context, error, stackTrace) {
+          // 이미지 로드 실패 시 기본 이미지로 대체
+          return _buildDefaultImage(widget.meetup.getDefaultImageUrl(), height);
+        },
+      ),
+    );
+  }
+
+  /// 카테고리별 아이콘 이미지 빌드 (기본 이미지 대신 사용)
+  Widget _buildCategoryIconImage(double height) {
+    return Container(
+      height: height,
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            widget.meetup.getCategoryBackgroundColor(),
+            widget.meetup.getCategoryBackgroundColor().withOpacity(0.8),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: widget.meetup.getCategoryColor().withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                widget.meetup.getCategoryIcon(),
+                size: 48,
+                color: widget.meetup.getCategoryColor(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              widget.meetup.category,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: widget.meetup.getCategoryColor(),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 헤더 버튼들 빌드 (수정/삭제 또는 신고/차단)
+  Widget _buildHeaderButtons() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    if (currentUser == null) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<bool>(
+      future: _checkIsMyMeetup(currentUser),
+      builder: (context, snapshot) {
+        final isMyMeetup = snapshot.data ?? false;
+        
+        print('🔍🔍🔍 [MeetupDetailScreen] 권한 체크 상세 정보:');
+        print('   - 현재 사용자 UID: ${currentUser.uid}');
+        print('   - 모임 ID: ${widget.meetup.id}');
+        print('   - 모임 제목: ${widget.meetup.title}');
+        print('   - 모임 userId: ${widget.meetup.userId}');
+        print('   - 모임 hostNickname: ${widget.meetup.hostNickname}');
+        print('   - 모임 host: ${widget.meetup.host}');
+        print('   - isMyMeetup 결과: $isMyMeetup');
+        print('   - 표시될 메뉴: ${isMyMeetup ? "수정/삭제" : "신고/차단"}');
+
+        return _buildHeaderButtonsContent(currentUser, isMyMeetup);
+      },
+    );
+  }
+
+  /// 현재 사용자가 모임 작성자인지 확인
+  Future<bool> _checkIsMyMeetup(User currentUser) async {
+    try {
+      print('🔍 [MeetupDetailScreen._checkIsMyMeetup] 시작');
+      print('   - 현재 사용자 UID: ${currentUser.uid}');
+      print('   - 모임 userId: ${widget.meetup.userId}');
+      print('   - 모임 hostNickname: ${widget.meetup.hostNickname}');
+      
+      // 1. userId가 있으면 userId로 비교 (새로운 데이터)
+      if (widget.meetup.userId != null && widget.meetup.userId!.isNotEmpty) {
+        final result = widget.meetup.userId == currentUser.uid;
+        print('   - userId 비교 결과: $result (${widget.meetup.userId} == ${currentUser.uid})');
+        return result;
+      } 
+      
+      print('   - userId가 없음, hostNickname으로 비교 시도');
+      
+      // 2. userId가 없으면 hostNickname 또는 host로 비교 (기존 데이터 호환성)
+      final hostToCheck = widget.meetup.hostNickname ?? widget.meetup.host;
+      print('   - hostToCheck: $hostToCheck (hostNickname: ${widget.meetup.hostNickname}, host: ${widget.meetup.host})');
+      
+      if (hostToCheck != null && hostToCheck.isNotEmpty) {
+        print('   - Firestore에서 현재 사용자 닉네임 조회 중...');
+        
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(currentUser.uid)
+            .get();
+        
+        print('   - userDoc.exists: ${userDoc.exists}');
+        
+        if (userDoc.exists) {
+          final userData = userDoc.data();
+          print('   - 전체 userData: $userData');
+          
+          final currentUserNickname = userData?['nickname'] as String?;
+          
+          print('   - 현재 사용자 닉네임: "$currentUserNickname"');
+          print('   - 모임 hostToCheck: "$hostToCheck"');
+          print('   - 닉네임 타입 확인: currentUserNickname.runtimeType = ${currentUserNickname.runtimeType}');
+          print('   - hostToCheck 타입 확인: hostToCheck.runtimeType = ${hostToCheck.runtimeType}');
+          
+          if (currentUserNickname != null && currentUserNickname.isNotEmpty) {
+            // 문자열 비교를 더 엄격하게
+            final trimmedCurrentNickname = currentUserNickname.trim();
+            final trimmedHostToCheck = hostToCheck.trim();
+            
+            print('   - 트림된 현재 사용자 닉네임: "$trimmedCurrentNickname"');
+            print('   - 트림된 모임 hostToCheck: "$trimmedHostToCheck"');
+            
+            final result = trimmedHostToCheck == trimmedCurrentNickname;
+            print('   - 📋 최종 닉네임 비교 결과: $result');
+            print('   - 📋 비교식: "$trimmedHostToCheck" == "$trimmedCurrentNickname"');
+            return result;
+          } else {
+            print('   - 현재 사용자 닉네임이 null이거나 비어있음');
+          }
+        } else {
+          print('   - ❌ 사용자 문서가 존재하지 않음');
+        }
+      } else {
+        print('   - hostNickname과 host 모두 없음');
+      }
+      
+      print('   - 최종 결과: false (내 모임 아님)');
+      return false;
+    } catch (e) {
+      print('❌ 권한 체크 오류: $e');
+      return false;
+    }
+  }
+
+  /// 헤더 버튼 콘텐츠 빌드
+  Widget _buildHeaderButtonsContent(User currentUser, bool isMyMeetup) {
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (isMyMeetup) ...[
+          // 본인 모임인 경우: 수정/삭제 메뉴
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'edit',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 16),
+                    SizedBox(width: 8),
+                    Text('모임 수정'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'cancel',
+                child: Row(
+                  children: [
+                    Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                    const SizedBox(width: 8),
+                    const Text('모임 취소', style: TextStyle(color: Colors.red)),
+                  ],
+                ),
+              ),
+            ],
+            onSelected: (value) => _handleOwnerMenuAction(value),
+          ),
+        ] else if (currentUser != null) ...[
+          // 다른 사용자 모임인 경우: 신고/차단 메뉴
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.white),
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'report',
+                child: Row(
+                  children: [
+                    Icon(Icons.report_outlined, size: 16, color: Colors.red[600]),
+                    const SizedBox(width: 8),
+                    const Text('신고하기'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'block',
+                child: Row(
+                  children: [
+                    Icon(Icons.block, size: 16, color: Colors.red[600]),
+                    const SizedBox(width: 8),
+                    const Text('사용자 차단'),
+                  ],
+                ),
+              ),
+            ],
+            onSelected: (value) => _handleUserMenuAction(value),
+          ),
+        ],
+        
+        // 닫기 버튼
+        IconButton(
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(),
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+      ],
+    );
+  }
+
+  /// 모임 주최자 메뉴 액션 처리
+  void _handleOwnerMenuAction(String action) {
+    switch (action) {
+      case 'edit':
+        _showEditMeetup();
+        break;
+      case 'cancel':
+        _showCancelConfirmation();
+        break;
+    }
+  }
+
+  /// 일반 사용자 메뉴 액션 처리
+  void _handleUserMenuAction(String action) {
+    switch (action) {
+      case 'report':
+        if (widget.meetup.userId != null) {
+          showReportDialog(
+            context,
+            reportedUserId: widget.meetup.userId!,
+            targetType: 'meetup',
+            targetId: widget.meetup.id,
+            targetTitle: widget.meetup.title,
+          );
+        }
+        break;
+      case 'block':
+        if (widget.meetup.userId != null && widget.meetup.hostNickname != null) {
+          showBlockUserDialog(
+            context,
+            userId: widget.meetup.userId!,
+            userName: widget.meetup.hostNickname!,
+          );
+        }
+        break;
+    }
+  }
+
+  /// 모임 수정 화면으로 이동
+  void _showEditMeetup() {
+    Navigator.pushNamed(
+      context,
+      '/edit-meetup',
+      arguments: widget.meetup,
+    );
+  }
+
+  /// 모임 취소 확인 다이얼로그
+  void _showCancelConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // 바깥 영역 터치로 닫기 방지
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.help_outline, color: Colors.orange[600]),
+            const SizedBox(width: 8),
+            const Text('모임 취소 확인'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '정말로 "${widget.meetup.title}" 모임을 취소하시겠습니까?',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange[50],
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange[200]!),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber, 
+                           size: 16, 
+                           color: Colors.orange[700]),
+                      const SizedBox(width: 4),
+                      Text(
+                        '주의사항',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.orange[700],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '• 취소된 모임은 복구할 수 없습니다\n'
+                    '• 참여 중인 모든 사용자에게 알림이 발송됩니다',
+                    style: TextStyle(
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text(
+              '아니오',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _cancelMeetup();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+            child: const Text(
+              '예, 취소합니다',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        buttonPadding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+    );
   }
 }

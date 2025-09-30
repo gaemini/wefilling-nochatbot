@@ -104,7 +104,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   }
 
   String get _searchHint {
-    return widget.boardType == 'meeting' ? '모임 검색...' : '게시글 검색...';
+    return '검색어를 입력하세요';
   }
 
   @override

@@ -10,12 +10,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   User? _user;
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
+  
+  // 스트림 정리를 위한 콜백 리스트
+  final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
     _initializeAuth();
@@ -23,6 +26,17 @@ class AuthProvider with ChangeNotifier {
 
   // 초기화 함수 분리
   Future<void> _initializeAuth() async {
+    // Google Sign-In 7.x 초기화 (iOS 전용 설정 포함)
+    try {
+      await _googleSignIn.initialize(
+        // iOS에서 필요한 설정들
+        clientId: '700373659727-t3t89luvegusfl5cfeogsuf55go3uqmu.apps.googleusercontent.com',
+      );
+      print('Google Sign-In 초기화 완료');
+    } catch (e) {
+      print('Google Sign-In 초기화 실패: $e');
+    }
+
     // 먼저 현재 사용자 확인
     _user = _auth.currentUser;
 
@@ -130,26 +144,15 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // 기존 로그인 세션 초기화
-      await _googleSignIn.signOut();
-
-      // 구글 로그인 다이얼로그
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-
-      if (googleUser == null) {
-        // 사용자가 로그인 취소
-        _isLoading = false;
-        notifyListeners();
-        return false;
-      }
+      // Google Sign-In 7.x API 사용 (authenticate 메서드 사용)
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
       // 구글 인증 정보 가져오기
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
-      // Firebase 인증용 크레덴셜 생성
+      // Firebase 인증용 크레덴셜 생성 (idToken만 사용)
       final OAuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
@@ -168,8 +171,24 @@ class AuthProvider with ChangeNotifier {
       }
 
       return _user != null;
+    } on Exception catch (e) {
+      // Google Sign-In 관련 예외 처리
+      final errorMessage = e.toString();
+      if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
+        print('사용자가 Google 로그인을 취소했습니다: $e');
+        // 취소는 오류가 아니므로 조용히 처리
+      } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
+                 errorMessage.contains('connection') || errorMessage.contains('Connection')) {
+        print('네트워크 연결 오류: $e');
+        // 네트워크 오류 시 재시도 가능하도록 상태 초기화
+      } else {
+        print('구글 로그인 오류: $e');
+      }
+      _isLoading = false;
+      notifyListeners();
+      return false;
     } catch (e) {
-      print('구글 로그인 오류: $e');
+      print('구글 로그인 예상치 못한 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -292,16 +311,76 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // 스트림 정리 콜백 등록
+  void registerStreamCleanup(VoidCallback cleanup) {
+    _streamCleanupCallbacks.add(cleanup);
+  }
+
+  // 스트림 정리 콜백 제거
+  void unregisterStreamCleanup(VoidCallback cleanup) {
+    _streamCleanupCallbacks.remove(cleanup);
+  }
+
+  // 모든 스트림 정리
+  void _cleanupAllStreams() {
+    print('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
+    for (final cleanup in _streamCleanupCallbacks) {
+      try {
+        cleanup();
+      } catch (e) {
+        print('스트림 정리 오류: $e');
+      }
+    }
+    _streamCleanupCallbacks.clear();
+    print('모든 스트림 정리 완료');
+  }
+
   // 로그아웃
   Future<void> signOut() async {
     try {
-      await _googleSignIn.signOut();
-      await _auth.signOut();
+      print('로그아웃 시작...');
+      
+      // 로딩 상태 설정
+      _isLoading = true;
+      notifyListeners();
+      
+      // 먼저 모든 스트림 정리
+      _cleanupAllStreams();
+      
+      // Google Sign-In에서 로그아웃
+      try {
+        await _googleSignIn.signOut();
+        print('Google Sign-In 로그아웃 완료');
+      } catch (e) {
+        print('Google Sign-In 로그아웃 오류: $e');
+        // Google 로그아웃 실패해도 계속 진행
+      }
+      
+      // Firebase Auth에서 로그아웃
+      try {
+        await _auth.signOut();
+        print('Firebase Auth 로그아웃 완료');
+      } catch (e) {
+        print('Firebase Auth 로그아웃 오류: $e');
+        // Firebase 로그아웃 실패해도 계속 진행
+      }
+      
+      // 상태 초기화
       _user = null;
       _userData = null;
+      _isLoading = false;
+      
+      print('로그아웃 완료');
       notifyListeners();
+      
     } catch (e) {
-      print('로그아웃 오류: $e');
+      print('로그아웃 전체 오류: $e');
+      // 오류가 발생해도 상태는 초기화
+      _user = null;
+      _userData = null;
+      _isLoading = false;
+      notifyListeners();
+      rethrow; // 에러를 다시 던져서 UI에서 처리할 수 있도록
     }
   }
 }

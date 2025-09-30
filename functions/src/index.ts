@@ -4,12 +4,22 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import * as nodemailer from 'nodemailer';
 
 // Firebase Admin 초기화
 admin.initializeApp();
 
 // Firestore 인스턴스
 const db = admin.firestore();
+
+// Gmail SMTP 설정
+const transporter = nodemailer.createTransporter({
+  service: 'gmail',
+  auth: {
+    user: 'hanyangwatson@gmail.com',
+    pass: functions.config().gmail?.password || process.env.GMAIL_PASSWORD,
+  },
+});
 
 // 친구요청 보내기
 export const sendFriendRequest = functions.https.onCall(async (data, context) => {
@@ -706,6 +716,112 @@ export const unblockUser = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError(
       'internal',
       '사용자 차단 해제 중 오류가 발생했습니다.'
+    );
+  }
+});
+
+// 신고하기 기능
+export const reportUser = functions.https.onCall(async (data, context) => {
+  try {
+    // 인증 확인
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        '로그인이 필요합니다.'
+      );
+    }
+
+    const { 
+      reportedUserId, 
+      targetType, 
+      targetId, 
+      targetTitle, 
+      reason,
+      description 
+    } = data;
+    const reporterUid = context.auth.uid;
+
+    // 입력 검증
+    if (!reportedUserId || !targetType || !targetId || !reason) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '필수 정보가 누락되었습니다.'
+      );
+    }
+
+    // 자기 자신 신고 금지
+    if (reporterUid === reportedUserId) {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        '자기 자신을 신고할 수 없습니다.'
+      );
+    }
+
+    // 신고자 정보 가져오기
+    const reporterDoc = await db.collection('users').doc(reporterUid).get();
+    const reporterData = reporterDoc.data();
+    const reporterName = reporterData?.nickname || reporterData?.displayName || '익명';
+
+    // 신고 데이터 저장
+    const reportData = {
+      reporterId: reporterUid,
+      reporterName,
+      reportedUserId,
+      targetType, // 'post', 'meetup', 'comment', 'user'
+      targetId,
+      targetTitle: targetTitle || '',
+      reason,
+      description: description || '',
+      status: 'PENDING',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    await db.collection('reports').add(reportData);
+
+    // 이메일 발송
+    try {
+      const mailOptions = {
+        from: 'hanyangwatson@gmail.com',
+        to: 'hanyangwatson@gmail.com',
+        subject: '[Wefilling] 신고요청이 왔습니다',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #333;">신고 접수 알림</h2>
+            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>신고자:</strong> ${reporterName} (${reporterUid})</p>
+              <p><strong>신고 대상 사용자:</strong> ${reportedUserId}</p>
+              <p><strong>신고 유형:</strong> ${targetType}</p>
+              <p><strong>신고 대상 ID:</strong> ${targetId}</p>
+              <p><strong>신고 대상 제목:</strong> ${targetTitle}</p>
+              <p><strong>신고 사유:</strong> ${reason}</p>
+              ${description ? `<p><strong>상세 설명:</strong> ${description}</p>` : ''}
+              <p><strong>신고 시각:</strong> ${new Date().toLocaleString('ko-KR')}</p>
+            </div>
+            <p style="color: #666; font-size: 12px;">
+              이 신고는 Wefilling 앱에서 자동으로 발송된 이메일입니다.
+            </p>
+          </div>
+        `,
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log('신고 이메일 발송 완료');
+    } catch (emailError) {
+      console.error('이메일 발송 오류:', emailError);
+      // 이메일 발송 실패해도 신고는 접수되도록 함
+    }
+
+    return { success: true, message: '신고가 접수되었습니다.' };
+  } catch (error) {
+    console.error('신고 처리 오류:', error);
+    
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+
+    throw new functions.https.HttpsError(
+      'internal',
+      '신고 처리 중 오류가 발생했습니다.'
     );
   }
 });

@@ -7,6 +7,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as app_provider;
+import 'terms_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'blocked_users_screen.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -126,6 +129,61 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           Icons.email,
                           () => _sendEmailVerification(context),
                         ),
+
+                      const SizedBox(height: 24),
+
+                      // 법적 정보 섹션
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: const Text(
+                          '법적 정보',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                      _buildSettingItem(
+                        '서비스 이용약관',
+                        Icons.description_outlined,
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const TermsScreen()),
+                        ),
+                      ),
+
+                      _buildSettingItem(
+                        '개인정보 처리방침',
+                        Icons.privacy_tip_outlined,
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const PrivacyPolicyScreen()),
+                        ),
+                      ),
+
+                      const SizedBox(height: 24),
+
+                      // 개인정보 보호 섹션
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: const Text(
+                          '개인정보 보호',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                      _buildSettingItem(
+                        '차단 목록',
+                        Icons.block,
+                        () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const BlockedUsersScreen()),
+                        ),
+                      ),
 
                       const SizedBox(height: 24),
 

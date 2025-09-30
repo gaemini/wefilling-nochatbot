@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../models/user_profile.dart';
+import '../models/friend_category.dart';
+import '../services/friend_category_service.dart';
 import '../widgets/user_tile.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/empty_state.dart';
@@ -20,7 +22,9 @@ class FriendsPage extends StatefulWidget {
 
 class _FriendsPageState extends State<FriendsPage> {
   final TextEditingController _searchController = TextEditingController();
+  final FriendCategoryService _categoryService = FriendCategoryService();
   List<UserProfile> _filteredFriends = [];
+  List<FriendCategory> _friendCategories = [];
   bool _isInitialized = false;
 
   @override
@@ -34,6 +38,7 @@ class _FriendsPageState extends State<FriendsPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _categoryService.dispose();
     super.dispose();
   }
 
@@ -44,9 +49,23 @@ class _FriendsPageState extends State<FriendsPage> {
     final provider = context.read<RelationshipProvider>();
     await provider.initialize();
 
+    // 친구 카테고리 로드
+    _loadFriendCategories();
+
     setState(() {
       _isInitialized = true;
       _filteredFriends = provider.friends;
+    });
+  }
+
+  /// 친구 카테고리 로드
+  void _loadFriendCategories() {
+    _categoryService.getCategoriesStream().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _friendCategories = categories;
+        });
+      }
     });
   }
 
@@ -183,6 +202,14 @@ class _FriendsPageState extends State<FriendsPage> {
                   },
                 ),
                 ListTile(
+                  leading: const Icon(Icons.group, color: Colors.green),
+                  title: const Text('그룹 설정'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showGroupSelectionDialog(friend);
+                  },
+                ),
+                ListTile(
                   leading: const Icon(
                     Icons.person_remove,
                     color: Colors.orange,
@@ -205,6 +232,227 @@ class _FriendsPageState extends State<FriendsPage> {
               ],
             ),
           ),
+    );
+  }
+
+  /// 그룹 선택 다이얼로그 표시
+  void _showGroupSelectionDialog(UserProfile friend) {
+    // 현재 친구가 속한 그룹 찾기
+    String? currentCategoryId;
+    for (final category in _friendCategories) {
+      if (category.friendIds.contains(friend.uid)) {
+        currentCategoryId = category.id;
+        break;
+      }
+    }
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${friend.displayNameOrNickname}님의 그룹 설정'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 그룹 없음 옵션
+              RadioListTile<String?>(
+                title: const Text('그룹 없음'),
+                subtitle: const Text('특정 그룹에 속하지 않습니다'),
+                value: null,
+                groupValue: currentCategoryId,
+                onChanged: (value) {
+                  Navigator.pop(context);
+                  _assignToGroup(friend, null);
+                },
+                contentPadding: EdgeInsets.zero,
+              ),
+              
+              const Divider(),
+              
+              // 친구 그룹 목록
+              if (_friendCategories.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: Text(
+                    '생성된 친구 그룹이 없습니다.\n친구 카테고리 관리에서 그룹을 만들어보세요.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.grey,
+                      fontSize: 14,
+                    ),
+                  ),
+                )
+              else
+                ...(_friendCategories.map((category) {
+                  return RadioListTile<String?>(
+                    title: Text(category.name),
+                    subtitle: Text(
+                      '${category.description}\n${category.friendIds.length}명의 친구',
+                    ),
+                    value: category.id,
+                    groupValue: currentCategoryId,
+                    onChanged: (value) {
+                      Navigator.pop(context);
+                      _assignToGroup(friend, value);
+                    },
+                    contentPadding: EdgeInsets.zero,
+                    secondary: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _parseColor(category.color).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: _parseColor(category.color).withOpacity(0.3),
+                        ),
+                      ),
+                      child: Icon(
+                        _parseIcon(category.iconName),
+                        color: _parseColor(category.color),
+                        size: 20,
+                      ),
+                    ),
+                  );
+                })),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('취소'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 친구를 그룹에 배정
+  Future<void> _assignToGroup(UserProfile friend, String? categoryId) async {
+    try {
+      bool success = false;
+      
+      if (categoryId == null) {
+        // 모든 그룹에서 제거
+        for (final category in _friendCategories) {
+          if (category.friendIds.contains(friend.uid)) {
+            await _categoryService.removeFriendFromCategory(
+              categoryId: category.id,
+              friendId: friend.uid,
+            );
+          }
+        }
+        success = true;
+        _showSnackBar('${friend.displayNameOrNickname}님을 모든 그룹에서 제거했습니다.', Colors.blue);
+      } else {
+        // 선택한 그룹에 추가 (기존 그룹에서는 자동으로 제거됨)
+        success = await _categoryService.addFriendToCategory(
+          categoryId: categoryId,
+          friendId: friend.uid,
+        );
+        
+        if (success) {
+          final selectedCategory = _friendCategories.firstWhere((cat) => cat.id == categoryId);
+          _showSnackBar('${friend.displayNameOrNickname}님을 "${selectedCategory.name}" 그룹에 추가했습니다.', Colors.green);
+        }
+      }
+      
+      if (!success && categoryId != null) {
+        _showSnackBar('그룹 설정에 실패했습니다. 다시 시도해주세요.', Colors.red);
+      }
+    } catch (e) {
+      print('그룹 배정 오류: $e');
+      _showSnackBar('오류가 발생했습니다. 다시 시도해주세요.', Colors.red);
+    }
+  }
+
+  /// 색상 문자열을 Color 객체로 변환
+  Color _parseColor(String colorString) {
+    try {
+      if (colorString.startsWith('#')) {
+        return Color(int.parse(colorString.substring(1), radix: 16) + 0xFF000000);
+      }
+      return const Color(0xFF4A90E2); // 기본 색상
+    } catch (e) {
+      return const Color(0xFF4A90E2); // 기본 색상
+    }
+  }
+
+  /// 아이콘 이름을 IconData로 변환
+  IconData _parseIcon(String iconName) {
+    switch (iconName) {
+      case 'school':
+        return Icons.school;
+      case 'groups':
+        return Icons.groups;
+      case 'palette':
+        return Icons.palette;
+      case 'book':
+        return Icons.book;
+      case 'work':
+        return Icons.work;
+      case 'sports':
+        return Icons.sports;
+      case 'music_note':
+        return Icons.music_note;
+      case 'restaurant':
+        return Icons.restaurant;
+      case 'travel_explore':
+        return Icons.travel_explore;
+      default:
+        return Icons.group;
+    }
+  }
+
+  /// 친구 그룹 배지 빌드
+  Widget _buildGroupBadge(UserProfile friend) {
+    // 친구가 속한 그룹 찾기
+    FriendCategory? friendCategory;
+    for (final category in _friendCategories) {
+      if (category.friendIds.contains(friend.uid)) {
+        friendCategory = category;
+        break;
+      }
+    }
+
+    if (friendCategory == null) {
+      return const SizedBox.shrink(); // 그룹에 속하지 않으면 표시하지 않음
+    }
+
+    final color = _parseColor(friendCategory.color);
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 6,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: color.withOpacity(0.3),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            _parseIcon(friendCategory.iconName),
+            size: 12,
+            color: color,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            friendCategory.name,
+            style: TextStyle(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -409,31 +657,42 @@ class _FriendsPageState extends State<FriendsPage> {
                     ),
                   ),
 
-                  // 친구 상태 배지
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green[100],
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.people, size: 16, color: Colors.green[700]),
-                        const SizedBox(width: 4),
-                        Text(
-                          '친구',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green[700],
-                            fontWeight: FontWeight.w600,
-                          ),
+                  // 친구 그룹 배지
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // 친구 상태 배지
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
                         ),
-                      ],
-                    ),
+                        decoration: BoxDecoration(
+                          color: Colors.green[100],
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.people, size: 16, color: Colors.green[700]),
+                            const SizedBox(width: 4),
+                            Text(
+                              '친구',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      // 그룹 배지 (그룹에 속한 경우에만 표시)
+                      const SizedBox(height: 4),
+                      _buildGroupBadge(friend),
+                    ],
                   ),
 
                   const SizedBox(width: 8),

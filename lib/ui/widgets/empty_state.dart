@@ -67,11 +67,11 @@ class AppEmptyState extends StatelessWidget {
   /// 모임이 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noMeetups({VoidCallback? onCreateMeetup}) {
     return AppEmptyState(
-      icon: Icons.groups_outlined,
-      title: '새로운 모임을 시작해보세요!',
-      description: '함께할 사람들과 특별한 순간을 만들어보세요.\n첫 번째 모임으로 새로운 인연을 시작해보세요!',
+      icon: IconStyles.groups,
+      title: '어떤 취미를 함께하고 싶나요?',
+      description: '첫 모임을 만들어 새로운 인연을 만나보세요.\n함께할 사람들과 특별한 순간을 만들어보세요.',
       ctaText: '첫 모임 만들기',
-      ctaIcon: Icons.add_circle_outline,
+      ctaIcon: IconStyles.add,
       onCtaPressed: onCreateMeetup,
       secondaryCtaText: '모임 둘러보기',
     );
@@ -80,11 +80,11 @@ class AppEmptyState extends StatelessWidget {
   /// 게시글이 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noPosts({VoidCallback? onCreatePost}) {
     return AppEmptyState(
-      icon: Icons.article_outlined,
-      title: '아직 게시글이 없어요',
-      description: '첫 번째 글을 작성해서\n이야기를 나눠보세요!',
+      icon: IconStyles.article,
+      title: '첫 번째 이야기를 들려주세요',
+      description: '당신의 경험과 생각을 다른 사람들과 나누어보세요.\n소중한 이야기가 누군가에게는 큰 도움이 될 수 있어요.',
       ctaText: '첫 글 쓰기',
-      ctaIcon: Icons.edit,
+      ctaIcon: IconStyles.edit,
       onCtaPressed: onCreatePost,
       secondaryCtaText: '인기 글 보기',
     );
@@ -93,11 +93,11 @@ class AppEmptyState extends StatelessWidget {
   /// 친구가 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noFriends({VoidCallback? onSearchFriends}) {
     return AppEmptyState(
-      icon: Icons.people_outline,
-      title: '아직 친구가 없어요',
-      description: '새로운 친구를 찾아서\n함께 활동해보세요!',
+      icon: IconStyles.group,
+      title: '함께할 친구를 찾아보세요',
+      description: '새로운 친구들과 즐거운 추억을 만들어보세요.\n같은 관심사를 가진 사람들이 기다리고 있어요.',
       ctaText: '친구 찾기',
-      ctaIcon: Icons.person_search,
+      ctaIcon: IconStyles.search,
       onCtaPressed: onSearchFriends,
       secondaryCtaText: '추천 친구 보기',
     );
@@ -188,22 +188,19 @@ class AppEmptyState extends StatelessWidget {
       return illustration!;
     }
 
-    // 로고 스타일 아이콘 컨테이너
+      // 일관된 디자인의 아이콘 컨테이너
     return Container(
       width: 120,
       height: 120,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            colorScheme.primary.withOpacity(0.1),
-            colorScheme.primary.withOpacity(0.05),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        color: BrandColors.primary.withOpacity(0.1),
         shape: BoxShape.circle,
+        border: Border.all(
+          color: BrandColors.primary.withOpacity(0.2),
+          width: 2,
+        ),
       ),
-      child: Icon(icon, size: 48, color: colorScheme.primary),
+      child: Icon(icon, size: 48, color: BrandColors.primary),
     );
   }
 
@@ -214,20 +211,14 @@ class AppEmptyState extends StatelessWidget {
     // 주요 CTA 버튼
     if (ctaText != null && onCtaPressed != null) {
       buttons.add(
-        FilledButton.icon(
+        ElevatedButton.icon(
           onPressed: onCtaPressed,
           icon:
               ctaIcon != null
                   ? Icon(ctaIcon!, size: 20)
                   : const SizedBox.shrink(),
           label: Text(ctaText!),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(
-              horizontal: DesignTokens.s20,
-              vertical: DesignTokens.s12,
-            ),
-            minimumSize: const Size(160, 48),
-          ),
+          style: ComponentStyles.primaryButton,
         ),
       );
     }
@@ -241,13 +232,7 @@ class AppEmptyState extends StatelessWidget {
       buttons.add(
         OutlinedButton(
           onPressed: onSecondaryCtaPressed,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(
-              horizontal: DesignTokens.s20,
-              vertical: DesignTokens.s12,
-            ),
-            minimumSize: const Size(160, 48),
-          ),
+          style: ComponentStyles.secondaryButton,
           child: Text(secondaryCtaText!),
         ),
       );

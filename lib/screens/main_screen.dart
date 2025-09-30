@@ -4,12 +4,14 @@
 // 게시판, 모임, 마이페이지 화면 통합
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import '../constants/app_constants.dart';
 import '../services/notification_service.dart';
 import '../widgets/notification_badge.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../design/tokens.dart';
+import '../providers/auth_provider.dart';
 import 'board_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
@@ -32,6 +34,41 @@ class _MainScreenState extends State<MainScreen> {
   final NotificationService _notificationService = NotificationService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
+  late VoidCallback _cleanupCallback;
+
+  @override
+  void initState() {
+    super.initState();
+    
+    // Firebase Storage 테스트
+    _testFirebaseStorage();
+    
+    // 스트림 정리 콜백 등록
+    _cleanupCallback = () {
+      _notificationService.dispose();
+    };
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      authProvider.registerStreamCleanup(_cleanupCallback);
+    });
+  }
+
+  @override
+  void dispose() {
+    // AuthProvider에서 콜백 제거
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      authProvider.unregisterStreamCleanup(_cleanupCallback);
+    } catch (e) {
+      print('MainScreen AuthProvider 콜백 제거 오류: $e');
+    }
+    
+    // 서비스 정리
+    _notificationService.dispose();
+    _searchController.dispose();
+    super.dispose();
+  }
 
   // 화면 목록 - 검색어를 전달할 수 있도록 수정
   List<Widget> get _screens => [
@@ -48,17 +85,6 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _testFirebaseStorage();
-  }
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
 
   void _onSearchChanged() {
     setState(() {
@@ -76,9 +102,9 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return '게시글 검색...';
+        return '검색어를 입력하세요';
       case 1:
-        return '모임 검색...';
+        return '검색어를 입력하세요';
       default:
         return '검색...';
     }

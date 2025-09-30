@@ -4,6 +4,7 @@
 // 모임 정보 포맷팅을 위한 유틸리티 메서드 제공
 
 import 'package:intl/intl.dart';
+import 'package:flutter/material.dart';
 
 class Meetup {
   final String id;
@@ -20,6 +21,10 @@ class Meetup {
   final String thumbnailImageUrl;
   final DateTime date;
   final String category;
+  final String? userId; // 모임 주최자 ID
+  final String? hostNickname; // 주최자 닉네임
+  final String visibility; // 공개 범위: 'public', 'friends', 'category'
+  final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
 
   const Meetup({
     required this.id,
@@ -36,6 +41,10 @@ class Meetup {
     this.thumbnailImageUrl = '',
     required this.date,
     this.category = '기타',
+    this.userId,
+    this.hostNickname,
+    this.visibility = 'public', // 기본값: 전체 공개
+    this.visibleToCategoryIds = const [],
   });
 
   Meetup copyWith({
@@ -53,6 +62,10 @@ class Meetup {
     String? thumbnailImageUrl,
     DateTime? date,
     String? category,
+    String? userId,
+    String? hostNickname,
+    String? visibility,
+    List<String>? visibleToCategoryIds,
   }) {
     return Meetup(
       id: id ?? this.id,
@@ -69,6 +82,10 @@ class Meetup {
       thumbnailImageUrl: thumbnailImageUrl ?? this.thumbnailImageUrl,
       date: date ?? this.date,
       category: category ?? this.category,
+      userId: userId ?? this.userId,
+      hostNickname: hostNickname ?? this.hostNickname,
+      visibility: visibility ?? this.visibility,
+      visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
     );
   }
 
@@ -96,6 +113,12 @@ class Meetup {
     final dayNames = ['월', '화', '수', '목', '금', '토', '일'];
     // DateTime의 weekday는 1(월요일)부터 7(일요일)까지, 배열 인덱스는 0부터 시작하므로 -1
     final dayIndex = (date.weekday - 1) % 7;
+    
+    // 안전한 인덱스 접근
+    if (dayIndex < 0 || dayIndex >= dayNames.length) {
+      return '알 수 없음';
+    }
+    
     return dayNames[dayIndex];
   }
 
@@ -108,11 +131,26 @@ class Meetup {
   String getStatus() {
     final now = DateTime.now();
 
+    // 시간이 "미정"이거나 잘못된 형식인 경우 처리
+    if (time.isEmpty || time == '미정' || !time.contains(':')) {
+      // 날짜만으로 판단 (시간 정보 없음)
+      final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
+      return now.isAfter(meetupDate) ? '종료' : '예정';
+    }
+
     // 날짜와 시간 문자열을 결합하여 DateTime 객체 생성
-    final meetupTimeStr =
-        time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
-    final hour = int.tryParse(meetupTimeStr.split(':')[0]) ?? 0;
-    final minute = int.tryParse(meetupTimeStr.split(':')[1]) ?? 0;
+    final meetupTimeStr = time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
+    
+    // 안전한 시간 파싱
+    final timeParts = meetupTimeStr.split(':');
+    if (timeParts.length < 2) {
+      // 시간 형식이 잘못된 경우 날짜만으로 판단
+      final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
+      return now.isAfter(meetupDate) ? '종료' : '예정';
+    }
+    
+    final hour = int.tryParse(timeParts[0]) ?? 0;
+    final minute = int.tryParse(timeParts[1]) ?? 0;
 
     final meetupDateTime = DateTime(
       date.year,
@@ -123,15 +161,18 @@ class Meetup {
     );
 
     // 종료 시간 추정 (시작으로부터 2시간 후로 가정)
-    final endHour =
-        (time.contains('~'))
-            ? int.tryParse(time.split('~')[1].trim().split(':')[0]) ??
-                (hour + 2)
-            : (hour + 2);
-    final endMinute =
-        (time.contains('~'))
-            ? int.tryParse(time.split('~')[1].trim().split(':')[1]) ?? minute
-            : minute;
+    int endHour = hour + 2;
+    int endMinute = minute;
+    
+    if (time.contains('~')) {
+      final endTimeStr = time.split('~')[1].trim();
+      final endTimeParts = endTimeStr.split(':');
+      
+      if (endTimeParts.length >= 2) {
+        endHour = int.tryParse(endTimeParts[0]) ?? (hour + 2);
+        endMinute = int.tryParse(endTimeParts[1]) ?? minute;
+      }
+    }
 
     final meetupEndDateTime = DateTime(
       date.year,
@@ -153,5 +194,120 @@ class Meetup {
   // 모임이 가득 찼는지 확인
   bool isFull() {
     return currentParticipants >= maxParticipants;
+  }
+
+  // 기본 이미지 URL 가져오기 (이미지가 없을 때 카테고리별 기본 이미지 반환)
+  String getDefaultImageUrl() {
+    // 더 이상 asset 이미지를 사용하지 않고, 아이콘 기반 이미지를 사용
+    return '';
+  }
+
+  // 카테고리별 아이콘 가져오기
+  IconData getCategoryIcon() {
+    switch (category) {
+      case '스터디':
+        return Icons.school_outlined;
+      case '식사':
+        return Icons.restaurant_outlined;
+      case '취미':
+        return Icons.palette_outlined;
+      case '문화':
+        return Icons.theater_comedy_outlined;
+      default:
+        return Icons.groups_outlined;
+    }
+  }
+
+  // 카테고리별 색상 가져오기
+  Color getCategoryColor() {
+    switch (category) {
+      case '스터디':
+        return const Color(0xFF4A90E2); // 파란색
+      case '식사':
+        return const Color(0xFFFF9500); // 주황색
+      case '취미':
+        return const Color(0xFF34C759); // 초록색
+      case '문화':
+        return const Color(0xFFAF52DE); // 보라색
+      default:
+        return const Color(0xFF8E8E93); // 회색
+    }
+  }
+
+  // 카테고리별 배경 색상 가져오기
+  Color getCategoryBackgroundColor() {
+    switch (category) {
+      case '스터디':
+        return const Color(0xFFF0F7FF); // 연한 파란색
+      case '식사':
+        return const Color(0xFFFFF8F0); // 연한 주황색
+      case '취미':
+        return const Color(0xFFF0FFF4); // 연한 초록색
+      case '문화':
+        return const Color(0xFFF8F0FF); // 연한 보라색
+      default:
+        return const Color(0xFFF8F8F8); // 연한 회색
+    }
+  }
+
+  // 표시할 이미지 URL 가져오기 (실제 이미지가 있으면 그것을, 없으면 기본 이미지 반환)
+  String getDisplayImageUrl() {
+    // 우선순위: imageUrl > thumbnailImageUrl > 기본 이미지
+    if (imageUrl.isNotEmpty) {
+      return imageUrl;
+    } else if (thumbnailImageUrl.isNotEmpty) {
+      return thumbnailImageUrl;
+    } else {
+      return getDefaultImageUrl();
+    }
+  }
+
+  // 이미지가 기본 이미지인지 확인
+  bool isDefaultImage() {
+    return imageUrl.isEmpty && thumbnailImageUrl.isEmpty;
+  }
+
+  // Firebase에서 데이터를 가져올 때 사용
+  factory Meetup.fromJson(Map<String, dynamic> json) {
+    return Meetup(
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      location: json['location'] ?? '',
+      time: json['time'] ?? '',
+      maxParticipants: json['maxParticipants'] ?? 0,
+      currentParticipants: json['currentParticipants'] ?? 0,
+      host: json['host'] ?? json['hostNickname'] ?? '',
+      hostNationality: json['hostNationality'] ?? '',
+      imageUrl: json['imageUrl'] ?? '',
+      thumbnailContent: json['thumbnailContent'] ?? '',
+      thumbnailImageUrl: json['thumbnailImageUrl'] ?? '',
+      date: json['date']?.toDate() ?? DateTime.now(),
+      category: json['category'] ?? '기타',
+      userId: json['userId'],
+      hostNickname: json['hostNickname'],
+    );
+  }
+
+  // Firebase에 데이터를 저장할 때 사용
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'location': location,
+      'time': time,
+      'maxParticipants': maxParticipants,
+      'currentParticipants': currentParticipants,
+      'host': host,
+      'hostNationality': hostNationality,
+      'imageUrl': imageUrl,
+      'thumbnailContent': thumbnailContent,
+      'thumbnailImageUrl': thumbnailImageUrl,
+      'date': date,
+      'category': category,
+      'userId': userId,
+      'hostNickname': hostNickname,
+    };
   }
 }

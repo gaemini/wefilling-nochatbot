@@ -9,6 +9,7 @@ import '../ui/widgets/app_fab.dart';
 import 'search_users_page.dart';
 import 'requests_page.dart';
 import 'friends_page.dart';
+import 'friend_categories_screen.dart';
 
 class FriendsMainPage extends StatefulWidget {
   const FriendsMainPage({super.key});
@@ -44,6 +45,21 @@ class _FriendsMainPageState extends State<FriendsMainPage>
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
+        actions: [
+          if (_tabController.index == 2) // 친구 탭에서만 표시
+            IconButton(
+              icon: const Icon(Icons.category),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const FriendCategoriesScreen(),
+                  ),
+                );
+              },
+              tooltip: '카테고리 관리',
+            ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.blue,
@@ -117,14 +133,11 @@ class _FriendsMainPageState extends State<FriendsMainPage>
       // 친구 찾기 FAB (검색 탭에서만 표시)
       floatingActionButton:
           _tabController.index == 0
-              ? AppFab(
-                icon: Icons.person_search,
+              ? AppFab.addFriend(
                 onPressed: () {
                   // 검색 탭으로 포커스 이동 또는 검색 기능 실행
                   _tabController.animateTo(0);
                 },
-                semanticLabel: '친구 찾기',
-                tooltip: '친구 찾기',
                 heroTag: 'friends_search_fab',
               )
               : null,

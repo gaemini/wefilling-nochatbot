@@ -79,6 +79,8 @@ class UserStatsService {
               host: data['hostNickname'] ?? '',
               imageUrl: data['imageUrl'] ?? '',
               date: meetupDate,
+              userId: data['userId'], // 모임 주최자 ID 추가
+              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
             );
           }).toList();
         });
@@ -128,6 +130,8 @@ class UserStatsService {
                 host: data['hostNickname'] ?? '',
                 imageUrl: data['imageUrl'] ?? '',
                 date: meetupDate,
+                userId: data['userId'], // 모임 주최자 ID 추가
+                hostNickname: data['hostNickname'], // 주최자 닉네임 추가
               );
             }).toList();
           } catch (e) {

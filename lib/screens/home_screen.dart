@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../constants/app_constants.dart';
 import '../models/meetup.dart';
+import '../models/friend_category.dart';
 import '../services/meetup_service.dart';
+import '../services/friend_category_service.dart';
 import '../ui/widgets/compact_header.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/app_fab.dart';
@@ -30,10 +32,11 @@ class MeetupHomePage extends StatefulWidget {
 class _MeetupHomePageState extends State<MeetupHomePage>
     with SingleTickerProviderStateMixin, PreloadMixin {
   late TabController _tabController;
-  final List<String> _weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
+  final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
   // 기존 메모리 기반 데이터 - 필요시 폴백으로 사용
   late List<List<Meetup>> _localMeetupsByDay;
   final MeetupService _meetupService = MeetupService();
+  final FriendCategoryService _friendCategoryService = FriendCategoryService();
 
   // 검색 기능
   final TextEditingController _searchController = TextEditingController();
@@ -42,6 +45,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 카테고리 필터링
   final List<String> _categories = ['전체', '스터디', '식사', '취미', '문화'];
   String _selectedCategory = '전체';
+
+  // 친구 그룹 필터링
+  List<FriendCategory> _friendCategories = [];
+  String _friendFilter = 'all'; // 'all', 'public', 'friends', 'category:categoryId'
+  bool _showFriendFilter = false;
 
   // 현재 표시할 모임 목록
   List<Meetup> _filteredMeetups = [];
@@ -72,6 +80,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     // 초기화 시 현재 주와 오늘 요일로 설정
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _goToCurrentWeek();
+      _loadFriendCategories();
     });
   }
 
@@ -81,7 +90,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _searchController.dispose();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _friendCategoryService.dispose();
     super.dispose();
+  }
+
+  // 친구 카테고리 로드
+  void _loadFriendCategories() {
+    _friendCategoryService.getCategoriesStream().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _friendCategories = categories;
+        });
+      }
+    });
   }
 
   /// 중요 콘텐츠 프리로딩 (상위 3개 모임)
@@ -139,54 +160,53 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     });
 
     try {
-      final selectedDate = _getWeekDates()[_tabController.index];
+      List<Meetup> allMeetups = [];
       
       // 검색 모드일 때
       if (_isSearching && _searchController.text.isNotEmpty) {
         final searchQuery = _searchController.text.toLowerCase();
-        final allMeetups = await _meetupService.searchMeetupsAsync(searchQuery);
-
-        _filteredMeetups = allMeetups.where((meetup) {
-          final matchesCategory = _selectedCategory == '전체' || meetup.category == _selectedCategory;
-          return matchesCategory;
-        }).toList();
+        allMeetups = await _meetupService.searchMeetupsAsync(searchQuery);
       } else {
-        // 일반 모드일 때 - Firebase에서 해당 날짜의 모임 가져오기
-        final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-        final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
-        
-        final snapshot = await _meetupService.firestore
-            .collection('meetups')
-            .where('date', isGreaterThanOrEqualTo: startOfDay)
-            .where('date', isLessThanOrEqualTo: endOfDay)
-            .orderBy('date')
-            .get();
-
-        final dayMeetups = snapshot.docs.map((doc) {
-          final data = doc.data();
-          return Meetup(
-            id: doc.id,
-            title: data['title'] ?? '',
-            description: data['description'] ?? '',
-            location: data['location'] ?? '',
-            time: data['time'] ?? '',
-            maxParticipants: data['maxParticipants'] ?? 0,
-            currentParticipants: data['currentParticipants'] ?? 1,
-            host: data['hostNickname'] ?? '익명',
-            hostNationality: data['hostNationality'] ?? '',
-            imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
-            thumbnailContent: data['thumbnailContent'] ?? '',
-            thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-            date: (data['date'] as Timestamp).toDate(),
-            category: data['category'] ?? '기타',
+        // 친구 그룹 필터링 적용
+        if (_friendFilter.startsWith('category:')) {
+          // 특정 카테고리 필터링
+          final categoryId = _friendFilter.substring(9);
+          allMeetups = await _meetupService.getFilteredMeetupsByFriendCategories(
+            categoryIds: [categoryId],
           );
-        }).toList();
-
-        if (_selectedCategory == '전체') {
-          _filteredMeetups = dayMeetups;
+        } else if (_friendFilter == 'friends') {
+          // 모든 친구의 모임
+          allMeetups = await _meetupService.getFilteredMeetupsByFriendCategories(
+            categoryIds: null,
+          );
+        } else if (_friendFilter == 'public') {
+          // 전체 공개 모임만
+          allMeetups = await _meetupService.getFilteredMeetupsByFriendCategories(
+            categoryIds: [],
+          );
         } else {
-          _filteredMeetups = dayMeetups.where((meetup) => meetup.category == _selectedCategory).toList();
+          // 모든 모임 (기본값) - 공개 범위 필터링 적용
+          allMeetups = await _meetupService.getFilteredMeetupsByFriendCategories(
+            categoryIds: null, // null = 모든 친구 관계 기반 필터링
+          );
+          
+          // 날짜 필터링 추가 적용
+          final selectedDate = _getWeekDates()[_tabController.index];
+          final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+          final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
+          
+          allMeetups = allMeetups.where((meetup) {
+            return meetup.date.isAfter(startOfDay.subtract(const Duration(microseconds: 1))) &&
+                   meetup.date.isBefore(endOfDay.add(const Duration(microseconds: 1)));
+          }).toList();
         }
+      }
+
+      // 카테고리 필터링 적용
+      if (_selectedCategory == '전체') {
+        _filteredMeetups = allMeetups;
+      } else {
+        _filteredMeetups = allMeetups.where((meetup) => meetup.category == _selectedCategory).toList();
       }
 
       // 프리로딩 실행
@@ -354,6 +374,12 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                             index: index,
                             onTap: () => _navigateToMeetupDetail(meetup),
                             preloadImage: index < 3, // 상위 3개만 프리로드
+                            onMeetupDeleted: () {
+                              // 모임 삭제 후 목록 새로고침
+                              setState(() {
+                                _loadMeetups();
+                              });
+                            },
                           );
                         },
                       ),
@@ -404,7 +430,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             if (_isSearching)
               CompactSearchBar(
                 controller: _searchController,
-                hintText: '모임 검색',
+                hintText: '검색어를 입력하세요',
                 leading: AppIconButton(
                   icon: Icons.arrow_back,
                   onPressed: () {
@@ -442,6 +468,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   _loadMeetups();
                 },
               ),
+
+            // 친구 그룹 필터 (검색 모드가 아닐 때만 표시)
+            if (!_isSearching)
+              _buildFriendGroupFilter(),
           ],
         ),
       ),
@@ -473,25 +503,31 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 요일 (일요일은 빨간색)
+                // 요일 (일요일은 빨간색, 토요일은 파란색)
                 Text(
                   _weekdayNames[weekDates[index].weekday - 1],
                   style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                     color: weekDates[index].weekday == 7 // 일요일 체크 (7 = 일요일)
                         ? Colors.red
-                        : null, // 기본 색상 유지
+                        : weekDates[index].weekday == 6 // 토요일 체크 (6 = 토요일)
+                            ? Colors.blue
+                            : null, // 기본 색상 유지
                   ),
                 ),
                 const SizedBox(height: 2),
-                // 날짜 (일요일은 빨간색)
+                // 날짜 (일요일은 빨간색, 토요일은 파란색)
                 Text(
                   '${weekDates[index].day}',
                   style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
                     color: weekDates[index].weekday == 7 // 일요일 체크
                         ? Colors.red
-                        : null, // 기본 색상 유지
+                        : weekDates[index].weekday == 6 // 토요일 체크
+                            ? Colors.blue
+                            : null, // 기본 색상 유지
                   ),
                 ),
               ],
@@ -513,6 +549,242 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           }
         },
       ),
+    );
+  }
+
+  // 친구 그룹 필터 UI 빌드
+  Widget _buildFriendGroupFilter() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          // 필터 버튼
+          OutlinedButton.icon(
+            onPressed: () {
+              _showFriendFilterBottomSheet();
+            },
+            icon: Icon(
+              Icons.filter_list,
+              size: 18,
+              color: _friendFilter != 'all' 
+                ? const Color(0xFF4A90E2) 
+                : const Color(0xFF666666),
+            ),
+            label: Text(
+              _getFriendFilterDisplayText(),
+              style: TextStyle(
+                fontSize: 13,
+                color: _friendFilter != 'all' 
+                  ? const Color(0xFF4A90E2) 
+                  : const Color(0xFF666666),
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              minimumSize: const Size(0, 32),
+              side: BorderSide(
+                color: _friendFilter != 'all' 
+                  ? const Color(0xFF4A90E2) 
+                  : const Color(0xFFDDDDDD),
+                width: 1,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+          
+          // 필터 초기화 버튼 (필터가 적용된 경우에만 표시)
+          if (_friendFilter != 'all') ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _friendFilter = 'all';
+                });
+                _loadMeetups();
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF5F5F5),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  size: 16,
+                  color: Color(0xFF666666),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // 친구 필터 표시 텍스트 가져오기
+  String _getFriendFilterDisplayText() {
+    switch (_friendFilter) {
+      case 'public':
+        return '전체 공개만';
+      case 'friends':
+        return '친구 모임만';
+      default:
+        if (_friendFilter.startsWith('category:')) {
+          final categoryId = _friendFilter.substring(9);
+          final category = _friendCategories.firstWhere(
+            (cat) => cat.id == categoryId,
+            orElse: () => FriendCategory(
+              id: '',
+              name: '알 수 없음',
+              description: '',
+              color: '',
+              iconName: '',
+              createdAt: DateTime.now(),
+              updatedAt: DateTime.now(),
+              userId: '',
+              friendIds: [],
+            ),
+          );
+          return '${category.name} 그룹';
+        }
+        return '모든 모임';
+    }
+  }
+
+  // 친구 필터 바텀시트 표시
+  void _showFriendFilterBottomSheet() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 헤더
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '모임 필터',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // 필터 옵션들
+              _buildFilterOption(
+                title: '모든 모임',
+                subtitle: '볼 수 있는 모든 모임을 표시합니다',
+                value: 'all',
+                icon: Icons.public,
+              ),
+              _buildFilterOption(
+                title: '전체 공개만',
+                subtitle: '누구나 볼 수 있도록 공개된 모임만 표시',
+                value: 'public',
+                icon: Icons.language,
+              ),
+              _buildFilterOption(
+                title: '친구 모임만',
+                subtitle: '친구들이 만든 모든 모임을 표시',
+                value: 'friends',
+                icon: Icons.people,
+              ),
+              
+              // 친구 그룹별 필터
+              if (_friendCategories.isNotEmpty) ...[
+                const Divider(height: 24),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.blue[600],
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      '특정 친구 그룹만 보기',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  '선택한 그룹에 공개된 모임만 표시됩니다',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Color(0xFF888888),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                ...(_friendCategories.map((category) => _buildFilterOption(
+                  title: category.name,
+                  subtitle: '${category.friendIds.length}명의 친구 · 이 그룹에 공개된 모임만 표시',
+                  value: 'category:${category.id}',
+                  icon: Icons.group,
+                ))),
+              ],
+              
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 필터 옵션 아이템 빌드
+  Widget _buildFilterOption({
+    required String title,
+    required String subtitle,
+    required String value,
+    required IconData icon,
+  }) {
+    final isSelected = _friendFilter == value;
+    
+    return ListTile(
+      leading: Icon(
+        icon,
+        color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF666666),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+          color: isSelected ? const Color(0xFF4A90E2) : null,
+        ),
+      ),
+      subtitle: Text(subtitle),
+      trailing: isSelected 
+        ? const Icon(Icons.check, color: Color(0xFF4A90E2))
+        : null,
+      onTap: () {
+        setState(() {
+          _friendFilter = value;
+        });
+        Navigator.pop(context);
+        _loadMeetups();
+      },
     );
   }
 }

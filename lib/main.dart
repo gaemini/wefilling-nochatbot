@@ -12,6 +12,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
+import 'screens/edit_meetup_screen.dart';
+import 'models/meetup.dart';
 import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
@@ -21,7 +23,19 @@ import 'firebase_options.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugDefaultTargetPlatformOverride = TargetPlatform.android;
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // Firebase 중복 초기화 방지
+  try {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    print('🔥 Firebase 초기화 완료');
+  } catch (e) {
+    if (e.toString().contains('duplicate-app')) {
+      print('🔥 Firebase는 이미 초기화되어 있습니다.');
+    } else {
+      print('🔥 Firebase 초기화 중 오류: $e');
+      rethrow;
+    }
+  }
 
   // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
   // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
@@ -63,13 +77,7 @@ void main() async {
       print('🗃️ Firestore 설정 시작');
       final firestore = FirebaseFirestore.instance;
       
-      // 오프라인 지속성 활성화 (이미 활성화되어 있을 수 있음)
-      try {
-        await firestore.enablePersistence();
-        print('✅ Firestore 오프라인 지속성 활성화 성공');
-      } catch (persistenceError) {
-        print('⚠️ Firestore 오프라인 지속성 이미 활성화됨 또는 실패: $persistenceError');
-      }
+      // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
       
       // Firestore 설정 조정
       firestore.settings = const Settings(
@@ -120,6 +128,12 @@ class MeetupApp extends StatelessWidget {
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.system,
+      routes: {
+        '/edit-meetup': (context) {
+          final meetup = ModalRoute.of(context)!.settings.arguments as Meetup;
+          return EditMeetupScreen(meetup: meetup);
+        },
+      },
       home: Consumer<app_auth.AuthProvider>(
         builder: (context, authProvider, _) {
           if (authProvider.isLoading) {

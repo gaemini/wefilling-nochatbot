@@ -892,7 +892,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   // 게시글 이미지
                   if (_currentPost.imageUrls.isNotEmpty)
                     Container(
-                      height: 200,
+                      height: 350, // 200 → 350으로 증가
                       margin: const EdgeInsets.only(bottom: 16),
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
@@ -928,7 +928,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             },
                             child: Container(
                               margin: const EdgeInsets.only(right: 8),
-                              width: 200,
+                              width: 320, // 200 → 320으로 증가
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
                                 child: _buildRetryableImage(

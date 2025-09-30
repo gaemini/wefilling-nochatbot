@@ -155,7 +155,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                             Text(
                               userData?['nickname'] ?? '사용자',
                       style: AppTheme.headlineMedium.copyWith(
-                        color: AppTheme.primary,
+                        color: Colors.black,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -163,7 +163,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                             Text(
                               user?.email ?? '',
                       style: AppTheme.bodyMedium.copyWith(
-                        color: AppTheme.primary.withOpacity(0.7),
+                        color: Colors.black54,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -746,7 +746,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         Text(
           value,
           style: AppTheme.headlineMedium.copyWith(
-            color: AppTheme.primary,
+            color: Colors.black,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -754,7 +754,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         Text(
           label,
           style: AppTheme.labelSmall.copyWith(
-            color: AppTheme.primary.withOpacity(0.7),
+            color: Colors.black87,
           ),
         ),
       ],
@@ -830,8 +830,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               Divider(color: Colors.grey[300]),
               _buildMenuItem(context, '로그아웃', Icons.logout_rounded, () async {
                 Navigator.pop(context);
-              await authProvider.signOut();
-              }, color: AppTheme.accentRed),
+                // 로그아웃 확인 다이얼로그 표시
+                _showLogoutConfirmDialog(context, authProvider);
+              }, color: BrandColors.error),
               SizedBox(height: DesignTokens.s12),
             ],
           ),
@@ -876,6 +877,81 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           ],
         ),
       ),
+    );
+  }
+
+  void _showLogoutConfirmDialog(BuildContext context, AuthProvider authProvider) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('로그아웃'),
+          content: const Text('정말 로그아웃하시겠습니까?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: BrandColors.error,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                Navigator.pop(context);
+                
+                // 로딩 인디케이터 표시
+                if (context.mounted) {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (context) => const Center(
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+                
+                try {
+                  await authProvider.signOut();
+                  
+                  // 로딩 다이얼로그 닫기
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('로그아웃되었습니다'),
+                        backgroundColor: Colors.green,
+                      ),
+                    );
+                  }
+                } catch (e) {
+                  // 로딩 다이얼로그 닫기
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('로그아웃 중 오류가 발생했습니다.\n다시 시도해주세요.'),
+                        backgroundColor: BrandColors.error,
+                        duration: const Duration(seconds: 3),
+                        action: SnackBarAction(
+                          label: '재시도',
+                          textColor: Colors.white,
+                          onPressed: () {
+                            // 재시도 로직
+                            _showLogoutConfirmDialog(context, authProvider);
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                  print('로그아웃 UI 오류: $e');
+                }
+              },
+              child: const Text('로그아웃'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

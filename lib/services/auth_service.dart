@@ -10,7 +10,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn();
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // 현재 로그인된 사용자
@@ -22,15 +22,17 @@ class AuthService {
   // 구글 로그인
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      // 구글 로그인 Flow 시작
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) return null;
+      // Google Sign-In 초기화 (필요한 경우)
+      await _googleSignIn.initialize();
+
+      // Google Sign-In 7.x API 사용
+      final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
 
       // 인증 정보 가져오기
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
+
       final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 

@@ -138,6 +138,158 @@ extension DesignTokensExtension on BuildContext {
   bool get isDesktop => screenSize.width >= DesignTokens.tabletBreakpoint;
 }
 
+/// 브랜드 컬러 시스템
+class BrandColors {
+  // 주요 브랜드 컬러
+  static const Color primary = Color(0xFF4A90E2);
+  static const Color primaryVariant = Color(0xFF357ABD);
+  static const Color secondary = Color(0xFF6BC9A5);
+  static const Color secondaryVariant = Color(0xFF4FA584);
+  
+  // 카테고리별 컬러
+  static const Color study = Color(0xFF4A90E2);
+  static const Color food = Color(0xFFFF8C42);
+  static const Color hobby = Color(0xFF6BC9A5);
+  static const Color culture = Color(0xFF9B59B6);
+  static const Color general = Color(0xFF95A5A6);
+  
+  // 상태 컬러
+  static const Color success = Color(0xFF27AE60);
+  static const Color warning = Color(0xFFF39C12);
+  static const Color error = Color(0xFFE74C3C);
+  static const Color info = Color(0xFF3498DB);
+  
+  // 중성 컬러
+  static const Color neutral50 = Color(0xFFFAFAFA);
+  static const Color neutral100 = Color(0xFFF5F5F5);
+  static const Color neutral200 = Color(0xFFEEEEEE);
+  static const Color neutral300 = Color(0xFFE0E0E0);
+  static const Color neutral400 = Color(0xFFBDBDBD);
+  static const Color neutral500 = Color(0xFF9E9E9E);
+  static const Color neutral600 = Color(0xFF757575);
+  static const Color neutral700 = Color(0xFF616161);
+  static const Color neutral800 = Color(0xFF424242);
+  static const Color neutral900 = Color(0xFF212121);
+}
+
+/// 컴포넌트 스타일 시스템
+class ComponentStyles {
+  // 버튼 스타일
+  static ButtonStyle get primaryButton => ElevatedButton.styleFrom(
+    backgroundColor: BrandColors.primary,
+    foregroundColor: Colors.white,
+    elevation: DesignTokens.elevation2,
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    shape: RoundedRectangleBorder(
+      borderRadius: DesignTokens.radiusM,
+    ),
+    minimumSize: const Size(120, 48),
+  );
+  
+  static ButtonStyle get secondaryButton => OutlinedButton.styleFrom(
+    foregroundColor: BrandColors.primary,
+    side: const BorderSide(color: BrandColors.primary, width: 1.5),
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    shape: RoundedRectangleBorder(
+      borderRadius: DesignTokens.radiusM,
+    ),
+    minimumSize: const Size(120, 48),
+  );
+  
+  static ButtonStyle get textButton => TextButton.styleFrom(
+    foregroundColor: BrandColors.primary,
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    shape: RoundedRectangleBorder(
+      borderRadius: DesignTokens.radiusS,
+    ),
+  );
+  
+  // 검색창 스타일
+  static InputDecoration get searchFieldDecoration => InputDecoration(
+    hintText: '검색어를 입력하세요',
+    hintStyle: TextStyle(color: BrandColors.neutral500),
+    prefixIcon: Icon(Icons.search_outlined, color: BrandColors.neutral500),
+    filled: true,
+    fillColor: BrandColors.neutral100,
+    border: OutlineInputBorder(
+      borderRadius: DesignTokens.radiusM,
+      borderSide: BorderSide.none,
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: DesignTokens.radiusM,
+      borderSide: BorderSide.none,
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: DesignTokens.radiusM,
+      borderSide: const BorderSide(color: BrandColors.primary, width: 2),
+    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+  );
+  
+  // 카드 스타일
+  static BoxDecoration get cardDecoration => BoxDecoration(
+    color: Colors.white,
+    borderRadius: DesignTokens.radiusM,
+    boxShadow: DesignTokens.shadowLight,
+    border: Border.all(
+      color: BrandColors.neutral200,
+      width: 0.5,
+    ),
+  );
+  
+  // FAB 스타일
+  static FloatingActionButtonThemeData get fabTheme => FloatingActionButtonThemeData(
+    backgroundColor: BrandColors.primary,
+    foregroundColor: Colors.white,
+    elevation: DesignTokens.elevation3,
+    shape: const CircleBorder(),
+  );
+}
+
+/// 아이콘 스타일 시스템
+class IconStyles {
+  // 통일된 아이콘 스타일 (outlined)
+  static const IconData home = Icons.home_outlined;
+  static const IconData homeFilled = Icons.home;
+  static const IconData groups = Icons.groups_outlined;
+  static const IconData groupsFilled = Icons.groups;
+  static const IconData article = Icons.article_outlined;
+  static const IconData articleFilled = Icons.article;
+  static const IconData person = Icons.person_outline;
+  static const IconData personFilled = Icons.person;
+  static const IconData group = Icons.group_outlined;
+  static const IconData groupFilled = Icons.group;
+  
+  // 카테고리 아이콘
+  static const IconData study = Icons.school_outlined;
+  static const IconData food = Icons.restaurant_outlined;
+  static const IconData hobby = Icons.palette_outlined;
+  static const IconData culture = Icons.theater_comedy_outlined;
+  static const IconData general = Icons.groups_outlined;
+  
+  // 액션 아이콘
+  static const IconData add = Icons.add;
+  static const IconData edit = Icons.edit_outlined;
+  static const IconData search = Icons.search_outlined;
+  static const IconData bookmark = Icons.bookmark_outline;
+  static const IconData bookmarkFilled = Icons.bookmark;
+  static const IconData favorite = Icons.favorite_outline;
+  static const IconData favoriteFilled = Icons.favorite;
+  static const IconData share = Icons.share_outlined;
+  static const IconData more = Icons.more_vert;
+  static const IconData error = Icons.error_outline;
+  static const IconData warning = Icons.warning_outlined;
+  static const IconData info = Icons.info_outlined;
+  static const IconData success = Icons.check_circle_outline;
+  
+  // 네비게이션 아이콘
+  static const IconData back = Icons.arrow_back;
+  static const IconData close = Icons.close;
+  static const IconData menu = Icons.menu;
+  static const IconData notification = Icons.notifications_outlined;
+  static const IconData notificationFilled = Icons.notifications;
+}
+
 /// 추가 디자인 상수들
 extension DesignTokensX on DesignTokens {
   // Touch targets

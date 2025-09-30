@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/meetup.dart';
+import '../models/friend_category.dart';
 import '../constants/app_constants.dart';
 import '../services/meetup_service.dart';
+import '../services/friend_category_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/country_flag_circle.dart';
 import 'dart:io';
@@ -35,10 +37,16 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   int _maxParticipants = 3; // 기본값을 3으로 설정
   late int _selectedDayIndex;
   final _meetupService = MeetupService();
-  final List<String> _weekdayNames = ['월', '화', '수', '목', '금', '토', '일'];
+  final _friendCategoryService = FriendCategoryService();
+  final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
   bool _isSubmitting = false;
   String _selectedCategory = '기타'; // 카테고리 선택을 위한 상태 변수
   final List<String> _categories = ['스터디', '식사', '취미', '문화', '기타'];
+  
+  // 공개 범위 관련 변수
+  String _visibility = 'public'; // 'public', 'friends', 'category'
+  List<FriendCategory> _friendCategories = [];
+  List<String> _selectedCategoryIds = [];
 
   // 썸네일 관련 변수
   final TextEditingController _thumbnailTextController =
@@ -58,6 +66,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     _selectedDayIndex = widget.initialDayIndex;
     // 선택된 날짜에 맞는 시간 옵션 생성 - initState에서 한 번 호출
     _updateTimeOptions();
+    // 친구 카테고리 로드
+    _loadFriendCategories();
 
     // 디버깅 출력 추가
     print('초기 시간 옵션: $_timeOptions');
@@ -116,12 +126,24 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     });
   }
 
+  // 친구 카테고리 로드
+  void _loadFriendCategories() {
+    _friendCategoryService.getCategoriesStream().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _friendCategories = categories;
+        });
+      }
+    });
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
     _thumbnailTextController.dispose();
+    _friendCategoryService.dispose();
     super.dispose();
   }
 
@@ -332,9 +354,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             ? Colors.white
                                             : (date.weekday == 7 // 일요일 체크
                                                 ? Colors.red
-                                                : const Color(0xFF666666)),
+                                                : date.weekday == 6 // 토요일 체크
+                                                    ? Colors.blue
+                                                    : const Color(0xFF666666)),
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 12,
+                                        fontSize: 14,
                                       ),
                                     ),
                                     const SizedBox(height: 2),
@@ -345,8 +369,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                             ? Colors.white
                                             : (date.weekday == 7 // 일요일 체크
                                                 ? Colors.red
-                                                : const Color(0xFF1A1A1A)),
-                                        fontSize: 16,
+                                                : date.weekday == 6 // 토요일 체크
+                                                    ? Colors.blue
+                                                    : const Color(0xFF1A1A1A)),
+                                        fontSize: 18,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -852,6 +878,180 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
+
+                // 공개 범위 선택
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '공개 범위',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    
+                    // 공개 범위 옵션들
+                    Column(
+                      children: [
+                        // 전체 공개
+                        RadioListTile<String>(
+                          title: const Text('전체 공개'),
+                          subtitle: const Text('모든 사용자가 볼 수 있습니다'),
+                          value: 'public',
+                          groupValue: _visibility,
+                          onChanged: (value) {
+                            setState(() {
+                              _visibility = value!;
+                              _selectedCategoryIds.clear();
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        
+                        // 친구만 공개
+                        RadioListTile<String>(
+                          title: const Text('친구만 공개'),
+                          subtitle: const Text('내 친구들만 볼 수 있습니다'),
+                          value: 'friends',
+                          groupValue: _visibility,
+                          onChanged: (value) {
+                            setState(() {
+                              _visibility = value!;
+                              _selectedCategoryIds.clear();
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        
+                        // 특정 그룹만 공개
+                        RadioListTile<String>(
+                          title: const Text('선택한 친구 그룹만'),
+                          subtitle: const Text('선택한 그룹의 친구들만 이 모임을 볼 수 있습니다'),
+                          value: 'category',
+                          groupValue: _visibility,
+                          onChanged: (value) {
+                            setState(() {
+                              _visibility = value!;
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                      ],
+                    ),
+                    
+                    // 특정 그룹 선택 UI (category 선택 시에만 표시)
+                    if (_visibility == 'category') ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE1E6EE)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: Colors.orange[600],
+                                ),
+                                const SizedBox(width: 6),
+                                const Text(
+                                  '이 모임을 볼 수 있는 친구 그룹 선택',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF666666),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            if (_friendCategories.isEmpty)
+                              const Text(
+                                '친구 그룹이 없습니다. 친구 관리에서 그룹을 만들어보세요.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF999999),
+                                ),
+                              )
+                            else
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: _friendCategories.map((category) {
+                                  final isSelected = _selectedCategoryIds.contains(category.id);
+                                  return FilterChip(
+                                    label: Text(
+                                      '${category.name} (${category.friendIds.length}명)',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: isSelected ? Colors.white : const Color(0xFF666666),
+                                      ),
+                                    ),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      setState(() {
+                                        if (selected) {
+                                          _selectedCategoryIds.add(category.id);
+                                        } else {
+                                          _selectedCategoryIds.remove(category.id);
+                                        }
+                                      });
+                                    },
+                                    selectedColor: const Color(0xFF4A90E2),
+                                    backgroundColor: Colors.white,
+                                    checkmarkColor: Colors.white,
+                                  );
+                                }).toList(),
+                              ),
+                            
+                            // 선택된 그룹이 없을 때 경고 메시지
+                            if (_selectedCategoryIds.isEmpty && _friendCategories.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange[50],
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.orange[200]!),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.warning_amber,
+                                      size: 16,
+                                      color: Colors.orange[700],
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Text(
+                                        '그룹을 선택하지 않으면 아무도 이 모임을 볼 수 없습니다',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.orange[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 24),
 
                 // 하단 버튼
@@ -915,6 +1115,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               ? null
                               : () async {
                                 if (_formKey.currentState!.validate()) {
+                                  // 공개 범위 유효성 검사
+                                  if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('특정 그룹 공개를 선택했다면 최소 하나의 그룹을 선택해주세요.'),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
                                   setState(() {
                                     _isSubmitting = true;
                                   });
@@ -941,17 +1152,40 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                   .trim(),
                                           thumbnailImage:
                                               _thumbnailImage, // 이미지 전달
+                                          visibility: _visibility, // 공개 범위 추가
+                                          visibleToCategoryIds: _selectedCategoryIds, // 선택된 카테고리 ID들 추가
                                         );
 
                                     if (success) {
                                       if (mounted) {
-                                        // 콜백은 호출하지 않고 창만 닫음 (Firebase에서 이미 데이터가 생성됨)
+                                        // 더미 모임 객체 생성 (콜백용)
+                                        final dummyMeetup = Meetup(
+                                          id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+                                          title: _titleController.text.trim(),
+                                          description: _descriptionController.text.trim(),
+                                          location: _locationController.text.trim(),
+                                          time: _selectedTime!,
+                                          maxParticipants: _maxParticipants,
+                                          currentParticipants: 1,
+                                          host: 'temp_host',
+                                          hostNationality: '',
+                                          imageUrl: '',
+                                          thumbnailContent: _thumbnailTextController.text.trim(),
+                                          thumbnailImageUrl: '',
+                                          date: selectedDate,
+                                          category: _selectedCategory,
+                                        );
+
+                                        // 콜백 호출하여 홈 화면 새로고침
+                                        widget.onCreateMeetup(widget.initialDayIndex, dummyMeetup);
+                                        
                                         Navigator.of(context).pop();
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
                                           const SnackBar(
                                             content: Text('모임이 생성되었습니다!'),
+                                            backgroundColor: Colors.green,
                                           ),
                                         );
                                       }

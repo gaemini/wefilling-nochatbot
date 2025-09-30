@@ -135,11 +135,11 @@ class AppColors {
   static const Color error = Color(0xFFE53E3E); // 에러/위험 (빨강)
   static const Color info = wefillingBlue; // 정보 (파랑)
 
-  // 텍스트 색상
-  static const Color textPrimary = Color(0xFF212121);
-  static const Color textSecondary = Color(0xFF757575);
-  static const Color textTertiary = Color(0xFF9E9E9E);
-  static const Color textHint = Color(0xFFBDBDBD);
+  // 텍스트 색상 (더 진하고 명확한 검은색)
+  static const Color textPrimary = Color(0xFF000000); // 완전한 검은색
+  static const Color textSecondary = Color(0xFF333333); // 진한 회색
+  static const Color textTertiary = Color(0xFF666666); // 중간 회색
+  static const Color textHint = Color(0xFF999999); // 밝은 회색
 
   // 다크 모드 텍스트
   static const Color darkTextPrimary = Color(0xFFE0E0E0);
@@ -266,7 +266,7 @@ class AppColors {
 // 테마별 색상 접근자
 class AppTheme {
   static bool _isDarkMode = false;
-  static bool _useDynamicColors = true; // 다이나믹 컬러 활성화 여부
+  static bool _useDynamicColors = false; // 다이나믹 컬러 비활성화
 
   static void setDarkMode(bool isDark) {
     _isDarkMode = isDark;
@@ -286,16 +286,16 @@ class AppTheme {
     
     if (_isDarkMode) {
       // 다크 모드에서의 시간대별 색상
-      if (hour < 6) return const Color(0xFF1E1B4B); // 새벽 - 진한 남색
-      if (hour < 12) return const Color(0xFF3730A3); // 오전 - 진한 파랑
-      if (hour < 18) return const Color(0xFF9333EA); // 오후 - 보라
-      return const Color(0xFF6366F1); // 저녁 - 인디고
+      if (hour < 6) return const Color(0xFF14242E); // 새벽 - 깊은 네이비
+      if (hour < 12) return const Color(0xFF4A8EA0); // 오전 - 청록
+      if (hour < 18) return const Color(0xFFB89A8F); // 오후 - 중성 톤
+      return const Color(0xFFF48E6E); // 저녁 - 코랄
     } else {
       // 라이트 모드에서의 시간대별 색상
-      if (hour < 6) return const Color(0xFF312E81); // 새벽 - 진한 남색
-      if (hour < 12) return const Color(0xFF3B82F6); // 오전 - 파란색
-      if (hour < 18) return const Color(0xFFEC4899); // 오후 - 핑크
-      return const Color(0xFF7C3AED); // 저녁 - 보라색
+      if (hour < 6) return const Color(0xFF14242E); // 새벽 - 깊은 네이비
+      if (hour < 12) return const Color(0xFF4A8EA0); // 오전 - 청록
+      if (hour < 18) return const Color(0xFFB89A8F); // 오후 - 중성 톤
+      return const Color(0xFFF48E6E); // 저녁 - 코랄
     }
   }
 
@@ -307,16 +307,16 @@ class AppTheme {
     
     if (_isDarkMode) {
       // 다크 모드 보조색
-      if (hour < 6) return const Color(0xFF7E22CE); // 새벽 - 보라
-      if (hour < 12) return const Color(0xFF059669); // 오전 - 녹색
-      if (hour < 18) return const Color(0xFFDC2626); // 오후 - 빨강
-      return const Color(0xFFEA580C); // 저녁 - 주황
+      if (hour < 6) return const Color(0xFF4A8EA0); // 새벽 - 청록
+      if (hour < 12) return const Color(0xFF59A6B0); // 오전 - 청록 밝은 톤
+      if (hour < 18) return const Color(0xFFF48E6E); // 오후 - 코랄
+      return const Color(0xFFC36959); // 저녁 - 테라코타
     } else {
       // 라이트 모드 보조색
-      if (hour < 6) return const Color(0xFF8B5CF6); // 새벽 - 연한 보라
-      if (hour < 12) return const Color(0xFF10B981); // 오전 - 에메랄드
-      if (hour < 18) return const Color(0xFFF59E0B); // 오후 - 앰버
-      return const Color(0xFFF97316); // 저녁 - 오렌지
+      if (hour < 6) return const Color(0xFF4A8EA0); // 새벽 - 청록
+      if (hour < 12) return const Color(0xFF59A6B0); // 오전 - 청록 밝은 톤
+      if (hour < 18) return const Color(0xFFF48E6E); // 오후 - 코랄
+      return const Color(0xFFC36959); // 저녁 - 테라코타
     }
   }
 
@@ -327,15 +327,15 @@ class AppTheme {
     final hour = DateTime.now().hour;
     
     if (_isDarkMode) {
-      if (hour < 6) return const Color(0xFF0891B2); // 새벽 - 시안
-      if (hour < 12) return const Color(0xFFF59E0B); // 오전 - 앰버
-      if (hour < 18) return const Color(0xFF10B981); // 오후 - 에메랄드
-      return const Color(0xFFEC4899); // 저녁 - 핑크
+      if (hour < 6) return const Color(0xFF59A6B0); // 새벽 - 청록 밝은 톤
+      if (hour < 12) return const Color(0xFF8ED6F6); // 오전 - 밝은 하늘색
+      if (hour < 18) return const Color(0xFFC36959); // 오후 - 테라코타
+      return const Color(0xFF14242E); // 저녁 - 딥네이비
     } else {
-      if (hour < 6) return const Color(0xFF0EA5E9); // 새벽 - 하늘색
-      if (hour < 12) return const Color(0xFFFBBF24); // 오전 - 밝은 앰버
-      if (hour < 18) return const Color(0xFF34D399); // 오후 - 밝은 에메랄드
-      return const Color(0xFFF472B6); // 저녁 - 밝은 핑크
+      if (hour < 6) return const Color(0xFF59A6B0); // 새벽 - 청록 밝은 톤
+      if (hour < 12) return const Color(0xFF8ED6F6); // 오전 - 밝은 하늘색
+      if (hour < 18) return const Color(0xFFC36959); // 오후 - 테라코타
+      return const Color(0xFF14242E); // 저녁 - 딥네이비
     }
   }
 
@@ -363,27 +363,27 @@ class AppTheme {
       // 다크 모드 배경
       if (hour < 6) {
         return const LinearGradient(
-          colors: [Color(0xFF0F0F23), Color(0xFF1E1B4B)], // 새벽 - 깊은 밤색
+          colors: [Color(0xFF14242E), Color(0xFF4A8EA0), Color(0xFF59A6B0)], // 새벽 - 깊은 네이비→청록
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       if (hour < 12) {
         return const LinearGradient(
-          colors: [Color(0xFF1E1B4B), Color(0xFF312E81)], // 오전 - 새벽에서 아침으로
+          colors: [Color(0xFF8ED6F6), Color(0xFF59A6B0), Color(0xFF4A8EA0)], // 오전 - 밝은 하늘색→청록
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       if (hour < 18) {
         return const LinearGradient(
-          colors: [Color(0xFF312E81), Color(0xFF4C1D95)], // 오후 - 활동적
+          colors: [Color(0xFFB89A8F), Color(0xFFF48E6E), Color(0xFFC36959)], // 오후 - 중성 톤→코랄→테라코타
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       return const LinearGradient(
-        colors: [Color(0xFF4C1D95), Color(0xFF581C87)], // 저녁 - 따뜻한 보라
+        colors: [Color(0xFFF48E6E), Color(0xFFC36959), Color(0xFF14242E)], // 저녁 - 코랄→테라코타→딥네이비
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       );
@@ -391,27 +391,27 @@ class AppTheme {
       // 라이트 모드 배경
       if (hour < 6) {
         return const LinearGradient(
-          colors: [Color(0xFFE0E7FF), Color(0xFFC7D2FE)], // 새벽 - 연한 남색
+          colors: [Color(0xFF14242E), Color(0xFF4A8EA0), Color(0xFF59A6B0)], // 새벽 - 깊은 네이비→청록
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       if (hour < 12) {
         return const LinearGradient(
-          colors: [Color(0xFFDBEAFE), Color(0xFFBFDBFE)], // 오전 - 파란 하늘
+          colors: [Color(0xFF8ED6F6), Color(0xFF59A6B0), Color(0xFF4A8EA0)], // 오전 - 밝은 하늘색→청록
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       if (hour < 18) {
         return const LinearGradient(
-          colors: [Color(0xFFFCE7F3), Color(0xFFF9A8D4)], // 오후 - 따뜻한 핑크
+          colors: [Color(0xFFB89A8F), Color(0xFFF48E6E), Color(0xFFC36959)], // 오후 - 중성 톤→코랄→테라코타
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         );
       }
       return const LinearGradient(
-        colors: [Color(0xFFEDE9FE), Color(0xFFDDD6FE)], // 저녁 - 부드러운 보라
+        colors: [Color(0xFFF48E6E), Color(0xFFC36959), Color(0xFF14242E)], // 저녁 - 코랄→테라코타→딥네이비
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
       );
@@ -673,7 +673,7 @@ class AppTheme {
   // Extra Large Headlines (트렌드: 큰 제목)
   static TextStyle get headlineLarge => TextStyle(
     fontSize: 32,
-    fontWeight: FontWeight.w800, // w700 → w800 (더 강한 emphasis)
+    fontWeight: FontWeight.w900, // w800 → w900 (최대 굵기)
     height: 1.2,
     letterSpacing: -0.5,
     color: AppTheme.textPrimary,
@@ -683,7 +683,7 @@ class AppTheme {
   // Dynamic sizing (24px headline)
   static TextStyle get headlineMedium => TextStyle(
     fontSize: 24,
-    fontWeight: FontWeight.w700, // w600 → w700 (더 강한 hierarchy)
+    fontWeight: FontWeight.w800, // w700 → w800 (더 강한 hierarchy)
     height: 1.3,
     letterSpacing: -0.3, // -0.25 → -0.3 (tighter spacing)
     color: AppTheme.textPrimary,
@@ -692,22 +692,24 @@ class AppTheme {
 
   static TextStyle get titleLarge => TextStyle(
     fontSize: 20,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700, // w600 → w700 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
+    fontFamily: 'Pretendard',
   );
 
   static TextStyle get titleMedium => TextStyle(
     fontSize: 18,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
+    fontFamily: 'Pretendard',
   );
 
   // Body with better readability (16px → 18px)
   static TextStyle get bodyLarge => TextStyle(
     fontSize: 18, // 기존 16px → 18px (더 나은 가독성)
-    fontWeight: FontWeight.w500, // w400 → w500 (약간 더 강조)
+    fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.6, // 1.5 → 1.6 (더 넉넉한 행간)
     color: AppTheme.textPrimary,
     fontFamily: 'Pretendard',
@@ -715,9 +717,9 @@ class AppTheme {
 
   static TextStyle get bodyMedium => TextStyle(
     fontSize: 16, // 14px → 16px (계층적 조정)
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500, // w400 → w500 (더 굵게)
     height: 1.5,
-    color: AppTheme.textSecondary,
+    color: AppTheme.textPrimary, // textSecondary → textPrimary (더 진한 색)
     fontFamily: 'Pretendard',
   );
 
@@ -730,16 +732,18 @@ class AppTheme {
 
   static TextStyle get labelLarge => TextStyle(
     fontSize: 14,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.4,
     color: AppTheme.textPrimary,
+    fontFamily: 'Pretendard',
   );
 
   static TextStyle get labelMedium => TextStyle(
     fontSize: 12,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600, // w500 → w600 (더 굵게)
     height: 1.3,
-    color: AppTheme.textSecondary,
+    color: AppTheme.textPrimary, // textSecondary → textPrimary (더 진한 색)
+    fontFamily: 'Pretendard',
   );
 
   static TextStyle get labelSmall => TextStyle(

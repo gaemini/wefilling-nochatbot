@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
+import 'content_filter_service.dart';
 
 class PostService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -319,8 +320,8 @@ class PostService {
         .collection('posts')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
+        .asyncMap((snapshot) async {
+      final posts = snapshot.docs.map((doc) {
         try {
           final data = doc.data();
           return Post(
@@ -353,6 +354,9 @@ class PostService {
           );
         }
       }).toList();
+
+      // 차단된 사용자의 게시물 필터링
+      return await ContentFilterService.filterPosts(posts);
     });
   }
 

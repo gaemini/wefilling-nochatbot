@@ -87,6 +87,17 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
+  /// 댓글 깊이에 따른 배경색 반환
+  Color _getCommentBackgroundColor(ThemeData theme) {
+    if (widget.comment.depth == 0) {
+      // 최상위 댓글: 기본 카드 색상
+      return theme.cardColor;
+    } else {
+      // 대댓글: 지정된 노란색 100% 적용
+      return const Color(0xFFF9F871);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -99,19 +110,38 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         left: widget.comment.depth * 24.0, // 들여쓰기
         bottom: 12,
       ),
-      child: Column(
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 댓글 카드
-          Card(
+          // 대댓글용 세로선
+          if (widget.comment.depth > 0) ...[
+            Container(
+              width: 3,
+              height: 60, // 카드 높이에 맞춤
+              margin: const EdgeInsets.only(right: 8, top: 8),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primary.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ],
+          
+          // 댓글 내용
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 댓글 카드
+                Card(
             elevation: 1,
+            color: _getCommentBackgroundColor(theme),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
               side: BorderSide(
                 color: widget.comment.depth > 0 
-                    ? theme.colorScheme.primary.withOpacity(0.2)
+                    ? theme.colorScheme.primary.withOpacity(0.15)
                     : Colors.transparent,
-                width: widget.comment.depth > 0 ? 1 : 0,
+                width: widget.comment.depth > 0 ? 0.5 : 0,
               ),
             ),
             child: Padding(
@@ -317,16 +347,19 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             ),
           ],
           
-          // 답글 목록
-          if (_showReplies && widget.replies.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...widget.replies.map((reply) => EnhancedCommentWidget(
-              comment: reply,
-              replies: const [], // 대댓글의 대댓글은 지원하지 않음
-              postId: widget.postId,
-              onDeleteComment: widget.onDeleteComment,
-            )).toList(),
-          ],
+                // 답글 목록
+                if (_showReplies && widget.replies.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ...widget.replies.map((reply) => EnhancedCommentWidget(
+                    comment: reply,
+                    replies: const [], // 대댓글의 대댓글은 지원하지 않음
+                    postId: widget.postId,
+                    onDeleteComment: widget.onDeleteComment,
+                  )).toList(),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

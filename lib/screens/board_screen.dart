@@ -16,7 +16,6 @@ import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 
 import 'package:provider/provider.dart';
-import '../providers/settings_provider.dart';
 import '../ui/widgets/app_icon_button.dart';
 
 class BoardScreen extends StatefulWidget {
@@ -158,28 +157,14 @@ class _BoardScreenState extends State<BoardScreen> {
                   onRefresh: () async {
                     setState(() {}); // 새로고침 효과
                   },
-                  child: ListView.builder(
-                    itemCount: posts.length,
-                    itemBuilder: (context, index) {
-                      final post = posts[index];
-                      return OptimizedPostCard(
-                        key: ValueKey(post.id),
-                        post: post,
-                        index: index,
-                        onTap: () => _navigateToPostDetail(post),
-                        preloadImage: index < 3, // 상위 3개만 프리로드
-                      );
-                    },
-                  ),
+                  child: _buildGroupedPostsList(posts),
                 );
               },
             ),
           ),
         ],
       ),
-      floatingActionButton: AppFab.extended(
-        icon: Icons.edit,
-        label: '글쓰기',
+      floatingActionButton: AppFab.write(
         onPressed: () {
           Navigator.push(
             context,
@@ -194,7 +179,6 @@ class _BoardScreenState extends State<BoardScreen> {
             ),
           );
         },
-        semanticLabel: '새 글 작성하기',
         heroTag: 'board_write_fab',
       ),
     );
@@ -211,6 +195,148 @@ class _BoardScreenState extends State<BoardScreen> {
     if (result == true) {
       setState(() {}); // Stream이므로 자동으로 갱신됨
     }
+  }
+
+  /// 날짜별로 그룹화된 게시글 목록 빌드
+  Widget _buildGroupedPostsList(List<Post> posts) {
+    final groupedPosts = _groupPostsByDate(posts);
+    
+    return ListView.builder(
+      itemCount: groupedPosts.length,
+      itemBuilder: (context, groupIndex) {
+        final group = groupedPosts[groupIndex];
+        final dateLabel = group['dateLabel'] as String;
+        final groupPosts = group['posts'] as List<Post>;
+        
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 날짜 헤더
+            _buildDateHeader(dateLabel),
+            
+            // 해당 날짜의 게시글들
+            ...groupPosts.asMap().entries.map((entry) {
+              final index = entry.key;
+              final post = entry.value;
+              final globalIndex = _getGlobalIndex(posts, post);
+              
+              return OptimizedPostCard(
+                key: ValueKey(post.id),
+                post: post,
+                index: globalIndex,
+                onTap: () => _navigateToPostDetail(post),
+                preloadImage: globalIndex < 3, // 상위 3개만 프리로드
+              );
+            }).toList(),
+            
+            // 그룹 간 여백
+            if (groupIndex < groupedPosts.length - 1)
+              const SizedBox(height: 8),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 날짜별로 게시글 그룹화
+  List<Map<String, dynamic>> _groupPostsByDate(List<Post> posts) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
+    
+    final Map<String, List<Post>> groups = {
+      '오늘': [],
+      '어제': [],
+      '이번 주': [],
+      '이전': [],
+    };
+    
+    for (final post in posts) {
+      final postDate = DateTime(
+        post.createdAt.year,
+        post.createdAt.month,
+        post.createdAt.day,
+      );
+      
+      if (postDate.isAtSameMomentAs(today)) {
+        groups['오늘']!.add(post);
+      } else if (postDate.isAtSameMomentAs(yesterday)) {
+        groups['어제']!.add(post);
+      } else if (postDate.isAfter(thisWeekStart.subtract(const Duration(days: 1))) && 
+                 postDate.isBefore(yesterday)) {
+        groups['이번 주']!.add(post);
+      } else {
+        groups['이전']!.add(post);
+      }
+    }
+    
+    // 비어있지 않은 그룹만 반환
+    return groups.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .map((entry) => {
+              'dateLabel': entry.key,
+              'posts': entry.value,
+            })
+        .toList();
+  }
+
+  /// 날짜 헤더 빌드
+  Widget _buildDateHeader(String dateLabel) {
+    Color headerColor;
+    IconData headerIcon;
+    
+    switch (dateLabel) {
+      case '오늘':
+        headerColor = Colors.blue[600]!;
+        headerIcon = Icons.today;
+        break;
+      case '어제':
+        headerColor = Colors.orange[600]!;
+        headerIcon = Icons.history_toggle_off;
+        break;
+      case '이번 주':
+        headerColor = Colors.green[600]!;
+        headerIcon = Icons.date_range;
+        break;
+      default: // '이전'
+        headerColor = Colors.grey[600]!;
+        headerIcon = Icons.history;
+    }
+    
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: headerColor.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: headerColor.withOpacity(0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            headerIcon,
+            color: headerColor,
+            size: 18,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            dateLabel,
+            style: TextStyle(
+              color: headerColor,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 전체 목록에서의 인덱스 찾기
+  int _getGlobalIndex(List<Post> allPosts, Post targetPost) {
+    return allPosts.indexWhere((post) => post.id == targetPost.id);
   }
 
 }

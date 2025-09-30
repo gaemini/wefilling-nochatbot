@@ -48,47 +48,126 @@ class UsersRepository {
       final currentUid = currentUserId;
       if (currentUid == null) return [];
 
-      // 닉네임으로 검색
-      final nicknameQuery =
-          await _firestore
-              .collection(_usersCollection)
-              .where('nickname', isGreaterThanOrEqualTo: query)
-              .where('nickname', isLessThan: query + '\uf8ff')
-              .limit(limit)
-              .get();
+      // 검색어 전처리 - 대소문자 구분 없이 검색
+      final normalizedQuery = query.trim().toLowerCase();
+      
+      // 더 넓은 범위로 사용자 데이터 가져오기
+      final allUsersQuery = await _firestore
+          .collection(_usersCollection)
+          .limit(100) // 검색 대상을 늘려서 더 정확한 매칭
+          .get();
 
-      // displayName으로 검색
-      final displayNameQuery =
-          await _firestore
-              .collection(_usersCollection)
-              .where('displayName', isGreaterThanOrEqualTo: query)
-              .where('displayName', isLessThan: query + '\uf8ff')
-              .limit(limit)
-              .get();
-
-      // 결과 합치기 및 중복 제거
-      final allDocs = <DocumentSnapshot>[];
-      allDocs.addAll(nicknameQuery.docs);
-      allDocs.addAll(displayNameQuery.docs);
-
-      // 중복 제거 (uid 기준)
-      final uniqueDocs = <String, DocumentSnapshot>{};
-      for (final doc in allDocs) {
-        uniqueDocs[doc.id] = doc;
+      final matchedProfiles = <UserProfile>[];
+      
+      for (final doc in allUsersQuery.docs) {
+        // 현재 사용자 제외
+        if (doc.id == currentUid) continue;
+        
+        try {
+          final profile = UserProfile.fromFirestore(doc);
+          
+          // 닉네임과 displayName을 소문자로 변환하여 검색
+          final nickname = (profile.nickname ?? '').toLowerCase();
+          final displayName = (profile.displayName ?? '').toLowerCase();
+          
+          // 부분 문자열 매칭 (한국어 포함)
+          if (nickname.contains(normalizedQuery) || 
+              displayName.contains(normalizedQuery) ||
+              _isKoreanMatch(nickname, normalizedQuery) ||
+              _isKoreanMatch(displayName, normalizedQuery)) {
+            matchedProfiles.add(profile);
+          }
+        } catch (e) {
+          print('사용자 데이터 파싱 오류: $e');
+          continue;
+        }
       }
 
-      // 현재 사용자 제외하고 UserProfile로 변환
-      final profiles =
-          uniqueDocs.values
-              .where((doc) => doc.id != currentUid)
-              .map((doc) => UserProfile.fromFirestore(doc))
-              .toList();
+      // 결과를 관련도 순으로 정렬 (정확한 매칭이 먼저 오도록)
+      matchedProfiles.sort((a, b) {
+        final aScore = _getRelevanceScore(a, normalizedQuery);
+        final bScore = _getRelevanceScore(b, normalizedQuery);
+        return bScore.compareTo(aScore); // 내림차순 정렬
+      });
 
-      return profiles;
+      // 제한된 개수만 반환
+      return matchedProfiles.take(limit).toList();
     } catch (e) {
       print('사용자 검색 오류: $e');
       return [];
     }
+  }
+
+  /// 한국어 매칭 검사 (초성, 중성, 종성 고려)
+  bool _isKoreanMatch(String text, String query) {
+    if (text.isEmpty || query.isEmpty) return false;
+    
+    // 한국어 초성 추출 및 매칭
+    try {
+      final textChoseong = _extractChoseong(text);
+      final queryChoseong = _extractChoseong(query);
+      
+      return textChoseong.contains(queryChoseong);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// 한국어 초성 추출
+  String _extractChoseong(String text) {
+    const choseong = [
+      'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
+      'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+    ];
+    
+    String result = '';
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
+      final code = char.codeUnitAt(0);
+      
+      // 한글 완성형인지 확인 (가-힣: 44032-55203)
+      if (code >= 0xAC00 && code <= 0xD7A3) {
+        final choseongIndex = (code - 0xAC00) ~/ (21 * 28);
+        if (choseongIndex < choseong.length) {
+          result += choseong[choseongIndex];
+        }
+      } else {
+        // 한글이 아닌 경우 그대로 추가
+        result += char;
+      }
+    }
+    
+    return result;
+  }
+
+  /// 검색 관련도 점수 계산
+  int _getRelevanceScore(UserProfile profile, String query) {
+    final nickname = (profile.nickname ?? '').toLowerCase();
+    final displayName = (profile.displayName ?? '').toLowerCase();
+    
+    int score = 0;
+    
+    // 정확한 매칭에 높은 점수
+    if (nickname == query || displayName == query) {
+      score += 100;
+    }
+    
+    // 시작 부분 매칭에 중간 점수
+    if (nickname.startsWith(query) || displayName.startsWith(query)) {
+      score += 50;
+    }
+    
+    // 부분 매칭에 낮은 점수
+    if (nickname.contains(query) || displayName.contains(query)) {
+      score += 25;
+    }
+    
+    // 한국어 초성 매칭
+    if (_isKoreanMatch(nickname, query) || _isKoreanMatch(displayName, query)) {
+      score += 10;
+    }
+    
+    return score;
   }
 
   /// 사용자 간 관계 상태 조회

@@ -173,18 +173,28 @@ class CommentService {
   // 댓글 좋아요 토글
   Future<bool> toggleCommentLike(String commentId, String userId) async {
     try {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('댓글 좋아요 토글 시작');
+      print('  - commentId: $commentId');
+      print('  - userId: $userId');
+      
       final commentRef = _firestore.collection('comments').doc(commentId);
       
       return await _firestore.runTransaction((transaction) async {
         final commentDoc = await transaction.get(commentRef);
         
         if (!commentDoc.exists) {
+          print('  ❌ 댓글을 찾을 수 없습니다.');
           throw Exception('댓글을 찾을 수 없습니다.');
         }
         
         final commentData = commentDoc.data()!;
         final List<String> likedBy = List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
+        
+        print('  - 현재 좋아요 수: $currentLikeCount');
+        print('  - 좋아요 누른 사용자: ${likedBy.length}명');
+        print('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
         
         if (likedBy.contains(userId)) {
           // 좋아요 취소
@@ -193,6 +203,7 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount - 1,
           });
+          print('  ✅ 좋아요 취소 완료');
           return false; // 좋아요 취소됨
         } else {
           // 좋아요 추가
@@ -201,12 +212,20 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount + 1,
           });
+          print('  ✅ 좋아요 추가 완료');
           return true; // 좋아요 추가됨
         }
       });
-    } catch (e) {
-      print('댓글 좋아요 토글 오류: $e');
+    } catch (e, stackTrace) {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('❌ 댓글 좋아요 토글 오류');
+      print('  에러: $e');
+      print('  스택 트레이스: $stackTrace');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
+    } finally {
+      print('댓글 좋아요 토글 종료');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 

@@ -1,0 +1,183 @@
+Resolving dependencies...
+Downloading packages...
+  characters 1.4.0 (1.4.1 available)
+  country_flags 2.2.0 (4.0.1 available)
+  flutter_lints 2.0.3 (6.0.0 available)
+  lints 2.1.1 (6.0.0 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  meta 1.16.0 (1.17.0 available)
+  permission_handler 11.4.0 (12.0.1 available)
+  permission_handler_android 12.1.0 (13.0.1 available)
+  shared_preferences_android 2.4.13 (2.4.15 available)
+  test_api 0.7.6 (0.7.7 available)
+  url_launcher_android 6.3.22 (6.3.23 available)
+  webview_flutter_android 4.10.2 (4.10.4 available)
+Got dependencies!
+12 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Launching lib/main.dart on iPhone 16 Pro in debug mode...
+Running Xcode build...                                          
+flutter: 🔥 Firebase는 이미 초기화되어 있습니다.
+flutter: 🔥 Firebase 초기화 시작: 2025-10-09 19:52:09.906400
+flutter: 🔥 Firebase 프로젝트 ID: flutterproject3-af322
+flutter: 🔥 Firebase Storage 버킷: flutterproject3-af322.firebasestorage.app
+flutter: 🔐 인증 초기화 대기 중...
+flutter: 🔐 사용자 로그인 확인: jmcha22@hanyang.ac.kr
+flutter: 🔐 인증 초기화 완료: 2025-10-09 19:52:09.917419
+flutter: 🗃️ Firestore 설정 시작
+flutter: ✅ Firestore 설정 완료
+flutter: 📢 광고 배너 초기화 시작
+flutter: 🔄 광고 배너 초기화 시작...
+flutter: 🔐 Auth State Changed: Authenticated
+flutter: 🔐 User ID: TjZWjNW75dMqCG1j51QVD1GhXIP2
+flutter: 🔐 Timestamp: 2025-10-09 19:52:09.930208
+flutter: ❌ 초기 광고 배너 생성 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: ✅ 광고 배너 초기화 완료
+flutter: 🗄️ Storage 접근 테스트 시작
+flutter: ✅ Firebase Storage 접근 테스트: 성공
+flutter: 🚩 Remote Config 업데이트 완료
+flutter: 🚩 FeatureFlagService 초기화 완료
+flutter: 🚩 FeatureFlagService 초기화 완료
+flutter: Google Sign-In 초기화 완료
+flutter: =========== Firebase Storage 진단 시작 ===========
+flutter: 📢 AdBannerWidget 초기화: board_banner
+flutter: 📢 [board_banner] 자동 스크롤 시작: 5개 광고
+flutter: 📋 게시글 ID: gX8v04ltInLI69EcCjFf
+flutter: 📋 이미지 URL 개수: 0
+flutter: ✅ URL 변환 없이 원본 그대로 사용
+flutter: 작성자 확인 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: 좋아요 확인 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: Storage 버킷: flutterproject3-af322.firebasestorage.app
+flutter: 앱 이름: [DEFAULT]
+flutter: 스토리지 접근 권한: 성공
+flutter: - 아이템 수: 6
+flutter: - 폴더 수: 4
+flutter: 파일 업로드 테스트: 성공
+flutter: - 경로: debug/test_1760007132314.txt
+flutter: - 다운로드 URL: https://firebasestorage.googleapis.com/v0/b/flutterproject3-af322.firebasestorage.app/o/debug%2Ftest_1760007132314.txt?alt=media&token=9c7b171c-fb8d-4d7c-a2bc-851627e05e7a
+flutter: 이미지 URL 접근성 테스트 시작: https://firebasestorage.googleapis.com/v0/b/flutterproject3-af322.firebasestorage.app/o/debug%2Ftest_1760007132314.txt?alt=media&token=9c7b171c-fb8d-4d7c-a2bc-851627e05e7a
+flutter: 📢 [board_banner] AdBannerWidget dispose 호출
+flutter: 이미지 URL 접근성 테스트 결과: 상태 코드=404, 콘텐츠 타입=application/json; charset=UTF-8
+flutter: 오류 응답 본문: {
+  "error": {
+    "code": 404,
+    "message": "Not Found."
+  }
+}
+flutter: URL 접근 테스트: 실패
+flutter: 보안 규칙 테스트: 성공
+flutter: =========== Firebase Storage 진단 완료 ===========
+flutter: 📢 AdBannerWidget 초기화: board_banner
+flutter: FriendCategoryService: 0개 스트림 정리 중...
+flutter: FriendCategoryService: 모든 스트림 정리 완료
+flutter: 📢 [board_banner] 자동 스크롤 시작: 5개 광고
+flutter: 📋 게시글 ID: gX8v04ltInLI69EcCjFf
+flutter: 📋 이미지 URL 개수: 0
+flutter: ✅ URL 변환 없이 원본 그대로 사용
+flutter: 작성자 확인 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: 좋아요 확인 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+Xcode build done.                                           310.7s
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+Syncing files to device iPhone 16 Pro...                        
+flutter: 🔥 Firebase는 이미 초기화되어 있습니다.
+flutter: 🔥 Firebase 초기화 시작: 2025-10-09 19:52:46.189651
+flutter: 🔥 Firebase 프로젝트 ID: flutterproject3-af322
+flutter: 🔥 Firebase Storage 버킷: flutterproject3-af322.firebasestorage.app
+flutter: 🔐 인증 초기화 대기 중...
+flutter: 🔐 사용자 로그인 확인: jmcha22@hanyang.ac.kr
+flutter: 🔐 인증 초기화 완료: 2025-10-09 19:52:46.201410
+flutter: 🗃️ Firestore 설정 시작
+flutter: ✅ Firestore 설정 완료
+flutter: 📢 광고 배너 초기화 시작
+flutter: 🔄 광고 배너 초기화 시작...
+flutter: 🔐 Auth State Changed: Authenticated
+flutter: 🔐 User ID: TjZWjNW75dMqCG1j51QVD1GhXIP2
+flutter: 🔐 Timestamp: 2025-10-09 19:52:46.213487
+Syncing files to device iPhone 16 Pro...                           145ms
+
+Flutter run key commands.
+r Hot reload. 🔥🔥🔥
+R Hot restart.
+h List all available interactive commands.
+d Detach (terminate "flutter run" but leave application running).
+c Clear the screen
+q Quit (terminate the application on the device).
+
+A Dart VM Service on iPhone 16 Pro is available at: http://127.0.0.1:65048/URqkiv3HhPI=/
+The Flutter DevTools debugger and profiler on iPhone 16 Pro is available at: http://127.0.0.1:9100?uri=http://127.0.0.1:65048/URqkiv3HhPI=/
+flutter: ❌ 초기 광고 배너 생성 오류: [cloud_firestore/permission-denied] The caller does not have permission to execute the specified operation.
+flutter: ✅ 광고 배너 초기화 완료
+flutter: 🗄️ Storage 접근 테스트 시작
+flutter: ✅ Firebase Storage 접근 테스트: 성공
+flutter: 🚩 Remote Config 업데이트 완료
+flutter: 🚩 FeatureFlagService 초기화 완료
+flutter: 🚩 FeatureFlagService 초기화 완료
+flutter: Google Sign-In 초기화 완료
+flutter: =========== Firebase Storage 진단 시작 ===========
+flutter: 📢 AdBannerWidget 초기화: board_banner
+flutter: 📢 [board_banner] 자동 스크롤 시작: 5개 광고
+flutter: 📋 게시글 ID: gX8v04ltInLI69EcCjFf
+flutter: 📋 이미지 URL 개수: 0
+flutter: ✅ URL 변환 없이 원본 그대로 사용
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: Storage 버킷: flutterproject3-af322.firebasestorage.app
+flutter: 앱 이름: [DEFAULT]
+flutter: 스토리지 접근 권한: 성공
+flutter: - 아이템 수: 6
+flutter: - 폴더 수: 4
+flutter: 파일 업로드 테스트: 성공
+flutter: - 경로: debug/test_1760007168438.txt
+flutter: - 다운로드 URL: https://firebasestorage.googleapis.com/v0/b/flutterproject3-af322.firebasestorage.app/o/debug%2Ftest_1760007168438.txt?alt=media&token=caad84be-5dd4-45d3-86d8-119176cb728f
+flutter: 이미지 URL 접근성 테스트 시작: https://firebasestorage.googleapis.com/v0/b/flutterproject3-af322.firebasestorage.app/o/debug%2Ftest_1760007168438.txt?alt=media&token=caad84be-5dd4-45d3-86d8-119176cb728f
+flutter: 이미지 URL 접근성 테스트 결과: 상태 코드=404, 콘텐츠 타입=application/json; charset=UTF-8
+flutter: 오류 응답 본문: {
+  "error": {
+    "code": 404,
+    "message": "Not Found."
+  }
+}
+flutter: URL 접근 테스트: 실패
+flutter: 보안 규칙 테스트: 성공
+flutter: =========== Firebase Storage 진단 완료 ===========
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+flutter: 📢 [board_banner] 인덱스 변경: 1/5
+flutter: 📢 [board_banner] 인덱스 변경: 2/5
+flutter: 📢 [board_banner] 인덱스 변경: 3/5
+flutter: 📢 [board_banner] 인덱스 변경: 4/5
+flutter: 📢 [board_banner] 인덱스 변경: 0/5
+Lost connection to device.

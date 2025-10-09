@@ -68,8 +68,8 @@ class AppEmptyState extends StatelessWidget {
   factory AppEmptyState.noMeetups({VoidCallback? onCreateMeetup}) {
     return AppEmptyState(
       icon: IconStyles.groups,
-      title: '어떤 취미를 함께하고 싶나요?',
-      description: '첫 모임을 만들어 새로운 인연을 만나보세요.\n함께할 사람들과 특별한 순간을 만들어보세요.',
+      title: 'Wefilling의 뜻을 아시나요?',
+      description: '"We"와 "filling"의 합성어로,\n사람과 사람 사이의 공간을 채운다는 뜻입니다.',
       ctaText: '첫 모임 만들기',
       ctaIcon: IconStyles.add,
       onCtaPressed: onCreateMeetup,

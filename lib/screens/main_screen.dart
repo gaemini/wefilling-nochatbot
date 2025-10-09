@@ -18,9 +18,11 @@ import 'notification_screen.dart';
 import 'home_screen.dart'; // MeetupHomePage 클래스가 있는 파일
 import 'friends_main_page.dart';
 import 'search_result_page.dart';
+import 'ad_showcase_screen.dart';
 
 import '../utils/firebase_debug_helper.dart';
 import 'firebase_security_rules_helper.dart';
+import '../widgets/adaptive_bottom_navigation.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -298,25 +300,38 @@ service firebase.storage {
         shadowColor: Colors.black12,
         title: Row(
           children: [
-            // Wefilling 로고 + 텍스트
-            Row(
-              children: [
-                Container(
-                  width: 28,
-                  height: 28,
-                  child: _buildLogo(),
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'Wefilling',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF4A90E2), // 브랜드 파란색
-                    letterSpacing: -0.5,
+            // Wefilling 로고 + 텍스트 (클릭 가능)
+            GestureDetector(
+              onTap: () {
+                // 광고 쇼케이스 페이지로 이동
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AdShowcaseScreen(),
                   ),
-                ),
-              ],
+                );
+              },
+              behavior: HitTestBehavior.opaque, // 투명한 영역도 터치 가능하게
+              child: Row(
+                mainAxisSize: MainAxisSize.min, // Row 크기를 내용물에 맞춤
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    child: _buildLogo(),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Wefilling',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF4A90E2), // 브랜드 파란색
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(width: 16),
             // 검색창 (가변 폭) - 정보게시판용
@@ -399,55 +414,32 @@ service firebase.storage {
       ),
       body: _screens[_selectedIndex],
 
-      // 접근성 기준을 준수하는 하단 네비게이션 바
-      bottomNavigationBar: Container(
-        height: DesignTokens.bottomNavHeight,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surface,
-          boxShadow: DesignTokens.shadowMedium,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            // 16dp 이상 간격 확보를 위해 Expanded 사용
-            Expanded(
-              child: AppBottomNavItem(
-                icon: Icons.forum_outlined,
-                selectedIcon: Icons.forum,
-                label: AppConstants.BOARD,
-                isSelected: _selectedIndex == 0,
-                onTap: () => _onItemTapped(0),
-              ),
-            ),
-            Expanded(
-              child: AppBottomNavItem(
-                icon: Icons.groups_outlined,
-                selectedIcon: Icons.groups,
-                label: AppConstants.MEETUP,
-                isSelected: _selectedIndex == 1,
-                onTap: () => _onItemTapped(1),
-              ),
-            ),
-            Expanded(
-              child: AppBottomNavItem(
-                icon: Icons.person_outline,
-                selectedIcon: Icons.person,
-                label: AppConstants.MYPAGE,
-                isSelected: _selectedIndex == 2,
-                onTap: () => _onItemTapped(2),
-              ),
-            ),
-            Expanded(
-              child: AppBottomNavItem(
-                icon: Icons.people_outline,
-                selectedIcon: Icons.people,
-                label: '친구',
-                isSelected: _selectedIndex == 3,
-                onTap: () => _onItemTapped(3),
-              ),
-            ),
-          ],
-        ),
+      // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
+      bottomNavigationBar: AdaptiveBottomNavigation(
+        selectedIndex: _selectedIndex,
+        onItemTapped: _onItemTapped,
+        items: const [
+          BottomNavigationItem(
+            icon: Icons.forum_outlined,
+            selectedIcon: Icons.forum,
+            label: AppConstants.BOARD,
+          ),
+          BottomNavigationItem(
+            icon: Icons.groups_outlined,
+            selectedIcon: Icons.groups,
+            label: AppConstants.MEETUP,
+          ),
+          BottomNavigationItem(
+            icon: Icons.person_outline,
+            selectedIcon: Icons.person,
+            label: AppConstants.MYPAGE,
+          ),
+          BottomNavigationItem(
+            icon: Icons.people_outline,
+            selectedIcon: Icons.people,
+            label: '친구',
+          ),
+        ],
       ),
     );
   }

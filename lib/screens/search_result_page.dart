@@ -8,6 +8,8 @@ import '../models/meetup.dart';
 import '../services/post_service.dart';
 import '../services/meetup_service.dart';
 import '../ui/widgets/app_icon_button.dart';
+import 'meetup_detail_screen.dart';
+import 'post_detail_screen.dart';
 
 class SearchResultPage extends StatefulWidget {
   final String boardType; // 'meeting' 또는 'info'
@@ -260,95 +262,136 @@ class _SearchResultPageState extends State<SearchResultPage> {
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
         final meetup = _searchResults[index] as Meetup;
-        return Container(
-          decoration: BoxDecoration(
-            color: const Color(0xFFE9F1FF),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 상단: 제목 + 시간
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      meetup.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    meetup.getFormattedDate(),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.blue,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              
-              // 본문
-              Text(
-                meetup.description,
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black.withOpacity(0.6),
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 12),
-              
-              // 하단: 참여 현황 + Join 버튼
-              Row(
-                children: [
-                  Icon(
-                    Icons.people,
-                    size: 16,
-                    color: Colors.blue.shade700,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.blue.shade700,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const Spacer(),
-                  Container(
-                    height: 32,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF68FF3A),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Center(
+        return InkWell(
+          onTap: () {
+            _showMeetupDetail(meetup);
+          },
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFE9F1FF),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 상단: 제목 + 오늘 예정 라벨
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
                       child: Text(
-                        'Join',
+                        meetup.title,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 16,
                           fontWeight: FontWeight.bold,
                           color: Colors.black,
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.blue,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        meetup.getFormattedDate(),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                
+                // 호스트 닉네임
+                Text(
+                  '주최자: ${meetup.host}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.black.withOpacity(0.5),
                   ),
-                ],
-              ),
-            ],
+                ),
+                const SizedBox(height: 8),
+                
+                // 본문
+                Text(
+                  meetup.description,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black.withOpacity(0.6),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 12),
+                
+                // 하단: 위치 + 참여 현황
+                Row(
+                  children: [
+                    Icon(
+                      Icons.location_on,
+                      size: 14,
+                      color: Colors.red.shade400,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        meetup.location,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.black.withOpacity(0.6),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Icon(
+                      Icons.people,
+                      size: 16,
+                      color: Colors.blue.shade700,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${meetup.currentParticipants}/${meetup.maxParticipants}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  // 모임 상세 다이얼로그 표시
+  void _showMeetupDetail(Meetup meetup) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      builder: (context) => MeetupDetailScreen(
+        meetup: meetup,
+        meetupId: meetup.id,
+        onMeetupDeleted: () {
+          // 모임이 삭제되면 검색 결과 새로고침
+          if (_searchController.text.isNotEmpty) {
+            _performSearch(_searchController.text);
+          }
+        },
+      ),
     );
   }
 
@@ -362,11 +405,15 @@ class _SearchResultPageState extends State<SearchResultPage> {
       ),
       itemBuilder: (context, index) {
         final post = _searchResults[index] as Post;
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        return InkWell(
+          onTap: () {
+            _showPostDetail(post);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
               // 좌측: 하트/댓글 아이콘
               Column(
                 children: [
@@ -482,10 +529,21 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   ),
                 ],
               ),
-            ],
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  // 게시글 상세 화면으로 이동
+  void _showPostDetail(Post post) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(post: post),
+      ),
     );
   }
 }

@@ -8,6 +8,7 @@ import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
+import '../../widgets/country_flag_circle.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -105,6 +106,55 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
   }
 
+  /// 공개 범위에 따른 테두리 색상 결정
+  Color _getBorderColor(Post post) {
+    // 전체 공개 + 익명 → 테두리 없음 (투명)
+    if (post.visibility == 'public' && post.isAnonymous) {
+      return Colors.transparent;
+    }
+    // 카테고리별 공개 (비공개) → 주황색
+    else if (post.visibility == 'category') {
+      return const Color(0xFFF78C6A);
+    }
+    // 기본 (전체 공개 + 아이디 공개) → 연한 테두리
+    else {
+      return AppTheme.primary.withOpacity(0.1);
+    }
+  }
+
+  /// 공개 범위 배지 위젯
+  Widget? _buildVisibilityBadge(Post post, ThemeData theme) {
+    String? badgeText;
+    Color? badgeColor;
+    
+    if (post.visibility == 'public' && post.isAnonymous) {
+      badgeText = '익명';
+      badgeColor = const Color(0xFF108AB1);
+    } else if (post.visibility == 'category') {
+      badgeText = '비공개';
+      badgeColor = const Color(0xFFF78C6A);
+    }
+    
+    if (badgeText == null || badgeColor == null) return null;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: badgeColor.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        badgeText,
+        style: TextStyle(
+          color: badgeColor,
+          fontWeight: FontWeight.w700,
+          fontSize: 9,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -124,8 +174,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           ),
         ],
         border: Border.all(
-          color: AppTheme.primary.withOpacity(0.1),
-          width: 1,
+          color: _getBorderColor(widget.post),
+          width: 2,
         ),
       ),
       child: Material(
@@ -139,21 +189,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 작성자 정보
-                _buildAuthorInfo(widget.post, theme, colorScheme),
-                
-                const SizedBox(height: 12),
-
-                // 게시글 내용
-                Text(
-                  widget.post.content,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    height: 1.4,
-                  ),
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                // 작성자 정보와 제목을 한 줄에 표시
+                _buildAuthorInfoWithTitle(widget.post, theme, colorScheme),
 
                 // 이미지 (있는 경우)
                 if (widget.post.imageUrls.isNotEmpty) ...[
@@ -173,67 +210,105 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
-  /// 작성자 정보 빌드
-  Widget _buildAuthorInfo(Post post, ThemeData theme, ColorScheme colorScheme) {
-    // 안전한 작성자 정보 추출
-    final String authorName = post.author;
-    final String? authorImageUrl = null; // Post 모델에 imageUrl이 없으므로 null
+  /// 작성자 정보와 제목을 함께 빌드
+  Widget _buildAuthorInfoWithTitle(Post post, ThemeData theme, ColorScheme colorScheme) {
+    // 익명 여부에 따라 작성자 정보 결정
+    final bool isAnonymous = post.isAnonymous;
+    final String authorName = isAnonymous ? '익명' : post.author;
+    final String? authorImageUrl = isAnonymous ? null : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // 프로필 이미지
-        Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: colorScheme.primaryContainer,
-          ),
-          child: authorImageUrl?.isNotEmpty == true
-              ? ClipOval(
-                  child: Image.network(
-                    authorImageUrl!,
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Icon(
+        // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 프로필 이미지
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey.shade300,
+              ),
+              child: (authorImageUrl != null && !isAnonymous)
+                  ? ClipOval(
+                      child: Image.network(
+                        authorImageUrl,
+                        width: 40,
+                        height: 40,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    )
+                  : Icon(
                       Icons.person,
-                      color: colorScheme.onPrimaryContainer,
-                      size: 20,
+                      size: 24,
+                      color: Colors.grey[600],
+                    ),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // 작성자 이름과 시간
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        authorName,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: colorScheme.onSurface,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      // 국적 표시 (항상)
+                      CountryFlagCircle(
+                        nationality: post.authorNationality,
+                        size: 20, // 16 → 20으로 증가
+                      ),
+                      // 공개 범위 배지
+                      if (_buildVisibilityBadge(post, theme) != null) ...[
+                        const SizedBox(width: 8),
+                        _buildVisibilityBadge(post, theme)!,
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatTimeAgo(post.createdAt),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
                     ),
                   ),
-                )
-              : Icon(
-                  IconStyles.person,
-                  color: colorScheme.onPrimaryContainer,
-                  size: 20,
-                ),
+                ],
+              ),
+            ),
+          ],
         ),
         
-        const SizedBox(width: 12),
-        
-        // 작성자 이름과 시간
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                authorName,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: colorScheme.onSurface,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _formatTimeAgo(post.createdAt),
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+        // 게시글 제목 (프로필 아래에 표시)
+        if (post.title.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text(
+            post.title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontWeight: FontWeight.w700,
+              fontSize: 16,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-        ),
+        ],
       ],
     );
   }
@@ -376,13 +451,23 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
-  /// 시간 포맷팅
+  /// 시간 포맷팅 - 24시간 이후는 날짜로 표시
   String _formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
 
-    if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+    // 24시간(1일) 이상 지난 경우 날짜 표시
+    if (difference.inHours >= 24) {
+      final year = dateTime.year;
+      final month = dateTime.month.toString().padLeft(2, '0');
+      final day = dateTime.day.toString().padLeft(2, '0');
+      
+      // 올해 게시글이면 년도 생략
+      if (year == now.year) {
+        return '$month.$day';
+      } else {
+        return '$year.$month.$day';
+      }
     } else if (difference.inHours > 0) {
       return '${difference.inHours}시간 전';
     } else if (difference.inMinutes > 0) {

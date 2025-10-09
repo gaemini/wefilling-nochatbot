@@ -116,7 +116,12 @@ class RelationshipProvider with ChangeNotifier {
       }
       return success;
     } catch (e) {
-      _setError('친구요청 전송 중 오류가 발생했습니다: $e');
+      // Exception 객체의 메시지를 추출 (FirebaseFunctionsException에서 파싱된 메시지)
+      String errorMessage = e.toString();
+      if (errorMessage.startsWith('Exception: ')) {
+        errorMessage = errorMessage.substring('Exception: '.length);
+      }
+      _setError(errorMessage);
       return false;
     } finally {
       _setLoading(false);

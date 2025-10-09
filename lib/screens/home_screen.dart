@@ -189,17 +189,17 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           allMeetups = await _meetupService.getFilteredMeetupsByFriendCategories(
             categoryIds: null, // null = 모든 친구 관계 기반 필터링
           );
-          
-          // 날짜 필터링 추가 적용
-          final selectedDate = _getWeekDates()[_tabController.index];
-          final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
-          final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
-          
-          allMeetups = allMeetups.where((meetup) {
-            return meetup.date.isAfter(startOfDay.subtract(const Duration(microseconds: 1))) &&
-                   meetup.date.isBefore(endOfDay.add(const Duration(microseconds: 1)));
-          }).toList();
         }
+        
+        // 모든 경우에 날짜 필터링 적용 (검색 모드가 아닐 때)
+        final selectedDate = _getWeekDates()[_tabController.index];
+        final startOfDay = DateTime(selectedDate.year, selectedDate.month, selectedDate.day);
+        final endOfDay = startOfDay.add(const Duration(days: 1)).subtract(const Duration(microseconds: 1));
+        
+        allMeetups = allMeetups.where((meetup) {
+          return meetup.date.isAfter(startOfDay.subtract(const Duration(microseconds: 1))) &&
+                 meetup.date.isBefore(endOfDay.add(const Duration(microseconds: 1)));
+        }).toList();
       }
 
       // 카테고리 필터링 적용
@@ -306,7 +306,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           if (!_isSearching)
             Container(
               padding: const EdgeInsets.symmetric(
-                vertical: 12.0, // 위아래 간격을 약간 늘림
+                vertical: 2.0,
                 horizontal: 16.0,
               ),
               child: Row(
@@ -325,7 +325,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       onTap: _goToCurrentWeek,
                       child: Text(
                         '$selectedDayString (${_weekdayNames[weekDates[_tabController.index].weekday - 1]})',
-                        style: Theme.of(context).textTheme.titleMedium,
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontSize: 15,
+                          height: 1.2,
+                        ),
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -482,9 +485,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   Widget _buildCompactTabBar(List<DateTime> weekDates) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
 
     return Container(
-      height: 56, // 컴팩트 높이
+      height: 56, // 원래 높이로 복원
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -498,41 +503,60 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         controller: _tabController,
         tabs: List.generate(
           weekDates.length,
-          (index) => Tab(
-            height: 48, // 터치 타깃 확보
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 요일 (일요일은 빨간색, 토요일은 파란색)
-                Text(
-                  _weekdayNames[weekDates[index].weekday - 1],
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                    color: weekDates[index].weekday == 7 // 일요일 체크 (7 = 일요일)
-                        ? Colors.red
-                        : weekDates[index].weekday == 6 // 토요일 체크 (6 = 토요일)
-                            ? Colors.blue
-                            : null, // 기본 색상 유지
-                  ),
+          (index) {
+            final date = weekDates[index];
+            final dateOnly = DateTime(date.year, date.month, date.day);
+            final isToday = dateOnly.isAtSameMomentAs(today);
+            
+            return Tab(
+              height: 48, // 원래 높이로 복원
+              child: Container(
+                decoration: isToday
+                    ? BoxDecoration(
+                        border: Border(
+                          top: BorderSide(
+                            color: Colors.purple, // 보라색
+                            width: 2.5, // 얇은 선
+                          ),
+                        ),
+                      )
+                    : null,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // 요일 (일요일은 빨간색, 토요일은 파란색)
+                    Text(
+                      _weekdayNames[date.weekday - 1],
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: date.weekday == 7 // 일요일 체크 (7 = 일요일)
+                            ? Colors.red
+                            : date.weekday == 6 // 토요일 체크 (6 = 토요일)
+                                ? Colors.blue
+                                : null, // 기본 색상 유지
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    // 날짜 (일요일은 빨간색, 토요일은 파란색)
+                    Text(
+                      '${date.day}',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: date.weekday == 7 // 일요일 체크
+                            ? Colors.red
+                            : date.weekday == 6 // 토요일 체크
+                                ? Colors.blue
+                                : null, // 기본 색상 유지
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                // 날짜 (일요일은 빨간색, 토요일은 파란색)
-                Text(
-                  '${weekDates[index].day}',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 16,
-                    color: weekDates[index].weekday == 7 // 일요일 체크
-                        ? Colors.red
-                        : weekDates[index].weekday == 6 // 토요일 체크
-                            ? Colors.blue
-                            : null, // 기본 색상 유지
-                  ),
-                ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
         isScrollable: false,
         labelColor: colorScheme.primary,
@@ -657,16 +681,23 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   void _showFriendFilterBottomSheet() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return SafeArea(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
               // 헤더
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -686,68 +717,82 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               ),
               const SizedBox(height: 16),
               
-              // 필터 옵션들
-              _buildFilterOption(
-                title: '모든 모임',
-                subtitle: '볼 수 있는 모든 모임을 표시합니다',
-                value: 'all',
-                icon: Icons.public,
-              ),
-              _buildFilterOption(
-                title: '전체 공개만',
-                subtitle: '누구나 볼 수 있도록 공개된 모임만 표시',
-                value: 'public',
-                icon: Icons.language,
-              ),
-              _buildFilterOption(
-                title: '친구 모임만',
-                subtitle: '친구들이 만든 모든 모임을 표시',
-                value: 'friends',
-                icon: Icons.people,
-              ),
-              
-              // 친구 그룹별 필터
-              if (_friendCategories.isNotEmpty) ...[
-                const Divider(height: 24),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      size: 16,
-                      color: Colors.blue[600],
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      '특정 친구 그룹만 보기',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF666666),
+              // 스크롤 가능한 필터 옵션들
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 필터 옵션들
+                      _buildFilterOption(
+                        title: '모든 모임',
+                        subtitle: '볼 수 있는 모든 모임을 표시합니다',
+                        value: 'all',
+                        icon: Icons.public,
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '선택한 그룹에 공개된 모임만 표시됩니다',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Color(0xFF888888),
+                      _buildFilterOption(
+                        title: '전체 공개만',
+                        subtitle: '누구나 볼 수 있도록 공개된 모임만 표시',
+                        value: 'public',
+                        icon: Icons.language,
+                      ),
+                      _buildFilterOption(
+                        title: '친구 모임만',
+                        subtitle: '친구들이 만든 모든 모임을 표시',
+                        value: 'friends',
+                        icon: Icons.people,
+                      ),
+                      
+                      // 친구 그룹별 필터
+                      if (_friendCategories.isNotEmpty) ...[
+                        const Divider(height: 24),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.info_outline,
+                              size: 16,
+                              color: Colors.blue[600],
+                            ),
+                            const SizedBox(width: 6),
+                            const Text(
+                              '특정 친구 그룹만 보기',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF666666),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          '선택한 그룹에 공개된 모임만 표시됩니다',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF888888),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        
+                        ...(_friendCategories.map((category) => _buildFilterOption(
+                          title: category.name,
+                          subtitle: '${category.friendIds.length}명의 친구 · 이 그룹에 공개된 모임만 표시',
+                          value: 'category:${category.id}',
+                          icon: Icons.group,
+                        ))),
+                      ],
+                      
+                      const SizedBox(height: 16),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 8),
-                
-                ...(_friendCategories.map((category) => _buildFilterOption(
-                  title: category.name,
-                  subtitle: '${category.friendIds.length}명의 친구 · 이 그룹에 공개된 모임만 표시',
-                  value: 'category:${category.id}',
-                  icon: Icons.group,
-                ))),
-              ],
-              
-              const SizedBox(height: 16),
+              ),
             ],
           ),
+            ),
+          );
+          },
         );
       },
     );

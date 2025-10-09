@@ -69,7 +69,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     if (success) {
       _showSnackBar('친구요청을 보냈습니다.', Colors.green);
     } else {
-      _showSnackBar('친구요청 전송에 실패했습니다.', Colors.red);
+      // Provider의 구체적인 오류 메시지 표시
+      final errorMessage = provider.errorMessage ?? '친구요청 전송에 실패했습니다.';
+      _showSnackBar(errorMessage, Colors.red);
     }
   }
 

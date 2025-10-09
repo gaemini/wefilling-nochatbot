@@ -9,6 +9,7 @@ import '../design/tokens.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../providers/auth_provider.dart';
+import 'category_detail_screen.dart';
 
 class FriendCategoriesScreen extends StatefulWidget {
   const FriendCategoriesScreen({super.key});
@@ -168,29 +169,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             fontSize: 16,
           ),
         ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (category.description.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Text(
-                category.description,
-                style: TextStyle(
-                  color: BrandColors.neutral600,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-            Text(
-              '${category.friendIds.length}명의 친구',
-              style: TextStyle(
-                color: BrandColors.neutral500,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-              ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            '${category.friendIds.length}명의 친구',
+            style: TextStyle(
+              color: BrandColors.neutral500,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
-          ],
+          ),
         ),
         trailing: PopupMenuButton<String>(
           icon: Icon(
@@ -249,7 +237,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   void _showCategoryDialog({FriendCategory? category}) {
     final isEdit = category != null;
     final nameController = TextEditingController(text: category?.name ?? '');
-    final descriptionController = TextEditingController(text: category?.description ?? '');
     String selectedColor = category?.color ?? '#4A90E2';
     String selectedIcon = category?.iconName ?? 'group';
 
@@ -267,14 +254,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   decoration: const InputDecoration(
                     labelText: '카테고리 이름',
                     hintText: '예: 대학 친구',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: descriptionController,
-                  decoration: const InputDecoration(
-                    labelText: '설명 (선택사항)',
-                    hintText: '예: 같은 대학교 친구들',
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -313,14 +292,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   success = await _categoryService.updateCategory(
                     categoryId: category!.id,
                     name: name,
-                    description: descriptionController.text.trim(),
+                    description: '',
                     color: selectedColor,
                     iconName: selectedIcon,
                   );
                 } else {
                   final categoryId = await _categoryService.createCategory(
                     name: name,
-                    description: descriptionController.text.trim(),
+                    description: '',
                     color: selectedColor,
                     iconName: selectedIcon,
                   );
@@ -481,10 +460,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   }
 
   void _navigateToCategoryDetail(FriendCategory category) {
-    // TODO: 카테고리 상세 화면으로 이동
-    // Navigator.push(context, MaterialPageRoute(
-    //   builder: (context) => CategoryDetailScreen(category: category),
-    // ));
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CategoryDetailScreen(category: category),
+      ),
+    );
   }
 
   Future<void> _createDefaultCategoriesIfNeeded() async {

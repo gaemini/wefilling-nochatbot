@@ -5,8 +5,11 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -19,10 +22,33 @@ import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
 import 'firebase_options.dart';
+import 'services/feature_flag_service.dart';
+import 'services/fcm_service.dart';
+import 'services/ad_banner_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugDefaultTargetPlatformOverride = TargetPlatform.android;
+  
+  // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark, // 라이트모드용
+      systemNavigationBarColor: Colors.transparent,
+      systemNavigationBarIconBrightness: Brightness.dark, // 라이트모드용
+      systemNavigationBarDividerColor: Colors.transparent,
+    ),
+  );
+  
+  // Edge-to-edge 모드 활성화
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  
+  // 화면 회전 제한 (세로 방향만 허용)
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown,
+  ]);
   
   // Firebase 중복 초기화 방지
   try {
@@ -36,6 +62,9 @@ void main() async {
       rethrow;
     }
   }
+
+  // FCM 백그라운드 메시지 핸들러 등록
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
   // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
@@ -86,6 +115,16 @@ void main() async {
       );
       
       print('✅ Firestore 설정 완료');
+      
+      // 광고 배너 초기화
+      try {
+        print('📢 광고 배너 초기화 시작');
+        final adBannerService = AdBannerService();
+        await adBannerService.initializeSampleBanners();
+        print('✅ 광고 배너 초기화 완료');
+      } catch (adError) {
+        print('❌ 광고 배너 초기화 오류: $adError');
+      }
     } catch (firestoreError) {
       print('❌ Firestore 설정 중 오류: $firestoreError');
     }
@@ -107,6 +146,14 @@ void main() async {
     print('❌ Firebase 초기화 중 오류: $e');
   }
 
+  // FeatureFlagService 초기화
+  try {
+    await FeatureFlagService().init();
+    print('🚩 FeatureFlagService 초기화 완료');
+  } catch (e) {
+    print('⚠️ FeatureFlagService 초기화 오류: $e');
+  }
+
   runApp(
     MultiProvider(
       providers: [
@@ -126,8 +173,16 @@ class MeetupApp extends StatelessWidget {
     return MaterialApp(
       title: 'David C.',
       theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light, // 강제 라이트모드
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('ko', 'KR'), // 한국어
+        Locale('en', 'US'), // 영어
+      ],
       routes: {
         '/edit-meetup': (context) {
           final meetup = ModalRoute.of(context)!.settings.arguments as Meetup;

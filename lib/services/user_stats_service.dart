@@ -12,7 +12,7 @@ class UserStatsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // 사용자가 주최한 모임 수
+  // 사용자가 주최한 모임 수 (후기 작성 완료된 모임만)
   Stream<int> getHostedMeetupCount() {
     final user = _auth.currentUser;
     if (user == null) {
@@ -23,7 +23,29 @@ class UserStatsService {
         .collection('meetups')
         .where('userId', isEqualTo: user.uid)
         .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .asyncMap((snapshot) async {
+          int count = 0;
+          
+          // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
+          for (var doc in snapshot.docs) {
+            final meetupId = doc.id;
+            
+            // 리뷰 합의 문서 확인
+            final reviewDoc = await _firestore
+                .collection('meetings')
+                .doc(meetupId)
+                .collection('reviews')
+                .doc('consensus')
+                .get();
+            
+            // 리뷰 합의가 완료된 모임만 카운트
+            if (reviewDoc.exists) {
+              count++;
+            }
+          }
+          
+          return count;
+        });
   }
 
   // 사용자가 참여한 모임 수 (주최한 모임 제외)
@@ -128,6 +150,7 @@ class UserStatsService {
                 maxParticipants: data['maxParticipants'] ?? 0,
                 currentParticipants: data['currentParticipants'] ?? 0,
                 host: data['hostNickname'] ?? '',
+                hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
                 imageUrl: data['imageUrl'] ?? '',
                 date: meetupDate,
                 userId: data['userId'], // 모임 주최자 ID 추가
@@ -175,6 +198,8 @@ class UserStatsService {
               title: data['title'] ?? '',
               content: data['content'] ?? '',
               author: data['authorNickname'] ?? '',
+              authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
+              category: data['category'] ?? '일반', // 카테고리 추가
               createdAt:
                   data['createdAt'] != null
                       ? (data['createdAt'] as Timestamp).toDate()
@@ -183,6 +208,7 @@ class UserStatsService {
               likes: (data['likes'] ?? 0).toInt(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: (data['commentCount'] ?? 0).toInt(),
+              imageUrls: List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
             );
           }).toList();
         });
@@ -229,6 +255,8 @@ class UserStatsService {
               title: data['title'] ?? '',
               content: data['content'] ?? '',
               author: data['authorNickname'] ?? '',
+              authorNationality: data['authorNationality'] ?? '', // 국적 정보 추가
+              category: data['category'] ?? '일반', // 카테고리 추가
               createdAt:
                   data['createdAt'] != null
                       ? (data['createdAt'] as Timestamp).toDate()
@@ -237,8 +265,70 @@ class UserStatsService {
               likes: (data['likes'] ?? 0).toInt(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: (data['commentCount'] ?? 0).toInt(),
+              imageUrls: List<String>.from(data['imageUrls'] ?? []), // 이미지 URL 목록 추가
             );
           }).toList();
         });
+  }
+
+  // ==================== 특정 사용자 통계 메서드 ====================
+  // 다른 사용자의 프로필을 볼 때 사용
+
+  // 특정 사용자가 주최한 모임 수 (후기 작성 완료된 모임만)
+  Stream<int> getHostedMeetupCountForUser(String userId) {
+    return _firestore
+        .collection('meetups')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          int count = 0;
+          
+          // 각 모임에 대해 리뷰 합의가 완료되었는지 확인
+          for (var doc in snapshot.docs) {
+            final meetupId = doc.id;
+            
+            // 리뷰 합의 문서 확인
+            final reviewDoc = await _firestore
+                .collection('meetings')
+                .doc(meetupId)
+                .collection('reviews')
+                .doc('consensus')
+                .get();
+            
+            // 리뷰 합의가 완료된 모임만 카운트
+            if (reviewDoc.exists) {
+              count++;
+            }
+          }
+          
+          return count;
+        });
+  }
+
+  // 특정 사용자가 참여한 모임 수 (주최한 모임 제외)
+  Stream<int> getJoinedMeetupCountForUser(String userId) {
+    return _firestore
+        .collection('meetups')
+        .where('participants', arrayContains: userId)
+        .snapshots()
+        .map((snapshot) {
+          // 주최하지 않은 모임만 필터링
+          final filteredDocs =
+              snapshot.docs.where((doc) {
+                final data = doc.data();
+                return data['userId'] != userId;
+              }).toList();
+
+          return filteredDocs.length;
+        });
+  }
+
+  // 특정 사용자가 작성한 게시글 수
+  Stream<int> getUserPostCountForUser(String userId) {
+    return _firestore
+        .collection('posts')
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
   }
 }

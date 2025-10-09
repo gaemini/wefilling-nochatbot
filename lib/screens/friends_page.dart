@@ -12,6 +12,7 @@ import '../widgets/user_tile.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
+import 'friend_profile_screen.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -183,6 +184,30 @@ class _FriendsPageState extends State<FriendsPage> {
     return result ?? false;
   }
 
+  /// 친구 프로필로 이동
+  void _navigateToProfile(UserProfile friend) {
+    try {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => FriendProfileScreen(
+            userId: friend.uid,
+            nickname: friend.displayNameOrNickname,
+            photoURL: friend.photoURL,
+            email: friend.email,
+            university: friend.university,
+          ),
+        ),
+      );
+    } catch (e) {
+      _showSnackBar(
+        '프로필을 불러올 수 없습니다.',
+        Colors.red,
+      );
+      print('프로필 이동 오류: $e');
+    }
+  }
+
   /// 친구 옵션 메뉴 표시
   void _showFriendOptions(UserProfile friend) {
     showModalBottomSheet(
@@ -197,8 +222,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   title: const Text('프로필 보기'),
                   onTap: () {
                     Navigator.pop(context);
-                    // TODO: 프로필 화면으로 이동
-                    _showSnackBar('프로필 화면은 곧 추가될 예정입니다.', Colors.blue);
+                    _navigateToProfile(friend);
                   },
                 ),
                 ListTile(
@@ -287,7 +311,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   return RadioListTile<String?>(
                     title: Text(category.name),
                     subtitle: Text(
-                      '${category.description}\n${category.friendIds.length}명의 친구',
+                      '${category.friendIds.length}명의 친구',
                     ),
                     value: category.id,
                     groupValue: currentCategoryId,
@@ -580,34 +604,40 @@ class _FriendsPageState extends State<FriendsPage> {
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           elevation: 2,
           child: InkWell(
-            onTap: () => _showFriendOptions(friend),
+            onTap: () => _navigateToProfile(friend),
+            onLongPress: () => _showFriendOptions(friend),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
                   // 프로필 이미지
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor: Colors.grey[300],
-                    backgroundImage:
-                        friend.hasProfileImage
-                            ? NetworkImage(friend.photoURL!)
-                            : null,
-                    child:
-                        !friend.hasProfileImage
-                            ? Text(
-                              friend.displayNameOrNickname.isNotEmpty
-                                  ? friend.displayNameOrNickname[0]
-                                      .toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey[300],
+                    ),
+                    child: friend.hasProfileImage
+                        ? ClipOval(
+                            child: Image.network(
+                              friend.photoURL!,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.person,
+                                size: 24,
+                                color: Colors.grey[600],
                               ),
-                            )
-                            : null,
+                            ),
+                          )
+                        : Icon(
+                            Icons.person,
+                            size: 24,
+                            color: Colors.grey[600],
+                          ),
                   ),
 
                   const SizedBox(width: 16),
@@ -657,7 +687,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     ),
                   ),
 
-                  // 친구 그룹 배지
+                  // 친구 그룹 배지 및 메뉴
                   Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
@@ -694,11 +724,15 @@ class _FriendsPageState extends State<FriendsPage> {
                       _buildGroupBadge(friend),
                     ],
                   ),
-
-                  const SizedBox(width: 8),
-
-                  // 더보기 버튼
-                  AppMoreButton(onPressed: () => _showFriendOptions(friend)),
+                  
+                  // 메뉴 버튼 (맨 오른쪽 상단에 배치)
+                  IconButton(
+                    icon: const Icon(Icons.more_vert),
+                    iconSize: 20,
+                    padding: const EdgeInsets.all(4),
+                    constraints: const BoxConstraints(),
+                    onPressed: () => _showFriendOptions(friend),
+                  ),
                 ],
               ),
             ),

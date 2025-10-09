@@ -214,4 +214,54 @@ class ReviewService {
     }
   }
 
+  // 특정 사용자의 후기 게시글 스트림 가져오기 (친구 프로필 조회용)
+  Stream<List<ReviewPost>> getUserReviewsStream(String userId) {
+    try {
+      return _firestore
+          .collection('reviews')
+          .where('authorId', isEqualTo: userId)
+          .snapshots()
+          .map((snapshot) {
+        final reviews = <ReviewPost>[];
+        
+        for (var doc in snapshot.docs) {
+          try {
+            final data = doc.data();
+            
+            // 기본값으로 안전한 ReviewPost 생성
+            final review = ReviewPost(
+              id: doc.id,
+              authorId: data['authorId'] ?? userId,
+              authorName: data['authorName'] ?? '익명',
+              authorProfileImage: data['authorProfileImage'] ?? '',
+              meetupId: data['meetupId'] ?? '',
+              meetupTitle: data['meetupTitle'] ?? '모임',
+              imageUrls: List<String>.from(data['imageUrls'] ?? []),
+              content: data['content'] ?? '',
+              category: data['category'] ?? '일반',
+              rating: data['rating'] ?? 5,
+              taggedUserIds: List<String>.from(data['taggedUserIds'] ?? []),
+              createdAt: data['createdAt'] is Timestamp 
+                  ? (data['createdAt'] as Timestamp).toDate() 
+                  : DateTime.now(),
+              likedBy: List<String>.from(data['likedBy'] ?? []),
+              commentCount: data['commentCount'] ?? 0,
+              privacyLevel: _parsePrivacyLevel(data['privacyLevel']),
+            );
+            
+            reviews.add(review);
+          } catch (e) {
+            print('후기 파싱 오류: $e');
+            // 개별 문서 오류는 무시하고 계속 진행
+          }
+        }
+        
+        return reviews;
+      });
+    } catch (e) {
+      print('후기 스트림 오류: $e');
+      return Stream.value([]);
+    }
+  }
+
 }

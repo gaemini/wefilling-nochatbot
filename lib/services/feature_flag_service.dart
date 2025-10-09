@@ -124,13 +124,9 @@ class FeatureFlagService {
   /// 환경변수에서 값 가져오기 (개발용)
   bool? _getEnvironmentValue(String featureKey) {
     // Flutter에서는 const String.fromEnvironment 사용
-    const envPrefix = 'FLUTTER_';
-    final envKey = envPrefix + featureKey.toUpperCase();
-    
-    const rawValue = String.fromEnvironment(envKey);
-    if (rawValue.isEmpty) return null;
-    
-    return rawValue.toLowerCase() == 'true';
+    // envKey는 동적으로 생성되므로 각 feature별로 하드코딩 필요
+    // 지금은 기능을 비활성화
+    return null;
   }
 
   /// 모든 Feature Flag 상태 출력 (디버그용)

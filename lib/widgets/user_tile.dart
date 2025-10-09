@@ -52,24 +52,32 @@ class UserTile extends StatelessWidget {
 
   /// 프로필 이미지 위젯
   Widget _buildProfileImage() {
-    return CircleAvatar(
-      radius: 24,
-      backgroundColor: Colors.grey[300],
-      backgroundImage:
-          user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
-      child:
-          !user.hasProfileImage
-              ? Text(
-                user.displayNameOrNickname.isNotEmpty
-                    ? user.displayNameOrNickname[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
+    return Container(
+      width: 48,
+      height: 48,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.grey[300],
+      ),
+      child: user.hasProfileImage
+          ? ClipOval(
+              child: Image.network(
+                user.photoURL!,
+                width: 48,
+                height: 48,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.person,
+                  size: 24,
+                  color: Colors.grey[600],
                 ),
-              )
-              : null,
+              ),
+            )
+          : Icon(
+              Icons.person,
+              size: 24,
+              color: Colors.grey[600],
+            ),
     );
   }
 
@@ -229,24 +237,32 @@ class SimpleUserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: CircleAvatar(
-        radius: 20,
-        backgroundColor: Colors.grey[300],
-        backgroundImage:
-            user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
-        child:
-            !user.hasProfileImage
-                ? Text(
-                  user.displayNameOrNickname.isNotEmpty
-                      ? user.displayNameOrNickname[0].toUpperCase()
-                      : '?',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.grey[300],
+        ),
+        child: user.hasProfileImage
+            ? ClipOval(
+                child: Image.network(
+                  user.photoURL!,
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Icon(
+                    Icons.person,
+                    size: 20,
+                    color: Colors.grey[600],
                   ),
-                )
-                : null,
+                ),
+              )
+            : Icon(
+                Icons.person,
+                size: 20,
+                color: Colors.grey[600],
+              ),
       ),
       title: Text(
         user.displayNameOrNickname,

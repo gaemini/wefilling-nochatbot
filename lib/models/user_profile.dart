@@ -10,6 +10,8 @@ class UserProfile {
   final String? photoURL;
   final String? nickname;
   final String? nationality;
+  final String? email;
+  final String? university;
   final int friendsCount;
   final int incomingCount; // 받은 친구요청 수
   final int outgoingCount; // 보낸 친구요청 수
@@ -22,6 +24,8 @@ class UserProfile {
     this.photoURL,
     this.nickname,
     this.nationality,
+    this.email,
+    this.university,
     this.friendsCount = 0,
     this.incomingCount = 0,
     this.outgoingCount = 0,
@@ -39,6 +43,8 @@ class UserProfile {
       photoURL: data['photoURL'],
       nickname: data['nickname'],
       nationality: data['nationality'],
+      email: data['email'],
+      university: data['university'],
       friendsCount: data['friendsCount'] ?? 0,
       incomingCount: data['incomingCount'] ?? 0,
       outgoingCount: data['outgoingCount'] ?? 0,
@@ -54,6 +60,8 @@ class UserProfile {
       'photoURL': photoURL,
       'nickname': nickname,
       'nationality': nationality,
+      'email': email,
+      'university': university,
       'friendsCount': friendsCount,
       'incomingCount': incomingCount,
       'outgoingCount': outgoingCount,
@@ -77,6 +85,8 @@ class UserProfile {
     String? photoURL,
     String? nickname,
     String? nationality,
+    String? email,
+    String? university,
     int? friendsCount,
     int? incomingCount,
     int? outgoingCount,
@@ -88,6 +98,8 @@ class UserProfile {
       photoURL: photoURL ?? this.photoURL,
       nickname: nickname ?? this.nickname,
       nationality: nationality ?? this.nationality,
+      email: email ?? this.email,
+      university: university ?? this.university,
       friendsCount: friendsCount ?? this.friendsCount,
       incomingCount: incomingCount ?? this.incomingCount,
       outgoingCount: outgoingCount ?? this.outgoingCount,

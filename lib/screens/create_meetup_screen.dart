@@ -49,8 +49,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   List<String> _selectedCategoryIds = [];
 
   // 썸네일 관련 변수
-  final TextEditingController _thumbnailTextController =
-      TextEditingController();
   File? _thumbnailImage;
   final ImagePicker _picker = ImagePicker();
 
@@ -142,7 +140,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
-    _thumbnailTextController.dispose();
     _friendCategoryService.dispose();
     super.dispose();
   }
@@ -164,20 +161,18 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final nickname =
         authProvider.userData?['nickname'] ?? AppConstants.DEFAULT_HOST;
     final nationality = authProvider.userData?['nationality'] ?? '';
+    final photoURL = authProvider.user?.photoURL;
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-      alignment: Alignment.bottomCenter,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+      alignment: Alignment.center,
       child: Container(
         width: double.infinity,
         height: MediaQuery.of(context).size.height * 0.82, // 82vh 높이
         decoration: BoxDecoration(
           color: const Color(0xFFFAFBFC), // 연한 배경색
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
+          borderRadius: BorderRadius.circular(20), // 전체 모서리 둥글게
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.08),
@@ -187,10 +182,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           ],
         ),
         child: ClipRRect(
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(20),
-            topRight: Radius.circular(20),
-          ),
+          borderRadius: BorderRadius.circular(20), // 전체 모서리 둥글게
           child: Column(
             children: [
               // 헤더 고정
@@ -223,25 +215,28 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(20),
-                          gradient: LinearGradient(
-                            colors: [
-                              const Color(0xFF4A90E2).withOpacity(0.8),
-                              const Color(0xFF7DD3FC).withOpacity(0.8),
-                            ],
-                          ),
+                          shape: BoxShape.circle,
+                          color: Colors.grey[300],
                         ),
-                        child: CircleAvatar(
-                          backgroundColor: Colors.transparent,
-                          child: Text(
-                            nickname.isNotEmpty ? nickname[0].toUpperCase() : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                        ),
+                        child: photoURL != null
+                            ? ClipOval(
+                                child: Image.network(
+                                  photoURL,
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 20,
+                                color: Colors.grey[600],
+                              ),
                       ),
                       const SizedBox(width: 12),
                       // 호스트 정보 (왼쪽 정렬)
@@ -265,7 +260,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                     padding: const EdgeInsets.only(left: 6.0),
                                     child: CountryFlagCircle(
                                       nationality: nationality,
-                                      size: 16,
+                                      size: 20, // 16 → 20으로 증가
                                     ),
                                   ),
                               ],
@@ -290,13 +285,34 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '날짜 선택',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '날짜 선택',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        // 선택된 날짜 표시
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4A90E2),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            dateStr,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     // 개선된 요일 선택 칩
@@ -387,170 +403,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-
-                // 개선된 썸네일 설정
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      '썸네일 설정 (선택사항)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF666666),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-
-                    // 썸네일 컨테이너
-                    Container(
-                      height: 130,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFE6EAF0),
-                          width: 1,
-                        ),
-                      ),
-                      child: _thumbnailImage != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Stack(
-                                children: [
-                                  Image.file(
-                                    _thumbnailImage!,
-                                    width: double.infinity,
-                                    height: 130,
-                                    fit: BoxFit.cover,
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _thumbnailImage = null;
-                                        });
-                                      },
-                                      child: Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius: BorderRadius.circular(14),
-                                        ),
-                                        child: const Icon(
-                                          Icons.close,
-                                          color: Colors.white,
-                                          size: 16,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image_outlined,
-                                  size: 32,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 8),
-                                const Text(
-                                  '썸네일 이미지',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    // 썸네일 텍스트 입력 필드
-                    TextFormField(
-                      controller: _thumbnailTextController,
-                      decoration: InputDecoration(
-                        hintText: '모임을 대표할 텍스트를 입력하세요',
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.all(16),
-                        counterText: '',
-                      ),
-                      style: const TextStyle(fontSize: 14),
-                      maxLength: 30,
-                      maxLines: 2,
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // 이미지 첨부 버튼
-                    SizedBox(
-                      height: 48,
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final XFile? image = await _picker.pickImage(
-                            source: ImageSource.gallery,
-                            maxWidth: 800,
-                            maxHeight: 800,
-                          );
-                          if (image != null) {
-                            setState(() {
-                              _thumbnailImage = File(image.path);
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('이미지가 선택되었습니다'),
-                                duration: Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                        },
-                        icon: Icon(
-                          Icons.add_photo_alternate,
-                          size: 20,
-                          color: const Color(0xFF4A90E2),
-                        ),
-                        label: Text(
-                          _thumbnailImage != null ? '이미지 변경' : '이미지 첨부',
-                          style: const TextStyle(
-                            color: Color(0xFF4A90E2),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Color(0xFF4A90E2)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
 
                 // 개선된 모임 정보 입력
                 Column(
@@ -1054,6 +906,140 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const SizedBox(height: 24),
 
+                // 썸네일 설정
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '썸네일 설정 (선택사항)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF666666),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // 썸네일 컨테이너
+                    Container(
+                      height: 130,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFFE6EAF0),
+                          width: 1,
+                        ),
+                      ),
+                      child: _thumbnailImage != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Stack(
+                                children: [
+                                  Image.file(
+                                    _thumbnailImage!,
+                                    width: double.infinity,
+                                    height: 130,
+                                    fit: BoxFit.cover,
+                                  ),
+                                  Positioned(
+                                    top: 8,
+                                    right: 8,
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _thumbnailImage = null;
+                                        });
+                                      },
+                                      child: Container(
+                                        width: 28,
+                                        height: 28,
+                                        decoration: BoxDecoration(
+                                          color: Colors.black54,
+                                          borderRadius: BorderRadius.circular(14),
+                                        ),
+                                        child: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 16,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.image_outlined,
+                                  size: 32,
+                                  color: Colors.grey[400],
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  '썸네일 이미지',
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // 이미지 첨부 버튼
+                    SizedBox(
+                      height: 48,
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final XFile? image = await _picker.pickImage(
+                            source: ImageSource.gallery,
+                            maxWidth: 800,
+                            maxHeight: 800,
+                          );
+                          if (image != null) {
+                            setState(() {
+                              _thumbnailImage = File(image.path);
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('이미지가 선택되었습니다'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          Icons.add_photo_alternate,
+                          size: 20,
+                          color: const Color(0xFF4A90E2),
+                        ),
+                        label: Text(
+                          _thumbnailImage != null ? '이미지 변경' : '이미지 첨부',
+                          style: const TextStyle(
+                            color: Color(0xFF4A90E2),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFF4A90E2)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+
                 // 하단 버튼
                 // 개선된 하단 버튼 (고정)
                 const SizedBox(height: 24),
@@ -1147,9 +1133,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           date: selectedDate,
                                           category:
                                               _selectedCategory, // 선택된 카테고리 전달
-                                          thumbnailContent:
-                                              _thumbnailTextController.text
-                                                  .trim(),
+                                          thumbnailContent: '',
                                           thumbnailImage:
                                               _thumbnailImage, // 이미지 전달
                                           visibility: _visibility, // 공개 범위 추가
@@ -1170,7 +1154,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           host: 'temp_host',
                                           hostNationality: '',
                                           imageUrl: '',
-                                          thumbnailContent: _thumbnailTextController.text.trim(),
+                                          thumbnailContent: '',
                                           thumbnailImageUrl: '',
                                           date: selectedDate,
                                           category: _selectedCategory,

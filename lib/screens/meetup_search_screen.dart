@@ -419,7 +419,7 @@ class MeetupCard extends StatelessWidget {
       case '스터디':
         return Colors.blue;
       case '식사':
-        return Colors.orange;
+        return const Color(0xFFE74C3C); // 빨간색으로 변경
       case '취미':
         return Colors.green;
       case '문화':
@@ -556,11 +556,11 @@ class MeetupCard extends StatelessWidget {
                           meetup.hostNationality.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         SizedBox(
-                          width: 18,
-                          height: 18,
+                          width: 22, // 18 → 22로 증가
+                          height: 22,
                           child: CountryFlagCircle(
                             nationality: meetup.hostNationality,
-                            size: 18,
+                            size: 22, // 18 → 22로 증가
                           ),
                         ),
                       ],

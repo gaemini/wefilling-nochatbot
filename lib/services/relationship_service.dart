@@ -54,6 +54,29 @@ class RelationshipService {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
+    } on FirebaseFunctionsException catch (e) {
+      // Firebase Functions 오류 메시지를 정확히 파싱
+      print('친구요청 전송 오류 (Functions): ${e.code} - ${e.message}');
+      
+      String userMessage;
+      switch (e.code) {
+        case 'already-exists':
+          userMessage = e.message ?? '이미 친구요청을 보냈거나 친구입니다.';
+          break;
+        case 'permission-denied':
+          userMessage = '차단된 사용자에게 친구요청을 보낼 수 없습니다.';
+          break;
+        case 'unauthenticated':
+          userMessage = '로그인이 필요합니다.';
+          break;
+        case 'invalid-argument':
+          userMessage = e.message ?? '유효하지 않은 요청입니다.';
+          break;
+        default:
+          userMessage = e.message ?? '친구요청 전송 중 오류가 발생했습니다.';
+      }
+      
+      throw Exception(userMessage);
     } catch (e) {
       print('친구요청 전송 오류: $e');
       rethrow;

@@ -16,6 +16,7 @@ class Meetup {
   final int currentParticipants;
   final String host;
   final String hostNationality;
+  final String hostPhotoURL; // 주최자 프로필 사진 URL
   final String imageUrl;
   final String thumbnailContent;
   final String thumbnailImageUrl;
@@ -36,6 +37,7 @@ class Meetup {
     required this.currentParticipants,
     required this.host,
     this.hostNationality = '',
+    this.hostPhotoURL = '', // 프로필 사진 URL (기본값은 빈 문자열)
     required this.imageUrl,
     this.thumbnailContent = '',
     this.thumbnailImageUrl = '',
@@ -57,6 +59,7 @@ class Meetup {
     int? currentParticipants,
     String? host,
     String? hostNationality,
+    String? hostPhotoURL,
     String? imageUrl,
     String? thumbnailContent,
     String? thumbnailImageUrl,
@@ -77,6 +80,7 @@ class Meetup {
       currentParticipants: currentParticipants ?? this.currentParticipants,
       host: host ?? this.host,
       hostNationality: hostNationality ?? this.hostNationality,
+      hostPhotoURL: hostPhotoURL ?? this.hostPhotoURL,
       imageUrl: imageUrl ?? this.imageUrl,
       thumbnailContent: thumbnailContent ?? this.thumbnailContent,
       thumbnailImageUrl: thumbnailImageUrl ?? this.thumbnailImageUrl,
@@ -279,6 +283,7 @@ class Meetup {
       currentParticipants: json['currentParticipants'] ?? 0,
       host: json['host'] ?? json['hostNickname'] ?? '',
       hostNationality: json['hostNationality'] ?? '',
+      hostPhotoURL: json['hostPhotoURL'] ?? '',
       imageUrl: json['imageUrl'] ?? '',
       thumbnailContent: json['thumbnailContent'] ?? '',
       thumbnailImageUrl: json['thumbnailImageUrl'] ?? '',
@@ -286,6 +291,10 @@ class Meetup {
       category: json['category'] ?? '기타',
       userId: json['userId'],
       hostNickname: json['hostNickname'],
+      visibility: json['visibility'] ?? 'public',
+      visibleToCategoryIds: json['visibleToCategoryIds'] != null
+          ? List<String>.from(json['visibleToCategoryIds'] as List)
+          : [],
     );
   }
 
@@ -301,6 +310,7 @@ class Meetup {
       'currentParticipants': currentParticipants,
       'host': host,
       'hostNationality': hostNationality,
+      'hostPhotoURL': hostPhotoURL,
       'imageUrl': imageUrl,
       'thumbnailContent': thumbnailContent,
       'thumbnailImageUrl': thumbnailImageUrl,
@@ -308,6 +318,8 @@ class Meetup {
       'category': category,
       'userId': userId,
       'hostNickname': hostNickname,
+      'visibility': visibility,
+      'visibleToCategoryIds': visibleToCategoryIds,
     };
   }
 }

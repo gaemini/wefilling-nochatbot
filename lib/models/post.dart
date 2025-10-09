@@ -13,6 +13,7 @@ class Post {
   final String content;
   final String author;
   final String authorNationality; // 작성자 국적
+  final String authorPhotoURL; // 작성자 프로필 사진 URL
   final String category; // 카테고리
   final DateTime createdAt;
   final String userId;
@@ -20,6 +21,12 @@ class Post {
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
+  
+  // 공개 범위 관련 필드
+  final String visibility; // 'public' 또는 'category'
+  final bool isAnonymous; // 익명 여부
+  final List<String> visibleToCategoryIds; // 공개할 카테고리 ID 목록
+  final List<String> allowedUserIds; // 이 게시글을 볼 수 있는 사용자 ID 목록 (비공개용)
 
   // 캐시된 번역 결과
   String? _translatedTitle;
@@ -31,6 +38,7 @@ class Post {
     required this.content,
     required this.author,
     this.authorNationality = '', // 국적 정보 (기본값은 빈 문자열)
+    this.authorPhotoURL = '', // 프로필 사진 URL (기본값은 빈 문자열)
     this.category = '일반', // 카테고리 (기본값은 '일반')
     required this.createdAt,
     required this.userId,
@@ -38,6 +46,10 @@ class Post {
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
+    this.visibility = 'public', // 공개 범위 (기본값: 전체 공개)
+    this.isAnonymous = false, // 익명 여부 (기본값: 실명)
+    this.visibleToCategoryIds = const [], // 공개할 카테고리 목록 (기본값: 빈 리스트)
+    this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
   });
 
   // 모델 디버깅을 위한 문자열 표현
@@ -113,6 +125,7 @@ class Post {
     String? content,
     String? author,
     String? authorNationality,
+    String? authorPhotoURL,
     String? category,
     DateTime? createdAt,
     String? userId,
@@ -120,6 +133,10 @@ class Post {
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
+    String? visibility,
+    bool? isAnonymous,
+    List<String>? visibleToCategoryIds,
+    List<String>? allowedUserIds,
   }) {
     return Post(
       id: id ?? this.id,
@@ -127,6 +144,7 @@ class Post {
       content: content ?? this.content,
       author: author ?? this.author,
       authorNationality: authorNationality ?? this.authorNationality,
+      authorPhotoURL: authorPhotoURL ?? this.authorPhotoURL,
       category: category ?? this.category,
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
@@ -134,6 +152,10 @@ class Post {
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
+      visibility: visibility ?? this.visibility,
+      isAnonymous: isAnonymous ?? this.isAnonymous,
+      visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
+      allowedUserIds: allowedUserIds ?? this.allowedUserIds,
     );
   }
 }

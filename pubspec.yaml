@@ -34,10 +34,12 @@ dependencies:
     sdk: flutter
   firebase_core: ^4.1.0
   firebase_auth: ^6.0.2
+  firebase_messaging: ^16.0.2
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.0.1
   cloud_functions: ^6.0.2
   provider: ^6.0.5  # 상태 관리용
+  permission_handler: ^11.3.1
   intl: ^0.20.2
   url_launcher: ^6.1.14
   convex_bottom_bar: ^3.2.0
@@ -55,6 +57,7 @@ dependencies:
   country_flags: ^2.2.0
   easy_localization: ^3.0.7+1
   translator: ^1.0.3+1
+  flutter_linkify: ^6.0.0
   
   # 친구요청 시스템을 위한 의존성
   

@@ -96,30 +96,32 @@ class DefaultFriendCategories {
   static const List<Map<String, dynamic>> defaults = [
     {
       'name': '대학 친구',
-      'description': '같은 대학교 친구들',
+      'description': '',
       'color': '#4A90E2',
       'iconName': 'school',
     },
     {
       'name': '동아리',
-      'description': '동아리 활동 친구들',
+      'description': '',
       'color': '#6BC9A5',
       'iconName': 'groups',
     },
     {
       'name': '취미 친구',
-      'description': '취미를 함께하는 친구들',
+      'description': '',
       'color': '#FF8C42',
       'iconName': 'palette',
     },
     {
       'name': '스터디 그룹',
-      'description': '함께 공부하는 친구들',
+      'description': '',
       'color': '#9B59B6',
       'iconName': 'book',
     },
   ];
 }
+
+
 
 
 

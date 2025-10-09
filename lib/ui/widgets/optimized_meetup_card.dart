@@ -11,6 +11,7 @@ import '../../design/tokens.dart';
 import '../../services/meetup_service.dart';
 import '../dialogs/report_dialog.dart';
 import '../dialogs/block_dialog.dart';
+import '../../screens/edit_meetup_screen.dart';
 
 /// 최적화된 모임 카드
 class OptimizedMeetupCard extends StatefulWidget {
@@ -111,22 +112,25 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               // 모임 제목
               Text(
                 currentMeetup.title,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                style: theme.textTheme.titleLarge?.copyWith( // titleMedium → titleLarge
+                  fontWeight: FontWeight.w700, // w600 → w700
                   color: colorScheme.onSurface,
+                  fontSize: 18, // 명시적 크기 지정
                 ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 10), // 8 → 10
 
               // 모임 설명
               if (currentMeetup.description.isNotEmpty) ...[
                 Text(
                   currentMeetup.description,
-                  style: theme.textTheme.bodyMedium?.copyWith(
+                  style: theme.textTheme.bodyLarge?.copyWith( // bodyMedium → bodyLarge
                     color: colorScheme.onSurfaceVariant,
+                    fontSize: 15, // 명시적 크기 지정
+                    height: 1.4, // 줄 높이 추가
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -329,15 +333,21 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   }
 
   /// 메뉴 액션 처리
-  void _handleMenuAction(BuildContext context, String action) {
+  void _handleMenuAction(BuildContext context, String action) async {
     switch (action) {
       case 'edit':
         // 모임 수정 화면으로 이동
-        Navigator.pushNamed(
+        final result = await Navigator.push(
           context,
-          '/edit-currentMeetup',
-          arguments: currentMeetup,
+          MaterialPageRoute(
+            builder: (context) => EditMeetupScreen(meetup: currentMeetup),
+          ),
         );
+        
+        // 수정이 완료되면 최신 데이터로 새로고침
+        if (result == true && mounted) {
+          await _refreshMeetupData();
+        }
         break;
       case 'cancel':
         // 모임 취소 확인 다이얼로그
@@ -348,7 +358,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           showReportDialog(
             context,
             reportedUserId: currentMeetup.userId!,
-            targetType: 'currentMeetup',
+            targetType: 'meetup',
             targetId: currentMeetup.id,
             targetTitle: currentMeetup.title,
           );
@@ -531,18 +541,18 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // 8, 4 → 12, 6
       decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.1),
+        color: badgeColor.withOpacity(0.12), // 0.1 → 0.12
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: badgeColor.withOpacity(0.3), width: 1),
+        border: Border.all(color: badgeColor.withOpacity(0.4), width: 1.5), // 0.3, 1 → 0.4, 1.5
       ),
       child: Text(
         category,
         style: TextStyle(
           color: badgeColor,
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
+          fontSize: 14, // 12 → 14
+          fontWeight: FontWeight.w700, // w600 → w700
         ),
       ),
     );
@@ -586,13 +596,15 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   }) {
     return Row(
       children: [
-        Icon(icon, size: 16, color: BrandColors.neutral500),
-        const SizedBox(width: 6),
+        Icon(icon, size: 18, color: BrandColors.neutral500), // 16 → 18
+        const SizedBox(width: 8), // 6 → 8
         Expanded(
           child: Text(
             text,
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith( // bodySmall → bodyMedium
               color: colorScheme.onSurfaceVariant,
+              fontSize: 14, // 명시적 크기 지정
+              fontWeight: FontWeight.w500, // 굵기 추가
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -617,7 +629,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         // 참가자 정보
         Row(
           children: [
-            // 작성자 아바타 - 기본 아이콘 사용
+            // 작성자 아바타
             Container(
               width: 24,
               height: 24,
@@ -625,12 +637,26 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                 color: colorScheme.surfaceVariant,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                IconStyles.person,
-                size: 16,
-                color: BrandColors.neutral500,
-                ),
-              ),
+              child: currentMeetup.hostPhotoURL.isNotEmpty
+                  ? ClipOval(
+                      child: Image.network(
+                        currentMeetup.hostPhotoURL,
+                        width: 24,
+                        height: 24,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(
+                          IconStyles.person,
+                          size: 16,
+                          color: BrandColors.neutral500,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      IconStyles.person,
+                      size: 16,
+                      color: BrandColors.neutral500,
+                    ),
+            ),
 
             const SizedBox(width: 8),
 
@@ -670,7 +696,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
 
     return Row(
       children: [
-        // 작성자 아바타 - 기본 아이콘 사용
+        // 작성자 아바타
         Container(
           width: 24,
           height: 24,
@@ -678,12 +704,26 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             color: colorScheme.surfaceVariant,
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            IconStyles.person,
-            size: 16,
-            color: BrandColors.neutral500,
-            ),
-          ),
+          child: currentMeetup.hostPhotoURL.isNotEmpty
+              ? ClipOval(
+                  child: Image.network(
+                    currentMeetup.hostPhotoURL,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      IconStyles.person,
+                      size: 16,
+                      color: BrandColors.neutral500,
+                    ),
+                  ),
+                )
+              : Icon(
+                  IconStyles.person,
+                  size: 16,
+                  color: BrandColors.neutral500,
+                ),
+        ),
 
         const SizedBox(width: 8),
 
@@ -691,9 +731,10 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (max > 0)
           Text(
             '$current/$max명',
-            style: theme.textTheme.bodySmall?.copyWith(
+            style: theme.textTheme.bodyMedium?.copyWith( // bodySmall → bodyMedium
               color: colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600, // w500 → w600
+              fontSize: 14, // 명시적 크기 지정
             ),
           ),
 
@@ -795,16 +836,18 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     final statusText = isOpen ? '모집중' : '마감';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // padding 증가
       decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.1),
+        color: statusColor.withOpacity(0.15), // 배경 불투명도 증가
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: statusColor.withOpacity(0.4), width: 1.5), // 테두리 추가
       ),
       child: Text(
         statusText,
-        style: theme.textTheme.labelSmall?.copyWith(
+        style: theme.textTheme.labelMedium?.copyWith( // labelSmall → labelMedium
           color: statusColor,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700, // w600 → w700
+          fontSize: 14, // 명시적으로 크기 지정
         ),
       ),
     );
@@ -1076,6 +1119,27 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         ),
       ),
     );
+  }
+
+  /// 모임 데이터 새로고침
+  Future<void> _refreshMeetupData() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('meetups')
+          .doc(currentMeetup.id)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data()!;
+        data['id'] = doc.id; // doc.id를 데이터에 추가
+        
+        setState(() {
+          currentMeetup = Meetup.fromJson(data);
+        });
+      }
+    } catch (e) {
+      print('모임 데이터 새로고침 오류: $e');
+    }
   }
 
 }

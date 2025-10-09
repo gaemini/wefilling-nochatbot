@@ -6,9 +6,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/auth_provider.dart';
 import '../services/storage_service.dart';
+import '../services/post_service.dart';
 import '../constants/app_constants.dart';
+import '../utils/country_flag_helper.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -20,65 +23,15 @@ class ProfileEditScreen extends StatefulWidget {
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
-  String _selectedNationality = '한국'; // 기본값
+  String _selectedNationality = '한국'; // 기본값 (한글 이름)
   final ImagePicker _imagePicker = ImagePicker();
   final StorageService _storageService = StorageService();
   File? _selectedImage;
   bool _isUploadingImage = false;
-
-  // 국적 목록 (필요에 따라 확장)
-  final List<String> _nationalities = [
-    '한국',
-    '미국',
-    '일본',
-    '중국',
-    '영국',
-    '프랑스',
-    '독일',
-    '캐나다',
-    '호주',
-    '러시아',
-    '이탈리아',
-    '스페인',
-    '브라질',
-    '멕시코',
-    '인도',
-    '인도네시아',
-    '필리핀',
-    '베트남',
-    '태국',
-    '싱가포르',
-    '말레이시아',
-    '아르헨티나',
-    '네덜란드',
-    '벨기에',
-    '스웨덴',
-    '노르웨이',
-    '덴마크',
-    '핀란드',
-    '폴란드',
-    '오스트리아',
-    '스위스',
-    '그리스',
-    '터키',
-    '이스라엘',
-    '이집트',
-    '사우디아라비아',
-    '남아프리카공화국',
-    '뉴질랜드',
-    '포르투갈',
-    '아일랜드',
-    '체코',
-    '헝가리',
-    '우크라이나',
-    '몽골',
-    '북한',
-    '대만',
-    '홍콩',
-    '기타',
-  ];
+  bool _useDefaultImage = false; // 기본 이미지 사용 여부
 
   bool _isSubmitting = false;
+  bool _isForceUpdating = false;
 
   @override
   void initState() {
@@ -123,6 +76,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
+          _useDefaultImage = false; // 새 이미지 선택 시 기본 이미지 플래그 해제
         });
       }
     } catch (e) {
@@ -148,6 +102,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (image != null) {
         setState(() {
           _selectedImage = File(image.path);
+          _useDefaultImage = false; // 새 이미지 선택 시 기본 이미지 플래그 해제
         });
       }
     } catch (e) {
@@ -195,6 +150,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   Navigator.pop(context);
                   setState(() {
                     _selectedImage = null;
+                    _useDefaultImage = true; // 기본 이미지 사용 플래그 설정
                   });
                 },
               ),
@@ -215,15 +171,31 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        String? profileImageUrl;
+        bool success = false;
 
+        // 기본 이미지로 변경하는 경우
+        if (_useDefaultImage) {
+          print("🗑️ 기본 이미지로 변경 요청");
+          
+          // resetProfilePhotoToDefault를 호출하여 Storage 이미지 삭제 및 과거 콘텐츠 업데이트
+          success = await authProvider.resetProfilePhotoToDefault();
+          
+          if (success && mounted) {
+            // 닉네임과 국적도 함께 업데이트 (photoURL은 이미 처리됨)
+            success = await authProvider.updateUserProfile(
+              nickname: _nicknameController.text.trim(),
+              nationality: _selectedNationality,
+              photoURL: '', // 빈 문자열로 유지
+            );
+          }
+        }
         // 이미지가 선택된 경우 업로드
-        if (_selectedImage != null) {
+        else if (_selectedImage != null) {
           setState(() {
             _isUploadingImage = true;
           });
           
-          profileImageUrl = await _storageService.uploadImage(_selectedImage!);
+          final profileImageUrl = await _storageService.uploadImage(_selectedImage!);
           
           setState(() {
             _isUploadingImage = false;
@@ -232,31 +204,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           if (profileImageUrl == null) {
             throw Exception('이미지 업로드에 실패했습니다.');
           }
+          
+          // 프로필 업데이트 수행 (닉네임, 국적, photoURL 모두 포함)
+          success = await authProvider.updateUserProfile(
+            nickname: _nicknameController.text.trim(),
+            nationality: _selectedNationality,
+            photoURL: profileImageUrl, // 새로 업로드된 이미지 URL 전달
+          );
         }
-
-        // 프로필 업데이트 수행
-        final success = await authProvider.updateUserProfile(
-          nickname: _nicknameController.text.trim(),
-          nationality: _selectedNationality,
-        );
-        
-        // 프로필 이미지가 업로드된 경우 Firebase Auth에서 별도로 업데이트
-        if (profileImageUrl != null && success) {
-          final user = authProvider.user;
-          if (user != null) {
-            try {
-              await user.updatePhotoURL(profileImageUrl);
-              await user.reload();
-              // AuthProvider 상태 갱신
-              await authProvider.refreshUser();
-            } catch (photoError) {
-              print('프로필 이미지 업데이트 오류: $photoError');
-              // 이미지 업데이트가 실패해도 프로필 업데이트는 성공으로 처리
-            }
-          }
+        // 이미지 변경 없이 닉네임/국적만 업데이트
+        else {
+          success = await authProvider.updateUserProfile(
+            nickname: _nicknameController.text.trim(),
+            nationality: _selectedNationality,
+          );
         }
 
         if (success && mounted) {
+          // 프로필 업데이트 성공
+          // 참고: 과거 게시글/댓글은 authProvider.updateUserProfile 또는 
+          // resetProfilePhotoToDefault 내부에서 이미 업데이트됨
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('프로필이 업데이트되었습니다'),
@@ -284,6 +252,120 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             _isSubmitting = false;
           });
         }
+      }
+    }
+  }
+
+  // 강제로 모든 콘텐츠 업데이트 (PostService 직접 사용)
+  Future<void> _forceUpdateAllContent() async {
+    // 확인 다이얼로그
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('모든 게시글 업데이트'),
+        content: Text(
+          '현재 프로필 정보(이름, 사진)를 모든 과거 게시글과 모임에 반영합니다.\n\n이 작업은 시간이 걸릴 수 있습니다.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange,
+            ),
+            child: Text('업데이트', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() {
+      _isForceUpdating = true;
+    });
+
+    try {
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final user = authProvider.user;
+      
+      if (user == null) {
+        throw Exception('로그인이 필요합니다.');
+      }
+
+      // 현재 프로필 정보 가져오기
+      final userData = authProvider.userData;
+      final nickname = userData?['nickname'] ?? '익명';
+      final photoURL = userData?['photoURL'];
+      
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🔥 수동 게시물 업데이트 시작');
+      print('   - User ID: ${user.uid}');
+      print('   - Nickname: $nickname');
+      print('   - PhotoURL: ${photoURL ?? "없음"}');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      // 1단계: users 컬렉션의 displayName을 nickname과 동기화
+      try {
+        await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'displayName': nickname,
+        });
+        print('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
+      } catch (e) {
+        print('⚠️ displayName 동기화 실패: $e');
+      }
+
+      // 2단계: PostService를 사용하여 게시물 업데이트
+      final postService = PostService();
+      final postsSuccess = await postService.updateAuthorInfoInAllPosts(
+        user.uid,
+        nickname,
+        photoURL,
+      );
+
+      if (mounted) {
+        if (postsSuccess) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ 모든 게시글에 프로필이 반영되었습니다!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('❌ 업데이트에 실패했습니다. 콘솔 로그를 확인해주세요.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      print('❌ 수동 업데이트 오류: $e');
+      print('스택 트레이스: $stackTrace');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isForceUpdating = false;
+        });
       }
     }
   }
@@ -323,18 +405,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 프로필 안내
-              const Text(
-                '프로필 정보 수정',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '프로필 이미지, 이름, 국적을 설정하세요.',
-                style: TextStyle(color: Colors.grey),
-              ),
-              const SizedBox(height: 32),
-
               // 프로필 이미지 편집
               Center(
                 child: Column(
@@ -366,20 +436,39 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               ],
                             ),
                             child: ClipOval(
-                              child: _selectedImage != null
-                                  ? Image.file(
-                                      _selectedImage!,
-                                      fit: BoxFit.cover,
+                              child: _useDefaultImage
+                                  ? Container(
+                                      color: AppTheme.primary.withOpacity(0.1),
+                                      child: Icon(
+                                        Icons.person,
+                                        size: 40,
+                                        color: AppTheme.primary,
+                                      ),
                                     )
-                                  : Consumer<AuthProvider>(
-                                      builder: (context, authProvider, child) {
-                                        final user = authProvider.user;
-                                        return user?.photoURL != null
-                                            ? Image.network(
-                                                user!.photoURL!,
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  return Container(
+                                  : _selectedImage != null
+                                      ? Image.file(
+                                          _selectedImage!,
+                                          fit: BoxFit.cover,
+                                        )
+                                      : Consumer<AuthProvider>(
+                                          builder: (context, authProvider, child) {
+                                            final user = authProvider.user;
+                                            return user?.photoURL != null
+                                                ? Image.network(
+                                                    user!.photoURL!,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context, error, stackTrace) {
+                                                      return Container(
+                                                        color: AppTheme.primary.withOpacity(0.1),
+                                                        child: Icon(
+                                                          Icons.person,
+                                                          size: 40,
+                                                          color: AppTheme.primary,
+                                                        ),
+                                                      );
+                                                    },
+                                                  )
+                                                : Container(
                                                     color: AppTheme.primary.withOpacity(0.1),
                                                     child: Icon(
                                                       Icons.person,
@@ -387,18 +476,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                       color: AppTheme.primary,
                                                     ),
                                                   );
-                                                },
-                                              )
-                                            : Container(
-                                                color: AppTheme.primary.withOpacity(0.1),
-                                                child: Icon(
-                                                  Icons.person,
-                                                  size: 40,
-                                                  color: AppTheme.primary,
-                                                ),
-                                              );
-                                      },
-                                    ),
+                                          },
+                                        ),
                             ),
                           ),
                           if (_isUploadingImage)
@@ -454,7 +533,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
               // 닉네임 입력
               const Text(
-                '닉네임',
+                'What is your nickname?',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
@@ -482,7 +561,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
               // 국적 선택
               const Text(
-                '국적',
+                'Where are you from?',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
@@ -495,13 +574,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   fillColor: Colors.white,
                 ),
                 value: _selectedNationality,
-                items:
-                    _nationalities.map((nationality) {
-                      return DropdownMenuItem(
-                        value: nationality,
-                        child: Text(nationality),
-                      );
-                    }).toList(),
+                isExpanded: true, // 긴 텍스트 표시를 위해
+                items: CountryFlagHelper.allCountries.map((country) {
+                  return DropdownMenuItem(
+                    value: country.korean, // 내부적으로는 한글 이름 저장
+                    child: Text(
+                      country.displayText, // 표시는 "영문 / 한글"
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {
@@ -543,6 +626,44 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               color: Colors.white,
                             ),
                           ),
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // 모든 게시글 업데이트 버튼 (긴급용)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: (_isSubmitting || _isForceUpdating) ? null : _forceUpdateAllContent,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    side: BorderSide(
+                      color: _isForceUpdating ? Colors.grey : Colors.orange, 
+                      width: 2
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  icon: _isForceUpdating
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.orange,
+                          ),
+                        )
+                      : Icon(Icons.sync, color: Colors.orange),
+                  label: Text(
+                    _isForceUpdating ? '업데이트 중...' : '모든 게시글에 프로필 반영',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: _isForceUpdating ? Colors.grey : Colors.orange,
+                    ),
+                  ),
                 ),
               ),
             ],

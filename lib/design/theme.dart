@@ -64,27 +64,28 @@ class AppTheme {
     );
   }
 
-  /// 다크 모드 테마 (2024-2025 트렌드 적용)
-  static ThemeData dark() {
-    final cs = ColorScheme.fromSeed(
-      seedColor: _primaryLight, // Modern bright indigo for dark mode
-      brightness: Brightness.dark,
-    );
-
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: cs,
-      // cardTheme: const CardTheme(),
-      elevatedButtonTheme: _elevatedButtonTheme(cs),
-      filledButtonTheme: _filledButtonTheme(cs),
-      outlinedButtonTheme: _outlinedButtonTheme(cs),
-      textButtonTheme: _textButtonTheme(cs),
-      iconButtonTheme: _iconButtonTheme(cs),
-      floatingActionButtonTheme: _fabTheme(cs),
-      bottomNavigationBarTheme: _bottomNavTheme(cs),
-      chipTheme: _chipTheme(cs),
-    );
-  }
+  /// 다크 모드 테마 (사용 안 함 - 라이트모드 전용 앱)
+  /// 필요 시 주석 해제하여 사용 가능
+  // static ThemeData dark() {
+  //   final cs = ColorScheme.fromSeed(
+  //     seedColor: _primaryLight, // Modern bright indigo for dark mode
+  //     brightness: Brightness.dark,
+  //   );
+  //
+  //   return ThemeData(
+  //     useMaterial3: true,
+  //     colorScheme: cs,
+  //     // cardTheme: const CardTheme(),
+  //     elevatedButtonTheme: _elevatedButtonTheme(cs),
+  //     filledButtonTheme: _filledButtonTheme(cs),
+  //     outlinedButtonTheme: _outlinedButtonTheme(cs),
+  //     textButtonTheme: _textButtonTheme(cs),
+  //     iconButtonTheme: _iconButtonTheme(cs),
+  //     floatingActionButtonTheme: _fabTheme(cs),
+  //     bottomNavigationBarTheme: _bottomNavTheme(cs),
+  //     chipTheme: _chipTheme(cs),
+  //   );
+  // }
 
   static ElevatedButtonThemeData _elevatedButtonTheme(ColorScheme cs) =>
       ElevatedButtonThemeData(

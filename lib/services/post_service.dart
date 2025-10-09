@@ -23,6 +23,9 @@ class PostService {
     String title,
     String content, {
     List<File>? imageFiles,
+    String visibility = 'public', // 공개 범위
+    bool isAnonymous = false, // 익명 여부
+    List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
   }) async {
     try {
       final user = _auth.currentUser;
@@ -35,9 +38,10 @@ class PostService {
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final nationality = userData?['nationality'] ?? ''; // 국적 정보 가져오기
+      final photoURL = userData?['photoURL'] ?? user.photoURL ?? ''; // 프로필 사진 URL 가져오기
 
       print(
-        "AddPost - 사용자 데이터: ${userData?.toString()} | 닉네임: $nickname | 국적: $nationality",
+        "AddPost - 사용자 데이터: ${userData?.toString()} | 닉네임: $nickname | 국적: $nationality | 프로필 사진: ${photoURL.isNotEmpty ? '있음' : '없음'}",
       );
 
       // 게시글 작성 시간
@@ -86,16 +90,53 @@ class PostService {
         }
       }
 
+      // 카테고리별 공개인 경우 allowedUserIds 계산
+      List<String> allowedUserIds = [];
+      if (visibility == 'category' && visibleToCategoryIds.isNotEmpty) {
+        print('카테고리별 공개 게시글: 허용 사용자 ID 계산 중...');
+        try {
+          // 각 카테고리의 친구 ID들을 가져와서 합침
+          final Set<String> uniqueFriendIds = {};
+          for (final categoryId in visibleToCategoryIds) {
+            final categoryDoc = await _firestore
+                .collection('friend_categories')
+                .doc(categoryId)
+                .get();
+            
+            if (categoryDoc.exists) {
+              final categoryData = categoryDoc.data();
+              final friendIds = List<String>.from(categoryData?['friendIds'] ?? []);
+              uniqueFriendIds.addAll(friendIds);
+              print('카테고리 ${categoryId}: ${friendIds.length}명의 친구');
+            }
+          }
+          
+          // 작성자 본인도 포함
+          uniqueFriendIds.add(user.uid);
+          allowedUserIds = uniqueFriendIds.toList();
+          print('총 ${allowedUserIds.length}명이 이 게시글을 볼 수 있습니다.');
+        } catch (e) {
+          print('allowedUserIds 계산 오류: $e');
+          // 오류 발생 시 작성자만 볼 수 있도록 설정
+          allowedUserIds = [user.uid];
+        }
+      }
+
       // 게시글 데이터 생성
       final postData = {
         'userId': user.uid,
         'authorNickname': nickname,
         'authorNationality': nationality, // 작성자 국적 추가
+        'authorPhotoURL': photoURL, // 작성자 프로필 사진 URL 추가
         'title': title,
         'content': content,
         'imageUrls': imageUrls,
         'createdAt': now,
         'updatedAt': now,
+        'visibility': visibility, // 공개 범위
+        'isAnonymous': isAnonymous, // 익명 여부
+        'visibleToCategoryIds': visibleToCategoryIds, // 공개할 카테고리 ID 목록
+        'allowedUserIds': allowedUserIds, // 허용된 사용자 ID 목록
         'likes': 0,
         'likedBy': [],
         'commentCount': 0,
@@ -117,19 +158,24 @@ class PostService {
 
   // 모든 게시글 가져오기
   Stream<List<Post>> getAllPosts() {
+    final user = _auth.currentUser;
+    
     return _firestore
         .collection('posts')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs.map((doc) {
+          print('📊 Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
+          
+          final posts = snapshot.docs.map((doc) {
             final data = doc.data();
-            return Post(
+            final post = Post(
               id: doc.id,
               title: data['title'] ?? '',
               content: data['content'] ?? '',
               author: data['authorNickname'] ?? '익명',
               authorNationality: data['authorNationality'] ?? '알 수 없음',
+              authorPhotoURL: data['authorPhotoURL'] ?? '',
               createdAt:
                   data['createdAt'] != null
                       ? (data['createdAt'] as Timestamp).toDate()
@@ -139,8 +185,78 @@ class PostService {
               likes: data['likes'] ?? 0,
               likedBy: List<String>.from(data['likedBy'] ?? []),
               imageUrls: List<String>.from(data['imageUrls'] ?? []),
+              visibility: data['visibility'] ?? 'public',
+              isAnonymous: data['isAnonymous'] ?? false,
+              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+              allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
             );
+            
+            // 비공개 게시글 로그
+            if (post.visibility == 'category') {
+              print('🔒 비공개 게시글 발견: ${post.title}');
+              print('   작성자: ${post.author} (${post.userId})');
+              print('   현재 사용자: ${user?.uid ?? "로그인 안 함"}');
+              print('   허용된 사용자: ${post.allowedUserIds}');
+              print('   접근 가능: ${user != null && (post.userId == user.uid || post.allowedUserIds.contains(user.uid))}');
+            }
+            
+            return post;
           }).toList();
+          
+          // 클라이언트 측 필수 필터링: 비공개 게시글 차단
+          if (user != null) {
+            final filteredPosts = posts.where((post) {
+              // visibility 필드가 없으면 전체 공개로 간주
+              final visibility = post.visibility;
+              
+              // 전체 공개 게시글은 모두 표시
+              if (visibility == 'public' || visibility.isEmpty) {
+                return true;
+              }
+              
+              // 카테고리별 비공개 게시글 - 매우 엄격하게 필터링
+              if (visibility == 'category') {
+                // 1. 작성자 본인인 경우만 무조건 표시
+                if (post.userId == user.uid) {
+                  print('✅ 작성자 본인: ${post.title}');
+                  return true;
+                }
+                
+                // 2. allowedUserIds 배열이 없거나 비어있으면 차단
+                if (post.allowedUserIds.isEmpty) {
+                  print('❌ allowedUserIds 비어있음: ${post.title}');
+                  return false;
+                }
+                
+                // 3. allowedUserIds에 정확히 포함되어 있는지 확인
+                final isAllowed = post.allowedUserIds.contains(user.uid);
+                
+                if (isAllowed) {
+                  print('✅ 접근 허용: ${post.title}');
+                  print('   - 현재 사용자: ${user.uid}');
+                  print('   - 허용된 사용자: ${post.allowedUserIds}');
+                } else {
+                  print('❌ 접근 차단: ${post.title}');
+                  print('   - 현재 사용자: ${user.uid}');
+                  print('   - 허용된 사용자: ${post.allowedUserIds}');
+                  print('   - 작성자: ${post.userId}');
+                }
+                
+                return isAllowed;
+              }
+              
+              // 알 수 없는 visibility 값은 차단
+              print('⚠️  알 수 없는 visibility: ${visibility} - ${post.title}');
+              return false;
+            }).toList();
+            
+            print('✅ 필터링 후 게시글 수: ${filteredPosts.length} (전체: ${posts.length})');
+            return filteredPosts;
+          }
+          
+          // 로그인하지 않은 경우 전체 공개 게시글만 표시
+          print('⚠️  로그인하지 않음 - 전체 공개만 표시');
+          return posts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
         });
   }
 
@@ -161,6 +277,7 @@ class PostService {
         content: data['content'] ?? '',
         author: data['authorNickname'] ?? '익명',
         authorNationality: data['authorNationality'] ?? '알 수 없음',
+        authorPhotoURL: data['authorPhotoURL'] ?? '',
         createdAt:
             data['createdAt'] != null
                 ? (data['createdAt'] as Timestamp).toDate()
@@ -170,6 +287,10 @@ class PostService {
         likes: data['likes'] ?? 0,
         likedBy: List<String>.from(data['likedBy'] ?? []),
         imageUrls: List<String>.from(data['imageUrls'] ?? []),
+        visibility: data['visibility'] ?? 'public',
+        isAnonymous: data['isAnonymous'] ?? false,
+        visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+        allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
       );
     } catch (e) {
       print('게시글 조회 오류: $e');
@@ -251,6 +372,8 @@ class PostService {
   }
 
   // 현재 사용자가 좋아요를 눌렀는지 확인
+  // 주의: 이 함수는 더 이상 사용되지 않습니다. Post 객체의 likedBy를 직접 사용하세요.
+  @Deprecated('Post 객체의 likedBy 리스트를 직접 사용하세요')
   Future<bool> hasUserLikedPost(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -264,7 +387,7 @@ class PostService {
 
       return likedBy.contains(user.uid);
     } catch (e) {
-      print('좋아요 확인 오류: $e');
+      // 권한 오류는 정상 - 비공개 게시글에 접근할 수 없음
       return false;
     }
   }
@@ -316,20 +439,25 @@ class PostService {
 
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
+    final user = _auth.currentUser;
+    
     return _firestore
         .collection('posts')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
+      print('📊 [getPostsStream] Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
+      
       final posts = snapshot.docs.map((doc) {
         try {
           final data = doc.data();
-          return Post(
+          final post = Post(
             id: doc.id,
             title: data['title'] ?? '제목 없음',
             content: data['content'] ?? '내용 없음',
             author: data['authorNickname'] ?? '알 수 없음',
             authorNationality: data['authorNationality'] ?? '',
+            authorPhotoURL: data['authorPhotoURL'] ?? '',
             category: data['category'] ?? '일반',
             createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
             userId: data['userId'] ?? '',
@@ -337,7 +465,21 @@ class PostService {
             likes: data['likes'] ?? 0,
             likedBy: List<String>.from(data['likedBy'] ?? []),
             imageUrls: List<String>.from(data['imageUrls'] ?? []),
+            visibility: data['visibility'] ?? 'public',
+            isAnonymous: data['isAnonymous'] ?? false,
+            visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+            allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
           );
+          
+          // 비공개 게시글 로그
+          if (post.visibility == 'category') {
+            print('🔒 비공개 게시글 발견: ${post.title}');
+            print('   작성자: ${post.author} (${post.userId})');
+            print('   현재 사용자: ${user?.uid ?? "로그인 안 함"}');
+            print('   허용된 사용자: ${post.allowedUserIds}');
+          }
+          
+          return post;
         } catch (e) {
           print('게시글 파싱 오류: $e');
           // 오류 발생 시 기본 Post 객체 반환
@@ -350,17 +492,74 @@ class PostService {
             createdAt: DateTime.now(),
             userId: '',
             imageUrls: [],
+            visibility: 'public',
+            isAnonymous: false,
+            visibleToCategoryIds: [],
             likes: 0,
           );
         }
       }).toList();
 
-      // 차단된 사용자의 게시물 필터링
-      return await ContentFilterService.filterPosts(posts);
+      // 1단계: 차단된 사용자의 게시물 필터링
+      final nonBlockedPosts = await ContentFilterService.filterPosts(posts);
+      
+      // 2단계: 비공개 게시글 필터링 (매우 중요!)
+      if (user != null) {
+        final visiblePosts = nonBlockedPosts.where((post) {
+          final visibility = post.visibility;
+          
+          // 전체 공개 게시글은 모두 표시
+          if (visibility == 'public' || visibility.isEmpty) {
+            return true;
+          }
+          
+          // 카테고리별 비공개 게시글 - 엄격하게 필터링
+          if (visibility == 'category') {
+            // 1. 작성자 본인
+            if (post.userId == user.uid) {
+              print('✅ [getPostsStream] 작성자 본인: ${post.title}');
+              return true;
+            }
+            
+            // 2. allowedUserIds 비어있으면 차단
+            if (post.allowedUserIds.isEmpty) {
+              print('❌ [getPostsStream] allowedUserIds 비어있음: ${post.title}');
+              return false;
+            }
+            
+            // 3. allowedUserIds에 포함 여부 확인
+            final isAllowed = post.allowedUserIds.contains(user.uid);
+            
+            if (isAllowed) {
+              print('✅ [getPostsStream] 접근 허용: ${post.title}');
+            } else {
+              print('❌ [getPostsStream] 접근 차단: ${post.title}');
+              print('   - 현재 사용자: ${user.uid}');
+              print('   - 허용된 사용자: ${post.allowedUserIds}');
+              print('   - 작성자: ${post.userId}');
+            }
+            
+            return isAllowed;
+          }
+          
+          // 알 수 없는 visibility는 차단
+          print('⚠️  [getPostsStream] 알 수 없는 visibility: ${visibility}');
+          return false;
+        }).toList();
+        
+        print('✅ [getPostsStream] 필터링 후 게시글 수: ${visiblePosts.length} (전체: ${posts.length})');
+        return visiblePosts;
+      }
+      
+      // 로그인하지 않은 경우 전체 공개만
+      print('⚠️  [getPostsStream] 로그인하지 않음 - 전체 공개만 표시');
+      return nonBlockedPosts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
     });
   }
 
   // 현재 사용자가 게시글 작성자인지 확인
+  // 주의: 이 함수는 더 이상 사용되지 않습니다. Post 객체의 userId를 직접 사용하세요.
+  @Deprecated('Post 객체의 userId를 직접 사용하세요')
   Future<bool> isCurrentUserAuthor(String postId) async {
     try {
       final user = _auth.currentUser;
@@ -372,7 +571,7 @@ class PostService {
       final data = postDoc.data()!;
       return data['userId'] == user.uid;
     } catch (e) {
-      print('작성자 확인 오류: $e');
+      // 권한 오류는 정상 - 비공개 게시글에 접근할 수 없음
       return false;
     }
   }
@@ -415,6 +614,7 @@ class PostService {
                   content: data['content'] ?? '내용 없음',
                   author: data['authorNickname'] ?? '알 수 없음',
                   authorNationality: data['authorNationality'] ?? '',
+                  authorPhotoURL: data['authorPhotoURL'] ?? '',
                   category: data['category'] ?? '일반',
                   createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
                   userId: data['userId'] ?? '',
@@ -422,6 +622,10 @@ class PostService {
                   likes: data['likes'] ?? 0,
                   likedBy: List<String>.from(data['likedBy'] ?? []),
                   imageUrls: List<String>.from(data['imageUrls'] ?? []),
+                  visibility: data['visibility'] ?? 'public',
+                  isAnonymous: data['isAnonymous'] ?? false,
+                  visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+                  allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
                 );
               }
               return null;
@@ -522,6 +726,7 @@ class PostService {
               content: data['content'] ?? '내용 없음',
               author: data['authorNickname'] ?? '알 수 없음',
               authorNationality: data['authorNationality'] ?? '',
+              authorPhotoURL: data['authorPhotoURL'] ?? '',
               category: data['category'] ?? '일반',
               createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
               userId: data['userId'] ?? '',
@@ -529,6 +734,10 @@ class PostService {
               likes: data['likes'] ?? 0,
               likedBy: List<String>.from(data['likedBy'] ?? []),
               imageUrls: List<String>.from(data['imageUrls'] ?? []),
+              visibility: data['visibility'] ?? 'public',
+              isAnonymous: data['isAnonymous'] ?? false,
+              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+              allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
             ));
           }
         } catch (e) {
@@ -556,6 +765,104 @@ class PostService {
     } catch (e) {
       print('저장된 게시글 수 조회 오류: $e');
       return 0;
+    }
+  }
+
+  /// 특정 사용자의 모든 게시물에서 작성자 정보 업데이트
+  Future<bool> updateAuthorInfoInAllPosts(
+    String userId,
+    String newNickname,
+    String? newPhotoUrl,
+  ) async {
+    try {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🔄 게시물 배치 업데이트 시작');
+      print('   - userId: $userId');
+      print('   - newNickname: $newNickname');
+      print('   - newPhotoUrl: ${newPhotoUrl ?? "없음"}');
+
+      // 1. 해당 사용자가 작성한 모든 게시물 조회
+      final postsQuery = await _firestore
+          .collection('posts')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      print('   - 찾은 게시물: ${postsQuery.docs.length}개');
+
+      if (postsQuery.docs.isEmpty) {
+        print('   ⚠️  업데이트할 게시물이 없습니다.');
+        return true;
+      }
+
+      // 2. 배치 작업 준비 (Firestore는 배치당 최대 500개)
+      final batches = <WriteBatch>[];
+      var currentBatch = _firestore.batch();
+      var operationCount = 0;
+      const maxOperationsPerBatch = 500;
+
+      // 3. 각 게시물의 작성자 정보 업데이트
+      for (final doc in postsQuery.docs) {
+        if (operationCount >= maxOperationsPerBatch) {
+          batches.add(currentBatch);
+          currentBatch = _firestore.batch();
+          operationCount = 0;
+          print('   → 새 배치 생성 (배치 ${batches.length + 1})');
+        }
+
+        final postRef = _firestore.collection('posts').doc(doc.id);
+
+        final updateData = <String, dynamic>{
+          'authorNickname': newNickname,
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        // photoURL이 있는 경우에만 추가
+        if (newPhotoUrl != null && newPhotoUrl.isNotEmpty) {
+          updateData['authorPhotoURL'] = newPhotoUrl;
+        }
+
+        currentBatch.update(postRef, updateData);
+        operationCount++;
+      }
+
+      // 마지막 배치 추가
+      if (operationCount > 0) {
+        batches.add(currentBatch);
+      }
+
+      // 4. 모든 배치 실행
+      print('   💾 총 ${batches.length}개의 배치 커밋 시작...');
+      int successCount = 0;
+      int failCount = 0;
+
+      for (int i = 0; i < batches.length; i++) {
+        try {
+          await batches[i].commit();
+          successCount++;
+          print('   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료');
+        } catch (e) {
+          failCount++;
+          print('   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패: $e');
+        }
+      }
+
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('✅ 게시물 배치 업데이트 완료!');
+      print('   - 총 게시물: ${postsQuery.docs.length}개');
+      print('   - 성공한 배치: $successCount/${batches.length}');
+      if (failCount > 0) {
+        print('   ⚠️  실패한 배치: $failCount/${batches.length}');
+      }
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      return failCount == 0;
+    } catch (e, stackTrace) {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('❌ 게시물 배치 업데이트 실패!');
+      print('   에러: $e');
+      print('   스택 트레이스: $stackTrace');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      return false;
     }
   }
 }

@@ -13,6 +13,7 @@ import '../design/tokens.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/block_dialog.dart';
 import 'meetup_participants_screen.dart';
+import 'edit_meetup_screen.dart';
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -34,10 +35,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
   final MeetupService _meetupService = MeetupService();
   bool _isLoading = false;
   bool _isHost = false;
+  late Meetup _currentMeetup;
 
   @override
   void initState() {
     super.initState();
+    _currentMeetup = widget.meetup;
     _checkIfUserIsHost();
   }
 
@@ -90,7 +93,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final status = widget.meetup.getStatus();
+    final status = _currentMeetup.getStatus();
     final isUpcoming = status == '예정';
     final size = MediaQuery.of(context).size;
 
@@ -148,7 +151,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    widget.meetup.title,
+                    _currentMeetup.title,
                     style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
@@ -167,7 +170,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        '${widget.meetup.date.month}월 ${widget.meetup.date.day}일',
+                        '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일',
                         style: const TextStyle(color: Colors.white70),
                       ),
                       const SizedBox(width: 16),
@@ -178,7 +181,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        widget.meetup.time,
+                        _currentMeetup.time,
                         style: const TextStyle(color: Colors.white70),
                       ),
                     ],
@@ -197,38 +200,38 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     Icons.calendar_today,
                     Colors.blue,
                     '날짜 및 시간',
-                    '${widget.meetup.date.month}월 ${widget.meetup.date.day}일 (${widget.meetup.getFormattedDayOfWeek()}) ${widget.meetup.time}',
+                    '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek()}) ${_currentMeetup.time}',
                   ),
                   _buildInfoItem(
                     Icons.location_on,
                     Colors.red,
                     '모임 장소',
-                    widget.meetup.location,
+                    _currentMeetup.location,
                   ),
                   _buildInfoItem(
                     Icons.people,
                     Colors.amber,
                     '참가 인원',
-                    '${widget.meetup.currentParticipants}/${widget.meetup.maxParticipants}명',
+                    '${_currentMeetup.currentParticipants}/${_currentMeetup.maxParticipants}명',
                   ),
                   _buildInfoItem(
                     Icons.person,
                     Colors.green,
                     '주최자',
-                    "${widget.meetup.host} (국적: ${widget.meetup.hostNationality.isEmpty ? '없음' : widget.meetup.hostNationality})",
+                    "${_currentMeetup.host} (국적: ${_currentMeetup.hostNationality.isEmpty ? '없음' : _currentMeetup.hostNationality})",
                     suffix:
-                        widget.meetup.hostNationality.isNotEmpty
+                        _currentMeetup.hostNationality.isNotEmpty
                             ? CountryFlagCircle(
-                              nationality: widget.meetup.hostNationality,
-                              size: 20,
+                              nationality: _currentMeetup.hostNationality,
+                              size: 24, // 20 → 24로 증가
                             )
                             : null,
                   ),
                   _buildInfoItem(
                     Icons.category,
-                    _getCategoryColor(widget.meetup.category),
+                    _getCategoryColor(_currentMeetup.category),
                     '카테고리',
-                    widget.meetup.category,
+                    _currentMeetup.category,
                   ),
 
                   // 모임 이미지
@@ -252,7 +255,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          widget.meetup.description,
+                          _currentMeetup.description,
                           style: const TextStyle(fontSize: 14),
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
@@ -367,8 +370,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
     const double imageHeight = 200; // 상세화면에서는 더 큰 크기
     
     // 모임에서 표시할 이미지 URL 가져오기 (기본 이미지 포함)
-    final String displayImageUrl = widget.meetup.getDisplayImageUrl();
-    final bool isDefaultImage = widget.meetup.isDefaultImage();
+    final String displayImageUrl = _currentMeetup.getDisplayImageUrl();
+    final bool isDefaultImage = _currentMeetup.isDefaultImage();
     
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -416,7 +419,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
         },
         errorBuilder: (context, error, stackTrace) {
           // 이미지 로드 실패 시 기본 이미지로 대체
-          return _buildDefaultImage(widget.meetup.getDefaultImageUrl(), height);
+          return _buildDefaultImage(_currentMeetup.getDefaultImageUrl(), height);
         },
       ),
     );
@@ -432,8 +435,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            widget.meetup.getCategoryBackgroundColor(),
-            widget.meetup.getCategoryBackgroundColor().withOpacity(0.8),
+            _currentMeetup.getCategoryBackgroundColor(),
+            _currentMeetup.getCategoryBackgroundColor().withOpacity(0.8),
           ],
         ),
         borderRadius: BorderRadius.circular(12),
@@ -445,22 +448,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: widget.meetup.getCategoryColor().withOpacity(0.1),
+                color: _currentMeetup.getCategoryColor().withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
               child: Icon(
-                widget.meetup.getCategoryIcon(),
+                _currentMeetup.getCategoryIcon(),
                 size: 48,
-                color: widget.meetup.getCategoryColor(),
+                color: _currentMeetup.getCategoryColor(),
               ),
             ),
             const SizedBox(height: 12),
             Text(
-              widget.meetup.category,
+              _currentMeetup.category,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: widget.meetup.getCategoryColor(),
+                color: _currentMeetup.getCategoryColor(),
               ),
             ),
           ],
@@ -660,22 +663,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
   void _handleUserMenuAction(String action) {
     switch (action) {
       case 'report':
-        if (widget.meetup.userId != null) {
+        if (_currentMeetup.userId != null) {
           showReportDialog(
             context,
-            reportedUserId: widget.meetup.userId!,
+            reportedUserId: _currentMeetup.userId!,
             targetType: 'meetup',
-            targetId: widget.meetup.id,
-            targetTitle: widget.meetup.title,
+            targetId: _currentMeetup.id,
+            targetTitle: _currentMeetup.title,
           );
         }
         break;
       case 'block':
-        if (widget.meetup.userId != null && widget.meetup.hostNickname != null) {
+        if (_currentMeetup.userId != null && _currentMeetup.hostNickname != null) {
           showBlockUserDialog(
             context,
-            userId: widget.meetup.userId!,
-            userName: widget.meetup.hostNickname!,
+            userId: _currentMeetup.userId!,
+            userName: _currentMeetup.hostNickname!,
           );
         }
         break;
@@ -683,12 +686,47 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
   }
 
   /// 모임 수정 화면으로 이동
-  void _showEditMeetup() {
-    Navigator.pushNamed(
+  Future<void> _showEditMeetup() async {
+    final result = await Navigator.push(
       context,
-      '/edit-meetup',
-      arguments: widget.meetup,
+      MaterialPageRoute(
+        builder: (context) => EditMeetupScreen(meetup: _currentMeetup),
+      ),
     );
+
+    // 수정이 완료되면 최신 데이터로 새로고침
+    if (result == true && mounted) {
+      await _refreshMeetupData();
+    }
+  }
+
+  /// 모임 데이터 새로고침
+  Future<void> _refreshMeetupData() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('meetups')
+          .doc(widget.meetupId)
+          .get();
+
+      if (doc.exists && mounted) {
+        final data = doc.data()!;
+        data['id'] = doc.id; // doc.id를 데이터에 추가
+        
+        setState(() {
+          _currentMeetup = Meetup.fromJson(data);
+        });
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('모임 정보가 업데이트되었습니다.'),
+            backgroundColor: Colors.blue,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      print('모임 데이터 새로고침 오류: $e');
+    }
   }
 
   /// 모임 취소 확인 다이얼로그
@@ -709,7 +747,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '정말로 "${widget.meetup.title}" 모임을 취소하시겠습니까?',
+              '정말로 "${_currentMeetup.title}" 모임을 취소하시겠습니까?',
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,

@@ -28,6 +28,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   bool _isSubmitting = false;
   bool _canSubmit = false;
+  
+  // 공개 범위 설정
+  String _visibility = 'public'; // 'public' 또는 'category'
+  bool _isAnonymous = false; // 익명 여부
+  List<String> _selectedCategoryIds = []; // 선택된 카테고리 ID 목록
 
   @override
   void initState() {
@@ -99,7 +104,141 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
+  // 카테고리 선택 다이얼로그
+  Future<void> _selectCategories() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.user;
+    
+    if (user == null) {
+      print('❌ 사용자가 로그인되지 않았습니다.');
+      return;
+    }
+
+    try {
+      print('🔍 카테고리 조회 시작');
+      print('👤 사용자 UID: ${user.uid}');
+      print('📍 경로: friend_categories (where userId == ${user.uid})');
+      
+      // Firestore에서 사용자의 친구 카테고리 목록 가져오기
+      // 실제로는 friend_categories 컬렉션에 저장되어 있음
+      final categoriesSnapshot = await FirebaseFirestore.instance
+          .collection('friend_categories')
+          .where('userId', isEqualTo: user.uid)
+          .get();
+
+      print('📊 조회된 카테고리 개수: ${categoriesSnapshot.docs.length}');
+      
+      if (categoriesSnapshot.docs.isNotEmpty) {
+        print('✅ 카테고리 목록:');
+        for (var doc in categoriesSnapshot.docs) {
+          print('  - ID: ${doc.id}, 데이터: ${doc.data()}');
+        }
+      }
+
+      if (categoriesSnapshot.docs.isEmpty) {
+        print('⚠️ 카테고리가 비어있습니다.');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('생성된 친구 카테고리가 없습니다. 먼저 카테고리를 생성해주세요.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      final categories = categoriesSnapshot.docs.map((doc) {
+        return {
+          'id': doc.id,
+          'name': doc.data()['name'] ?? '이름 없음',
+        };
+      }).toList();
+
+      // 다중 선택 다이얼로그 표시
+      final selected = await showDialog<List<String>>(
+        context: context,
+        builder: (context) {
+          // 임시로 선택된 카테고리 저장
+          List<String> tempSelected = List.from(_selectedCategoryIds);
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('공개할 카테고리 선택'),
+                content: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: categories.map((category) {
+                      final isSelected = tempSelected.contains(category['id']);
+                      return CheckboxListTile(
+                        title: Text(category['name']!),
+                        value: isSelected,
+                        onChanged: (value) {
+                          setDialogState(() {
+                            if (value == true) {
+                              tempSelected.add(category['id']!);
+                            } else {
+                              tempSelected.remove(category['id']);
+                            }
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('취소'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, tempSelected),
+                    child: const Text('확인'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+
+      if (selected != null) {
+        setState(() {
+          _selectedCategoryIds = selected;
+        });
+      }
+    } catch (e, stackTrace) {
+      print('❌ 카테고리 로드 오류: $e');
+      print('스택 트레이스: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('카테고리를 불러오는 중 오류가 발생했습니다: $e'),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: '확인',
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _submitPost() async {
+    // 카테고리별 공개인 경우 카테고리 선택 여부 확인
+    if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('카테고리를 최소 1개 이상 선택해주세요.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    
     if (_formKey.currentState!.validate()) {
       setState(() {
         _isSubmitting = true;
@@ -129,6 +268,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           _titleController.text.trim(),
           _contentController.text.trim(),
           imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
+          visibility: _visibility,
+          isAnonymous: _isAnonymous,
+          visibleToCategoryIds: _selectedCategoryIds,
         );
 
         if (success) {
@@ -190,6 +332,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     // 현재 유저의 닉네임 가져오기
     final authProvider = Provider.of<AuthProvider>(context);
     final nickname = authProvider.userData?['nickname'] ?? '익명';
+    final photoURL = authProvider.user?.photoURL;
 
     return Scaffold(
       appBar: AppBar(
@@ -237,10 +380,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ),
         ],
       ),
+      resizeToAvoidBottomInset: true,
       body: Form(
         key: _formKey,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.only(
+            left: 16.0,
+            right: 16.0,
+            top: 16.0,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -258,16 +407,32 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: _getAvatarColor(nickname),
-                      child: Text(
-                        nickname.isNotEmpty ? nickname[0].toUpperCase() : '?',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey[300],
                       ),
+                      child: photoURL != null
+                          ? ClipOval(
+                              child: Image.network(
+                                photoURL,
+                                width: 36,
+                                height: 36,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  Icons.person,
+                                  size: 18,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: 18,
+                              color: Colors.grey[600],
+                            ),
                     ),
                     const SizedBox(width: 12),
                     Text(
@@ -299,6 +464,180 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ],
                 ),
               ),
+              
+              // 공개 범위 선택
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16.0),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '공개 범위',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // 전체 공개 / 카테고리별 공개 선택
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('전체 공개'),
+                            value: 'public',
+                            groupValue: _visibility,
+                            onChanged: (value) {
+                              setState(() {
+                                _visibility = value!;
+                                if (_visibility == 'category') {
+                                  _isAnonymous = false; // 카테고리 공개 시 익명 해제
+                                }
+                              });
+                            },
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: const Text('카테고리별'),
+                            value: 'category',
+                            groupValue: _visibility,
+                            onChanged: (value) {
+                              setState(() {
+                                _visibility = value!;
+                                if (_visibility == 'category') {
+                                  _isAnonymous = false; // 카테고리 공개 시 익명 해제
+                                }
+                              });
+                            },
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    
+                    // 익명 체크박스 (전체 공개일 때만 표시)
+                    if (_visibility == 'public') ...[
+                      const SizedBox(height: 8),
+                      // 안내 메시지
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                _isAnonymous
+                                    ? '익명으로 게시됩니다. 댓글 작성자는 "글쓴이", "익명1", "익명2" 등으로 표시됩니다.'
+                                    : '작성자와 댓글 작성자의 실명이 표시됩니다.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.blue.shade900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      CheckboxListTile(
+                        title: const Text(
+                          '익명으로 게시',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        subtitle: Text(
+                          _isAnonymous 
+                              ? '✓ 신원이 완전히 숨겨집니다'
+                              : '아이디가 공개됩니다',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _isAnonymous ? Colors.green.shade700 : Colors.grey.shade600,
+                          ),
+                        ),
+                        value: _isAnonymous,
+                        onChanged: (value) {
+                          setState(() {
+                            _isAnonymous = value ?? false;
+                          });
+                        },
+                        contentPadding: EdgeInsets.zero,
+                        dense: true,
+                        activeColor: Colors.blue.shade700,
+                      ),
+                    ],
+                    
+                    // 카테고리 선택 (카테고리별 공개일 때만 표시)
+                    if (_visibility == 'category')
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          // 안내 메시지
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.green.shade200),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: Colors.green.shade700),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    '카테고리 멤버에게만 공개되며, 작성자와 댓글 작성자의 실명이 표시됩니다.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade900,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ElevatedButton.icon(
+                            onPressed: _selectCategories,
+                            icon: const Icon(Icons.category, size: 18),
+                            label: Text(
+                              _selectedCategoryIds.isEmpty
+                                  ? '카테고리 선택 (필수)'
+                                  : '${_selectedCategoryIds.length}개 선택됨',
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              backgroundColor: _selectedCategoryIds.isEmpty 
+                                  ? Colors.orange.shade100 
+                                  : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              
               // 제목 입력 필드
               TextField(
                 controller: _titleController,

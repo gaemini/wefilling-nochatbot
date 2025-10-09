@@ -9,6 +9,12 @@ service cloud.firestore {
       allow create: if request.auth != null && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
       allow delete: if false; // 사용자 삭제는 금지
+      
+      // 저장된 게시글 서브컬렉션
+      match /savedPosts/{postId} {
+        // 본인만 자신의 저장된 게시글 읽기/쓰기 가능
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
     
     // ===== 친구 요청 컬렉션 =====
@@ -16,9 +22,9 @@ service cloud.firestore {
       // 요청 생성: 발신자만 가능, 자기 자신에게 요청 금지
       allow create: if 
         request.auth != null &&
-        request.auth.uid == resource.data.fromUid &&
-        request.auth.uid != resource.data.toUid &&
-        resource.data.status == 'PENDING';
+        request.auth.uid == request.resource.data.fromUid &&
+        request.auth.uid != request.resource.data.toUid &&
+        request.resource.data.status == 'PENDING';
       
       // 요청 읽기: 발신자 또는 수신자만 가능
       allow read: if 
@@ -59,7 +65,7 @@ service cloud.firestore {
     
     // ===== 차단 컬렉션 =====
     match /blocks/{blockId} {
-      // 읽기: 차단한 사용자만 가능
+      // 읽기: 차단한 사용자만 가능 (차단 상태 확인을 위해)
       allow read: if 
         request.auth != null &&
         request.auth.uid == resource.data.blocker;
@@ -67,32 +73,142 @@ service cloud.firestore {
       // 생성/삭제: 차단하는 사용자만 가능
       allow create, delete: if 
         request.auth != null &&
-        request.auth.uid == resource.data.blocker;
+        request.auth.uid == request.resource.data.blocker;
       
       // 업데이트: 금지
       allow update: if false;
     }
     
-    // ===== 기존 컬렉션들 (호환성 유지) =====
-    match /posts/{postId} {
-      allow read: if true;
-      allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && 
+    // ===== 관계(Relationships) 컬렉션 =====
+    match /relationships/{relationshipId} {
+      // 읽기: 본인과 관련된 관계만 읽기 가능
+      allow read: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.userId || 
+         request.auth.uid == resource.data.friendId);
+      
+      // 생성: 본인이 userId인 경우만 가능
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      
+      // 업데이트: 본인과 관련된 관계만 수정 가능
+      allow update: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.userId || 
+         request.auth.uid == resource.data.friendId);
+      
+      // 삭제: 본인과 관련된 관계만 삭제 가능
+      allow delete: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.userId || 
+         request.auth.uid == resource.data.friendId);
+    }
+    
+    // ===== 친구 카테고리 컬렉션 =====
+    match /friend_categories/{categoryId} {
+      // 읽기: 본인의 카테고리 또는 내가 포함된 카테고리 읽기 가능
+      allow read: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.userId || 
+         request.auth.uid in resource.data.friendIds);
+      
+      // 생성: 본인이 userId인 경우만 가능
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      
+      // 업데이트: 본인의 카테고리만 수정 가능
+      allow update: if 
+        request.auth != null &&
+        request.auth.uid == resource.data.userId;
+      
+      // 삭제: 본인의 카테고리만 삭제 가능
+      allow delete: if 
+        request.auth != null &&
         request.auth.uid == resource.data.userId;
     }
     
-    match /comments/{commentId} {
-      allow read: if true;
+    // ===== 기존 컬렉션들 (호환성 유지) =====
+    match /posts/{postId} {
+      // 게시글 읽기: 공개 범위에 따라 제한
+      // 1. 전체 공개(visibility == 'public' 또는 필드 없음) → 누구나 읽기 가능
+      // 2. 카테고리별 공개(visibility == 'category') → allowedUserIds에 포함된 사용자만 읽기 가능
+      allow read: if 
+        // 전체 공개인 경우 (기본값)
+        (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public') ||
+        // 카테고리별 공개이고 허용된 사용자인 경우
+        (resource.data.visibility == 'category' && request.auth != null && 
+         (request.auth.uid == resource.data.userId || 
+          (resource.data.keys().hasAny(['allowedUserIds']) && request.auth.uid in resource.data.allowedUserIds)));
+      
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && 
+      
+      // 게시글 수정: 작성자만 가능 또는 좋아요 필드만 변경하는 경우 읽기 권한이 있는 사용자 가능
+      allow update: if request.auth != null && 
+        // 읽기 권한 체크 (전체 공개 또는 허용된 사용자)
+        (
+          (!resource.data.keys().hasAny(['visibility']) || resource.data.visibility == 'public') ||
+          (resource.data.visibility == 'category' && 
+           (request.auth.uid == resource.data.userId || 
+            (resource.data.keys().hasAny(['allowedUserIds']) && request.auth.uid in resource.data.allowedUserIds)))
+        ) &&
+        // createdAt 필드는 절대 수정 불가
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
+        (request.auth.uid == resource.data.userId ||
+         // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']));
+      
+      // 게시글 삭제: 작성자만 가능
+      allow delete: if request.auth != null && 
         request.auth.uid == resource.data.userId;
+      
+      // 게시글의 댓글
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && 
+          request.auth.uid == resource.data.userId;
+      }
     }
     
     match /meetups/{meetupId} {
       allow read: if true;
       allow create: if request.auth != null;
-      allow update, delete: if request.auth != null && 
-        request.auth.uid == resource.data.hostId;
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      
+      // 모임의 댓글
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if request.auth != null;
+        allow update, delete: if request.auth != null && 
+          request.auth.uid == resource.data.userId;
+      }
+    }
+    
+    // ===== 모임 참여자 컬렉션 =====
+    match /meetup_participants/{participantId} {
+      // 읽기: 모든 사용자가 참여자 정보를 볼 수 있음
+      allow read: if true;
+      
+      // 생성: 본인만 참여 신청 가능
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      
+      // 업데이트: 본인 또는 모임 주최자만 수정 가능
+      allow update: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.userId || 
+         request.auth.uid == resource.data.hostId);
+      
+      // 삭제: 본인만 참여 취소 가능
+      allow delete: if 
+        request.auth != null &&
+        request.auth.uid == resource.data.userId;
     }
     
     // ===== 리뷰 합의 기능 추가 규칙 =====
@@ -189,6 +305,72 @@ service cloud.firestore {
       // 알림 삭제: 본인만 가능
       allow delete: if 
         request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // ===== 광고 배너 컬렉션 =====
+    match /ad_banners/{bannerId} {
+      // 모든 사용자가 광고를 읽을 수 있음
+      allow read: if true;
+      
+      // 광고 생성/수정/삭제는 Firebase Console에서만 가능
+      // (관리자가 직접 관리)
+      allow write: if false;
+    }
+    
+    // ===== 후기(Reviews) 컬렉션 =====
+    match /reviews/{reviewId} {
+      // 읽기: 본인의 후기 또는 공개된 후기만 읽기 가능
+      allow read: if 
+        request.auth != null &&
+        (request.auth.uid == resource.data.authorId || 
+         resource.data.privacyLevel == 'public' ||
+         (resource.data.privacyLevel == 'friends' && 
+          exists(/databases/$(database)/documents/relationships/$(request.auth.uid + '_' + resource.data.authorId))) ||
+         (resource.data.privacyLevel == 'school' && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.school == 
+          get(/databases/$(database)/documents/users/$(resource.data.authorId)).data.school));
+      
+      // 생성: 로그인한 사용자만 가능, authorId는 본인이어야 함
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.authorId;
+      
+      // 수정: 본인의 후기만 수정 가능
+      allow update: if 
+        request.auth != null &&
+        request.auth.uid == resource.data.authorId;
+      
+      // 삭제: 본인의 후기만 삭제 가능
+      allow delete: if 
+        request.auth != null &&
+        request.auth.uid == resource.data.authorId;
+    }
+    
+    // ===== 댓글(Comments) 컬렉션 (최상위) =====
+    match /comments/{commentId} {
+      // 읽기: 모든 사용자가 댓글을 읽을 수 있음
+      allow read: if true;
+      
+      // 생성: 로그인한 사용자만 댓글 작성 가능
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.userId;
+      
+      // 수정: 본인의 댓글 수정 가능 또는 좋아요/답글 필드만 변경하는 경우 누구나 가능
+      allow update: if 
+        request.auth != null &&
+        // createdAt 필드는 절대 수정 불가
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
+        (request.auth.uid == resource.data.userId ||
+         // 좋아요 관련 필드만 변경하는 경우 (likeCount, likedBy만 변경 허용)
+         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount', 'likedBy']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likeCount']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy'])));
+      
+      // 삭제: 본인의 댓글만 삭제 가능
+      allow delete: if 
+        request.auth != null &&
         request.auth.uid == resource.data.userId;
     }
     

@@ -32,9 +32,6 @@ class StorageService {
       // 이미지 파일 경로 설정 (posts 폴더 아래에 저장)
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
 
-      // 공개 접근을 위한 다운로드 토큰 생성
-      final String downloadToken = _uuid.v4();
-
       // 이미지 파일 업로드 및 진행 상태 모니터링
       final UploadTask uploadTask = ref.putFile(
         compressedFile,
@@ -43,8 +40,6 @@ class StorageService {
           customMetadata: {
             'fileName': fileName,
             'uploaded': DateTime.now().toString(),
-            // 공개 접근을 위한 다운로드 토큰 추가
-            'firebaseStorageDownloadTokens': downloadToken,
           },
         ),
       );
@@ -83,56 +78,20 @@ class StorageService {
       // 업로드 완료 대기
       final TaskSnapshot taskSnapshot = await uploadTask;
 
-      // 이미지 URL 반환
+      // 이미지 URL 반환 - Firebase가 자동으로 생성하는 다운로드 URL 사용
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
       print('다운로드 URL 획득: $downloadUrl');
-      print(
-        '다운로드 URL에 alt=media 있는지 확인: ${downloadUrl.contains('alt=media') ? '있음' : '없음'}',
-      );
-
-      // 토큰이 포함된 공개 접근 URL 생성 (Firebase Storage 403 오류 해결)
-      final String bucket = _storage.bucket ?? '';
-      final String encodedPath = Uri.encodeComponent('$folderPath/$fileName');
-      final String publicUrl =
-          'https://firebasestorage.googleapis.com/v0/b/$bucket/o/$encodedPath?alt=media&token=$downloadToken';
-      print('토큰이 포함된 공개 URL 생성: $publicUrl');
-
-      try {
-        // URL이 유효한지 테스트
-        final uri = Uri.parse(downloadUrl);
-        print('URL 스키마: ${uri.scheme}, 호스트: ${uri.host}, 경로: ${uri.path}');
-
-        // Firebase에서 제공하는 원본 URL 그대로 사용
-        print('✅ Firebase 원본 URL 사용: $downloadUrl');
-
-        // alt=media가 이미 있는지 확인
-        if (downloadUrl.contains('alt=media')) {
-          print('✅ 이미 올바른 형식의 URL');
-          return downloadUrl;
-        }
-
-        // alt=media가 없으면 추가
-        String finalUrl = downloadUrl;
-        if (downloadUrl.contains('?')) {
-          finalUrl = '$downloadUrl&alt=media';
-        } else {
-          finalUrl = '$downloadUrl?alt=media';
-        }
-
-        print('✅ 최종 URL: $finalUrl');
-        return finalUrl;
-      } catch (e) {
-        print('URL 파싱 오류: $e');
-        // 오류 발생 시 토큰 포함 URL 반환
-        return publicUrl;
-      }
 
       // 임시 파일 삭제
       if (compressedFile.path != imageFile.path) {
-        await compressedFile.delete();
+        try {
+          await compressedFile.delete();
+        } catch (e) {
+          print('임시 파일 삭제 실패: $e');
+        }
       }
 
-      return publicUrl;
+      return downloadUrl;
     } catch (e) {
       print('이미지 업로드 오류: $e');
 

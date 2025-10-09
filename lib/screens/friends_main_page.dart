@@ -25,7 +25,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _tabController.addListener(() {
       setState(() {}); // FAB 표시 상태 업데이트
     });
@@ -45,21 +45,6 @@ class _FriendsMainPageState extends State<FriendsMainPage>
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
-        actions: [
-          if (_tabController.index == 2) // 친구 탭에서만 표시
-            IconButton(
-              icon: const Icon(Icons.category),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const FriendCategoriesScreen(),
-                  ),
-                );
-              },
-              tooltip: '카테고리 관리',
-            ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           labelColor: Colors.blue,
@@ -123,12 +108,18 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                 },
               ),
             ),
+            const Tab(icon: Icon(Icons.category), text: '카테고리'),
           ],
         ),
       ),
       body: TabBarView(
         controller: _tabController,
-        children: const [SearchUsersPage(), RequestsPage(), FriendsPage()],
+        children: const [
+          SearchUsersPage(),
+          RequestsPage(),
+          FriendsPage(),
+          FriendCategoriesScreen(),
+        ],
       ),
       // 친구 찾기 FAB (검색 탭에서만 표시)
       floatingActionButton:

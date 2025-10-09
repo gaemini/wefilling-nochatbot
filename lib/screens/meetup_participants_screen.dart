@@ -242,22 +242,32 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
             // 사용자 정보
             Row(
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundImage: participant.userProfileImage != null
-                      ? NetworkImage(participant.userProfileImage!)
-                      : null,
-                  child: participant.userProfileImage == null
-                      ? Text(
-                          participant.userName.isNotEmpty
-                              ? participant.userName[0].toUpperCase()
-                              : '?',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey[300],
+                  ),
+                  child: participant.userProfileImage != null
+                      ? ClipOval(
+                          child: Image.network(
+                            participant.userProfileImage!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.person,
+                              size: 24,
+                              color: Colors.grey[600],
+                            ),
                           ),
                         )
-                      : null,
+                      : Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Colors.grey[600],
+                        ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -506,6 +516,8 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
     }
   }
 }
+
+
 
 
 

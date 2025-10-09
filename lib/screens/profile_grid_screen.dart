@@ -57,6 +57,12 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
 
   /// Feature Flag 확인
   void _checkFeatureFlag() {
+    // 다른 사용자의 프로필을 보는 경우 feature flag를 확인하지 않음
+    if (widget.userId != null) {
+      return;
+    }
+    
+    // 자신의 프로필을 볼 때만 feature flag 확인
     if (!FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
       // Feature가 비활성화된 경우 기존 프로필 화면으로 이동
       WidgetsBinding.instance.addPostFrameCallback((_) {

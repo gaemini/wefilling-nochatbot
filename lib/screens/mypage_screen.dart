@@ -19,6 +19,7 @@ import '../design/tokens.dart';
 import '../services/post_service.dart';
 import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
+import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -47,55 +48,56 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
+    // 화면 크기 가져오기 (다양한 기종 대응)
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    final statusBarHeight = mediaQuery.padding.top;
+    
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          '내 정보',
-          style: AppTheme.headlineMedium.copyWith(
-            color: AppTheme.primary,
-          ),
-        ),
-        backgroundColor: AppTheme.backgroundPrimary,
-        foregroundColor: AppTheme.primary,
-        elevation: 0,
-      ),
       backgroundColor: AppTheme.backgroundPrimary,
-      body: Column(
-        children: [
-          _buildProfileHeader(),
-          Container(
-            color: AppTheme.backgroundSecondary,
-            child: TabBar(
-              controller: _tabController,
-              labelColor: AppTheme.primary,
-              unselectedLabelColor: Colors.grey,
-              indicatorColor: AppTheme.primary,
-              indicatorWeight: 3,
-              labelStyle: AppTheme.labelMedium.copyWith(
-                fontWeight: FontWeight.w600,
+      body: SafeArea(
+        top: true,
+        bottom: true,
+        child: Column(
+          children: [
+            _buildProfileHeader(),
+            Container(
+              color: AppTheme.backgroundSecondary,
+              child: TabBar(
+                controller: _tabController,
+                labelColor: AppTheme.primary,
+                unselectedLabelColor: Colors.grey,
+                indicatorColor: AppTheme.primary,
+                indicatorWeight: 2.5,
+                labelStyle: AppTheme.labelMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+                tabs: [
+                  Tab(
+                    icon: Icon(Icons.grid_on_rounded, size: 16),
+                    text: '후기',
+                    height: 48,
+                  ),
+                  Tab(
+                    icon: Icon(Icons.bookmark_border_rounded, size: 16),
+                    text: '저장됨',
+                    height: 48,
+                  ),
+                ],
               ),
-              tabs: [
-                Tab(
-                  icon: Icon(Icons.grid_on_rounded),
-                  text: '후기',
-                ),
-                Tab(
-                  icon: Icon(Icons.bookmark_border_rounded),
-                  text: '저장됨',
-                ),
-              ],
             ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildReviewGrid(),
-                _buildSavedPosts(),
-              ],
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildReviewGrid(),
+                  _buildSavedPosts(),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -104,160 +106,243 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.user;
     final userData = authProvider.userData;
+    final nationality = userData?['nationality'];
+    
+    // 반응형 패딩 (화면 크기에 따라 조정)
+    final mediaQuery = MediaQuery.of(context);
+    final screenHeight = mediaQuery.size.height;
+    
+    // 작은 화면에서는 패딩을 더 줄임
+    final verticalPadding = screenHeight < 700 ? 8.0 : 12.0;
+    final horizontalPadding = 16.0;
 
     return Container(
-              padding: const EdgeInsets.all(16.0),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        verticalPadding,
+        horizontalPadding,
+        verticalPadding,
+      ),
       decoration: BoxDecoration(
         gradient: AppTheme.backgroundGradient,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(DesignTokens.r16),
           bottomRight: Radius.circular(DesignTokens.r16),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primary.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: Stack(
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(height: screenHeight < 700 ? 4 : 8),
+              
+              // 프로필 사진(왼쪽) + 이름/국가(오른쪽)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      // 프로필 이미지
+                  // 프로필 이미지
+                  Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: AppTheme.primaryGradient,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppTheme.primary.withOpacity(0.3),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    padding: const EdgeInsets.all(3),
+                    child: Container(
+                      width: screenHeight < 700 ? 80 : 88,
+                      height: screenHeight < 700 ? 80 : 88,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppTheme.backgroundPrimary,
+                      ),
+                      child: user?.photoURL != null
+                          ? ClipOval(
+                              child: Image.network(
+                                user!.photoURL!,
+                                width: screenHeight < 700 ? 80 : 88,
+                                height: screenHeight < 700 ? 80 : 88,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  Icons.person,
+                                  size: screenHeight < 700 ? 40 : 44,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: screenHeight < 700 ? 40 : 44,
+                              color: AppTheme.primary,
+                            ),
+                    ),
+                  ),
+                  
+                  const SizedBox(width: 16),
+                  
+                  // 이름과 국가 정보 (오른쪽)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          userData?['nickname'] ?? '사용자',
+                          style: AppTheme.headlineMedium.copyWith(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 22,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 6),
+                        if (nationality != null && nationality.isNotEmpty)
+                          Row(
+                            children: [
+                              CountryFlagCircle(
+                                nationality: nationality,
+                                size: 26,
+                              ),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  nationality,
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    color: Colors.black87,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        if (userData?['university'] != null) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.school, size: 18, color: Colors.black54),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  userData!['university'],
+                                  style: AppTheme.bodyMedium.copyWith(
+                                    color: Colors.black54,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              
+              SizedBox(height: screenHeight < 700 ? 10 : 14), // 간격 증가
+
+              // 통계 정보 (원래 위치 - 카드 형태)
               Container(
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: AppTheme.primaryGradient,
-                ),
-                padding: EdgeInsets.all(3),
-                child: CircleAvatar(
-                        radius: 40,
-                  backgroundColor: AppTheme.backgroundPrimary,
-                        backgroundImage:
-                            user?.photoURL != null
-                                ? NetworkImage(user!.photoURL!)
-                                : null,
-                        child:
-                            user?.photoURL == null
-                                ? Text(
-                                  userData?['nickname']?.substring(0, 1) ?? 'U',
-                            style: AppTheme.headlineLarge.copyWith(
-                              color: AppTheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                )
-                                : null,
-                ),
-                      ),
-                      const SizedBox(width: 16),
-
-                      // 사용자 정보
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              userData?['nickname'] ?? '사용자',
-                      style: AppTheme.headlineMedium.copyWith(
-                        color: Colors.black,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              user?.email ?? '',
-                      style: AppTheme.bodyMedium.copyWith(
-                        color: Colors.black54,
-                      ),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.black, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
-                    const SizedBox(height: 8),
-                    if (userData?['university'] != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          gradient: AppTheme.secondaryGradient,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          userData!['university'],
-                          style: AppTheme.labelSmall.copyWith(
-                            color: Colors.white,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                        ),
+                  ],
+                ),
+                padding: EdgeInsets.symmetric(
+                  vertical: screenHeight < 700 ? 10 : 12,
+                  horizontal: 8,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatItem('주최한 모임', icon: Icons.event_available, color: Colors.black),
+                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: Colors.black),
+                    _buildStatItem('참여한 모임', isJoined: true, icon: Icons.groups, color: Colors.black),
+                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: Colors.black),
+                    _buildStatItem('작성한 글', isPosts: true, icon: Icons.article, color: Colors.black),
+                  ],
+                ),
+              ),
+
+              SizedBox(height: screenHeight < 700 ? 8 : 12), // 반응형 간격
+
+              // 프로필 편집 버튼
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileEditScreen(),
                       ),
-                    ],
+                    ).then((_) {
+                      setState(() {});
+                    });
+                  },
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: AppTheme.primary, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(DesignTokens.r12),
+                    ),
+                    padding: EdgeInsets.symmetric(
+                      vertical: screenHeight < 700 ? 8 : 10, // 반응형 패딩
+                    ),
                   ),
-              ),
-
-              // 설정 버튼
-              IconButton(
-                    onPressed: () {
-                  _showSettingsBottomSheet(context);
-                },
-                icon: Icon(
-                  Icons.settings_rounded,
-                  color: AppTheme.primary,
+                  child: Text(
+                    '프로필 편집',
+                    style: AppTheme.labelMedium.copyWith(
+                      color: AppTheme.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: screenHeight < 700 ? 13 : 14, // 반응형 텍스트
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-
-          const SizedBox(height: 16),
-
-          // 활동 통계
-          Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  // 주최한 모임 통계
-                  StreamBuilder<int>(
-                    stream: _userStatsService.getHostedMeetupCount(),
-                    builder: (context, snapshot) {
-                      final count = snapshot.data ?? 0;
-                      return _buildStatDisplay('주최한 모임', count.toString());
-                    },
-                  ),
-
-                  // 참여했던 모임 통계
-                  StreamBuilder<int>(
-                    stream: _userStatsService.getJoinedMeetupCount(),
-                    builder: (context, snapshot) {
-                      final count = snapshot.data ?? 0;
-                  return _buildStatDisplay('참여한 모임', count.toString());
-                    },
-                  ),
-
-              // 작성한 게시글 통계
-              _buildStatDisplay('작성한 글', '0'), // TODO: getPostCount 메서드 구현 후 StreamBuilder로 변경
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          // 프로필 편집 버튼
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton(
+          
+          // 설정 버튼 (오른쪽 상단 절대 위치)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: IconButton(
               onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProfileEditScreen(),
-                  ),
-                ).then((_) {
-                  setState(() {});
-                });
+                _showSettingsBottomSheet(context);
               },
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: AppTheme.primary.withOpacity(0.5)),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(DesignTokens.r12),
-                ),
-                padding: EdgeInsets.symmetric(vertical: 12),
+              icon: Icon(
+                Icons.settings_rounded,
+                color: Colors.black87,
+                size: 22,
               ),
-              child: Text(
-                '프로필 편집',
-                style: AppTheme.labelMedium.copyWith(
-                  color: AppTheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints(),
             ),
           ),
         ],
@@ -348,50 +433,31 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: EdgeInsets.all(24),
+                  padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     gradient: AppTheme.primaryGradient,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.photo_library_outlined,
-                    size: 48,
+                    size: 32,
                     color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 24),
+                SizedBox(height: 16),
                 Text(
                   '아직 작성한 후기가 없습니다',
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
+                    fontSize: 16,
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 6),
                 Text(
                   '모임에 참여하고 후기를 작성해보세요!',
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
-                  ),
-                ),
-                SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () {
-                    // TODO: 모임 둘러보기 화면으로 이동
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.primary,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                  ),
-                  child: Text(
-                    '모임 둘러보기',
-                    style: AppTheme.labelMedium.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    fontSize: 13,
                   ),
                 ),
               ],
@@ -607,29 +673,31 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: EdgeInsets.all(24),
+                  padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     gradient: AppTheme.secondaryGradient,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.bookmark_border_rounded,
-                    size: 48,
+                    size: 32,
                     color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 24),
+                SizedBox(height: 16),
                 Text(
                   '저장된 게시물이 없습니다',
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
+                    fontSize: 16,
                   ),
                 ),
-                SizedBox(height: 8),
+                SizedBox(height: 6),
                 Text(
                   '관심 있는 게시물을 저장해보세요',
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
+                    fontSize: 13,
                   ),
                 ),
               ],
@@ -740,24 +808,46 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     }
   }
 
-  Widget _buildStatDisplay(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: AppTheme.headlineMedium.copyWith(
-            color: Colors.black,
-            fontWeight: FontWeight.bold,
+  Widget _buildStatItem(
+    String label, {
+    bool isJoined = false,
+    bool isPosts = false,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Expanded(
+      child: Column(
+        children: [
+          Icon(icon, size: 20, color: color), // 22 → 20
+          const SizedBox(height: 6), // 8 → 6
+          StreamBuilder<int>(
+            stream: isJoined
+                ? _userStatsService.getJoinedMeetupCount()
+                : isPosts
+                    ? _userStatsService.getUserPostCount()
+                    : _userStatsService.getHostedMeetupCount(),
+            builder: (context, snapshot) {
+              return Text(
+                '${snapshot.data ?? 0}',
+                style: AppTheme.headlineMedium.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                  fontSize: 22, // 24 → 22
+                ),
+              );
+            },
           ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: AppTheme.labelSmall.copyWith(
-            color: Colors.black87,
+          const SizedBox(height: 3), // 4 → 3
+          Text(
+            label,
+            style: AppTheme.bodySmall.copyWith(
+              color: Colors.black,
+              fontSize: 10, // 11 → 10
+            ),
+            textAlign: TextAlign.center,
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -777,64 +867,66 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         ),
       ),
       builder: (BuildContext context) {
-        return Container(
-          padding: EdgeInsets.all(DesignTokens.s16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+        return SafeArea(
+          child: Container(
+            padding: EdgeInsets.all(DesignTokens.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-              ),
-              SizedBox(height: DesignTokens.s16),
-              _buildMenuItem(context, '내 모임', Icons.group_rounded, () {
-                Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const UserMeetupsScreen(),
-                ),
-              );
-            }),
-              _buildMenuItem(context, '내 게시글', Icons.article_rounded, () {
-                Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const UserPostsScreen(),
-                ),
-              );
-            }),
-              _buildMenuItem(context, '알림 설정', Icons.notifications_rounded, () {
-                Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationSettingsScreen(),
-                ),
-              );
-            }),
-              _buildMenuItem(context, '계정 설정', Icons.settings_rounded, () {
-                Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const AccountSettingsScreen(),
-                ),
-              );
-            }),
-              Divider(color: Colors.grey[300]),
-              _buildMenuItem(context, '로그아웃', Icons.logout_rounded, () async {
-                Navigator.pop(context);
-                // 로그아웃 확인 다이얼로그 표시
-                _showLogoutConfirmDialog(context, authProvider);
-              }, color: BrandColors.error),
-              SizedBox(height: DesignTokens.s12),
-            ],
+                SizedBox(height: DesignTokens.s16),
+                _buildMenuItem(context, '내 모임', Icons.group_rounded, () {
+                  Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserMeetupsScreen(),
+                  ),
+                );
+              }),
+                _buildMenuItem(context, '내 게시글', Icons.article_rounded, () {
+                  Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const UserPostsScreen(),
+                  ),
+                );
+              }),
+                _buildMenuItem(context, '알림 설정', Icons.notifications_rounded, () {
+                  Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const NotificationSettingsScreen(),
+                  ),
+                );
+              }),
+                _buildMenuItem(context, '계정 설정', Icons.settings_rounded, () {
+                  Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const AccountSettingsScreen(),
+                  ),
+                );
+              }),
+                Divider(color: Colors.grey[300]),
+                _buildMenuItem(context, '로그아웃', Icons.logout_rounded, () async {
+                  Navigator.pop(context);
+                  // 로그아웃 확인 다이얼로그 표시
+                  _showLogoutConfirmDialog(context, authProvider);
+                }, color: BrandColors.error),
+                SizedBox(height: DesignTokens.s12),
+              ],
+            ),
           ),
         );
       },

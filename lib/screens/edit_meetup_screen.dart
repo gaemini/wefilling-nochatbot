@@ -24,13 +24,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
   final _timeController = TextEditingController();
-  final _maxParticipantsController = TextEditingController();
   
   late DateTime _selectedDate;
   String _selectedCategory = '기타';
+  int _selectedMaxParticipants = 3;
   bool _isLoading = false;
 
   final List<String> _categories = ['스터디', '식사', '취미', '문화', '기타'];
+  final List<int> _participantOptions = [3, 4];
 
   @override
   void initState() {
@@ -43,7 +44,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _descriptionController.text = widget.meetup.description;
     _locationController.text = widget.meetup.location;
     _timeController.text = widget.meetup.time;
-    _maxParticipantsController.text = widget.meetup.maxParticipants.toString();
+    _selectedMaxParticipants = widget.meetup.maxParticipants;
     _selectedDate = widget.meetup.date;
     _selectedCategory = widget.meetup.category;
   }
@@ -54,7 +55,6 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _descriptionController.dispose();
     _locationController.dispose();
     _timeController.dispose();
-    _maxParticipantsController.dispose();
     super.dispose();
   }
 
@@ -90,7 +90,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         'description': _descriptionController.text.trim(),
         'location': _locationController.text.trim(),
         'time': _timeController.text.trim(),
-        'maxParticipants': int.parse(_maxParticipantsController.text),
+        'maxParticipants': _selectedMaxParticipants,
         'date': Timestamp.fromDate(_selectedDate),
         'category': _selectedCategory,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -282,26 +282,24 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 16),
               
               // 최대 참여자 수
-              TextFormField(
-                controller: _maxParticipantsController,
-                keyboardType: TextInputType.number,
+              DropdownButtonFormField<int>(
+                value: _selectedMaxParticipants,
                 decoration: const InputDecoration(
                   labelText: '최대 참여자 수',
-                  hintText: '예: 5',
                   border: OutlineInputBorder(),
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '최대 참여자 수를 입력해주세요';
+                items: _participantOptions.map((int number) {
+                  return DropdownMenuItem<int>(
+                    value: number,
+                    child: Text('$number명'),
+                  );
+                }).toList(),
+                onChanged: (int? newValue) {
+                  if (newValue != null) {
+                    setState(() {
+                      _selectedMaxParticipants = newValue;
+                    });
                   }
-                  final int? number = int.tryParse(value);
-                  if (number == null || number < 1) {
-                    return '1 이상의 숫자를 입력해주세요';
-                  }
-                  if (number > 100) {
-                    return '100명 이하로 입력해주세요';
-                  }
-                  return null;
                 },
               ),
               
@@ -341,6 +339,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     );
   }
 }
+
+
 
 
 

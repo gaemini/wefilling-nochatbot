@@ -13,7 +13,6 @@ import '../constants/app_constants.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'dart:io';
-import 'package:country_flags/country_flags.dart';
 
 class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -71,6 +70,7 @@ class MeetupService {
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final nationality = userData?['nationality'] ?? ''; // 국적 가져오기
+      final photoURL = userData?['photoURL'] ?? user.photoURL ?? ''; // 프로필 사진 URL 가져오기
 
       // 모임 생성 시간
       final now = FieldValue.serverTimestamp();
@@ -79,6 +79,7 @@ class MeetupService {
       final meetupData = {
         'userId': user.uid,
         'hostNickname': nickname,
+        'hostPhotoURL': photoURL, // 주최자 프로필 사진 URL 추가
         'title': title,
         'description': description,
         'location': location,
@@ -172,6 +173,7 @@ class MeetupService {
                       ? '한국'
                       : (data['hostNationality'] ??
                           ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+              hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
               imageUrl:
                   data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
               thumbnailContent: data['thumbnailContent'] ?? '',
@@ -358,17 +360,19 @@ class MeetupService {
               .map((doc) {
                 final data = doc.data();
 
-                // 검색어와 일치하는지 확인 (제목, 내용, 위치만 사용)
+                // 검색어와 일치하는지 확인 (제목, 내용, 위치, 호스트 닉네임)
                 final title = (data['title'] as String? ?? '').toLowerCase();
                 final description =
                     (data['description'] as String? ?? '').toLowerCase();
                 final location =
                     (data['location'] as String? ?? '').toLowerCase();
+                final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
 
-                // 제목, 내용, 위치에서만 검색
+                // 제목, 내용, 위치, 호스트 닉네임에서 검색
                 if (title.contains(lowercaseQuery) ||
                     description.contains(lowercaseQuery) ||
-                    location.contains(lowercaseQuery)) {
+                    location.contains(lowercaseQuery) ||
+                    hostNickname.contains(lowercaseQuery)) {
                   // Timestamp에서 DateTime으로 변환
                   DateTime meetupDate;
                   if (data['date'] is Timestamp) {
@@ -432,14 +436,16 @@ class MeetupService {
             try {
               final data = doc.data();
 
-              // 검색어와 일치하는지 확인
+              // 검색어와 일치하는지 확인 (제목, 설명, 위치, 호스트 닉네임)
               final title = (data['title'] as String? ?? '').toLowerCase();
               final description = (data['description'] as String? ?? '').toLowerCase();
               final location = (data['location'] as String? ?? '').toLowerCase();
+              final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
 
               if (title.contains(lowercaseQuery) ||
                   description.contains(lowercaseQuery) ||
-                  location.contains(lowercaseQuery)) {
+                  location.contains(lowercaseQuery) ||
+                  hostNickname.contains(lowercaseQuery)) {
                 
                 // Timestamp에서 DateTime으로 변환
                 DateTime meetupDate;
@@ -888,8 +894,7 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return [];
 
-      print('🔍 모임 필터링 시작: categoryIds = $categoryIds');
-      print('🔍 현재 사용자 ID: ${user.uid}');
+      // 디버그: print('🔍 모임 필터링 시작: categoryIds = $categoryIds');
 
       // 1. 전체 모임 가져오기 (현재 날짜 이후만)
       final now = DateTime.now();
@@ -934,11 +939,9 @@ class MeetupService {
           visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
         );
         
-        print('📄 모임 로드: ${meetup.title} - userId: ${meetup.userId}, visibility: ${meetup.visibility}, categories: ${meetup.visibleToCategoryIds}');
+        // 디버그: print('📄 모임 로드: ${meetup.title}');
         return meetup;
       }).toList();
-      
-      print('📊 전체 모임 개수: ${allMeetups.length}');
 
       // 2. 친구 관계 가져오기
       final friendsSnapshot = await _firestore
@@ -976,34 +979,26 @@ class MeetupService {
           .get();
       
       final userCategoryIds = userCategoriesSnapshot.docs.map((doc) => doc.id).toSet();
-      print('📋 사용자가 속한 카테고리: $userCategoryIds');
 
       // 5. 모임 필터링
       final filteredMeetups = <Meetup>[];
       for (final meetup in allMeetups) {
         // 내 모임은 항상 표시
         if (meetup.userId == user.uid) {
-          print('✅ 내 모임: ${meetup.title}');
           filteredMeetups.add(meetup);
           continue;
         }
 
-        print('📋 모임 체크: ${meetup.title} (visibility: ${meetup.visibility}, categories: ${meetup.visibleToCategoryIds})');
-
         // 공개 범위에 따른 필터링
         switch (meetup.visibility) {
           case 'public':
-            print('✅ 전체 공개 모임: ${meetup.title}');
             filteredMeetups.add(meetup); // 전체 공개는 항상 표시
             break;
 
           case 'friends':
             // 친구에게만 공개 - 모임 주최자가 내 친구인지 확인
             if (friendIds.contains(meetup.userId)) {
-              print('✅ 친구 공개 모임: ${meetup.title}');
               filteredMeetups.add(meetup);
-            } else {
-              print('❌ 친구 아님: ${meetup.title}');
             }
             break;
 
@@ -1015,23 +1010,14 @@ class MeetupService {
               // 모든 친구 보기 모드: 내가 해당 카테고리에 속해있는지 확인
               for (final categoryId in meetup.visibleToCategoryIds) {
                 if (userCategoryIds.contains(categoryId)) {
-                  print('✅ 카테고리 멤버 확인: ${meetup.title} - 사용자가 카테고리 $categoryId에 속함');
                   shouldShow = true;
                   break;
-                } else {
-                  print('❌ 카테고리 멤버 아님: ${meetup.title} - 사용자가 카테고리 $categoryId에 속하지 않음');
                 }
               }
             } else {
               // 특정 카테고리 필터링 모드: 모임이 선택된 카테고리에 공개되는지 확인
               shouldShow = meetup.visibleToCategoryIds.any((visibleCategoryId) => 
                 categoryIds.contains(visibleCategoryId));
-              
-              if (shouldShow) {
-                print('✅ 카테고리 매칭: ${meetup.title} (categories: ${meetup.visibleToCategoryIds})');
-              } else {
-                print('❌ 카테고리 불일치: ${meetup.title} (모임: ${meetup.visibleToCategoryIds}, 필터: $categoryIds)');
-              }
             }
             
             if (shouldShow) {
@@ -1041,7 +1027,6 @@ class MeetupService {
         }
       }
 
-      print('🎯 필터링 완료: ${filteredMeetups.length}개 모임');
       return filteredMeetups;
     } catch (e) {
       print('❌ 친구 그룹별 모임 필터링 오류: $e');

@@ -68,10 +68,10 @@ class ProfileHeader extends StatelessWidget {
                     ),
                     
                     // 서브텍스트 (14sp muted)
-                    if (profile.nationality.isNotEmpty) ...[
+                    if (profile.nationality != null && profile.nationality!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        profile.nationality,
+                        profile.nationality!,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 14,
                           color: colorScheme.onSurface.withOpacity(0.6),

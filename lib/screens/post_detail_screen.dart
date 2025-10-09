@@ -41,6 +41,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
   Map<String, bool> _imageRetrying = {}; // URL별 재시도 중 상태
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
+  
+  // 익명 번호 매핑 (userId -> 익명번호)
+  final Map<String, int> _anonymousUserMap = {};
 
   @override
   void initState() {
@@ -60,19 +63,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Future<void> _checkIfUserIsAuthor() async {
-    final isAuthor = await _postService.isCurrentUserAuthor(widget.post.id);
-    if (mounted) {
+    // Post 객체에 이미 userId가 있으므로 직접 비교
+    final user = FirebaseAuth.instance.currentUser;
+    if (mounted && user != null) {
       setState(() {
-        _isAuthor = isAuthor;
+        _isAuthor = widget.post.userId == user.uid;
       });
     }
   }
 
   Future<void> _checkIfUserLikedPost() async {
-    final hasLiked = await _postService.hasUserLikedPost(widget.post.id);
-    if (mounted) {
+    // Post 객체에 이미 likedBy 리스트가 있으므로 직접 확인
+    final user = FirebaseAuth.instance.currentUser;
+    if (mounted && user != null) {
       setState(() {
-        _isLiked = hasLiked;
+        _isLiked = widget.post.likedBy.contains(user.uid);
       });
     }
   }
@@ -425,29 +430,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 프로필 이미지
-          CircleAvatar(
-            radius: 18,
-            backgroundColor:
-                comment.authorPhotoUrl.isEmpty
-                    ? _getAvatarColor(comment.authorNickname)
-                    : Colors.grey[200],
-            backgroundImage:
-                comment.authorPhotoUrl.isNotEmpty
-                    ? NetworkImage(comment.authorPhotoUrl)
-                    : null,
-            child:
-                comment.authorPhotoUrl.isEmpty
-                    ? Text(
-                      comment.authorNickname.isNotEmpty
-                          ? comment.authorNickname[0].toUpperCase()
-                          : '?',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey[300],
+            ),
+            child: comment.authorPhotoUrl.isNotEmpty
+                ? ClipOval(
+                    child: Image.network(
+                      comment.authorPhotoUrl,
+                      width: 36,
+                      height: 36,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Icon(
+                        Icons.person,
+                        size: 18,
+                        color: Colors.grey[600],
                       ),
-                    )
-                    : null,
+                    ),
+                  )
+                : Icon(
+                    Icons.person,
+                    size: 18,
+                    color: Colors.grey[600],
+                  ),
           ),
           const SizedBox(width: 12),
 
@@ -547,6 +555,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       print('📋 원본 이미지 URL $i: ${_currentPost.imageUrls[i]}');
     }
     print('✅ URL 변환 없이 원본 그대로 사용');
+  }
+  
+  /// 익명 게시글의 댓글 작성자 표시명 생성
+  /// - 글쓴이: "글쓴이"
+  /// - 다른 사람: "익명1", "익명2", ... (같은 사람은 같은 번호)
+  String getCommentAuthorName(Comment comment, String? currentUserId) {
+    // 익명이 아닌 게시글인 경우 실명 표시
+    if (!_currentPost.isAnonymous) {
+      return comment.authorNickname;
+    }
+    
+    // 익명 게시글인 경우
+    // 글쓴이인 경우
+    if (comment.userId == _currentPost.userId) {
+      return '글쓴이';
+    }
+    
+    // 다른 사람인 경우 익명 번호 할당
+    if (!_anonymousUserMap.containsKey(comment.userId)) {
+      _anonymousUserMap[comment.userId] = _anonymousUserMap.length + 1;
+    }
+    
+    return '익명${_anonymousUserMap[comment.userId]}';
   }
 
   // 이미지 로딩 재시도 로직
@@ -766,6 +797,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isLoggedIn = authProvider.isLoggedIn;
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: const Text('게시글'),
         actions: [
@@ -839,18 +871,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       children: [
                         const SizedBox(width: 16),
                         // 작성자 아바타
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: _getAvatarColor(_currentPost.author),
-                          child: Text(
-                            _currentPost.author.isNotEmpty
-                                ? _currentPost.author[0].toUpperCase()
-                                : '?',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.grey[300],
                           ),
+                          child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
+                              ? ClipOval(
+                                  child: Image.network(
+                                    _currentPost.authorPhotoURL,
+                                    width: 40,
+                                    height: 40,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      Icons.person,
+                                      color: Colors.grey[600],
+                                      size: 24,
+                                    ),
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.person,
+                                  color: Colors.grey[600],
+                                  size: 24,
+                                ),
                         ),
                         const SizedBox(width: 12),
                         // 작성자 정보
@@ -860,17 +906,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             Row(
                               children: [
                                 Text(
-                                  _currentPost.author,
+                                  _currentPost.isAnonymous ? '익명' : _currentPost.author,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 16,
                                   ),
                                 ),
                                 const SizedBox(width: 8),
-                                // 국적 정보 표시
+                                // 국적 정보 표시 (익명이든 실명이든 모두 표시)
                                 CountryFlagCircle(
                                   nationality: _currentPost.authorNationality,
-                                  size: 22,
+                                  size: 26, // 22 → 26으로 증가
                                 ),
                               ],
                             ),
@@ -1084,6 +1130,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       }
 
                       final allComments = snapshot.data ?? [];
+                      final currentUser = FirebaseAuth.instance.currentUser;
 
                       if (allComments.isEmpty) {
                         return const Padding(
@@ -1110,6 +1157,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             replies: replies,
                             postId: _currentPost.id,
                             onDeleteComment: _deleteCommentWithReplies,
+                            isAnonymousPost: _currentPost.isAnonymous,
+                            getDisplayName: (comment) => getCommentAuthorName(comment, currentUser?.uid),
                           );
                         },
                       );
@@ -1133,35 +1182,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ),
               ],
             ),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
+            padding: EdgeInsets.only(
+              left: 16.0,
+              right: 16.0,
+              top: 8.0,
+              bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 8.0,
             ),
             child: Row(
               children: [
                 // 현재 사용자 프로필 이미지 (로그인 상태인 경우에만)
                 if (isLoggedIn) ...[
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage:
-                        authProvider.user?.photoURL != null
-                            ? NetworkImage(authProvider.user!.photoURL!)
-                            : null,
-                    child:
-                        authProvider.user?.photoURL == null
-                            ? Text(
-                              authProvider.userData?['nickname'] != null
-                                  ? (authProvider.userData!['nickname']
-                                          as String)[0]
-                                      .toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                color: Colors.black54,
-                                fontWeight: FontWeight.bold,
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey[300],
+                    ),
+                    child: authProvider.user?.photoURL != null
+                        ? ClipOval(
+                            child: Image.network(
+                              authProvider.user!.photoURL!,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.person,
+                                size: 16,
+                                color: Colors.grey[600],
                               ),
-                            )
-                            : null,
+                            ),
+                          )
+                        : Icon(
+                            Icons.person,
+                            size: 16,
+                            color: Colors.grey[600],
+                          ),
                   ),
                   const SizedBox(width: 8),
                 ],

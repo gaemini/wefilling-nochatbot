@@ -9,11 +9,14 @@ import * as nodemailer from 'nodemailer';
 // Firebase Admin 초기화
 admin.initializeApp();
 
+// 광고 초기화 함수 export
+export { initializeAds } from './initAds';
+
 // Firestore 인스턴스
 const db = admin.firestore();
 
 // Gmail SMTP 설정
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: 'hanyangwatson@gmail.com',
@@ -825,3 +828,205 @@ export const reportUser = functions.https.onCall(async (data, context) => {
     );
   }
 });
+
+// 모임 생성 시 친구들에게 알림 전송
+export const onMeetupCreated = functions.firestore
+  .document('meetups/{meetupId}')
+  .onCreate(async (snapshot, context) => {
+    try {
+      const meetupData = snapshot.data();
+      const meetupId = context.params.meetupId;
+      const hostId = meetupData.userId;
+      const visibility = meetupData.visibility || 'public';
+      const category = meetupData.category || '기타';
+
+      console.log(`📢 새 모임 생성 감지: ${meetupId}, 공개범위: ${visibility}, 카테고리: ${category}`);
+
+      // 호스트 정보 가져오기
+      const hostDoc = await db.collection('users').doc(hostId).get();
+      const hostData = hostDoc.data();
+      const hostName = hostData?.nickname || hostData?.displayName || '익명';
+
+      // 알림 받을 사용자 목록
+      let targetUserIds: string[] = [];
+
+      // 공개범위에 따라 대상 사용자 필터링
+      if (visibility === 'public') {
+        // 전체 공개: 모든 활성 사용자에게 알림 (최대 100명)
+        console.log('전체 공개 모임 - 모든 사용자에게 알림');
+        
+        const allUsersSnapshot = await db
+          .collection('users')
+          .where('fcmToken', '!=', null)
+          .limit(100)
+          .get();
+
+        allUsersSnapshot.forEach((doc) => {
+          if (doc.id !== hostId) { // 본인 제외
+            targetUserIds.push(doc.id);
+          }
+        });
+
+      } else if (visibility === 'friends') {
+        // 친구 공개: 친구들에게만 알림
+        console.log('친구 공개 모임 - 친구들에게만 알림');
+        
+        const friendshipsSnapshot = await db
+          .collection('friendships')
+          .where('uids', 'array-contains', hostId)
+          .get();
+
+        friendshipsSnapshot.forEach((doc) => {
+          const friendship = doc.data();
+          const otherUid = friendship.uids.find((uid: string) => uid !== hostId);
+          if (otherUid) {
+            targetUserIds.push(otherUid);
+          }
+        });
+
+      } else {
+        // 카테고리별 공개 (기본값): 해당 카테고리 모임에 관심있는 사용자들에게 알림
+        console.log(`카테고리별 공개 - ${category} 카테고리 사용자에게 알림`);
+        
+        // 1. 해당 카테고리 모임에 참여한 적 있는 사용자 찾기
+        const categoryMeetupsSnapshot = await db
+          .collection('meetups')
+          .where('category', '==', category)
+          .limit(50)
+          .get();
+
+        const participantIds = new Set<string>();
+        categoryMeetupsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.participants && Array.isArray(data.participants)) {
+            data.participants.forEach((uid: string) => {
+              if (uid !== hostId) {
+                participantIds.add(uid);
+              }
+            });
+          }
+          // 주최자도 추가
+          if (data.userId && data.userId !== hostId) {
+            participantIds.add(data.userId);
+          }
+        });
+
+        // 2. 사용자 프로필에 관심 카테고리가 있다면 그것도 확인
+        try {
+          const usersWithInterestSnapshot = await db
+            .collection('users')
+            .where('interestedCategories', 'array-contains', category)
+            .limit(100)
+            .get();
+
+          usersWithInterestSnapshot.forEach((doc) => {
+            if (doc.id !== hostId) {
+              participantIds.add(doc.id);
+            }
+          });
+        } catch (e) {
+          // interestedCategories 필드가 없을 수 있으므로 무시
+          console.log('interestedCategories 필드 없음 - 참여 이력만 사용');
+        }
+
+        targetUserIds = Array.from(participantIds);
+        console.log(`카테고리 관심 사용자: ${targetUserIds.length}명`);
+      }
+
+      if (targetUserIds.length === 0) {
+        console.log('알림 대상이 없습니다.');
+        return null;
+      }
+
+      console.log(`알림 대상: ${targetUserIds.length}명`);
+
+      // 대상 사용자들의 FCM 토큰 가져오기 (최대 10명씩 배치 처리)
+      const fcmTokens: string[] = [];
+      const batchSize = 10;
+      
+      for (let i = 0; i < targetUserIds.length; i += batchSize) {
+        const batch = targetUserIds.slice(i, i + batchSize);
+        const usersSnapshot = await db
+          .collection('users')
+          .where(admin.firestore.FieldPath.documentId(), 'in', batch)
+          .get();
+
+        usersSnapshot.forEach((doc) => {
+          const userData = doc.data();
+          if (userData.fcmToken) {
+            fcmTokens.push(userData.fcmToken);
+          }
+        });
+      }
+
+      console.log(`FCM 토큰: ${fcmTokens.length}개`);
+
+      if (fcmTokens.length === 0) {
+        console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
+        return null;
+      }
+
+      // 알림 메시지 구성
+      const categoryEmoji = 
+        category === '스터디' ? '📚' :
+        category === '식사' ? '🍽️' :
+        category === '취미' ? '🎨' :
+        category === '문화' ? '🎭' : '🎉';
+
+      const title = `${categoryEmoji} 새 ${category} 모임이 생성되었습니다!`;
+      const body = `${hostName}님이 "${meetupData.title}" 모임을 만들었습니다.`;
+
+      // 멀티캐스트 메시지 전송
+      const message: admin.messaging.MulticastMessage = {
+        tokens: fcmTokens,
+        notification: {
+          title,
+          body,
+        },
+        data: {
+          type: 'NEW_MEETUP',
+          meetupId,
+          hostId,
+          hostName,
+          meetupTitle: meetupData.title || '',
+          meetupCategory: category,
+          meetupDate: meetupData.date?.toDate?.()?.toISOString() || '',
+          meetupLocation: meetupData.location || '',
+          visibility,
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: 1,
+            },
+          },
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'meetup_notifications',
+          },
+        },
+      };
+
+      const response = await admin.messaging().sendEachForMulticast(message);
+
+      console.log(`✅ 알림 전송 성공: ${response.successCount}/${fcmTokens.length}`);
+      
+      if (response.failureCount > 0) {
+        console.error(`❌ 알림 전송 실패: ${response.failureCount}개`);
+        response.responses.forEach((resp, idx) => {
+          if (!resp.success) {
+            console.error(`실패한 토큰 ${idx}: ${resp.error}`);
+          }
+        });
+      }
+
+      return null;
+    } catch (error) {
+      console.error('모임 생성 알림 전송 오류:', error);
+      return null; // 알림 실패해도 모임 생성은 유지
+    }
+  });

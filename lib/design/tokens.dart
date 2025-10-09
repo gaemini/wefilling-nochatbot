@@ -148,7 +148,7 @@ class BrandColors {
   
   // 카테고리별 컬러
   static const Color study = Color(0xFF4A90E2);
-  static const Color food = Color(0xFFFF8C42);
+  static const Color food = Color(0xFFE74C3C); // 빨간색으로 변경
   static const Color hobby = Color(0xFF6BC9A5);
   static const Color culture = Color(0xFF9B59B6);
   static const Color general = Color(0xFF95A5A6);

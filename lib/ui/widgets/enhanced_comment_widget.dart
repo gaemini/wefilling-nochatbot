@@ -4,6 +4,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_linkify/flutter_linkify.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
 import '../../design/tokens.dart';
@@ -16,6 +19,8 @@ class EnhancedCommentWidget extends StatefulWidget {
   final VoidCallback? onReplyTap;
   final Function(String)? onDeleteComment;
   final Function(String, String, String)? onReplySubmit;
+  final bool isAnonymousPost; // 익명 게시글 여부
+  final String Function(Comment)? getDisplayName; // 댓글 작성자 표시명 함수
 
   const EnhancedCommentWidget({
     super.key,
@@ -25,6 +30,8 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.onReplyTap,
     this.onDeleteComment,
     this.onReplySubmit,
+    this.isAnonymousPost = false,
+    this.getDisplayName,
   });
 
   @override
@@ -37,6 +44,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   bool _isReplying = false;
   bool _isSubmittingReply = false;
   bool _showReplies = true;
+  String? _currentNickname; // 캐시된 현재 닉네임
 
   @override
   void dispose() {
@@ -44,12 +52,66 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     super.dispose();
   }
 
+  // 사용자의 현재 닉네임을 실시간으로 조회
+  Future<String> _getCurrentNickname(String userId) async {
+    // 이미 캐시된 닉네임이 있으면 반환
+    if (_currentNickname != null) {
+      return _currentNickname!;
+    }
+    
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      
+      if (userDoc.exists) {
+        final data = userDoc.data();
+        final nickname = data?['nickname'] ?? widget.comment.authorNickname;
+        // 캐시에 저장
+        if (mounted) {
+          setState(() {
+            _currentNickname = nickname;
+          });
+        }
+        return nickname;
+      }
+    } catch (e) {
+      print('닉네임 조회 오류: $e');
+    }
+    // 조회 실패 시 댓글에 저장된 닉네임 반환
+    return widget.comment.authorNickname;
+  }
+
   // 좋아요 토글
   Future<void> _toggleLike() async {
     final user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('로그인이 필요합니다.')),
+        );
+      }
+      return;
+    }
 
-    await _commentService.toggleCommentLike(widget.comment.id, user.uid);
+    try {
+      // 댓글 좋아요 토글 실행
+      final success = await _commentService.toggleCommentLike(widget.comment.id, user.uid);
+      
+      if (!success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('좋아요 업데이트에 실패했습니다.')),
+        );
+      }
+    } catch (e) {
+      print('댓글 좋아요 토글 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('오류가 발생했습니다: $e')),
+        );
+      }
+    }
   }
 
   // 답글 제출
@@ -62,12 +124,15 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     });
 
     try {
+      // 최신 닉네임 사용
+      final currentNickname = _currentNickname ?? await _getCurrentNickname(widget.comment.userId);
+      
       final success = await _commentService.addComment(
         widget.postId,
         content,
         parentCommentId: widget.comment.id,
         replyToUserId: widget.comment.userId,
-        replyToUserNickname: widget.comment.authorNickname,
+        replyToUserNickname: currentNickname,
       );
 
       if (success && mounted) {
@@ -153,14 +218,32 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   Row(
                     children: [
                       // 프로필 이미지
-                      CircleAvatar(
-                        radius: 16,
-                        backgroundImage: widget.comment.authorPhotoUrl.isNotEmpty
-                            ? NetworkImage(widget.comment.authorPhotoUrl)
-                            : null,
-                        child: widget.comment.authorPhotoUrl.isEmpty
-                            ? Icon(Icons.person, size: 16)
-                            : null,
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey[300],
+                        ),
+                        child: (!widget.isAnonymousPost && widget.comment.authorPhotoUrl.isNotEmpty)
+                            ? ClipOval(
+                                child: Image.network(
+                                  widget.comment.authorPhotoUrl,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Icon(
+                                    Icons.person,
+                                    size: 16,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              )
+                            : Icon(
+                                Icons.person,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
                       ),
                       const SizedBox(width: 8),
                       
@@ -171,22 +254,60 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                           children: [
                             Row(
                               children: [
-                                Text(
-                                  widget.comment.authorNickname,
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                // 실시간 닉네임 표시
+                                FutureBuilder<String>(
+                                  future: widget.isAnonymousPost
+                                      ? Future.value(widget.getDisplayName?.call(widget.comment) ?? '익명')
+                                      : _getCurrentNickname(widget.comment.userId),
+                                  builder: (context, snapshot) {
+                                    final displayName = snapshot.data ?? 
+                                        (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
+                                    return Text(
+                                      displayName,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    );
+                                  },
                                 ),
-                                if (widget.comment.replyToUserNickname != null) ...[
+                                if (widget.comment.replyToUserNickname != null && 
+                                    widget.comment.replyToUserId != null) ...[
                                   const SizedBox(width: 4),
                                   Icon(Icons.reply, size: 12, color: Colors.grey),
                                   const SizedBox(width: 2),
-                                  Text(
-                                    widget.comment.replyToUserNickname!,
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                  // 답글 대상도 익명 처리
+                                  Builder(
+                                    builder: (context) {
+                                      if (widget.isAnonymousPost && widget.getDisplayName != null) {
+                                        // 익명 게시글인 경우: replyToUserId로 Comment 객체를 만들어서 getDisplayName 호출
+                                        final replyTargetComment = Comment(
+                                          id: '',
+                                          postId: widget.postId,
+                                          userId: widget.comment.replyToUserId!,
+                                          authorNickname: widget.comment.replyToUserNickname!,
+                                          authorPhotoUrl: '',
+                                          content: '',
+                                          createdAt: DateTime.now(),
+                                        );
+                                        final displayName = widget.getDisplayName!(replyTargetComment);
+                                        return Text(
+                                          displayName,
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        );
+                                      } else {
+                                        // 일반 게시글인 경우: 실제 닉네임 표시
+                                        return Text(
+                                          widget.comment.replyToUserNickname!,
+                                          style: theme.textTheme.bodySmall?.copyWith(
+                                            color: theme.colorScheme.primary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        );
+                                      }
+                                    },
                                   ),
                                 ],
                               ],
@@ -213,10 +334,29 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   
                   const SizedBox(height: 8),
                   
-                  // 댓글 내용
-                  Text(
-                    widget.comment.content,
+                  // 댓글 내용 (URL 클릭 가능)
+                  Linkify(
+                    onOpen: (link) async {
+                      final uri = Uri.parse(link.url);
+                      if (await canLaunchUrl(uri)) {
+                        await launchUrl(
+                          uri,
+                          mode: LaunchMode.externalApplication,
+                        );
+                      } else {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('링크를 열 수 없습니다: ${link.url}')),
+                          );
+                        }
+                      }
+                    },
+                    text: widget.comment.content,
                     style: theme.textTheme.bodyMedium,
+                    linkStyle: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.primary,
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                   
                   const SizedBox(height: 8),
@@ -314,7 +454,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   TextField(
                     controller: _replyController,
                     decoration: InputDecoration(
-                      hintText: '${widget.comment.authorNickname}님에게 답글...',
+                      hintText: '${_currentNickname ?? widget.comment.authorNickname}님에게 답글...',
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.zero,
                     ),
@@ -355,6 +495,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     replies: const [], // 대댓글의 대댓글은 지원하지 않음
                     postId: widget.postId,
                     onDeleteComment: widget.onDeleteComment,
+                    isAnonymousPost: widget.isAnonymousPost,
+                    getDisplayName: widget.getDisplayName,
                   )).toList(),
                 ],
               ],

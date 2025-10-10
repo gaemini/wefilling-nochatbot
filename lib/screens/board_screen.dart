@@ -101,8 +101,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
                 fontWeight: FontWeight.w500,
               ),
               tabs: const [
-                Tab(text: '오늘'),
-                Tab(text: '전체'),
+                Tab(text: 'Today'),
+                Tab(text: 'All'),
               ],
             ),
           ),

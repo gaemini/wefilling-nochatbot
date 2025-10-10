@@ -74,6 +74,26 @@ class AppEmptyState extends StatelessWidget {
       ctaIcon: IconStyles.add,
       onCtaPressed: onCreateMeetup,
       secondaryCtaText: '모임 둘러보기',
+      // 위필링 로고를 표시
+      illustration: Container(
+        width: 120,
+        height: 120,
+        decoration: BoxDecoration(
+          color: BrandColors.primary.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: BrandColors.primary.withOpacity(0.2),
+            width: 2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Image.asset(
+            'assets/images/wefilling_logo.png',
+            fit: BoxFit.contain,
+          ),
+        ),
+      ),
     );
   }
 

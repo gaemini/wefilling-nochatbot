@@ -108,17 +108,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   /// 공개 범위에 따른 테두리 색상 결정
   Color _getBorderColor(Post post) {
-    // 전체 공개 + 익명 → 테두리 없음 (투명)
-    if (post.visibility == 'public' && post.isAnonymous) {
-      return Colors.transparent;
+    // 전체 공개 (익명 + 일반 모두 동일) → 진한 보라색 테두리
+    if (post.visibility == 'public') {
+      return AppTheme.primary.withOpacity(0.5); // 0.3 → 0.5로 증가
     }
-    // 카테고리별 공개 (비공개) → 주황색
+    // 카테고리별 공개 (비공개) → 따뜻한 주황색
     else if (post.visibility == 'category') {
-      return const Color(0xFFF78C6A);
+      return const Color(0xFFFF8A65).withOpacity(0.6);
     }
-    // 기본 (전체 공개 + 아이디 공개) → 연한 테두리
+    // 기타 (폴백)
     else {
-      return AppTheme.primary.withOpacity(0.1);
+      return AppTheme.primary.withOpacity(0.5);
     }
   }
 
@@ -159,23 +159,57 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final post = widget.post;
+
+    // 게시글 유형별 그림자 색상
+    Color shadowColor;
+    List<BoxShadow> customShadows;
+    
+    if (post.visibility == 'category') {
+      // 비공개: 주황색 글로우
+      shadowColor = const Color(0xFFF78C6A).withOpacity(0.25);
+      customShadows = [
+        BoxShadow(
+          color: shadowColor,
+          offset: const Offset(0, 2),
+          blurRadius: 16,
+          spreadRadius: 0,
+        ),
+        BoxShadow(
+          color: shadowColor.withOpacity(0.1),
+          offset: const Offset(0, 4),
+          blurRadius: 24,
+          spreadRadius: 2,
+        ),
+      ];
+    } else {
+      // 공개 게시글 (익명 + 일반 모두 동일한 그라데이션) - 진한 보라색
+      shadowColor = AppTheme.primary.withOpacity(0.35); // 0.15 → 0.35로 증가
+      customShadows = [
+        BoxShadow(
+          color: shadowColor,
+          offset: const Offset(0, 2),
+          blurRadius: 16,
+          spreadRadius: 0,
+        ),
+        BoxShadow(
+          color: shadowColor.withOpacity(0.5), // 0.08 → 0.5로 증가
+          offset: const Offset(0, 4),
+          blurRadius: 20,
+          spreadRadius: 1,
+        ),
+      ];
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         gradient: AppTheme.backgroundGradient,
         borderRadius: BorderRadius.circular(AppTheme.radiusL),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primary.withOpacity(0.1),
-            offset: const Offset(0, 4),
-            blurRadius: 20,
-            spreadRadius: 0,
-          ),
-        ],
+        boxShadow: customShadows,
         border: Border.all(
-          color: _getBorderColor(widget.post),
-          width: 2,
+          color: _getBorderColor(post),
+          width: post.visibility == 'category' || (post.visibility == 'public' && !post.isAnonymous) ? 1.5 : 0,
         ),
       ),
       child: Material(
@@ -190,18 +224,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 작성자 정보와 제목을 한 줄에 표시
-                _buildAuthorInfoWithTitle(widget.post, theme, colorScheme),
+                _buildAuthorInfoWithTitle(post, theme, colorScheme),
 
                 // 이미지 (있는 경우)
-                if (widget.post.imageUrls.isNotEmpty) ...[
+                if (post.imageUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
-                  _buildPostImages(widget.post.imageUrls),
+                  _buildPostImages(post.imageUrls),
                 ],
 
                 const SizedBox(height: 12),
 
                 // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
-                _buildPostMeta(widget.post, theme, colorScheme),
+                _buildPostMeta(post, theme, colorScheme),
               ],
             ),
           ),
@@ -431,8 +465,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           ),
         ),
         
-        // 카테고리 (있는 경우)
-        if (post.category.isNotEmpty)
+        // 카테고리 (있는 경우, '일반'은 제외)
+        if (post.category.isNotEmpty && post.category != '일반')
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(

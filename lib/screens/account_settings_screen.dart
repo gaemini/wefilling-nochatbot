@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as app_provider;
+import '../services/auth_service.dart';
 import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'blocked_users_screen.dart';
@@ -21,6 +22,7 @@ class AccountSettingsScreen extends StatefulWidget {
 class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final AuthService _authService = AuthService();
   bool _isLoading = false;
 
   @override
@@ -349,29 +351,55 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       listen: false,
     );
 
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('로그인된 사용자를 찾을 수 없습니다')),
+        );
+      }
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     try {
-      // 1. Firestore에서 사용자 데이터 삭제
-      await _firestore.collection('users').doc(_auth.currentUser?.uid).delete();
+      // AuthService의 완전한 회원탈퇴 함수 호출
+      await _authService.deleteUserAccount(userId);
 
-      // 2. Authentication에서 사용자 삭제
-      await _auth.currentUser?.delete();
-
-      // 3. 로그아웃 처리
+      // 로그아웃 처리
       await authProvider.signOut();
 
       if (mounted) {
         // 앱 처음 화면으로 이동
         Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
+        
+        // 성공 메시지 (짧게 표시)
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('회원 탈퇴가 완료되었습니다'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       setState(() => _isLoading = false);
       if (mounted) {
         // 재인증이 필요한 경우 등 오류 처리
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: ${e.toString()}')));
+        String errorMessage = '오류가 발생했습니다';
+        
+        if (e.toString().contains('requires-recent-login')) {
+          errorMessage = '보안을 위해 다시 로그인한 후 탈퇴를 진행해주세요';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$errorMessage: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
       }
     }
   }

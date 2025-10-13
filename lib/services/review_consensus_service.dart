@@ -28,7 +28,7 @@ class ReviewConsensusService {
   final ReviewMeetupAdapter _meetupAdapter = ReviewMeetupAdapter();
 
   /// Feature Flag 확인 후 기능 실행
-  Future<T?> _executeIfEnabled<T>(Future<T> Function() action) async {
+  Future<T?> _executeIfEnabled<T>(Future<T?> Function() action) async {
     final isEnabled = await _featureFlag.isReviewConsensusEnabled;
     if (!isEnabled) {
       print('리뷰 합의 기능이 비활성화됨');
@@ -109,7 +109,7 @@ class ReviewConsensusService {
 
       } catch (e) {
         print('리뷰 요청 생성 오류: $e');
-        return null;
+        rethrow;
       }
     });
   }
@@ -298,7 +298,7 @@ class ReviewConsensusService {
           meetupId: meetupId,
           meetupTitle: meetup.title,
           hostId: meetup.host,
-          hostName: meetup.hostNickname,
+          hostName: meetup.hostNickname ?? meetup.host,
           participantIds: consensusData.participantIds,
           participantReviews: consensusData.participantReviews,
           consensusType: consensusData.determineConsensusType(),

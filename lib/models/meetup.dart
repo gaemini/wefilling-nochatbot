@@ -298,6 +298,18 @@ class Meetup {
     );
   }
 
+  // Firestore DocumentSnapshot에서 데이터를 가져올 때 사용
+  factory Meetup.fromFirestore(dynamic doc) {
+    final data = doc.data() as Map<String, dynamic>?;
+    if (data == null) {
+      throw Exception('Meetup document has no data');
+    }
+    return Meetup.fromJson({
+      ...data,
+      'id': doc.id,
+    });
+  }
+
   // Firebase에 데이터를 저장할 때 사용
   Map<String, dynamic> toJson() {
     return {

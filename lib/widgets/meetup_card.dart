@@ -329,9 +329,6 @@ class MeetupCard extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
+          );
   }
 }

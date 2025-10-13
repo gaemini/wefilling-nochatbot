@@ -53,12 +53,18 @@ void main() async {
   // Firebase 중복 초기화 방지
   try {
     await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-    print('🔥 Firebase 초기화 완료');
+    if (kDebugMode) {
+      debugPrint('🔥 Firebase 초기화 완료');
+    }
   } catch (e) {
     if (e.toString().contains('duplicate-app')) {
-      print('🔥 Firebase는 이미 초기화되어 있습니다.');
+      if (kDebugMode) {
+        debugPrint('🔥 Firebase는 이미 초기화되어 있습니다.');
+      }
     } else {
-      print('🔥 Firebase 초기화 중 오류: $e');
+      if (kDebugMode) {
+        debugPrint('🔥 Firebase 초기화 중 오류: $e');
+      }
       rethrow;
     }
   }
@@ -69,20 +75,26 @@ void main() async {
   // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
   // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
   try {
-    print('🔥 Firebase 초기화 시작: ${DateTime.now()}');
-    print('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
-    print('🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
+    if (kDebugMode) {
+      debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
+      debugPrint('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
+      debugPrint('🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
+    }
 
     // Firebase Auth 상태 변화 로깅
     FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      print(
-        '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
-      );
-      print('🔐 User ID: ${user?.uid ?? "null"}');
-      print('🔐 Timestamp: ${DateTime.now()}');
+      if (kDebugMode) {
+        debugPrint(
+          '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
+        );
+        debugPrint('🔐 User ID: ${user?.uid ?? "null"}');
+        debugPrint('🔐 Timestamp: ${DateTime.now()}');
+      }
     });
 
-    print('🔐 인증 초기화 대기 중...');
+    if (kDebugMode) {
+      debugPrint('🔐 인증 초기화 대기 중...');
+    }
 
     // 인증 상태를 최대 5초간 기다림
     User? currentUser;
@@ -91,19 +103,27 @@ void main() async {
       // 0.5초씩 10번 = 5초
       currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser != null) {
-        print('🔐 사용자 로그인 확인: ${currentUser.email}');
+        if (kDebugMode) {
+          debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
+        }
         break;
       }
       await Future.delayed(Duration(milliseconds: 500));
       attempts++;
-      print('🔐 인증 대기 중... (${attempts}/10)');
+      if (kDebugMode) {
+        debugPrint('🔐 인증 대기 중... (${attempts}/10)');
+      }
     }
 
-    print('🔐 인증 초기화 완료: ${DateTime.now()}');
+    if (kDebugMode) {
+      debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
+    }
 
     // Firestore 설정 개선 (연결 안정성 향상)
     try {
-      print('🗃️ Firestore 설정 시작');
+      if (kDebugMode) {
+        debugPrint('🗃️ Firestore 설정 시작');
+      }
       final firestore = FirebaseFirestore.instance;
       
       // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
@@ -114,44 +134,66 @@ void main() async {
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
       
-      print('✅ Firestore 설정 완료');
+      if (kDebugMode) {
+        debugPrint('✅ Firestore 설정 완료');
+      }
       
       // 광고 배너 초기화
       try {
-        print('📢 광고 배너 초기화 시작');
+        if (kDebugMode) {
+          debugPrint('📢 광고 배너 초기화 시작');
+        }
         final adBannerService = AdBannerService();
         await adBannerService.initializeSampleBanners();
-        print('✅ 광고 배너 초기화 완료');
+        if (kDebugMode) {
+          debugPrint('✅ 광고 배너 초기화 완료');
+        }
       } catch (adError) {
-        print('❌ 광고 배너 초기화 오류: $adError');
+        if (kDebugMode) {
+          debugPrint('❌ 광고 배너 초기화 오류: $adError');
+        }
       }
     } catch (firestoreError) {
-      print('❌ Firestore 설정 중 오류: $firestoreError');
+      if (kDebugMode) {
+        debugPrint('❌ Firestore 설정 중 오류: $firestoreError');
+      }
     }
 
     // Firebase Storage 접근 테스트
     try {
-      print('🗄️ Storage 접근 테스트 시작');
+      if (kDebugMode) {
+        debugPrint('🗄️ Storage 접근 테스트 시작');
+      }
       final storageRef = FirebaseStorage.instance.ref();
       await storageRef.listAll();
-      print('✅ Firebase Storage 접근 테스트: 성공');
+      if (kDebugMode) {
+        debugPrint('✅ Firebase Storage 접근 테스트: 성공');
+      }
     } catch (storageError) {
-      print('❌ Firebase Storage 접근 테스트 실패: $storageError');
-      if (storageError.toString().contains('403')) {
-        print('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
-        print('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
+      if (kDebugMode) {
+        debugPrint('❌ Firebase Storage 접근 테스트 실패: $storageError');
+        if (storageError.toString().contains('403')) {
+          debugPrint('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
+          debugPrint('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
+        }
       }
     }
   } catch (e) {
-    print('❌ Firebase 초기화 중 오류: $e');
+    if (kDebugMode) {
+      debugPrint('❌ Firebase 초기화 중 오류: $e');
+    }
   }
 
   // FeatureFlagService 초기화
   try {
     await FeatureFlagService().init();
-    print('🚩 FeatureFlagService 초기화 완료');
+    if (kDebugMode) {
+      debugPrint('🚩 FeatureFlagService 초기화 완료');
+    }
   } catch (e) {
-    print('⚠️ FeatureFlagService 초기화 오류: $e');
+    if (kDebugMode) {
+      debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
+    }
   }
 
   runApp(
@@ -171,7 +213,7 @@ class MeetupApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'David C.',
+      title: 'Wefilling',
       theme: AppTheme.light(),
       themeMode: ThemeMode.light, // 강제 라이트모드
       localizationsDelegates: const [

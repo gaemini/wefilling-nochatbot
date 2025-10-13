@@ -2,7 +2,6 @@
 // 사용자 간 관계 상태 모델
 // 친구요청, 친구관계, 차단 상태를 통합 관리
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'friend_request.dart';
 
 /// 사용자 간 관계 상태 열거형

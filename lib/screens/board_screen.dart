@@ -5,18 +5,12 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
-import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
-import '../ui/widgets/optimized_list.dart';
 import '../ui/widgets/optimized_post_card.dart';
-import '../utils/image_utils.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
-
-import 'package:provider/provider.dart';
-import '../ui/widgets/app_icon_button.dart';
 import '../widgets/ad_banner_widget.dart';
 
 class BoardScreen extends StatefulWidget {

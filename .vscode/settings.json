@@ -1,0 +1,49 @@
+{
+  "dart.flutterSdkPath": ".fvm/flutter_sdk",
+  "search.exclude": {
+    "**/.fvm": true,
+    "**/build": true,
+    "**/.dart_tool": true,
+    "**/ios/Pods": true,
+    "**/android/.gradle": true
+  },
+  "files.watcherExclude": {
+    "**/.fvm/**": true,
+    "**/build/**": true,
+    "**/.dart_tool/**": true,
+    "**/ios/Pods/**": true,
+    "**/android/.gradle/**": true
+  },
+  "dart.lineLength": 120,
+  "dart.debugExternalPackageLibraries": false,
+  "dart.debugSdkLibraries": false,
+  "[dart]": {
+    "editor.formatOnSave": true,
+    "editor.formatOnType": true,
+    "editor.rulers": [
+      120
+    ],
+    "editor.selectionHighlight": false,
+    "editor.suggest.snippetsPreventQuickSuggestions": false,
+    "editor.suggestSelection": "first",
+    "editor.tabCompletion": "onlySnippets",
+    "editor.wordBasedSuggestions": "off",
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    }
+  },
+  "git.ignoreLimitWarning": true,
+  "terminal.integrated.env.osx": {
+    "FVM_FLUTTER_PATH": "${workspaceFolder}/.fvm/flutter_sdk"
+  },
+  "terminal.integrated.env.linux": {
+    "FVM_FLUTTER_PATH": "${workspaceFolder}/.fvm/flutter_sdk"
+  },
+  "recommendations": [
+    "dart-code.dart-code",
+    "dart-code.flutter",
+    "nash.awesome-flutter-snippets",
+    "alexisvt.flutter-snippets"
+  ]
+}

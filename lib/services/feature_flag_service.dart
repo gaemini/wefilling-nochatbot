@@ -17,6 +17,7 @@ class FeatureFlagService {
 
   // Feature Flag Keys
   static const String FEATURE_PROFILE_GRID = 'feature_profile_grid';
+  static const String FEATURE_REVIEW_CONSENSUS = 'feature_review_consensus';
 
   /// 서비스 초기화
   Future<void> init() async {
@@ -36,6 +37,7 @@ class FeatureFlagService {
       // 기본값 설정 (모든 feature flag는 기본적으로 false)
       await _remoteConfig.setDefaults({
         FEATURE_PROFILE_GRID: false,
+        FEATURE_REVIEW_CONSENSUS: false,
       });
 
       // Remote Config에서 최신 설정 가져오기
@@ -129,6 +131,9 @@ class FeatureFlagService {
     return null;
   }
 
+  /// Review Consensus 기능 활성화 여부
+  bool get isReviewConsensusEnabled => isFeatureEnabled(FEATURE_REVIEW_CONSENSUS);
+
   /// 모든 Feature Flag 상태 출력 (디버그용)
   void debugPrintAllFlags() {
     if (!_isInitialized) {
@@ -138,6 +143,7 @@ class FeatureFlagService {
 
     print('🚩 === Feature Flags 상태 ===');
     print('🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
+    print('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
     print('🚩 ========================');
   }
 }

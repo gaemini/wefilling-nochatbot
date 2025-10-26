@@ -10,6 +10,7 @@ import '../services/meetup_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import 'meetup_detail_screen.dart';
 import 'post_detail_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class SearchResultPage extends StatefulWidget {
   final String boardType; // 'meeting' 또는 'info'
@@ -101,12 +102,14 @@ class _SearchResultPageState extends State<SearchResultPage> {
     }
   }
 
-  String get _pageTitle {
-    return widget.boardType == 'meeting' ? '활동 게시판' : '정보 게시판';
+  String _pageTitle(BuildContext context) {
+    return widget.boardType == 'meeting' 
+        ? AppLocalizations.of(context)!.activityBoard 
+        : AppLocalizations.of(context)!.infoBoard;
   }
 
-  String get _searchHint {
-    return '검색어를 입력하세요';
+  String _searchHint(BuildContext context) {
+    return AppLocalizations.of(context)!.enterSearchQuery;
   }
 
   @override
@@ -123,7 +126,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
           semanticLabel: '뒤로가기',
         ),
         title: Text(
-          _pageTitle,
+          _pageTitle(context),
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -146,7 +149,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                 onChanged: _onSearchChanged,
                 autofocus: true,
                 decoration: InputDecoration(
-                  hintText: _searchHint,
+                  hintText: _searchHint(context),
                   hintStyle: const TextStyle(
                     color: Colors.black54,
                     fontSize: 14,
@@ -213,7 +216,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              '검색어를 입력해주세요',
+              AppLocalizations.of(context)!.pleaseEnterSearchQuery,
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey.shade600,
@@ -474,7 +477,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          post.getFormattedTime(),
+                          post.getFormattedTime(context),
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.black.withOpacity(0.87),

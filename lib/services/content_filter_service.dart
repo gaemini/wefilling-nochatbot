@@ -51,6 +51,11 @@ class ContentFilterService {
     _lastCacheUpdate = null;
   }
 
+  /// 차단된 사용자 ID 목록을 가져옵니다 (public 메서드)
+  static Future<Set<String>> getBlockedUserIds() async {
+    return await _getBlockedUserIds();
+  }
+
   /// 게시물 목록에서 차단된 사용자의 게시물을 필터링합니다
   static Future<List<Post>> filterPosts(List<Post> posts) async {
     final blockedUserIds = await _getBlockedUserIds();

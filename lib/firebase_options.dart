@@ -46,17 +46,17 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCMLr7jyMbuzqrvwJMHNjOCvzUMlYS2VDo',
-    appId: '1:700373659727:web:ae0c980ebc237a9d6b3a3a',
+    appId: '1:700373659727:web:375f2e403af7a6a76b3a3a',
     messagingSenderId: '700373659727',
     projectId: 'flutterproject3-af322',
     authDomain: 'flutterproject3-af322.firebaseapp.com',
     storageBucket: 'flutterproject3-af322.firebasestorage.app',
-    measurementId: 'G-QPLLZNWFK5',
+    measurementId: 'G-2XVH1Q0T2E',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyBqhAqrQxkFvAk7WQDpm9pIi6MutTO0c5w',
-    appId: '1:700373659727:android:325f7e22755aeef96b3a3a',
+    appId: '1:700373659727:android:6ed1d025e166b6b16b3a3a',
     messagingSenderId: '700373659727',
     projectId: 'flutterproject3-af322',
     storageBucket: 'flutterproject3-af322.firebasestorage.app',
@@ -64,15 +64,13 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBvbWHCInECdS8bMwfxLcmznLanX6jegZA',
-    appId: '1:700373659727:ios:3ea33008ee326e906b3a3a',
+    appId: '1:700373659727:ios:87981cca82334bbf6b3a3a',
     messagingSenderId: '700373659727',
     projectId: 'flutterproject3-af322',
     storageBucket: 'flutterproject3-af322.firebasestorage.app',
-    androidClientId:
-        '700373659727-jlq5hvo6s7e6r1me4joh9ocj7skm9k1b.apps.googleusercontent.com',
-    iosClientId:
-        '700373659727-t3t89luvegusfl5cfeogsuf55go3uqmu.apps.googleusercontent.com',
-    iosBundleId: 'com.example.flutterPractice3',
+    androidClientId: '700373659727-6nrlohkdkdrmrf2pceukdlve2sfjcufg.apps.googleusercontent.com',
+    iosClientId: '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com',
+    iosBundleId: 'com.wefilling.app',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(

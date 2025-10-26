@@ -5,6 +5,8 @@
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
+import '../utils/country_flag_helper.dart';
+import '../l10n/app_localizations.dart';
 
 class UserTile extends StatelessWidget {
   final UserProfile user;
@@ -39,7 +41,7 @@ class UserTile extends StatelessWidget {
               const SizedBox(width: 16),
 
               // 사용자 정보
-              Expanded(child: _buildUserInfo()),
+              Expanded(child: _buildUserInfo(context)),
 
               // 액션 버튼
               _buildActionButton(),
@@ -82,7 +84,7 @@ class UserTile extends StatelessWidget {
   }
 
   /// 사용자 정보 위젯
-  Widget _buildUserInfo() {
+  Widget _buildUserInfo(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -116,7 +118,9 @@ class UserTile extends StatelessWidget {
               Icon(Icons.flag, size: 16, color: Colors.grey[600]),
               const SizedBox(width: 4),
               Text(
-                user.nationality!,
+                CountryFlagHelper.getCountryInfo(user.nationality!)?.getLocalizedName(
+                  Localizations.localeOf(context).languageCode
+                ) ?? user.nationality!,
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
             ],
@@ -130,7 +134,7 @@ class UserTile extends StatelessWidget {
             Icon(Icons.people, size: 16, color: Colors.grey[600]),
             const SizedBox(width: 4),
             Text(
-              '친구 ${user.friendsCount}명',
+              AppLocalizations.of(context)!.friendsCount(user.friendsCount),
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],

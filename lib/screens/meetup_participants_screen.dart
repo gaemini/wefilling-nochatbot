@@ -72,8 +72,9 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
         _isLoading = false;
       });
       if (mounted) {
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('참여자 목록을 불러오는데 실패했습니다: $e')),
+          SnackBar(content: Text(isKo ? '참여자 목록을 불러오는데 실패했습니다: $e' : 'Failed to load participants: $e')),
         );
       }
     }
@@ -87,7 +88,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '참여자 관리',
+              Localizations.localeOf(context).languageCode == 'ko' ? '참여자 관리' : 'Participants',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
             Text(
@@ -108,7 +109,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('대기중'),
+                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '대기중' : 'Pending'),
                   const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -132,7 +133,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('승인됨'),
+                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '승인됨' : 'Approved'),
                   const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -156,7 +157,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Text('거절됨'),
+                  Text(Localizations.localeOf(context).languageCode == 'ko' ? '거절됨' : 'Rejected'),
                   const SizedBox(width: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -298,7 +299,7 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    participant.getStatusText(),
+                    participant.getStatusTextLocalized(Localizations.localeOf(context).languageCode),
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

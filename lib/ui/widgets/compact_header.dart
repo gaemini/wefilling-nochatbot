@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../utils/accessibility_utils.dart';
+import '../../l10n/app_localizations.dart';
 import 'app_icon_button.dart';
 
 /// 컴팩트 검색바
@@ -311,6 +312,9 @@ class _CompactChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    
+    // 라벨 번역
+    String displayLabel = _getLocalizedLabel(context, label);
 
     // 텍스트 스케일에 따른 높이 조정
     final adjustedHeight = context.adjustedHeight(32.0);
@@ -344,10 +348,10 @@ class _CompactChip extends StatelessWidget {
     );
 
     return Semantics(
-      label: '$label 카테고리${isSelected ? ", 선택됨" : ""}',
+      label: '$displayLabel ${AppLocalizations.of(context)!.category}${isSelected ? ", ${AppLocalizations.of(context)!.selected}" : ""}',
       button: true,
       selected: isSelected,
-      onTapHint: '${isSelected ? "선택 취소" : "선택"}하려면 두 번 탭하세요',
+      onTapHint: '${isSelected ? AppLocalizations.of(context)!.cancel : AppLocalizations.of(context)!.select}',
       child: Container(
         decoration: BoxDecoration(
           color: backgroundColor,
@@ -379,7 +383,7 @@ class _CompactChip extends StatelessWidget {
               padding: adjustedPadding,
               child: Center(
                 child: Text(
-                  label,
+                  displayLabel,
                   style: theme.textTheme.labelMedium?.copyWith(
                     color: textColor,
                     fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
@@ -502,4 +506,26 @@ class CompactAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Size get preferredSize => const Size.fromHeight(48);
+}
+
+/// 카테고리 라벨을 번역하는 헬퍼 함수
+String _getLocalizedLabel(BuildContext context, String label) {
+  final localizations = AppLocalizations.of(context)!;
+  
+  switch (label) {
+    case 'all':
+      return localizations.all;
+    case 'study':
+      return localizations.study;
+    case 'meal':
+      return localizations.meal;
+    case 'hobby':
+      return localizations.hobby;
+    case 'culture':
+      return localizations.culture;
+    case 'other':
+      return localizations.other;
+    default:
+      return label; // 번역이 없으면 원본 반환
+  }
 }

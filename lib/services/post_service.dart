@@ -345,6 +345,11 @@ class PostService {
         });
         print('좋아요 추가 완료');
 
+        print('❤️ 좋아요 추가 - 알림 전송 확인 중');
+        print('   게시글 작성자: $authorId');
+        print('   좋아요 누른 사람: ${user.uid}');
+        print('   게시글 제목: $postTitle');
+
         // 좋아요 알림 전송 (자신의 게시글이 아닌 경우에만)
         if (authorId != null && authorId != user.uid) {
           // 사용자 정보 가져오기
@@ -353,14 +358,18 @@ class PostService {
           final userData = userDoc.data();
           final nickname = userData?['nickname'] ?? '익명';
 
+          print('🔔 알림 전송 시작...');
           // 좋아요 알림 전송
-          await _notificationService.sendNewLikeNotification(
+          final notificationSent = await _notificationService.sendNewLikeNotification(
             postId,
             postTitle,
             authorId,
             nickname,
             user.uid,
           );
+          print(notificationSent ? '✅ 알림 전송 성공' : '❌ 알림 전송 실패');
+        } else {
+          print('⏭️ 알림 전송 건너뜀 (본인 게시글)');
         }
       }
 

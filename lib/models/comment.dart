@@ -4,8 +4,10 @@
 // Firestore데이터 변환 메서드 제공
 // 번역 기능 추가
 
+import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/settings_provider.dart';
+import '../l10n/app_localizations.dart';
 
 class Comment {
   final String id;
@@ -70,18 +72,28 @@ class Comment {
   }
 
   // 작성 시간을 표시 형식으로 변환
-  String getFormattedTime() {
+  String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
+    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      // 지역화 함수 호출 (숫자 전달)
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      if (locale == 'ko') {
+        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
+      } else {
+        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
+      }
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      if (locale == 'ko') {
+        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
+      } else {
+        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
+      }
     } else {
-      return '방금 전';
+      return AppLocalizations.of(context)!.justNow;
     }
   }
 

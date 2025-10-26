@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meetup.dart';
 import '../services/meetup_service.dart';
+import '../l10n/app_localizations.dart';
 
 class EditMeetupScreen extends StatefulWidget {
   final Meetup meetup;
@@ -26,11 +27,12 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   final _timeController = TextEditingController();
   
   late DateTime _selectedDate;
-  String _selectedCategory = '기타';
+  String _selectedCategory = 'etc'; // 영어 키로 저장
   int _selectedMaxParticipants = 3;
   bool _isLoading = false;
 
-  final List<String> _categories = ['스터디', '식사', '취미', '문화', '기타'];
+  // 카테고리 키 (Firestore에 저장되는 값)
+  final List<String> _categoryKeys = ['study', 'meal', 'cafe', 'culture', 'etc'];
   final List<int> _participantOptions = [3, 4];
 
   @override
@@ -46,7 +48,25 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _timeController.text = widget.meetup.time;
     _selectedMaxParticipants = widget.meetup.maxParticipants;
     _selectedDate = widget.meetup.date;
-    _selectedCategory = widget.meetup.category;
+    
+    // 카테고리 정규화 (한국어 → 영어 키)
+    final categoryNormalizeMap = {
+      '스터디': 'study',
+      '식사': 'meal',
+      '카페': 'cafe',
+      '문화': 'culture',
+      '기타': 'etc',
+    };
+    
+    // 기존 카테고리를 영어 키로 변환
+    final normalizedCategory = widget.meetup.category.toLowerCase();
+    if (_categoryKeys.contains(normalizedCategory)) {
+      _selectedCategory = normalizedCategory;
+    } else if (categoryNormalizeMap.containsKey(widget.meetup.category)) {
+      _selectedCategory = categoryNormalizeMap[widget.meetup.category]!;
+    } else {
+      _selectedCategory = 'etc';
+    }
   }
 
   @override
@@ -64,7 +84,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       initialDate: _selectedDate,
       firstDate: DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      locale: const Locale('ko', 'KR'),
+      locale: Localizations.localeOf(context),
     );
     if (picked != null && picked != _selectedDate) {
       setState(() {
@@ -125,9 +145,12 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final currentLang = Localizations.localeOf(context).languageCode;
+    
     return Scaffold(
       appBar: AppBar(
-        title: const Text('모임 수정'),
+        title: Text(l10n.editMeetup),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _updateMeetup,
@@ -137,9 +160,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text(
-                    '저장',
-                    style: TextStyle(
+                : Text(
+                    l10n.save,
+                    style: const TextStyle(
                       color: Colors.blue,
                       fontWeight: FontWeight.w600,
                     ),
@@ -157,17 +180,17 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               // 제목
               TextFormField(
                 controller: _titleController,
-                decoration: const InputDecoration(
-                  labelText: '모임 제목',
-                  hintText: '모임의 제목을 입력하세요',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.meetupTitle,
+                  hintText: l10n.enterMeetupTitle,
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '제목을 입력해주세요';
+                    return l10n.pleaseEnterTitle;
                   }
                   if (value.trim().length < 2) {
-                    return '제목은 2글자 이상 입력해주세요';
+                    return l10n.titleMinLength;
                   }
                   return null;
                 },
@@ -179,15 +202,15 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               TextFormField(
                 controller: _descriptionController,
                 maxLines: 4,
-                decoration: const InputDecoration(
-                  labelText: '모임 설명',
-                  hintText: '모임에 대한 자세한 설명을 입력하세요',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.meetupDescription,
+                  hintText: l10n.enterMeetupDescription,
+                  border: const OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '설명을 입력해주세요';
+                    return l10n.pleaseEnterDescription;
                   }
                   return null;
                 },
@@ -198,14 +221,36 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               // 카테고리
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
-                decoration: const InputDecoration(
-                  labelText: '카테고리',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.category,
+                  border: const OutlineInputBorder(),
                 ),
-                items: _categories.map((String category) {
+                items: _categoryKeys.map((String categoryKey) {
+                  // 카테고리 키를 현지화된 텍스트로 변환
+                  String displayText;
+                  switch (categoryKey) {
+                    case 'study':
+                      displayText = currentLang == 'ko' ? '스터디' : 'Study';
+                      break;
+                    case 'meal':
+                      displayText = currentLang == 'ko' ? '식사' : 'Meal';
+                      break;
+                    case 'cafe':
+                      displayText = currentLang == 'ko' ? '카페' : 'Cafe';
+                      break;
+                    case 'culture':
+                      displayText = currentLang == 'ko' ? '문화' : 'Culture';
+                      break;
+                    case 'etc':
+                      displayText = currentLang == 'ko' ? '기타' : 'Other';
+                      break;
+                    default:
+                      displayText = categoryKey;
+                  }
+                  
                   return DropdownMenuItem<String>(
-                    value: category,
-                    child: Text(category),
+                    value: categoryKey,
+                    child: Text(displayText),
                   );
                 }).toList(),
                 onChanged: (String? newValue) {
@@ -233,7 +278,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                       const Icon(Icons.calendar_today),
                       const SizedBox(width: 12),
                       Text(
-                        '날짜: ${_selectedDate.year}년 ${_selectedDate.month}월 ${_selectedDate.day}일',
+                        '${l10n.date}: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                         style: const TextStyle(fontSize: 16),
                       ),
                       const Spacer(),
@@ -248,14 +293,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               // 시간
               TextFormField(
                 controller: _timeController,
-                decoration: const InputDecoration(
-                  labelText: '시간',
-                  hintText: '예: 14:00 또는 14:00~16:00',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.time,
+                  hintText: l10n.timeHint,
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '시간을 입력해주세요';
+                    return l10n.pleaseEnterTime;
                   }
                   return null;
                 },
@@ -266,14 +311,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               // 장소
               TextFormField(
                 controller: _locationController,
-                decoration: const InputDecoration(
-                  labelText: '장소',
-                  hintText: '모임 장소를 입력하세요',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.location,
+                  hintText: l10n.enterMeetupLocation,
+                  border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '장소를 입력해주세요';
+                    return l10n.pleaseEnterLocation;
                   }
                   return null;
                 },
@@ -284,14 +329,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               // 최대 참여자 수
               DropdownButtonFormField<int>(
                 value: _selectedMaxParticipants,
-                decoration: const InputDecoration(
-                  labelText: '최대 참여자 수',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  labelText: l10n.maxParticipants,
+                  border: const OutlineInputBorder(),
                 ),
                 items: _participantOptions.map((int number) {
                   return DropdownMenuItem<int>(
                     value: number,
-                    child: Text('$number명'),
+                    child: Text('$number${l10n.peopleUnit}'),
                   );
                 }).toList(),
                 onChanged: (int? newValue) {
@@ -323,9 +368,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           color: Colors.white,
                           strokeWidth: 2,
                         )
-                      : const Text(
-                          '모임 수정하기',
-                          style: TextStyle(
+                      : Text(
+                          l10n.updateMeetup,
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                           ),

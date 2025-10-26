@@ -38,6 +38,10 @@
     native <methods>;
 }
 
-# Keep custom model classes (adjust package name as needed)
--keep class com.example.flutter_practice3.models.** { *; }
+# Keep custom model classes
+-keep class com.wefilling.app.models.** { *; }
+
+# Play Core library (for split APKs and deferred components)
+-keep class com.google.android.play.core.** { *; }
+-dontwarn com.google.android.play.core.**
 

@@ -8,6 +8,7 @@ import '../models/meetup.dart';
 import '../services/meetup_service.dart';
 import '../services/storage_service.dart';
 import '../widgets/country_flag_circle.dart';
+import '../l10n/app_localizations.dart';
 
 class MeetupSearchScreen extends StatefulWidget {
   const MeetupSearchScreen({Key? key}) : super(key: key);
@@ -261,7 +262,9 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                           ),
                           const SizedBox(height: 16),
                           Text(
-                            _searchQuery.isEmpty ? '검색어를 입력하세요' : '검색 결과가 없습니다',
+                            _searchQuery.isEmpty 
+                                ? AppLocalizations.of(context)!.enterSearchQuery 
+                                : AppLocalizations.of(context)!.noSearchResults,
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey[600],
@@ -404,7 +407,7 @@ class MeetupCard extends StatelessWidget {
         return Icons.book;
       case '식사':
         return Icons.restaurant;
-      case '취미':
+      case '카페':
         return Icons.sports_basketball;
       case '문화':
         return Icons.theater_comedy;
@@ -420,7 +423,7 @@ class MeetupCard extends StatelessWidget {
         return Colors.blue;
       case '식사':
         return const Color(0xFFE74C3C); // 빨간색으로 변경
-      case '취미':
+      case '카페':
         return Colors.green;
       case '문화':
         return Colors.purple;

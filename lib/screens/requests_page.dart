@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../models/friend_request.dart';
 import '../models/user_profile.dart';
-import '../widgets/user_tile.dart';
+import '../l10n/app_localizations.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -50,50 +50,62 @@ class _RequestsPageState extends State<RequestsPage>
 
   /// 친구요청 수락
   Future<void> _acceptRequest(String fromUid) async {
+    if (!mounted) return;
+    
     final provider = context.read<RelationshipProvider>();
     final success = await provider.acceptFriendRequest(fromUid);
 
-    if (success) {
-      _showSnackBar('친구요청을 수락했습니다.', Colors.green);
-    } else {
-      _showSnackBar('친구요청 수락에 실패했습니다.', Colors.red);
+    if (mounted) {
+      if (success) {
+        _showSnackBar(AppLocalizations.of(context)!.friendRequestAccepted, Colors.green);
+      } else {
+        _showSnackBar(AppLocalizations.of(context)!.friendRequestAcceptFailed, Colors.red);
+      }
     }
   }
 
   /// 친구요청 거절
   Future<void> _rejectRequest(String fromUid) async {
+    if (!mounted) return;
+    
     final confirmed = await _showConfirmDialog(
-      '친구요청 거절',
-      '정말로 이 친구요청을 거절하시겠습니까?',
+      AppLocalizations.of(context)!.rejectFriendRequest,
+      AppLocalizations.of(context)!.confirmRejectFriendRequest,
     );
 
-    if (confirmed) {
+    if (confirmed && mounted) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.rejectFriendRequest(fromUid);
 
-      if (success) {
-        _showSnackBar('친구요청을 거절했습니다.', Colors.orange);
-      } else {
-        _showSnackBar('친구요청 거절에 실패했습니다.', Colors.red);
+      if (mounted) {
+        if (success) {
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejected, Colors.orange);
+        } else {
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejectFailed, Colors.red);
+        }
       }
     }
   }
 
   /// 친구요청 취소
   Future<void> _cancelRequest(String toUid) async {
+    if (!mounted) return;
+    
     final confirmed = await _showConfirmDialog(
-      '친구요청 취소',
-      '정말로 이 친구요청을 취소하시겠습니까?',
+      AppLocalizations.of(context)!.cancelFriendRequest,
+      AppLocalizations.of(context)!.confirmCancelFriendRequest,
     );
 
-    if (confirmed) {
+    if (confirmed && mounted) {
       final provider = context.read<RelationshipProvider>();
       final success = await provider.cancelFriendRequest(toUid);
 
-      if (success) {
-        _showSnackBar('친구요청을 취소했습니다.', Colors.orange);
-      } else {
-        _showSnackBar('친구요청 취소에 실패했습니다.', Colors.red);
+      if (mounted) {
+        if (success) {
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelledSuccess, Colors.orange);
+        } else {
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelFailed, Colors.red);
+        }
       }
     }
   }
@@ -120,7 +132,7 @@ class _RequestsPageState extends State<RequestsPage>
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('취소'),
+                child: Text(AppLocalizations.of(context)!.cancel),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -128,7 +140,7 @@ class _RequestsPageState extends State<RequestsPage>
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('확인'),
+                child: Text(AppLocalizations.of(context)!.confirm),
               ),
             ],
           ),
@@ -142,30 +154,55 @@ class _RequestsPageState extends State<RequestsPage>
     return !_isInitialized
         ? const Center(child: CircularProgressIndicator())
         : Column(
-          children: [
-            // 탭바
-            Container(
-              color: Colors.white,
-              child: TabBar(
-                controller: _tabController,
-                labelColor: Colors.blue,
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: Colors.blue,
-                tabs: const [Tab(text: '받은 요청'), Tab(text: '보낸 요청')],
+            children: [
+              // 헤더 영역 (높이 통일 - 검색창과 동일)
+              Container(
+                height: 60, // 검색 탭과 동일한 높이
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12), // TabBar 높이 48에 맞춤
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      spreadRadius: 1,
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: Colors.blue,
+                  unselectedLabelColor: Colors.grey,
+                  indicatorColor: Colors.blue,
+                  indicatorWeight: 2.5,
+                  dividerColor: Colors.transparent, // TabBar 하단 구분선 제거
+                  labelStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.normal,
+                  ),
+                  tabs: [
+                    Tab(text: AppLocalizations.of(context)!.receivedRequests),
+                    Tab(text: AppLocalizations.of(context)!.sentRequests),
+                  ],
+                ),
               ),
-            ),
-            // 탭 내용
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildIncomingRequestsTab(),
-                  _buildOutgoingRequestsTab(),
-                ],
+              // 탭 내용
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildIncomingRequestsTab(),
+                    _buildOutgoingRequestsTab(),
+                  ],
+                ),
               ),
-            ),
-          ],
-        );
+            ],
+          );
   }
 
   /// 받은 요청 탭
@@ -182,8 +219,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         if (provider.incomingRequests.isEmpty) {
           return _buildEmptyState(
-            '받은 친구요청이 없습니다',
-            '새로운 친구요청이 오면 여기에 표시됩니다',
+            AppLocalizations.of(context)!.noReceivedRequests,
+            AppLocalizations.of(context)!.newRequestsWillAppearHere,
             Icons.inbox,
           );
         }
@@ -197,10 +234,10 @@ class _RequestsPageState extends State<RequestsPage>
               future: provider.getUserProfile(request.fromUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Card(
+                  return Card(
                     child: ListTile(
-                      leading: CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text('로딩 중...'),
+                      leading: const CircleAvatar(child: CircularProgressIndicator()),
+                      title: Text(AppLocalizations.of(context)!.loading),
                     ),
                   );
                 }
@@ -233,8 +270,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         if (provider.outgoingRequests.isEmpty) {
           return _buildEmptyState(
-            '보낸 친구요청이 없습니다',
-            '사용자를 검색하여 친구요청을 보내보세요',
+            AppLocalizations.of(context)!.noSentRequests,
+            AppLocalizations.of(context)!.searchToSendRequest,
             Icons.send,
           );
         }
@@ -248,10 +285,10 @@ class _RequestsPageState extends State<RequestsPage>
               future: provider.getUserProfile(request.toUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Card(
+                  return Card(
                     child: ListTile(
-                      leading: CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text('로딩 중...'),
+                      leading: const CircleAvatar(child: CircularProgressIndicator()),
+                      title: Text(AppLocalizations.of(context)!.loading),
                     ),
                   );
                 }
@@ -340,7 +377,7 @@ class _RequestsPageState extends State<RequestsPage>
                     foregroundColor: Colors.white,
                     minimumSize: const Size(60, 32),
                   ),
-                  child: const Text('수락', style: TextStyle(fontSize: 12)),
+                  child: Text(AppLocalizations.of(context)!.accept, style: const TextStyle(fontSize: 12)),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
@@ -350,7 +387,7 @@ class _RequestsPageState extends State<RequestsPage>
                     side: const BorderSide(color: Colors.red),
                     minimumSize: const Size(60, 32),
                   ),
-                  child: const Text('거절', style: TextStyle(fontSize: 12)),
+                  child: Text(AppLocalizations.of(context)!.reject, style: const TextStyle(fontSize: 12)),
                 ),
               ],
             ),
@@ -428,7 +465,7 @@ class _RequestsPageState extends State<RequestsPage>
                 side: const BorderSide(color: Colors.orange),
                 minimumSize: const Size(60, 32),
               ),
-              child: const Text('취소', style: TextStyle(fontSize: 12)),
+              child: Text(AppLocalizations.of(context)!.cancelAction, style: const TextStyle(fontSize: 12)),
             ),
           ],
         ),
@@ -501,17 +538,18 @@ class _RequestsPageState extends State<RequestsPage>
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
+    final l10n = AppLocalizations.of(context)!;
 
     if (difference.inDays > 7) {
       return '${dateTime.month}/${dateTime.day}';
     } else if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      return l10n.daysAgoCount(difference.inDays);
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      return l10n.hoursAgoCount(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      return l10n.minutesAgoCount(difference.inMinutes);
     } else {
-      return '방금 전';
+      return l10n.justNowTime;
     }
   }
 }

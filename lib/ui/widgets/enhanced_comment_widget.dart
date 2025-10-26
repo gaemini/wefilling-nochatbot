@@ -11,6 +11,7 @@ import '../../models/comment.dart';
 import '../../services/comment_service.dart';
 import '../../design/tokens.dart';
 import '../../design/theme.dart';
+import '../../l10n/app_localizations.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -21,6 +22,8 @@ class EnhancedCommentWidget extends StatefulWidget {
   final Function(String, String, String)? onReplySubmit;
   final bool isAnonymousPost; // 익명 게시글 여부
   final String Function(Comment)? getDisplayName; // 댓글 작성자 표시명 함수
+  final bool isReplyTarget; // 현재 하이라이트 대상인지
+  final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
 
   const EnhancedCommentWidget({
     super.key,
@@ -32,6 +35,8 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.onReplySubmit,
     this.isAnonymousPost = false,
     this.getDisplayName,
+    this.isReplyTarget = false,
+    this.parentTopLevelCommentId,
   });
 
   @override
@@ -40,15 +45,11 @@ class EnhancedCommentWidget extends StatefulWidget {
 
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
-  final TextEditingController _replyController = TextEditingController();
-  bool _isReplying = false;
-  bool _isSubmittingReply = false;
   bool _showReplies = true;
   String? _currentNickname; // 캐시된 현재 닉네임
 
   @override
   void dispose() {
-    _replyController.dispose();
     super.dispose();
   }
 
@@ -75,6 +76,15 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           });
         }
         return nickname;
+      } else {
+        // 사용자 문서가 없으면 탈퇴한 계정으로 표시
+        final deletedText = AppLocalizations.of(context)!.deletedAccount;
+        if (mounted) {
+          setState(() {
+            _currentNickname = deletedText;
+          });
+        }
+        return deletedText;
       }
     } catch (e) {
       print('닉네임 조회 오류: $e');
@@ -101,65 +111,72 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('좋아요 업데이트에 실패했습니다.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed)),
         );
       }
     } catch (e) {
       print('댓글 좋아요 토글 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('오류가 발생했습니다: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
         );
       }
     }
   }
 
-  // 답글 제출
-  Future<void> _submitReply() async {
-    final content = _replyController.text.trim();
-    if (content.isEmpty) return;
-
-    setState(() {
-      _isSubmittingReply = true;
-    });
-
-    try {
-      // 최신 닉네임 사용
-      final currentNickname = _currentNickname ?? await _getCurrentNickname(widget.comment.userId);
-      
-      final success = await _commentService.addComment(
-        widget.postId,
-        content,
-        parentCommentId: widget.comment.id,
-        replyToUserId: widget.comment.userId,
-        replyToUserNickname: currentNickname,
-      );
-
-      if (success && mounted) {
-        _replyController.clear();
-        setState(() {
-          _isReplying = false;
-        });
-      }
-    } catch (e) {
-      print('답글 작성 오류: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSubmittingReply = false;
-        });
-      }
-    }
-  }
-
-  /// 댓글 깊이에 따른 배경색 반환
+  /// 댓글 배경색 반환 (깊이 고려)
   Color _getCommentBackgroundColor(ThemeData theme) {
     if (widget.comment.depth == 0) {
-      // 최상위 댓글: 기본 카드 색상
+      // 최상위 댓글: 기본 카드 색상 (흰색)
       return theme.cardColor;
     } else {
-      // 대댓글: 지정된 노란색 100% 적용
-      return const Color(0xFFF9F871);
+      // 대댓글: 약간 더 진한 회색 배경으로 구분 강화
+      return Colors.grey[100]!; // grey[50] → grey[100]
+    }
+  }
+  
+  /// 하이라이트용 BoxDecoration 반환
+  BoxDecoration _getCardDecoration(ThemeData theme) {
+    if (widget.isReplyTarget) {
+      // 하이라이트 대상: 파란색 테두리 (전체 UI와 조화)
+      return BoxDecoration(
+        color: _getCommentBackgroundColor(theme),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.blue[400]!, // 파란색 테두리
+          width: 2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue[100]!.withOpacity(0.3), // 연한 파란색 그림자
+            blurRadius: 8,
+            spreadRadius: 1,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      );
+    } else {
+      // 일반 상태
+      return BoxDecoration(
+        color: _getCommentBackgroundColor(theme),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: widget.comment.depth > 0 
+              ? Colors.grey[400]! // 더 진한 회색 테두리 (300 → 400)
+              : Colors.transparent,
+          width: widget.comment.depth > 0 ? 1.5 : 0, // 테두리 두께 증가 (1 → 1.5)
+        ),
+        // 대댓글에 미세한 그림자 추가
+        boxShadow: widget.comment.depth > 0 
+            ? [
+                BoxShadow(
+                  color: Colors.grey[300]!.withOpacity(0.3),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      );
     }
   }
 
@@ -172,20 +189,20 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     return Container(
       margin: EdgeInsets.only(
-        left: widget.comment.depth * 24.0, // 들여쓰기
+        left: widget.comment.depth * 28.0, // 들여쓰기 증가 (24 → 28)
         bottom: 12,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 대댓글용 세로선
+          // 대댓글용 세로선 (더 굵고 진하게)
           if (widget.comment.depth > 0) ...[
             Container(
-              width: 3,
-              height: 60, // 카드 높이에 맞춤
-              margin: const EdgeInsets.only(right: 8, top: 8),
+              width: 4, // 두께 증가 (3 → 4)
+              height: 60,
+              margin: const EdgeInsets.only(right: 10, top: 8), // 간격 증가 (8 → 10)
               decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withOpacity(0.2),
+                color: Colors.blue[300]!, // 더 진한 파란색
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -197,18 +214,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 댓글 카드
-                Card(
-            elevation: 1,
-            color: _getCommentBackgroundColor(theme),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(
-                color: widget.comment.depth > 0 
-                    ? theme.colorScheme.primary.withOpacity(0.15)
-                    : Colors.transparent,
-                width: widget.comment.depth > 0 ? 0.5 : 0,
-              ),
-            ),
+                Container(
+            decoration: _getCardDecoration(theme),
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -255,20 +262,24 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             Row(
                               children: [
                                 // 실시간 닉네임 표시
-                                FutureBuilder<String>(
-                                  future: widget.isAnonymousPost
-                                      ? Future.value(widget.getDisplayName?.call(widget.comment) ?? '익명')
-                                      : _getCurrentNickname(widget.comment.userId),
-                                  builder: (context, snapshot) {
-                                    final displayName = snapshot.data ?? 
-                                        (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
-                                    return Text(
-                                      displayName,
-                                      style: theme.textTheme.bodyMedium?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    );
-                                  },
+                                Flexible(
+                                  child: FutureBuilder<String>(
+                                    future: widget.isAnonymousPost
+                                        ? Future.value(widget.getDisplayName?.call(widget.comment) ?? '익명')
+                                        : _getCurrentNickname(widget.comment.userId),
+                                    builder: (context, snapshot) {
+                                      final displayName = snapshot.data ?? 
+                                          (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
+                                      return Text(
+                                        displayName,
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      );
+                                    },
+                                  ),
                                 ),
                                 if (widget.comment.replyToUserNickname != null && 
                                     widget.comment.replyToUserId != null) ...[
@@ -313,7 +324,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               ],
                             ),
                             Text(
-                              widget.comment.getFormattedTime(),
+                              widget.comment.getFormattedTime(context),
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: Colors.grey[600],
                               ),
@@ -397,7 +408,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       // 답글 버튼 (원댓글에만 표시)
                       if (widget.comment.depth == 0)
                         InkWell(
-                          onTap: () => setState(() => _isReplying = !_isReplying),
+                          onTap: widget.onReplyTap,
                           borderRadius: BorderRadius.circular(16),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -407,7 +418,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                 Icon(Icons.reply, size: 16, color: Colors.grey[600]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '답글',
+                                  AppLocalizations.of(context)!.reply,
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.grey[600],
                                   ),
@@ -423,7 +434,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         InkWell(
                           onTap: () => setState(() => _showReplies = !_showReplies),
                           child: Text(
-                            '답글 ${widget.replies.length}개 ${_showReplies ? '숨기기' : '보기'}',
+                            '${AppLocalizations.of(context)!.repliesCount(widget.replies.length)} ${_showReplies ? AppLocalizations.of(context)!.hideReplies : AppLocalizations.of(context)!.showReplies}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.primary,
                               fontWeight: FontWeight.w500,
@@ -438,55 +449,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             ),
           ),
           
-          // 답글 입력창
-          if (_isReplying) ...[
-            const SizedBox(height: 8),
-            Container(
-              margin: const EdgeInsets.only(left: 24),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.grey[200]!),
-              ),
-              child: Column(
-                children: [
-                  TextField(
-                    controller: _replyController,
-                    decoration: InputDecoration(
-                      hintText: '${_currentNickname ?? widget.comment.authorNickname}님에게 답글...',
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                    maxLines: 3,
-                    minLines: 1,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => setState(() => _isReplying = false),
-                        child: Text('취소'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _isSubmittingReply ? null : _submitReply,
-                        child: _isSubmittingReply
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : Text('답글 작성'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-          
                 // 답글 목록
                 if (_showReplies && widget.replies.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -497,6 +459,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     onDeleteComment: widget.onDeleteComment,
                     isAnonymousPost: widget.isAnonymousPost,
                     getDisplayName: widget.getDisplayName,
+                    isReplyTarget: widget.parentTopLevelCommentId != null, // 대댓글도 하이라이트 가능하도록 유지 (상위 전달)
+                    parentTopLevelCommentId: widget.comment.id, // 최상위 댓글 ID 전달
+                    onReplyTap: widget.onReplyTap, // 대댓글에는 답글 버튼을 표시하지 않으므로 사용되지 않음
                   )).toList(),
                 ],
               ],

@@ -36,6 +36,7 @@ class UserProfile {
   // Firestore 문서에서 UserProfile 객체 생성
   factory UserProfile.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
+    final now = DateTime.now();
 
     return UserProfile(
       uid: doc.id,
@@ -48,8 +49,12 @@ class UserProfile {
       friendsCount: data['friendsCount'] ?? 0,
       incomingCount: data['incomingCount'] ?? 0,
       outgoingCount: data['outgoingCount'] ?? 0,
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      createdAt: data['createdAt'] != null 
+          ? (data['createdAt'] as Timestamp).toDate() 
+          : now,
+      updatedAt: data['updatedAt'] != null 
+          ? (data['updatedAt'] as Timestamp).toDate() 
+          : now,
     );
   }
 

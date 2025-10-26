@@ -2,17 +2,19 @@
 // 친구 목록 화면
 // 친구 목록 표시, 검색, 언팔 기능 제공
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../models/user_profile.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
-import '../widgets/user_tile.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/app_localizations.dart';
+import '../utils/country_flag_helper.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -27,6 +29,7 @@ class _FriendsPageState extends State<FriendsPage> {
   List<UserProfile> _filteredFriends = [];
   List<FriendCategory> _friendCategories = [];
   bool _isInitialized = false;
+  StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
 
   @override
   void initState() {
@@ -39,6 +42,7 @@ class _FriendsPageState extends State<FriendsPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _categoriesSubscription?.cancel();
     _categoryService.dispose();
     super.dispose();
   }
@@ -61,7 +65,8 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 친구 카테고리 로드
   void _loadFriendCategories() {
-    _categoryService.getCategoriesStream().listen((categories) {
+    _categoriesSubscription?.cancel();
+    _categoriesSubscription = _categoryService.getCategoriesStream().listen((categories) {
       if (mounted) {
         setState(() {
           _friendCategories = categories;
@@ -72,13 +77,17 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 친구 검색 필터링
   void _filterFriends(String query) {
+    if (!mounted) return;
+    
     final provider = context.read<RelationshipProvider>();
     final allFriends = provider.friends;
 
     if (query.trim().isEmpty) {
-      setState(() {
-        _filteredFriends = allFriends;
-      });
+      if (mounted) {
+        setState(() {
+          _filteredFriends = allFriends;
+        });
+      }
       return;
     }
 
@@ -94,16 +103,18 @@ class _FriendsPageState extends State<FriendsPage> {
               nickname.contains(searchQuery);
         }).toList();
 
-    setState(() {
-      _filteredFriends = filtered;
-    });
+    if (mounted) {
+      setState(() {
+        _filteredFriends = filtered;
+      });
+    }
   }
 
   /// 친구 삭제
   Future<void> _unfriend(UserProfile friend) async {
     final confirmed = await _showConfirmDialog(
-      '친구 삭제',
-      '정말로 ${friend.displayNameOrNickname}님을 친구에서 삭제하시겠습니까?',
+      AppLocalizations.of(context)!.removeFriend,
+      AppLocalizations.of(context)!.unfriendConfirm(friend.displayNameOrNickname),
     );
 
     if (confirmed) {
@@ -111,13 +122,13 @@ class _FriendsPageState extends State<FriendsPage> {
       final success = await provider.unfriend(friend.uid);
 
       if (success) {
-        _showSnackBar('친구를 삭제했습니다.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.unfriendSuccess, Colors.red);
         // 필터링된 목록에서도 제거
         setState(() {
           _filteredFriends.removeWhere((f) => f.uid == friend.uid);
         });
       } else {
-        _showSnackBar('친구 삭제에 실패했습니다.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.unfriendFailed, Colors.red);
       }
     }
   }
@@ -125,8 +136,8 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 사용자 차단
   Future<void> _blockUser(UserProfile user) async {
     final confirmed = await _showConfirmDialog(
-      '사용자 차단',
-      '정말로 ${user.displayNameOrNickname}님을 차단하시겠습니까?\n차단된 사용자는 더 이상 친구요청을 보낼 수 없습니다.',
+      AppLocalizations.of(context)!.blockUser,
+      AppLocalizations.of(context)!.blockUserConfirm(user.displayNameOrNickname),
     );
 
     if (confirmed) {
@@ -134,13 +145,13 @@ class _FriendsPageState extends State<FriendsPage> {
       final success = await provider.blockUser(user.uid);
 
       if (success) {
-        _showSnackBar('사용자를 차단했습니다.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.userBlockedSuccess, Colors.red);
         // 필터링된 목록에서도 제거
         setState(() {
           _filteredFriends.removeWhere((f) => f.uid == user.uid);
         });
       } else {
-        _showSnackBar('사용자 차단에 실패했습니다.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.userBlockFailed, Colors.red);
       }
     }
   }
@@ -167,7 +178,7 @@ class _FriendsPageState extends State<FriendsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('취소'),
+                child: Text(AppLocalizations.of(context)!.cancel),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -175,7 +186,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text('확인'),
+                child: Text(AppLocalizations.of(context)!.confirm),
               ),
             ],
           ),
@@ -201,7 +212,7 @@ class _FriendsPageState extends State<FriendsPage> {
       );
     } catch (e) {
       _showSnackBar(
-        '프로필을 불러올 수 없습니다.',
+        AppLocalizations.of(context)!.cannotLoadProfile,
         Colors.red,
       );
       print('프로필 이동 오류: $e');
@@ -219,7 +230,7 @@ class _FriendsPageState extends State<FriendsPage> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.person, color: Colors.blue),
-                  title: const Text('프로필 보기'),
+                  title: Text(AppLocalizations.of(context)!.viewProfile),
                   onTap: () {
                     Navigator.pop(context);
                     _navigateToProfile(friend);
@@ -227,7 +238,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.group, color: Colors.green),
-                  title: const Text('그룹 설정'),
+                  title: Text(AppLocalizations.of(context)!.groupSettings),
                   onTap: () {
                     Navigator.pop(context);
                     _showGroupSelectionDialog(friend);
@@ -238,7 +249,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     Icons.person_remove,
                     color: Colors.orange,
                   ),
-                  title: const Text('친구 삭제'),
+                  title: Text(AppLocalizations.of(context)!.removeFriendAction),
                   onTap: () {
                     Navigator.pop(context);
                     _unfriend(friend);
@@ -246,7 +257,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.block, color: Colors.red),
-                  title: const Text('차단하기'),
+                  title: Text(AppLocalizations.of(context)!.blockAction),
                   onTap: () {
                     Navigator.pop(context);
                     _blockUser(friend);
@@ -273,15 +284,15 @@ class _FriendsPageState extends State<FriendsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('${friend.displayNameOrNickname}님의 그룹 설정'),
+        title: Text(AppLocalizations.of(context)!.groupSettingsFor(friend.displayNameOrNickname)),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 그룹 없음 옵션
               RadioListTile<String?>(
-                title: const Text('그룹 없음'),
-                subtitle: const Text('특정 그룹에 속하지 않습니다'),
+                title: Text(AppLocalizations.of(context)!.noGroup),
+                subtitle: Text(AppLocalizations.of(context)!.notInAnyGroup),
                 value: null,
                 groupValue: currentCategoryId,
                 onChanged: (value) {
@@ -295,10 +306,10 @@ class _FriendsPageState extends State<FriendsPage> {
               
               // 친구 그룹 목록
               if (_friendCategories.isEmpty)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.all(16.0),
                   child: Text(
-                    '생성된 친구 그룹이 없습니다.\n친구 카테고리 관리에서 그룹을 만들어보세요.',
+                    AppLocalizations.of(context)!.noFriendGroupsYet,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey,
@@ -311,7 +322,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   return RadioListTile<String?>(
                     title: Text(category.name),
                     subtitle: Text(
-                      '${category.friendIds.length}명의 친구',
+                      AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
                     ),
                     value: category.id,
                     groupValue: currentCategoryId,
@@ -344,7 +355,7 @@ class _FriendsPageState extends State<FriendsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
         ],
       ),
@@ -367,7 +378,7 @@ class _FriendsPageState extends State<FriendsPage> {
           }
         }
         success = true;
-        _showSnackBar('${friend.displayNameOrNickname}님을 모든 그룹에서 제거했습니다.', Colors.blue);
+        _showSnackBar(AppLocalizations.of(context)!.removedFromAllGroups(friend.displayNameOrNickname), Colors.blue);
       } else {
         // 선택한 그룹에 추가 (기존 그룹에서는 자동으로 제거됨)
         success = await _categoryService.addFriendToCategory(
@@ -377,16 +388,19 @@ class _FriendsPageState extends State<FriendsPage> {
         
         if (success) {
           final selectedCategory = _friendCategories.firstWhere((cat) => cat.id == categoryId);
-          _showSnackBar('${friend.displayNameOrNickname}님을 "${selectedCategory.name}" 그룹에 추가했습니다.', Colors.green);
+          _showSnackBar(
+            AppLocalizations.of(context)!.addedToGroup(friend.displayNameOrNickname, selectedCategory.name),
+            Colors.green
+          );
         }
       }
       
       if (!success && categoryId != null) {
-        _showSnackBar('그룹 설정에 실패했습니다. 다시 시도해주세요.', Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.groupAssignmentFailed, Colors.red);
       }
     } catch (e) {
       print('그룹 배정 오류: $e');
-      _showSnackBar('오류가 발생했습니다. 다시 시도해주세요.', Colors.red);
+      _showSnackBar(AppLocalizations.of(context)!.errorOccurred, Colors.red);
     }
   }
 
@@ -487,66 +501,87 @@ class _FriendsPageState extends State<FriendsPage> {
           itemCount: 5,
           padding: const EdgeInsets.all(16),
         )
-        : Column(
-          children: [
-            // 검색바
-            _buildSearchBar(),
+        : GestureDetector(
+          onTap: () {
+            // 빈 공간 터치시 키보드 닫기
+            FocusScope.of(context).unfocus();
+          },
+          child: Column(
+            children: [
+              // 검색바
+              _buildSearchBar(),
 
-            // 친구 목록
-            Expanded(
-              child: Consumer<RelationshipProvider>(
-                builder: (context, provider, child) {
-                  // provider의 friends가 변경되면 필터링된 목록도 업데이트
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (_filteredFriends.length != provider.friends.length ||
-                        _searchController.text.trim().isEmpty) {
-                      _filterFriends(_searchController.text);
+              // 친구 목록
+              Expanded(
+                child: Consumer<RelationshipProvider>(
+                  builder: (context, provider, child) {
+                    // provider의 friends가 변경되면 필터링된 목록도 업데이트
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_filteredFriends.length != provider.friends.length ||
+                          _searchController.text.trim().isEmpty) {
+                        _filterFriends(_searchController.text);
+                      }
+                    });
+
+                    if (provider.isLoading) {
+                      return AppSkeletonList.listItems(
+                        itemCount: 5,
+                        padding: const EdgeInsets.all(16),
+                      );
                     }
-                  });
 
-                  if (provider.isLoading) {
-                    return AppSkeletonList.listItems(
-                      itemCount: 5,
-                      padding: const EdgeInsets.all(16),
-                    );
-                  }
+                    if (provider.errorMessage != null) {
+                      return _buildErrorState(provider.errorMessage!);
+                    }
 
-                  if (provider.errorMessage != null) {
-                    return _buildErrorState(provider.errorMessage!);
-                  }
+                    if (provider.friends.isEmpty) {
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: AppEmptyState.noFriends(
+                            context: context,
+                            onSearchFriends: () {
+                              // 친구 검색 화면으로 이동하는 로직
+                              // 예: Navigator.push(...);
+                            },
+                          ),
+                        ),
+                      );
+                    }
 
-                  if (provider.friends.isEmpty) {
-                    return AppEmptyState.noFriends(
-                      onSearchFriends: () {
-                        // 친구 검색 화면으로 이동하는 로직
-                        // 예: Navigator.push(...);
-                      },
-                    );
-                  }
+                    if (_filteredFriends.isEmpty &&
+                        _searchController.text.trim().isNotEmpty) {
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 40),
+                          child: AppEmptyState.noSearchResults(
+                            context: context,
+                            searchQuery: _searchController.text.trim(),
+                            onClearSearch: () {
+                              _searchController.clear();
+                              _filterFriends('');
+                            },
+                          ),
+                        ),
+                      );
+                    }
 
-                  if (_filteredFriends.isEmpty &&
-                      _searchController.text.trim().isNotEmpty) {
-                    return AppEmptyState.noSearchResults(
-                      searchQuery: _searchController.text.trim(),
-                      onClearSearch: () {
-                        _searchController.clear();
-                        _filterFriends('');
-                      },
-                    );
-                  }
-
-                  return _buildFriendsList();
-                },
+                    return _buildFriendsList();
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
   }
 
   /// 검색바 위젯
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.all(16),
+      height: 60, // 원래대로 복구
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -561,7 +596,7 @@ class _FriendsPageState extends State<FriendsPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: '친구 이름으로 검색',
+          hintText: AppLocalizations.of(context)!.searchByFriendName,
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
@@ -571,8 +606,8 @@ class _FriendsPageState extends State<FriendsPage> {
                       _searchController.clear();
                       _filterFriends('');
                     },
-                    semanticLabel: '검색어 지우기',
-                    tooltip: '지우기',
+                    semanticLabel: AppLocalizations.of(context)!.close,
+                    tooltip: AppLocalizations.of(context)!.close,
                   )
                   : null,
           border: OutlineInputBorder(
@@ -582,8 +617,8 @@ class _FriendsPageState extends State<FriendsPage> {
           filled: true,
           fillColor: Colors.grey[100],
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 20,
-            vertical: 16,
+            horizontal: 16,
+            vertical: 8,
           ),
         ),
         onChanged: _filterFriends,
@@ -675,7 +710,9 @@ class _FriendsPageState extends State<FriendsPage> {
                               ),
                               const SizedBox(width: 4),
                               Text(
-                                friend.nationality!,
+                                CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
+                                  Localizations.localeOf(context).languageCode
+                                ) ?? friend.nationality!,
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.grey[600],
@@ -708,7 +745,7 @@ class _FriendsPageState extends State<FriendsPage> {
                             Icon(Icons.people, size: 16, color: Colors.green[700]),
                             const SizedBox(width: 4),
                             Text(
-                              '친구',
+                              AppLocalizations.of(context)!.friendStatus,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.green[700],
@@ -742,32 +779,6 @@ class _FriendsPageState extends State<FriendsPage> {
     );
   }
 
-  /// 빈 상태 위젯
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.people_outline, size: 64, color: Colors.grey[400]),
-          const SizedBox(height: 16),
-          Text(
-            '아직 친구가 없습니다',
-            style: TextStyle(
-              fontSize: 18,
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '사용자를 검색하여 친구를 추가해보세요',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-          ),
-        ],
-      ),
-    );
-  }
 
   /// 에러 상태 위젯
   Widget _buildErrorState(String errorMessage) {
@@ -778,7 +789,7 @@ class _FriendsPageState extends State<FriendsPage> {
           Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
           const SizedBox(height: 16),
           Text(
-            '오류가 발생했습니다',
+            AppLocalizations.of(context)!.error,
             style: TextStyle(
               fontSize: 18,
               color: Colors.red[600],
@@ -796,7 +807,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onPressed: () {
               context.read<RelationshipProvider>().clearError();
             },
-            child: const Text('다시 시도'),
+            child: Text(AppLocalizations.of(context)!.retryAction),
           ),
         ],
       ),

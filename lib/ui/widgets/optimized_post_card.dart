@@ -9,6 +9,7 @@ import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
 import '../../widgets/country_flag_circle.dart';
+import '../../l10n/app_localizations.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -248,7 +249,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget _buildAuthorInfoWithTitle(Post post, ThemeData theme, ColorScheme colorScheme) {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
-    final String authorName = isAnonymous ? '익명' : post.author;
+    // 작성자 이름이 비어있거나 "Deleted"인 경우 탈퇴한 계정으로 표시
+    String authorName;
+    if (isAnonymous) {
+      authorName = '익명';
+    } else if (post.author.isEmpty || post.author == 'Deleted') {
+      authorName = AppLocalizations.of(context)!.deletedAccount;
+    } else {
+      authorName = post.author;
+    }
     final String? authorImageUrl = isAnonymous ? null : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
 
     return Column(
@@ -296,11 +305,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        authorName,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          color: colorScheme.onSurface,
-                          fontWeight: FontWeight.w600,
+                      Flexible(
+                        child: Text(
+                          authorName,
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            color: colorScheme.onSurface,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -324,6 +337,28 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                   ),
                 ],
+              ),
+            ),
+            
+            // 북마크 버튼 (상단 오른쪽으로 이동)
+            GestureDetector(
+              onTap: _toggleSave,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                child: _isLoading
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                        ),
+                      )
+                    : Icon(
+                        _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
+                        size: 20,
+                        color: Colors.black87, // 검은색으로 통일
+                      ),
               ),
             ),
           ],
@@ -443,28 +478,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         
         const Spacer(),
         
-        // 저장 버튼
-        GestureDetector(
-          onTap: _toggleSave,
-          child: Container(
-            padding: const EdgeInsets.all(8),
-            child: _isLoading
-                ? SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
-                    ),
-                  )
-                : Icon(
-                    _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
-                    size: 20,
-                    color: _isSaved ? BrandColors.success : BrandColors.neutral500,
-                  ),
-          ),
-        ),
-        
         // 카테고리 (있는 경우, '일반'은 제외)
         if (post.category.isNotEmpty && post.category != '일반')
           Container(
@@ -489,6 +502,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   String _formatTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
+    final locale = Localizations.localeOf(context).languageCode;
 
     // 24시간(1일) 이상 지난 경우 날짜 표시
     if (difference.inHours >= 24) {
@@ -503,11 +517,19 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return '$year.$month.$day';
       }
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      if (locale == 'ko') {
+        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
+      } else {
+        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
+      }
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      if (locale == 'ko') {
+        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
+      } else {
+        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
+      }
     } else {
-      return '방금 전';
+      return AppLocalizations.of(context)!.justNow;
     }
   }
 

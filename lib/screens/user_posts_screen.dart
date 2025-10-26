@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/user_stats_service.dart';
+import '../l10n/app_localizations.dart';
 import 'post_detail_screen.dart';
 
 class UserPostsScreen extends StatefulWidget {
@@ -19,7 +20,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('내 게시글')),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.myPosts)),
       body: StreamBuilder<List<Post>>(
         stream: _userStatsService.getUserPosts(),
         builder: (context, snapshot) {
@@ -28,13 +29,13 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text('오류가 발생했습니다: ${snapshot.error}'));
+            return Center(child: Text(AppLocalizations.of(context)!.error));
           }
 
           final posts = snapshot.data ?? [];
 
           if (posts.isEmpty) {
-            return const Center(child: Text('작성한 게시글이 없습니다'));
+            return Center(child: Text(AppLocalizations.of(context)!.noWrittenPosts));
           }
 
           return Column(
@@ -46,7 +47,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
                 child: Row(
                   children: [
                     Text(
-                      '총 ${posts.length}개의 게시글',
+                      AppLocalizations.of(context)!.totalPostsCount(posts.length),
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[700],
@@ -86,7 +87,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
                           Row(
                             children: [
                               Text(
-                                post.getFormattedTime(),
+                                post.getFormattedTime(context),
                                 style: TextStyle(
                                   color: Colors.grey[600],
                                   fontSize: 12,

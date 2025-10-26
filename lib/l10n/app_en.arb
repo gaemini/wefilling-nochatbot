@@ -1,115 +1,791 @@
 {
   "@@locale": "en",
-  "appTitle": "Connecting App",
-  "@appTitle": {
-    "description": "The title of the application"
-  },
-  "accountSettings": "Account Settings",
-  "@accountSettings": {
-    "description": "Title for the account settings screen"
-  },
-  "languageSettings": "Language Settings",
-  "@languageSettings": {
-    "description": "Title for language settings option"
-  },
-  "language": "Language",
-  "@language": {
-    "description": "Label for language selection"
-  },
-  "english": "English",
-  "@english": {
-    "description": "Name of English language"
-  },
-  "korean": "Korean",
-  "@korean": {
-    "description": "Name of Korean language"
-  },
-  "japanese": "Japanese",
-  "@japanese": {
-    "description": "Name of Japanese language"
-  },
-  "chinese": "Chinese",
-  "@chinese": {
-    "description": "Name of Chinese language"
-  },
-  "accountInfo": "Account Information",
-  "@accountInfo": {
-    "description": "Account information section title"
-  },
+  "login": "Login",
+  "signUp": "Sign Up",
+  "logout": "Logout",
+  "logoutConfirm": "Are you sure you want to logout?",
+  "logoutSuccess": "Logged out successfully",
+  "logoutError": "An error occurred during logout.\nPlease try again.",
   "email": "Email",
-  "@email": {
-    "description": "Email label"
-  },
-  "loginMethod": "Login Method",
-  "@loginMethod": {
-    "description": "Login method label"
-  },
-  "googleAccount": "Google Account",
-  "@googleAccount": {
-    "description": "Google account label"
-  },
-  "emailPassword": "Email/Password",
-  "@emailPassword": {
-    "description": "Email/password login method"
-  },
-  "accountSecurity": "Account Security",
-  "@accountSecurity": {
-    "description": "Account security section title"
-  },
-  "changePassword": "Change Password",
-  "@changePassword": {
-    "description": "Change password option"
-  },
-  "emailVerification": "Email Verification",
-  "@emailVerification": {
-    "description": "Email verification option"
-  },
-  "accountManagement": "Account Management",
-  "@accountManagement": {
-    "description": "Account management section title"
-  },
-  "deleteAccount": "Delete Account",
-  "@deleteAccount": {
-    "description": "Delete account option"
-  },
-  "save": "Save",
-  "@save": {
-    "description": "Save button label"
-  },
-  "cancel": "Cancel",
-  "@cancel": {
-    "description": "Cancel button label"
-  },
-  "confirm": "Confirm",
-  "@confirm": {
-    "description": "Confirm button label"
-  },
+  "password": "Password",
+  "confirmPassword": "Confirm Password",
+  "forgotPassword": "Forgot Password?",
   "resetPassword": "Reset Password",
-  "@resetPassword": {
-    "description": "Reset password title"
-  },
-  "resetPasswordConfirmation": "Do you want to send a password reset email?",
-  "@resetPasswordConfirmation": {
-    "description": "Reset password confirmation text"
-  },
-  "resetPasswordEmailSent": "Password reset email has been sent.",
-  "@resetPasswordEmailSent": {
-    "description": "Reset password email sent message"
-  },
-  "error": "Error",
-  "@error": {
-    "description": "Error message prefix"
-  },
-  "emailVerificationSent": "Verification email has been sent. Please check your inbox.",
-  "@emailVerificationSent": {
-    "description": "Email verification sent message"
-  },
-  "deleteAccountConfirmation": "Deleting your account will permanently remove all your data. Are you sure you want to delete?",
-  "@deleteAccountConfirmation": {
-    "description": "Delete account confirmation text"
-  },
+  "sendResetEmail": "Send Reset Email",
+  "loginFailed": "Login failed. Please try again.",
+  "loginError": "An error occurred during login",
+  "loginRequired": "Login required for this feature",
+  "emailSent": "Email sent. Please check your inbox.",
+  "verificationEmailSent": "Verification email sent. Please check your inbox.",
+  "resetEmailSent": "Password reset email has been sent.",
+  "sendResetEmailConfirm": "Send password reset email?",
+  "board": "Board",
+  "meetup": "Meetup",
+  "myPage": "My Page",
+  "home": "Home",
+  "friends": "Friends",
+  "notifications": "Notifications",
+  "settings": "Settings",
+  "accountSettings": "Account Settings",
+  "language": "Language",
+  "languageSettings": "Language Settings",
+  "selectLanguage": "Select Language",
+  "notificationSettings": "Notification Settings",
+  "privacyPolicy": "Privacy Policy",
+  "termsOfService": "Terms of Service",
+  "deleteAccount": "Delete Account",
+  "deleteAccountConfirm": "Are you sure? All data will be deleted.",
+  "deleteAccountCompleted": "Account deletion completed",
+  "userNotFound": "User not found",
+  "confirm": "Confirm",
+  "cancel": "Cancel",
+  "save": "Save",
   "delete": "Delete",
-  "@delete": {
-    "description": "Delete button label"
-  }
+  "edit": "Edit",
+  "create": "Create",
+  "createAction": "Create",
+  "search": "Search",
+  "searchMeetups": "Search Meetups",
+  "searching": "Search",
+  "searchByName": "Search by friend name",
+  "loading": "Loading...",
+  "error": "An error occurred",
+  "success": "Success",
+  "warning": "Warning",
+  "info": "Info",
+  "yes": "Yes",
+  "no": "No",
+  "ok": "OK",
+  "done": "Done",
+  "registration": "Register",
+  "back": "Back",
+  "next": "Next",
+  "submit": "Submit",
+  "retry": "Retry",
+  "retryAction": "Try Again",
+  "close": "Close",
+  "later": "Later",
+  "all": "All",
+  "allMeetups": "All Meetups",
+  "author": "Author",
+  "post": "Post",
+  "posts": "Posts",
+  "createPost": "Create Post",
+  "newPost": "New Post",
+  "newPostCreation": "New Post",
+  "editPost": "Edit Post",
+  "deletePost": "Delete Post",
+  "postDetail": "Post Detail",
+  "writePost": "Write Post",
+  "postCreated": "Post has been created.",
+  "postCreateFailed": "Failed to create post. Please try again.",
+  "postDeleted": "Post has been deleted.",
+  "postDeleteFailed": "Failed to delete post.",
+  "title": "Title",
+  "enterTitle": "Enter title",
+  "content": "Content",
+  "enterContent": "Enter content",
+  "image": "Image",
+  "images": "Images",
+  "selectImage": "Select Image",
+  "imageAttachment": "Attach Image",
+  "imageSelected": "Image selected",
+  "imageSelectError": "Error selecting image.",
+  "imageUploading": "Uploading image. Please wait...",
+  "selectFromGallery": "Select from Gallery",
+  "takePhoto": "Take Photo",
+  "photoError": "Error taking photo.",
+  "useDefaultImage": "Use Default Image",
+  "imageDisplayIssue": "Image Display Issue Detected",
+  "troubleshoot": "Troubleshoot",
+  "noPostsYet": "No posts yet",
+  "like": "Like",
+  "comment": "Comment",
+  "comments": "Comments",
+  "writeComment": "Write a comment",
+  "commentCreated": "Comment posted.",
+  "commentCreateFailed": "Failed to post comment.",
+  "commentDeleted": "Comment deleted.",
+  "commentDeleteFailed": "Failed to delete comment.",
+  "share": "Share",
+  "report": "Report",
+  "reportSubmitted": "Report submitted.",
+  "reportAction": "Report",
+  "blockUser": "Block User",
+  "userBlocked": "User blocked.",
+  "visibilityScope": "Visibility",
+  "publicPost": "Public",
+  "categorySpecific": "Category Specific",
+  "authorAndCommenterInfo": "Author and commenter info will be displayed",
+  "postAnonymously": "Post Anonymously",
+  "anonymous": "Anonymous",
+  "private": "Private",
+  "idWillBeShown": "ID will be shown",
+  "createMeetup": "Create Meetup",
+  "createNewMeetup": "Create New Meetup",
+  "createFirstMeetup": "Create Your First Meetup",
+  "editMeetup": "Edit Meetup",
+  "deleteMeetup": "Delete Meetup",
+  "cancelMeetup": "Cancel Meetup",
+  "cancelMeetupConfirm": "Confirm Meetup Cancellation",
+  "meetupDetail": "Meetup Detail",
+  "joinMeetup": "Join",
+  "leaveMeetup": "Leave",
+  "meetupTitle": "Meetup Title",
+  "enterMeetupTitle": "Enter meetup title",
+  "meetupDescription": "Meetup Description",
+  "enterMeetupDescription": "Enter meetup description",
+  "meetupInfo": "Meetup Info",
+  "meetupCreated": "Meetup created!",
+  "meetupUpdated": "Meetup info updated.",
+  "meetupUpdateSuccess": "Meetup updated successfully.",
+  "meetupCancelled": "Meetup cancelled",
+  "meetupCancelSuccess": "Meetup cancelled successfully.",
+  "meetupCancelFailed": "Failed to cancel meetup. Please try again.",
+  "location": "Location",
+  "date": "Date",
+  "dateSelection": "Select Date",
+  "time": "Time",
+  "maxParticipants": "Max Participants",
+  "currentParticipants": "Current Participants",
+  "participants": "Participants",
+  "host": "Host",
+  "category": "Category",
+  "categories": "Categories",
+  "study": "Study",
+  "meal": "Meal",
+  "hobby": "Cafe",
+  "culture": "Culture",
+  "noMeetupsYet": "No meetups yet",
+  "meetupJoined": "Successfully joined the meetup!",
+  "meetupFull": "Meetup is full",
+  "meetupClosed": "Meetup is closed",
+  "hostedMeetups": "Hosted Meetups",
+  "joinedMeetups": "Joined Meetups",
+  "writtenPosts": "Written Posts",
+  "profile": "Profile",
+  "editProfile": "Edit Profile",
+  "profileEdit": "Edit Profile",
+  "nickname": "Nickname",
+  "bio": "Bio",
+  "profileImage": "Profile Image",
+  "myPosts": "My Posts",
+  "myMeetups": "My Meetups",
+  "myComments": "My Comments",
+  "reviews": "Reviews",
+  "saved": "Saved",
+  "yourStoryMatters": "We're Curious\nAbout Your Story",
+  "shareYourMoments": "From small moments of empathy\nto special occasions,\nshare your story with us.",
+  "writeStory": "Share Your Story",
+  "wefillingMeaning": "Do You Know\nWhat Wefilling Means?",
+  "wefillingExplanation": "A combination of \"We\" and \"filling\",\nit means filling the space between people.",
+  "friendRequest": "Friend Request",
+  "friendRequests": "Friend Requests",
+  "friendsList": "Friends",
+  "acceptFriend": "Accept",
+  "accept": "Accept",
+  "rejectFriend": "Reject",
+  "reject": "Reject",
+  "approved": "Approved",
+  "rejected": "Rejected",
+  "pending": "Pending",
+  "inProgress": "In Progress",
+  "expired": "Expired Request",
+  "addFriend": "Add Friend",
+  "removeFriend": "Remove Friend",
+  "friendList": "Friend List",
+  "block": "Block",
+  "unblock": "Unblock",
+  "blockedUsers": "Blocked Users",
+  "requests": "Requests",
+  "myFriendsOnly": "Only my friends can see",
+  "everyoneCanSee": "Everyone can see",
+  "selectedGroupOnly": "Only friends in selected group can see this meetup",
+  "selectedFriendGroupOnly": "Selected Friend Group Only",
+  "noGroup": "No Group",
+  "groupSettings": "Group Settings",
+  "selectCategoriesToShare": "Select categories to share",
+  "friendCategories": "Friend Categories",
+  "noFriendCategories": "No friend categories created. Please create a category first.",
+  "defaultCategoryCreated": "Default category created",
+  "defaultCategoryFailed": "Failed to create default category",
+  "colorSelection": "Select Color",
+  "iconSelection": "Select Icon",
+  "newHighlight": "New Highlight",
+  "updateAllPosts": "Update All Posts",
+  "update": "Update",
+  "request": "Request",
+  "reviewRequest": "Review Request",
+  "reviewRequestSent": "Review request sent.",
+  "reviewRequestReject": "Reject Review Request",
+  "reviewConsensusDisabled": "Review consensus feature is currently disabled.",
+  "featureUnavailable": "Feature Unavailable",
+  "messageFeatureComingSoon": "Message feature coming soon.",
+  "copyRules": "Copy Rules",
+  "securityRulesCopied": "Security rules copied to clipboard.",
+  "required": "This field is required",
+  "invalidEmail": "Invalid email format",
+  "invalidPassword": "Password must be at least 6 characters",
+  "passwordMismatch": "Passwords do not match",
+  "tooShort": "Too short",
+  "tooLong": "Too long",
+  "accountInfo": "Account Info",
+  "accountSecurity": "Account Security",
+  "legalInfo": "Legal Info",
+  "privacyProtection": "Privacy Protection",
+  "openSourceLicenses": "Open Source Licenses",
+  "manageGoogleAccount": "Manage Google Account",
+  "selectCategoryRequired": "Select Category (Required)",
+  "selectedCount": " selected",
+  "enterSearchQuery": "Enter search query",
+  "description": "Description",
+  "korean": "한국어",
+  "english": "English",
+  "reauthenticateRequired": "Please log in again for security",
+  "loginMethod": "Login Method",
+  "googleAccount": "Google Account",
+  "emailPassword": "Email/Password",
+  "other": "Other",
+  "location": "Location",
+  "enterMeetupLocation": "Enter meetup location",
+  "pleaseEnterLocation": "Please enter location",
+  "timeSelection": "Time Selection",
+  "undecided": "Undecided",
+  "todayTimePassed": "Today's time has passed. Create a meetup as 'Undecided' or select another date.",
+  "maxParticipants": "Max Participants",
+  "people": " people",
+  "selectFriendGroupsForMeetup": "Select friend groups who can see this meetup",
+  "noGroupSelectedWarning": "If no group is selected, no one can see this meetup",
+  "thumbnailSettingsOptional": "Thumbnail Settings (Optional)",
+  "thumbnailImage": "Thumbnail Image",
+  "attachImage": "Attach Image",
+  "changeImage": "Change Image",
+  "searchByFriendName": "Search by friend name",
+  "searchUsers": "Search for users",
+  "searchByNicknameOrName": "Search by nickname or name\nto find new friends",
+  "searchAndAddFriends": "Search for users to add friends",
+  "receivedRequests": "Received",
+  "sentRequests": "Sent",
+  "noReceivedRequests": "No friend requests received",
+  "newRequestsWillAppearHere": "New friend requests will appear here",
+  "noSentRequests": "No friend requests sent",
+  "searchToSendRequest": "Search for users to send friend requests",
+  "friendCategoriesManagement": "Friend Categories Management",
+  "noFriendGroupsYet": "No friend groups created yet.\nCreate groups in Friend Categories Management.",
+  "friendsCount": "{count} friend(s)",
+  "noSearchResults": "No search results",
+  "blockList": "Block List",
+  "accountManagement": "Account Management",
+  "deleteAccountWarning": "All data will be permanently deleted if you delete your account. Are you sure you want to delete it?",
+  "notifications": "Notifications",
+  "notificationDeleted": "Notification deleted",
+  "daysAgo": "{count} day(s) ago",
+  "hoursAgo": "{count} hour(s) ago",
+  "minutesAgo": "{count} minute(s) ago",
+  "justNow": "Just now",
+  "markAllAsRead": "Mark all as read",
+  "notificationLoadError": "An error occurred while loading notifications",
+  "noNotifications": "No notifications",
+  "activityBoard": "Activity Board",
+  "infoBoard": "Info Board",
+  "pleaseEnterSearchQuery": "Please enter search query",
+  "profileImage": "Profile Image",
+  "tapToChangeImage": "Tap to change image",
+  "update": "Update",
+  "applyProfileToAllPosts": "Apply profile to all posts",
+  "updating": "Updating...",
+  "post": "Post",
+  "postSaved": "Post saved",
+  "postUnsaved": "Post unsaved",
+  "deletePost": "Delete Post",
+  "deletePostConfirm": "Are you sure you want to delete this post?",
+  "postDeleted": "Post deleted.",
+  "postDeleteFailed": "Failed to delete post.",
+  "comments": "Comments",
+  "comment": "Comment",
+  "commentSubmitFailed": "Failed to submit comment.",
+  "commentDeleted": "Comment deleted.",
+  "commentDeleteFailed": "Failed to delete comment.",
+  "enterComment": "Enter comment...",
+  "unsave": "Unsave",
+  "savePost": "Save Post",
+  "deleteComment": "Delete Comment",
+  "author": "Author",
+  "loginToComment": "Login to comment",
+  "today": "Today",
+  "yesterday": "Yesterday",
+  "thisWeek": "This Week",
+  "previous": "Previous",
+  "selected": "Selected",
+  "select": "Select",
+  "scheduled": "Scheduled",
+  "dateAndTime": "Date & Time",
+  "venue": "Venue",
+  "numberOfParticipants": "Participants",
+  "organizer": "Organizer",
+  "nationality": "Nationality",
+  "meetupDetails": "Meetup Details",
+  "cancelMeetupButton": "Cancel Meetup",
+  "cancelMeetupConfirm": "Confirm Cancellation",
+  "cancelMeetupFailed": "Failed to cancel meetup. Please try again.",
+  "peopleUnit": " people",
+  "openStatus": "Open",
+  "closedStatus": "Closed",
+  "meetupJoinFailed": "Failed to join the meetup. Please try again.",
+  "leaveMeetupFailed": "Failed to leave the meetup. Please try again.",
+  "reply": "Reply",
+  "replies": "Replies",
+  "replyToUser": "...",
+  "writeReply": "Write Reply",
+  "hideReplies": "Hide",
+  "showReplies": "Show",
+  "replyCreated": "Reply added.",
+  "replyCreateFailed": "Failed to add reply.",
+  "repliesCount": "{count} {count, plural, =1{reply} other{replies}}",
+  "@repliesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "showReplies": "Show",
+  "hideReplies": "Hide",
+  "writeReply": "Write Reply",
+  "firstCommentPrompt": "Be the first to comment!",
+  "loadingComments": "An error occurred while loading comments",
+  "hoursAgo": " hours ago",
+  "minutesAgo": " minutes ago",
+  "editCategory": "Edit Category",
+  "newCategory": "New Category",
+  "categoryName": "Category Name",
+  "categoryNameHint": "e.g., University Friends",
+  "createFirstCategory": "Create Your First Category",
+  "createFirstCategoryDescription": "Organize your friends by categories\nfor better management",
+  "editAction": "Edit",
+  "viewProfile": "View Profile",
+  "removeFriendAction": "Remove Friend",
+  "blockAction": "Block",
+  "groupSettingsFor": "{name}'s Group Settings",
+  "@groupSettingsFor": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "notInAnyGroup": "Not assigned to any group",
+  "friendsInGroup": "{count} friend(s)",
+  "@friendsInGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "categoryCreated": "Category created",
+  "categoryUpdated": "Category updated",
+  "categoryDeleted": "Category deleted",
+  "categoryCreateFailed": "Failed to create category",
+  "categoryUpdateFailed": "Failed to update category",
+  "categoryDeleteFailed": "Failed to delete category",
+  "enterCategoryName": "Please enter category name",
+  "deleteCategory": "Delete Category",
+  "deleteCategoryConfirm": "Are you sure you want to delete '{name}' category?\n\nFriends in this category will be moved to other categories.",
+  "@deleteCategoryConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unfriendConfirm": "Are you sure you want to remove {name} from your friends?",
+  "@unfriendConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "unfriendSuccess": "Friend removed",
+  "unfriendFailed": "Failed to remove friend",
+  "blockUserConfirm": "Are you sure you want to block {name}?\nBlocked users cannot send you friend requests.",
+  "@blockUserConfirm": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "userBlockedSuccess": "User blocked",
+  "userBlockFailed": "Failed to block user",
+  "cannotLoadProfile": "Unable to load profile",
+  "groupAssignmentFailed": "Failed to assign to group. Please try again.",
+  "removedFromAllGroups": "{name} has been removed from all groups",
+  "@removedFromAllGroups": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "addedToGroup": "{name} has been added to \"{group}\" group",
+  "@addedToGroup": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "errorOccurred": "An error occurred. Please try again.",
+  "friendStatus": "Friend",
+  "retryAction": "Retry",
+  "addCategory": "Add Category",
+  "newCategoryCreate": "Create New Category",
+  "participatedReviews": "Participated Reviews",
+  "user": "User",
+  "cannotLoadReviews": "Cannot load reviews",
+  "noReviewsYet": "No reviews yet",
+  "joinMeetupAndWriteReview": "Join meetups and write reviews!",
+  "reviewDetail": "Review",
+  "rating": "Rating",
+  "loginToViewReviews": "Please login to view reviews",
+  "noSavedPosts": "No saved posts",
+  "saveInterestingPosts": "Save posts you're interested in",
+  "loginToViewSavedPosts": "Please login to view saved posts",
+  "dayAgo": " day ago",
+  "daysAgoCount": "{count} days ago",
+  "@daysAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hourAgo": " hour ago",
+  "hoursAgoCount": "{count} hours ago",
+  "@hoursAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "minuteAgo": " minute ago",
+  "minutesAgoCount": "{count} minutes ago",
+  "@minutesAgoCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "justNowTime": "Just now",
+  "findFriends": "Find Friends to Connect With",
+  "makeFriendsWithSameInterests": "Make new friends and create joyful memories.\nPeople with similar interests are waiting for you.",
+  "findFriendsAction": "Find Friends",
+  "viewRecommendedFriends": "View Recommended Friends",
+  "noSearchResults": "No search results",
+  "tryDifferentKeyword": "Try a different search term",
+  "clearSearchQuery": "Clear search",
+  "friendRequestSent": "Friend request sent",
+  "friendRequestFailed": "Failed to send friend request",
+  "friendRequestCancelled": "Friend request cancelled",
+  "friendRequestCancelFailed": "Failed to cancel friend request",
+  "unfriendedUser": "Unfriended user",
+  "userBlocked": "User blocked",
+  "userUnblocked": "User unblocked",
+  "unblockFailed": "Failed to unblock user",
+  "noResultsFound": "No results found",
+  "tryDifferentSearch": "Try a different search term",
+  "confirmUnfriend": "Are you sure you want to unfriend this user?",
+  "blockUserDescription": "Are you sure you want to block this user?\nBlocked users will not be able to send you friend requests.",
+  "unblockUser": "Unblock User",
+  "confirmUnblock": "Are you sure you want to unblock this user?",
+  "meetupFilter": "Meetup Filter",
+  "publicMeetupsOnly": "Public Meetups Only",
+  "showOnlyPublicMeetups": "Show only meetups visible to everyone",
+  "friendsMeetupsOnly": "Friends' Meetups Only",
+  "showAllFriendsMeetups": "Show all meetups created by friends",
+  "viewSpecificFriendGroup": "View Specific Friend Group",
+  "showSelectedGroupMeetups": "Only meetups shared with the selected group will be displayed",
+  "friendsCountInGroup": "{count} friends · Show only meetups shared with this group",
+  "@friendsCountInGroup": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "friendRequestAccepted": "Friend request accepted",
+  "friendRequestAcceptFailed": "Failed to accept friend request",
+  "rejectFriendRequest": "Reject Friend Request",
+  "confirmRejectFriendRequest": "Are you sure you want to reject this friend request?",
+  "friendRequestRejected": "Friend request rejected",
+  "friendRequestRejectFailed": "Failed to reject friend request",
+  "cancelFriendRequest": "Cancel Friend Request",
+  "confirmCancelFriendRequest": "Are you sure you want to cancel this friend request?",
+  "friendRequestCancelledSuccess": "Friend request cancelled",
+  "loading": "Loading...",
+  "accept": "Accept",
+  "reject": "Reject",
+  "cancelAction": "Cancel",
+  "title": "Title",
+  "description": "Description",
+  "pleaseEnterMeetupTitle": "Please enter meetup title",
+  "pleaseEnterMeetupDescription": "Please enter meetup description",
+  "meetupIsFull": "Meetup is Full",
+  "meetupIsFullMessage": "The meetup \"{meetupTitle}\" ({maxParticipants} people) is now full.",
+  "@meetupIsFullMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      },
+      "maxParticipants": {
+        "type": "int"
+      }
+    }
+  },
+  "meetupCancelled": "Meetup Cancelled",
+  "meetupCancelledMessage": "The meetup \"{meetupTitle}\" you were going to attend has been cancelled.",
+  "@meetupCancelledMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newCommentAdded": "New Comment",
+  "newCommentMessage": "{commenterName} commented on your post \"{postTitle}\".",
+  "@newCommentMessage": {
+    "placeholders": {
+      "commenterName": {
+        "type": "String"
+      },
+      "postTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "newLikeAdded": "New Like",
+  "newLikeMessage": "{likerName} liked your post \"{postTitle}\".",
+  "newParticipantJoined": "New Participant",
+  "newParticipantJoinedMessage": "{name} has joined your meetup \"{meetupTitle}\".",
+  "@newParticipantJoinedMessage": {"placeholders": {"name": {"type": "String"}, "meetupTitle": {"type": "String"}}},
+  "newCommentLikeMessage": "{likerName} liked your comment.",
+  "@newCommentLikeMessage": {"placeholders": {"likerName": {"type": "String"}}},
+  "friendRequestMessage": "{name} sent you a friend request",
+  "@friendRequestMessage": {"placeholders": {"name": {"type": "String"}}},
+  "@newLikeMessage": {
+    "placeholders": {
+      "likerName": {
+        "type": "String"
+      },
+      "postTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "emailSignup": "Email Sign Up",
+  "emailLogin": "Email Login",
+  "hanyangEmailOnly": "Hanyang University Email Verification",
+  "hanyangEmailLogin": "Login with Hanyang University Email",
+  "hanyangEmailDescription": "Hanyang University email verification is required for registration.\nYou can log in with your Google account after verification.",
+  "sendVerificationCode": "Send Verification Code",
+  "verificationCode": "Verification Code",
+  "verifyCode": "Verify Code",
+  "emailVerified": "Email verification completed",
+  "verificationCodeSent": "Verification code has been sent to your email",
+  "verificationCodeExpired": "Verification code has expired. Please request again.",
+  "verificationCodeInvalid": "Verification code does not match. Please check again.",
+  "verificationCodeAttemptsExceeded": "Maximum verification attempts exceeded. Please request again.",
+  "emailVerificationRequired": "Hanyang Email Verification",
+  "signupWithEmail": "Sign up with Email",
+  "loginWithEmail": "Login with Email",
+  "hanyangEmailRequired": "Only Hanyang University email addresses are allowed",
+  "emailFormatInvalid": "Invalid email format",
+  "verificationCodeRequired": "Please enter verification code",
+  "verificationCodeLength": "Please enter 4-digit verification code",
+  "passwordRequired": "Please enter password",
+  "passwordMinLength": "Password must be at least 6 characters",
+  "passwordMismatch": "Passwords do not match",
+  "signupSuccess": "Sign up completed successfully",
+  "signupFailed": "Sign up failed. Please try again.",
+  "loginFailed": "Login failed. Please check your email and password.",
+  "noAccountYet": "Don't have an account yet?",
+  "helpTitle": "Help",
+  "helpContent": "• Only Hanyang University email addresses are allowed\n• If you forgot your password, please use the university email system\n• For account inquiries: hanyangwatson@gmail.com",
+  "or": "or",
+  "retryAction": "Retry",
+  "required": "This field is required",
+  "appName": "Wefilling",
+  "appTagline": "Connect Together",
+  "welcomeTitle": "Welcome!",
+  "googleLoginDescription": "Sign in with your Google account\nand enjoy various features.",
+  "googleLogin": "Sign in with Google",
+  "loggingIn": "Signing in...",
+  "loginTermsNotice": "By signing in, you agree to our Terms of Service and Privacy Policy.",
+  "verificationSuccess": "Verification Success",
+  "proceedWithGoogleLogin": "Email verification completed.\nWould you like to continue registration with your Google account?",
+  "continueWithGoogle": "Continue with Google",
+  "hanyangEmailAlreadyUsed": "This Hanyang email is already in use. Please use another email.",
+  "signupRequired": "Registration required. Please click 'Sign Up' first.",
+  "meetupNotifications": "Meetup Notifications",
+  "postNotifications": "Post Notifications",
+  "generalSettings": "General Settings",
+  "friendNotifications": "Friend Notifications",
+  "privatePostAlertTitle": "Private Post Alert",
+  "privatePostAlertSubtitle": "Notify for posts visible only to allowed users",
+  "meetupFullAlertTitle": "Meetup Full Alert",
+  "meetupFullAlertSubtitle": "Notify when a meetup I host becomes full",
+  "meetupCancelledAlertTitle": "Meetup Cancellation Alert",
+  "meetupCancelledAlertSubtitle": "Notify when a meetup I applied for is cancelled",
+  "friendRequestAlertTitle": "Friend Request Alert",
+  "friendRequestAlertSubtitle": "Notify when a new friend request arrives",
+  "commentAlertTitle": "Comment Alert",
+  "commentAlertSubtitle": "Notify when a comment is posted on my post",
+  "likeAlertTitle": "Like Alert",
+  "likeAlertSubtitle": "Notify when a like is added to my post",
+  "allNotifications": "All Notifications",
+  "allNotificationsSubtitle": "Enable/Disable all notifications",
+  "adUpdatesTitle": "Ad Updates",
+  "adUpdatesSubtitle": "Notify when new ads/banners are updated",
+  "loadSettingsError": "Error loading settings: {error}",
+  "saveSettingsError": "Error saving settings: {error}",
+  "@loadSettingsError": {"placeholders": {"error": {"type": "String"}}},
+  "@saveSettingsError": {"placeholders": {"error": {"type": "String"}}},
+  "hostedMeetupsEmpty": "No hosted meetups yet\nCreate a new meetup!",
+  "joinedMeetupsEmpty": "No joined meetups yet\nJoin someone else's meetup!",
+  "meetupLoadError": "An error occurred while loading meetups",
+  "fullShort": "Full",
+  "closed": "Closed",
+  "totalPostsCount": "Total {count} posts",
+  "@totalPostsCount": {"placeholders": {"count": {"type": "int"}}},
+  "noWrittenPosts": "No posts written yet",
+  "notificationDataMissing": "Notification data is missing",
+  "meetupNotFound": "Meetup not found",
+  "postNotFound": "Post not found",
+  "commentLikeFailed": "Failed to update like",
+  "reviewWriteTitle": "Write Meetup Review",
+  "reviewEditTitle": "Edit Review",
+  "reviewPhoto": "Review Photo",
+  "pickPhoto": "Select Photo",
+  "imagePickFailed": "Unable to select image",
+  "imageUploadFailed": "Failed to upload image",
+  "pleaseSelectPhoto": "Please select a photo",
+  "pleaseEnterReviewContent": "Please enter review content",
+  "reviewUpdated": "Review updated",
+  "reviewUpdateFailed": "Failed to update review",
+  "reviewCreateFailed": "Failed to create review",
+  "reviewCreatedAndRequestsSent": "Review created and requests sent to {count} participant(s)",
+  "@reviewCreatedAndRequestsSent": {"placeholders": {"count": {"type": "int"}}},
+  "reviewCreatedButNotificationFailed": "Review created but failed to send notifications",
+  "reviewRequestInfo": "A review acceptance request will be sent to participants. The same review will be shown on profiles of those who accept.",
+  "reviewApprovalRequest": "Review Acceptance Request",
+  "reviewApprovalInfo": "If you accept, this review will be posted on your profile. If you reject, it will not be shown on your profile.",
+  "reviewAccepted": "Review accepted",
+  "reviewRejected": "Review rejected",
+  "reviewApprovalRequestTitle": "Meetup Review Acceptance Request",
+  "reviewReject": "Reject",
+  "reviewAccept": "Accept",
+  "reviewApprovalProcessError": "An error occurred during processing",
+  "reviewProcessError": "An error occurred during processing",
+  "reviewInfoMissing": "Review information is missing",
+  "reviewInfoNotFound": "Review information not found",
+  "reviewContent": "Review Content",
+  "reviewWriteHint": "Please write your meetup review...",
+  "requestReviewAcceptance": "Request Review Acceptance",
+  "writeMeetupReview": "Write Meetup Review",
+  "editReview": "Edit Review",
+  "deleteReview": "Delete Review",
+  "completeOrCancelMeetup": "Complete / Cancel Meetup",
+  "meetupCompleteTitle": "Complete Meetup",
+  "meetupCompleteMessage": "This meetup is full. Do you want to mark it as completed?\n\nAfter completion, you can write a review.",
+  "markAsCompleted": "Mark as Completed",
+  "meetupMarkedCompleted": "Meetup marked as completed",
+  "meetupMarkCompleteFailed": "Failed to mark meetup as completed",
+  "reviewNotFound": "Review not found",
+  "reviewLoadFailed": "Failed to load the review",
+  "reviewDeleted": "Review deleted",
+  "reviewDeleteFailed": "Failed to delete review",
+  "noPermission": "Permission denied",
+  "meetupInfoRefreshed": "Meetup info has been refreshed",
+  "meetupCancelledSuccessfully": "Meetup has been cancelled successfully",
+  "deleteReviewTitle": "Delete Review",
+  "deleteReviewConfirmMessage": "Are you sure you want to delete the review?\n\nThe review will be removed from all participants' profiles.",
+  "delete": "Delete",
+  "noParticipantsYet": "No participants yet",
+  "participantsCountLabel": "Participants ({count})",
+  "@participantsCountLabel": {"placeholders": {"count": {"type": "int"}}},
+  "viewAndRespondToReview": "View & Respond to Review",
+  "reviewByAuthor": "{name}'s review",
+  "@reviewByAuthor": {"placeholders": {"name": {"type": "String"}}},
+  "replyingTo": "Replying to {name}",
+  "@replyingTo": {"placeholders": {"name": {"type": "String"}}},
+  "cancelReply": "Cancel Reply",
+  "writeReplyHint": "Write a reply...",
+  "noContent": "No content",
+  "reviewAlreadyAccepted": "You have already accepted this review",
+  "reviewAlreadyRejected": "You have already rejected this review",
+  "reviewAlreadyResponded": "You have already responded to this request",
+  "hideReview": "Hide Review",
+  "unhideReview": "Show Review",
+  "hideReviewConfirm": "Hide this review from your profile?\nOthers won't be able to see it.",
+  "unhideReviewConfirm": "Show this review again?",
+  "reviewHidden": "Review hidden",
+  "reviewUnhidden": "Review shown",
+  "reviewHideFailed": "Failed to hide review",
+  "reviewUnhideFailed": "Failed to show review",
+  "deleteReviewSuccess": "Review deleted",
+  "deleteReviewFailed": "Failed to delete review",
+  "reviewApprovalRequestMessage": "{authorName} has requested your acceptance for the \"{meetupTitle}\" meetup review.",
+  "@reviewApprovalRequestMessage": {
+    "placeholders": {
+      "authorName": {"type": "String"},
+      "meetupTitle": {"type": "String"}
+    }
+  },
+  "updateMeetup": "Update Meetup",
+  "pleaseEnterTitle": "Please enter a title",
+  "titleMinLength": "Title must be at least 2 characters",
+  "pleaseEnterDescription": "Please enter a description",
+  "pleaseEnterTime": "Please enter a time",
+  "timeHint": "e.g., 14:00 or 14:00~16:00",
+  "pleaseEnterLocation": "Please enter a location",
+  "enterMeetupLocation": "Enter meetup location",
+  "reviewDetails": "Review Details",
+  "likes": "Likes",
+  "likesCount": "{count} {count, plural, =1{like} other{likes}}",
+  "@likesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "viewAllComments": "View all {count} {count, plural, =1{comment} other{comments}}",
+  "@viewAllComments": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "noCommentsYet": "Be the first to comment",
+  "reviewNotFound": "Review not found",
+  "beFirstToComment": "Be the first to leave a comment",
+  "writeComment": "Write a comment...",
+  "commentFeatureComingSoon": "Comment feature coming soon",
+  "meetupParticipants": "Participants ({count})",
+  "@meetupParticipants": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deletedAccount": "Deleted Account"
 }

@@ -8,6 +8,8 @@ import '../models/user_profile.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import 'friend_profile_screen.dart';
+import '../l10n/app_localizations.dart';
+import '../utils/country_flag_helper.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -90,14 +92,37 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             Expanded(
               child: Text(
                 widget.category.name,
+                style: const TextStyle(
+                  color: Color(0xFF4A90E2), // 위필링 로고색 (파란색)
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
         ),
-        backgroundColor: BrandColors.primary,
-        foregroundColor: Colors.white,
+        backgroundColor: Colors.white,
+        foregroundColor: const Color(0xFF4A90E2), // 위필링 로고색 (파란색)
         elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.grey[200]!,
+                  Colors.grey[100]!,
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -115,7 +140,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       padding: const EdgeInsets.all(16),
                       color: Colors.grey[100],
                       child: Text(
-                        '${_friends.length}명의 친구',
+                        AppLocalizations.of(context)!.friendsInGroup(_friends.length),
                         style: TextStyle(
                           color: BrandColors.neutral700,
                           fontSize: 14,
@@ -215,7 +240,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            friend.nationality!,
+                            CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
+                              Localizations.localeOf(context).languageCode
+                            ) ?? friend.nationality!,
                             style: TextStyle(
                               fontSize: 12,
                               color: Colors.grey[600],

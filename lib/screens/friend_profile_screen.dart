@@ -9,7 +9,10 @@ import '../models/review_post.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
+import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'review_detail_screen.dart';
+import '../utils/country_flag_helper.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -72,13 +75,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '프로필',
+          AppLocalizations.of(context)!.profile,
           style: AppTheme.headlineMedium.copyWith(
-            color: AppTheme.primary,
+            color: const Color(0xFF4A90E2), // 위필링 로고색
           ),
         ),
         backgroundColor: AppTheme.backgroundPrimary,
-        foregroundColor: AppTheme.primary,
+        foregroundColor: const Color(0xFF4A90E2), // 위필링 로고색
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
@@ -97,13 +100,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center, // 중앙 정렬 추가
                     children: [
-                      Icon(Icons.grid_on_rounded, size: 20, color: AppTheme.primary),
+                      Icon(Icons.grid_on_rounded, size: 20, color: const Color(0xFF4A90E2)), // 위필링 로고색
                       const SizedBox(width: 8),
                       Text(
-                        '참여한 후기',
+                        AppLocalizations.of(context)!.participatedReviews,
                         style: AppTheme.labelMedium.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.primary,
+                          color: const Color(0xFF4A90E2), // 위필링 로고색
                           fontSize: 16,
                         ),
                       ),
@@ -120,7 +123,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   Widget _buildProfileHeader() {
-    final nickname = _userData?['nickname'] ?? widget.nickname ?? '사용자';
+    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
     final email = _userData?['email'] ?? widget.email ?? '';
     final photoURL = _userData?['photoURL'] ?? widget.photoURL;
     final university = _userData?['university'] ?? widget.university;
@@ -143,27 +146,24 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 프로필 이미지와 정보 (중앙 정렬)
-          Column(
+          // 프로필 이미지와 정보 (마이 프로필과 동일한 왼쪽 정렬)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 프로필 이미지
+              // 프로필 이미지 (88px)
               Container(
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  gradient: AppTheme.primaryGradient,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppTheme.primary.withOpacity(0.3),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  border: Border.all(
+                    color: Colors.black,
+                    width: 3,
+                  ),
                 ),
-                padding: const EdgeInsets.all(4),
                 child: Container(
-                  width: 100,
-                  height: 100,
+                  width: 88,
+                  height: 88,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: AppTheme.backgroundPrimary,
@@ -172,75 +172,58 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       ? ClipOval(
                           child: Image.network(
                             photoURL,
-                            width: 100,
-                            height: 100,
+                            width: 88,
+                            height: 88,
                             fit: BoxFit.cover,
                             errorBuilder: (_, __, ___) => Icon(
                               Icons.person,
-                              size: 50,
-                              color: AppTheme.primary,
+                              size: 44,
+                              color: const Color(0xFF4A90E2), // 위필링 로고색
                             ),
                           ),
                         )
                       : Icon(
                           Icons.person,
-                          size: 50,
-                          color: AppTheme.primary,
+                          size: 44,
+                          color: const Color(0xFF4A90E2), // 위필링 로고색
                         ),
                 ),
               ),
-              const SizedBox(height: 16),
-
-              // 사용자 정보
-              Text(
-                nickname,
-                style: AppTheme.headlineMedium.copyWith(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 22,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (nationality != null && nationality.isNotEmpty) ...[
-                    CountryFlagCircle(
-                      nationality: nationality,
-                      size: 28, // 국기 크기
-                    ),
-                    const SizedBox(width: 8), // 간격
+              const SizedBox(width: 16),
+              
+              // 사용자 정보 (오른쪽)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      nationality,
-                      style: AppTheme.bodyMedium.copyWith(
-                        color: Colors.black54,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
+                      nickname,
+                      style: AppTheme.headlineMedium.copyWith(
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 22,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (university != null) ...[
-                      const SizedBox(width: 8),
-                      Text('•', style: TextStyle(color: Colors.black54)),
-                      const SizedBox(width: 8),
-                    ],
-                  ],
-                  if (university != null)
-                    Flexible(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    const SizedBox(height: 6),
+                    if (nationality != null && nationality.isNotEmpty)
+                      Row(
                         children: [
-                          Icon(Icons.school, size: 22, color: Colors.black54), // 16 → 22
-                          const SizedBox(width: 6), // 4 → 6
+                          CountryFlagCircle(
+                            nationality: nationality,
+                            size: 26,
+                          ),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Text(
-                              university,
+                              CountryFlagHelper.getCountryInfo(nationality)?.getLocalizedName(
+                                Localizations.localeOf(context).languageCode
+                              ) ?? nationality,
                               style: AppTheme.bodyMedium.copyWith(
-                                color: Colors.black54,
-                                fontSize: 15, // 14 → 15
-                                fontWeight: FontWeight.w500, // 굵기 추가
+                                color: Colors.black87,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -248,22 +231,44 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           ),
                         ],
                       ),
-                    ),
-                ],
+                    if (university != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(Icons.school, size: 18, color: Colors.black54),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              university,
+                              style: AppTheme.bodyMedium.copyWith(
+                                color: Colors.black54,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ],
           ),
           
           const SizedBox(height: 20),
 
-          // 통계 정보 (카드 형태)
+          // 통계 정보 (카드 형태 - 마이 프로필과 동일 스타일)
           Container(
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.9),
-              borderRadius: BorderRadius.circular(16),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black, width: 1.5),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
+                  color: Colors.grey.withOpacity(0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -273,11 +278,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem('주최한 모임', widget.userId, icon: Icons.event_available, color: Colors.blue),
-                Container(width: 1, height: 40, color: Colors.grey[300]),
-                _buildStatItem('참여한 모임', widget.userId, isJoined: true, icon: Icons.groups, color: Colors.green),
-                Container(width: 1, height: 40, color: Colors.grey[300]),
-                _buildStatItem('작성한 글', widget.userId, isPosts: true, icon: Icons.article, color: Colors.orange),
+                _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, widget.userId, icon: Icons.event_available, color: Colors.black),
+                Container(width: 1, height: 36, color: Colors.black),
+                _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: Colors.black),
+                Container(width: 1, height: 36, color: Colors.black),
+                _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: Colors.black),
               ],
             ),
           ),
@@ -346,7 +351,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
                 const SizedBox(height: 16),
                 Text(
-                  '후기를 불러올 수 없습니다',
+                  AppLocalizations.of(context)!.cannotLoadReviews,
                   style: TextStyle(color: Colors.grey[600]),
                 ),
               ],
@@ -375,7 +380,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  '아직 작성한 후기가 없습니다',
+                  AppLocalizations.of(context)!.noReviewsYet,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontWeight: FontWeight.w500,
@@ -384,7 +389,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '모임에 참여하고 후기를 작성해보세요!',
+                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
                   style: AppTheme.bodySmall.copyWith(
                     color: Colors.grey[500],
                     fontSize: 13,
@@ -396,11 +401,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         }
 
         return GridView.builder(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(4),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 4,
-            mainAxisSpacing: 4,
+            crossAxisCount: 2,
+            crossAxisSpacing: 2,
+            mainAxisSpacing: 2,
             childAspectRatio: 1,
           ),
           itemCount: reviews.length,
@@ -416,26 +421,77 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget _buildReviewGridItem(ReviewPost review) {
     return GestureDetector(
       onTap: () {
-        // 후기 상세 보기 (선택사항)
-        _showReviewDetail(review);
+        // 후기 상세 화면으로 이동 (댓글, 좋아요 기능 포함)
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReviewDetailScreen(review: review),
+          ),
+        );
       },
       child: Container(
         decoration: BoxDecoration(
           color: Colors.grey[200],
           borderRadius: BorderRadius.circular(4),
         ),
-        child: review.imageUrls.isNotEmpty
-            ? ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Image.network(
-                  review.imageUrls.first,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildReviewPlaceholder(review);
-                  },
+        child: Stack(
+          children: [
+            // 이미지 또는 플레이스홀더
+            Positioned.fill(
+              child: review.imageUrls.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image.network(
+                        review.imageUrls.first,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          return _buildReviewPlaceholder(review);
+                        },
+                      ),
+                    )
+                  : _buildReviewPlaceholder(review),
+            ),
+            
+            // 좋아요 및 댓글 수 표시
+            Positioned(
+              bottom: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              )
-            : _buildReviewPlaceholder(review),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.favorite, color: Colors.white, size: 12),
+                    const SizedBox(width: 3),
+                    Text(
+                      '${review.likeCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.comment, color: Colors.white, size: 12),
+                    const SizedBox(width: 3),
+                    Text(
+                      '${review.commentCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -464,66 +520,5 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     );
   }
 
-  void _showReviewDetail(ReviewPost review) {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          constraints: const BoxConstraints(maxHeight: 600),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AppBar(
-                title: const Text('후기'),
-                automaticallyImplyLeading: false,
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ],
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        review.meetupTitle,
-                        style: const TextStyle(
-                          fontSize: 20, // 18 → 20
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 10), // 8 → 10
-                      Text(
-                        '평점: ${'⭐' * review.rating}',
-                        style: const TextStyle(fontSize: 18), // 16 → 18
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        review.content,
-                        style: const TextStyle(
-                          fontSize: 15, // 명시적 크기 지정
-                          height: 1.5, // 줄 높이 추가
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (review.imageUrls.isNotEmpty)
-                        ...review.imageUrls.map((url) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Image.network(url),
-                            )),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 

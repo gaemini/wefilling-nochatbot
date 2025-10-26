@@ -56,7 +56,7 @@ class MeetupCard extends StatelessWidget {
         return AppTheme.primary; // Modern indigo
       case '식사':
         return AppTheme.accentAmber; // Vibrant amber
-      case '취미':
+      case '카페':
         return AppTheme.accentEmerald; // Vibrant emerald
       case '문화':
         return AppTheme.secondary; // Modern pink
@@ -72,7 +72,7 @@ class MeetupCard extends StatelessWidget {
         return AppTheme.primaryGradient;
       case '식사':
         return AppTheme.amberGradient;
-      case '취미':
+      case '카페':
         return AppTheme.emeraldGradient;
       case '문화':
         return AppTheme.secondaryGradient;
@@ -88,7 +88,7 @@ class MeetupCard extends StatelessWidget {
         return 'primary';
       case '식사':
         return 'default'; // Amber는 아직 glassmorphism variant 없음
-      case '취미':
+      case '카페':
         return 'emerald';
       case '문화':
         return 'secondary';

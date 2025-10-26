@@ -2,8 +2,10 @@
 // 모임 홈 화면 - 일주일 단위 모임 목록 표시
 // 탭 기반 네비게이션, 카테고리 필터, 검색 기능
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 import '../constants/app_constants.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
@@ -21,9 +23,12 @@ import '../services/preload_service.dart';
 import '../design/tokens.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class MeetupHomePage extends StatefulWidget {
-  const MeetupHomePage({super.key});
+  final String? initialMeetupId; // 알림에서 전달받은 모임 ID
+  
+  const MeetupHomePage({super.key, this.initialMeetupId});
 
   @override
   State<MeetupHomePage> createState() => _MeetupHomePageState();
@@ -37,14 +42,17 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   late List<List<Meetup>> _localMeetupsByDay;
   final MeetupService _meetupService = MeetupService();
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
+  
+  // 친구 카테고리 스트림 구독
+  StreamSubscription<List<FriendCategory>>? _friendCategoriesSubscription;
 
   // 검색 기능
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
 
-  // 카테고리 필터링
-  final List<String> _categories = ['전체', '스터디', '식사', '취미', '문화'];
-  String _selectedCategory = '전체';
+  // 카테고리 필터링 (영어 키 사용)
+  final List<String> _categories = ['all', 'study', 'meal', 'hobby', 'culture'];
+  String _selectedCategory = 'all';
 
   // 친구 그룹 필터링
   List<FriendCategory> _friendCategories = [];
@@ -81,6 +89,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _goToCurrentWeek();
       _loadFriendCategories();
+      
+      // 알림에서 전달받은 모임이 있으면 다이얼로그 표시
+      if (widget.initialMeetupId != null) {
+        _showMeetupFromNotification(widget.initialMeetupId!);
+      }
     });
   }
 
@@ -90,13 +103,43 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _searchController.dispose();
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    _friendCategoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
   }
 
+  // 알림에서 전달받은 모임 표시
+  Future<void> _showMeetupFromNotification(String meetupId) async {
+    try {
+      print('🔔 알림에서 모임 로드: $meetupId');
+      final meetup = await _meetupService.getMeetupById(meetupId);
+      
+      if (meetup != null && mounted) {
+        print('✅ 모임 로드 성공, 다이얼로그 표시');
+        showDialog(
+          context: context,
+          builder: (dialogContext) => MeetupDetailScreen(
+            meetup: meetup,
+            meetupId: meetupId,
+            onMeetupDeleted: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(AppLocalizations.of(context)!.meetupCancelled)),
+              );
+            },
+          ),
+        );
+      } else {
+        print('❌ 모임을 찾을 수 없음: $meetupId');
+      }
+    } catch (e) {
+      print('❌ 알림 모임 로드 오류: $e');
+    }
+  }
+
   // 친구 카테고리 로드
   void _loadFriendCategories() {
-    _friendCategoryService.getCategoriesStream().listen((categories) {
+    _friendCategoriesSubscription?.cancel();
+    _friendCategoriesSubscription = _friendCategoryService.getCategoriesStream().listen((categories) {
       if (mounted) {
         setState(() {
           _friendCategories = categories;
@@ -203,10 +246,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       }
 
       // 카테고리 필터링 적용
-      if (_selectedCategory == '전체') {
+      if (_selectedCategory == 'all') {
         _filteredMeetups = allMeetups;
       } else {
-        _filteredMeetups = allMeetups.where((meetup) => meetup.category == _selectedCategory).toList();
+        // 카테고리 비교: 영어 키와 Firestore의 한글 값을 매핑
+        final categoryMap = {
+          'study': '스터디',
+          'meal': '식사',
+          'hobby': '카페',
+          'culture': '문화',
+          'other': '기타',
+        };
+        final firestoreCategory = categoryMap[_selectedCategory] ?? _selectedCategory;
+        _filteredMeetups = allMeetups.where((meetup) => meetup.category == firestoreCategory).toList();
       }
 
       // 프리로딩 실행
@@ -290,8 +342,18 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   @override
   Widget build(BuildContext context) {
     final List<DateTime> weekDates = _getWeekDates();
-    final selectedDayString =
-        '${weekDates[_tabController.index].month}월 ${weekDates[_tabController.index].day}일';
+    final selectedDate = weekDates[_tabController.index];
+    
+    // 현재 로케일에 맞게 날짜 포맷팅
+    final locale = Localizations.localeOf(context).languageCode;
+    final selectedDayString = locale == 'ko' 
+        ? '${selectedDate.month}월 ${selectedDate.day}일'
+        : DateFormat('MMM d', 'en').format(selectedDate);
+    
+    // 요일 약어 (로케일에 따라 다름)
+    final weekdayName = locale == 'ko'
+        ? ['월', '화', '수', '목', '금', '토', '일'][selectedDate.weekday - 1]
+        : _weekdayNames[selectedDate.weekday - 1];
 
     return Scaffold(
       body: Column(
@@ -324,7 +386,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     child: GestureDetector(
                       onTap: _goToCurrentWeek,
                       child: Text(
-                        '$selectedDayString (${_weekdayNames[weekDates[_tabController.index].weekday - 1]})',
+                        '$selectedDayString ($weekdayName)',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontSize: 15,
                           height: 1.2,
@@ -358,33 +420,42 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       )
                       : _filteredMeetups.isEmpty
                       ? AppEmptyState.noMeetups(
+                        context: context,
                         onCreateMeetup: () => _showCreateMeetupDialog(context),
                       )
-                      : OptimizedListView<Meetup>(
-                        key: ValueKey<String>(
-                          '${_selectedCategory}_${_tabController.index}',
-                        ),
-                        items: _filteredMeetups,
-                        keyExtractor: (meetup) => meetup.id,
-                        padding: const EdgeInsets.only(
-                          top: 8, // 상단 패딩 최소화
-                          bottom: 16,
-                        ),
-                        itemBuilder: (context, meetup, index) {
-                          return OptimizedMeetupCard(
-                            key: ValueKey(meetup.id),
-                            meetup: meetup,
-                            index: index,
-                            onTap: () => _navigateToMeetupDetail(meetup),
-                            preloadImage: index < 3, // 상위 3개만 프리로드
-                            onMeetupDeleted: () {
-                              // 모임 삭제 후 목록 새로고침
-                              setState(() {
-                                _loadMeetups();
-                              });
-                            },
-                          );
+                      : RefreshIndicator(
+                        onRefresh: () async {
+                          // 캐시 클리어 및 데이터 새로고침
+                          _meetupCache.clear();
+                          _categoryMeetupCache.clear();
+                          await _loadMeetups();
                         },
+                        child: OptimizedListView<Meetup>(
+                          key: ValueKey<String>(
+                            '${_selectedCategory}_${_tabController.index}',
+                          ),
+                          items: _filteredMeetups,
+                          keyExtractor: (meetup) => meetup.id,
+                          padding: const EdgeInsets.only(
+                            top: 8, // 상단 패딩 최소화
+                            bottom: 16,
+                          ),
+                          itemBuilder: (context, meetup, index) {
+                            return OptimizedMeetupCard(
+                              key: ValueKey(meetup.id),
+                              meetup: meetup,
+                              index: index,
+                              onTap: () => _navigateToMeetupDetail(meetup),
+                              preloadImage: index < 3, // 상위 3개만 프리로드
+                              onMeetupDeleted: () {
+                                // 모임 삭제 후 목록 새로고침
+                                setState(() {
+                                  _loadMeetups();
+                                });
+                              },
+                            );
+                          },
+                        ),
                       ),
             ),
           ),
@@ -433,7 +504,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             if (_isSearching)
               CompactSearchBar(
                 controller: _searchController,
-                hintText: '검색어를 입력하세요',
+                hintText: AppLocalizations.of(context)!.enterSearchQuery,
                 leading: AppIconButton(
                   icon: Icons.arrow_back,
                   onPressed: () {
@@ -489,7 +560,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     final today = DateTime(now.year, now.month, now.day);
 
     return Container(
-      height: 56, // 원래 높이로 복원
+      height: 64, // 높이 증가 (56 → 64)
       decoration: BoxDecoration(
         color: colorScheme.surface,
         border: Border(
@@ -509,51 +580,52 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             final isToday = dateOnly.isAtSameMomentAs(today);
             
             return Tab(
-              height: 48, // 원래 높이로 복원
-              child: Container(
-                decoration: isToday
-                    ? BoxDecoration(
-                        border: Border(
-                          top: BorderSide(
-                            color: Colors.purple, // 보라색
-                            width: 2.5, // 얇은 선
-                          ),
-                        ),
-                      )
-                    : null,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // 요일 (일요일은 빨간색, 토요일은 파란색)
-                    Text(
-                      _weekdayNames[date.weekday - 1],
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: date.weekday == 7 // 일요일 체크 (7 = 일요일)
-                            ? Colors.red
-                            : date.weekday == 6 // 토요일 체크 (6 = 토요일)
-                                ? Colors.blue
-                                : null, // 기본 색상 유지
+              height: 60, // 높이 증가 (48 → 60)
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 오늘 날짜 표시 점
+                  if (isToday)
+                    Container(
+                      width: 6,
+                      height: 6,
+                      margin: const EdgeInsets.only(bottom: 2), // 간격 축소 (4 → 2)
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4A90E2), // 위필링 로고색 (파란색)
+                        shape: BoxShape.circle,
                       ),
+                    )
+                  else
+                    const SizedBox(height: 8), // 간격 축소 (10 → 8)
+                  // 요일 (일요일은 빨간색, 토요일은 파란색)
+                  Text(
+                    _weekdayNames[date.weekday - 1],
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12, // 폰트 크기 축소 (13 → 12)
+                      color: date.weekday == 7 // 일요일 체크 (7 = 일요일)
+                          ? Colors.red
+                          : date.weekday == 6 // 토요일 체크 (6 = 토요일)
+                              ? Colors.blue
+                              : null, // 기본 색상 유지
                     ),
-                    const SizedBox(height: 2),
-                    // 날짜 (일요일은 빨간색, 토요일은 파란색)
-                    Text(
-                      '${date.day}',
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                        color: date.weekday == 7 // 일요일 체크
-                            ? Colors.red
-                            : date.weekday == 6 // 토요일 체크
-                                ? Colors.blue
-                                : null, // 기본 색상 유지
-                      ),
+                  ),
+                  const SizedBox(height: 1), // 간격 축소 (2 → 1)
+                  // 날짜 (일요일은 빨간색, 토요일은 파란색)
+                  Text(
+                    '${date.day}',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15, // 폰트 크기 축소 (16 → 15)
+                      color: date.weekday == 7 // 일요일 체크
+                          ? Colors.red
+                          : date.weekday == 6 // 토요일 체크
+                              ? Colors.blue
+                              : null, // 기본 색상 유지
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             );
           },
@@ -673,7 +745,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           );
           return '${category.name} 그룹';
         }
-        return '모든 모임';
+        return AppLocalizations.of(context)!.allMeetups;
     }
   }
 
@@ -702,9 +774,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    '모임 필터',
-                    style: TextStyle(
+                  Text(
+                    AppLocalizations.of(context)!.meetupFilter,
+                    style: const TextStyle(
                       fontSize: 18,
                       fontWeight: FontWeight.w600,
                     ),
@@ -726,20 +798,20 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     children: [
                       // 필터 옵션들
                       _buildFilterOption(
-                        title: '모든 모임',
-                        subtitle: '볼 수 있는 모든 모임을 표시합니다',
+                        title: AppLocalizations.of(context)!.allMeetups,
+                        subtitle: AppLocalizations.of(context)!.everyoneCanSee,
                         value: 'all',
                         icon: Icons.public,
                       ),
                       _buildFilterOption(
-                        title: '전체 공개만',
-                        subtitle: '누구나 볼 수 있도록 공개된 모임만 표시',
+                        title: AppLocalizations.of(context)!.publicMeetupsOnly,
+                        subtitle: AppLocalizations.of(context)!.showOnlyPublicMeetups,
                         value: 'public',
                         icon: Icons.language,
                       ),
                       _buildFilterOption(
-                        title: '친구 모임만',
-                        subtitle: '친구들이 만든 모든 모임을 표시',
+                        title: AppLocalizations.of(context)!.friendsMeetupsOnly,
+                        subtitle: AppLocalizations.of(context)!.showAllFriendsMeetups,
                         value: 'friends',
                         icon: Icons.people,
                       ),
@@ -755,9 +827,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               color: Colors.blue[600],
                             ),
                             const SizedBox(width: 6),
-                            const Text(
-                              '특정 친구 그룹만 보기',
-                              style: TextStyle(
+                            Text(
+                              AppLocalizations.of(context)!.viewSpecificFriendGroup,
+                              style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF666666),
@@ -766,9 +838,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                           ],
                         ),
                         const SizedBox(height: 4),
-                        const Text(
-                          '선택한 그룹에 공개된 모임만 표시됩니다',
-                          style: TextStyle(
+                        Text(
+                          AppLocalizations.of(context)!.showSelectedGroupMeetups,
+                          style: const TextStyle(
                             fontSize: 12,
                             color: Color(0xFF888888),
                           ),
@@ -777,7 +849,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         
                         ...(_friendCategories.map((category) => _buildFilterOption(
                           title: category.name,
-                          subtitle: '${category.friendIds.length}명의 친구 · 이 그룹에 공개된 모임만 표시',
+                          subtitle: AppLocalizations.of(context)!.friendsCountInGroup(category.friendIds.length),
                           value: 'category:${category.id}',
                           icon: Icons.group,
                         ))),

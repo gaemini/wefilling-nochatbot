@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../models/report.dart';
+import '../l10n/app_localizations.dart';
 import '../services/report_service.dart';
 import '../services/auth_service.dart';
 import '../design/tokens.dart';
@@ -19,6 +20,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   List<BlockedUser> _blockedUsers = [];
   Map<String, Map<String, dynamic>> _userProfiles = {};
   bool _isLoading = true;
+  bool _hasError = false;
+  String _errorMessage = '';
   final AuthService _authService = AuthService();
 
   @override
@@ -30,6 +33,8 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   Future<void> _loadBlockedUsers() async {
     setState(() {
       _isLoading = true;
+      _hasError = false;
+      _errorMessage = '';
     });
 
     try {
@@ -52,21 +57,21 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         _blockedUsers = blockedUsers;
         _userProfiles = profiles;
         _isLoading = false;
+        _hasError = false;
       });
     } catch (e) {
-      print('차단 목록 로딩 실패: $e');
+      print('❌ 차단 목록 조회 실패: $e');
+      
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      final errorMsg = isKo
+          ? '차단 목록을 불러오는데 실패했습니다.\n잠시 후 다시 시도해주세요.'
+          : 'Failed to load blocked users.\nPlease try again later.';
+      
       setState(() {
         _isLoading = false;
+        _hasError = true;
+        _errorMessage = errorMsg;
       });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('차단 목록을 불러오는데 실패했습니다.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
     }
   }
 
@@ -165,9 +170,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('차단 목록'),
+        title: Text(AppLocalizations.of(context)!.blockList),
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         leading: IconButton(
@@ -181,17 +188,65 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _blockedUsers.isEmpty
-              ? _buildEmptyState()
-              : _buildBlockedUsersList(),
+          : _hasError
+              ? _buildErrorState()
+              : _blockedUsers.isEmpty
+                  ? _buildEmptyState()
+                  : _buildBlockedUsersList(),
+    );
+  }
+
+  Widget _buildErrorState() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 80,
+              color: Colors.red.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isKo ? '오류가 발생했습니다' : 'An error occurred',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade700,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _errorMessage,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _loadBlockedUsers,
+              icon: const Icon(Icons.refresh),
+              label: Text(isKo ? '다시 시도' : 'Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: BrandColors.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildEmptyState() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return AppEmptyState(
       icon: Icons.block,
-      title: '차단한 사용자가 없습니다',
-      description: '차단한 사용자가 있으면 여기에 표시됩니다.',
+      title: isKo ? '차단한 사용자가 없습니다' : 'No blocked users',
+      description: isKo ? '차단한 사용자가 있으면 여기에 표시됩니다.' : 'Blocked users will appear here.',
     );
   }
 

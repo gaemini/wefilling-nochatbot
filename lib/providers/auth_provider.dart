@@ -3,21 +3,27 @@
 // 로그인 상태, 사용자 정보 제공
 // 다른 화면에서 인증 정보 접근 가능하게 함
 
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../services/fcm_service.dart';
 
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   User? _user;
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
+  
+  // 최근 로그인 시도에서 회원가입 필요 여부를 저장 (UI 알림 용도)
+  bool _signupRequired = false;
   
   // 스트림 정리를 위한 콜백 리스트
   final List<VoidCallback> _streamCleanupCallbacks = [];
@@ -28,12 +34,14 @@ class AuthProvider with ChangeNotifier {
 
   // 초기화 함수 분리
   Future<void> _initializeAuth() async {
-    // Google Sign-In 7.x 초기화 (iOS 전용 설정 포함)
+    // Google Sign-In 7.x 초기화 (플랫폼별 분기)
     try {
-      await _googleSignIn.initialize(
-        // iOS에서 필요한 설정들
-        clientId: '700373659727-t3t89luvegusfl5cfeogsuf55go3uqmu.apps.googleusercontent.com',
-      );
+      // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
+      final clientId = (Platform.isIOS || Platform.isMacOS)
+          ? '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com'
+          : null;
+      
+      await _googleSignIn.initialize(clientId: clientId);
       print('Google Sign-In 초기화 완료');
     } catch (e) {
       print('Google Sign-In 초기화 실패: $e');
@@ -79,8 +87,21 @@ class AuthProvider with ChangeNotifier {
       _userData!.containsKey('nickname') &&
       _userData!['nickname'] != null;
 
+  // 한양메일 인증 여부
+  bool get isEmailVerified =>
+      _userData != null &&
+      _userData!.containsKey('emailVerified') &&
+      _userData!['emailVerified'] == true;
+
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
+  
+  // 최근 로그인 시도에서 회원가입 필요 플래그를 소모하고 반환
+  bool consumeSignupRequiredFlag() {
+    final wasRequired = _signupRequired;
+    _signupRequired = false;
+    return wasRequired;
+  }
 
   // 사용자 데이터 로드 (재시도 로직 포함)
   Future<void> _loadUserData() async {
@@ -101,14 +122,8 @@ class AuthProvider with ChangeNotifier {
           _userData = doc.data();
           break; // 성공시 루프 종료
         } else {
-          // 문서가 없으면 기본 문서 생성
-          await _checkAndCreateUserDocument();
-          // 다시 로드 시도
-          final newDoc = await _firestore
-              .collection('users')
-              .doc(_user!.uid)
-              .get(const GetOptions(source: Source.serverAndCache));
-          _userData = newDoc.exists ? newDoc.data() : null;
+          // 문서가 없으면 null로 설정 (회원가입 필요)
+          _userData = null;
           break; // 성공시 루프 종료
         }
       } catch (e) {
@@ -141,7 +156,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 구글 로그인
-  Future<bool> signInWithGoogle() async {
+  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
+  Future<bool> signInWithGoogle({bool skipEmailVerifiedCheck = false}) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -166,9 +182,62 @@ class AuthProvider with ChangeNotifier {
       // 사용자 정보 업데이트
       _user = userCredential.user;
 
-      // 사용자 정보 Firebase 저장
+      // 사용자 정보 Firebase 확인 (자동 생성 없이)
       if (_user != null) {
-        await _checkAndCreateUserDocument();
+        // Firestore에서 사용자 문서 존재 여부 확인
+        final docSnapshot = await _firestore
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (!docSnapshot.exists) {
+          // 신규 사용자 - 회원가입 필요
+          if (skipEmailVerifiedCheck) {
+            // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
+            print('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+            _isLoading = false;
+            notifyListeners();
+            return true; // 로그인 허용 (completeEmailVerification 실행 예정)
+          }
+          
+          print('❌ 신규 사용자: 회원가입이 필요합니다.');
+          
+          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
+          _signupRequired = true;
+          
+          // Google 로그인은 유지하고 Firebase만 로그아웃
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          
+          return false; // 로그인 거부
+        }
+
+        // 기존 사용자 - 한양메일 인증 확인
+        final userData = docSnapshot.data();
+        final emailVerified = userData?['emailVerified'] == true;
+
+        if (!emailVerified && !skipEmailVerifiedCheck) {
+          // 한양메일 인증 미완료
+          print('❌ 한양메일 인증이 완료되지 않았습니다.');
+          
+          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
+          _signupRequired = true;
+          
+          // Google 로그인은 유지하고 Firebase만 로그아웃
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          
+          return false; // 로그인 거부
+        }
+
+        // 기존 사용자 정보 업데이트 (lastLogin, displayName 동기화)
+        await _updateExistingUserDocument();
         await _loadUserData();
         
         // FCM 초기화 (알림 기능)
@@ -206,24 +275,15 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // 사용자 문서 확인 및 생성
-  Future<void> _checkAndCreateUserDocument() async {
+  // 기존 사용자 문서 업데이트 (lastLogin, displayName 동기화)
+  Future<void> _updateExistingUserDocument() async {
     if (_user == null) return;
 
     try {
       final docRef = _firestore.collection('users').doc(_user!.uid);
       final doc = await docRef.get();
 
-      if (!doc.exists) {
-        // 사용자 기본 정보 설정
-        await docRef.set({
-          'email': _user!.email,
-          'displayName': _user!.displayName,
-          'photoURL': _user!.photoURL,
-          'createdAt': FieldValue.serverTimestamp(),
-          'lastLogin': FieldValue.serverTimestamp(),
-        });
-      } else {
+      if (doc.exists) {
         // 기존 사용자: displayName을 nickname과 자동 동기화
         final data = doc.data();
         final nickname = data?['nickname'];
@@ -242,7 +302,7 @@ class AuthProvider with ChangeNotifier {
         }
       }
     } catch (e) {
-      print('사용자 문서 생성 오류: $e');
+      print('사용자 문서 업데이트 오류: $e');
     }
   }
 
@@ -275,6 +335,7 @@ class AuthProvider with ChangeNotifier {
     required String nickname,
     required String nationality,
     String? photoURL,
+    String? bio, // 한 줄 소개 추가
   }) async {
     if (_user == null) return false;
 
@@ -305,6 +366,10 @@ class AuthProvider with ChangeNotifier {
             'nationality': nationality,
             'updatedAt': FieldValue.serverTimestamp(),
           };
+          // bio가 제공되면 업데이트
+          if (bio != null) {
+            updateData['bio'] = bio;
+          }
           
           // photoURL이 제공된 경우 추가
           if (photoURL != null) {
@@ -764,6 +829,102 @@ class AuthProvider with ChangeNotifier {
     }
     _streamCleanupCallbacks.clear();
     print('모든 스트림 정리 완료');
+  }
+
+  // 이메일 인증번호 전송
+  Future<Map<String, dynamic>> sendEmailVerificationCode(String email, {Locale? locale}) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      // hanyang.ac.kr 도메인 검증
+      if (!email.endsWith('@hanyang.ac.kr')) {
+        throw Exception('한양대학교 이메일 주소만 사용할 수 있습니다.');
+      }
+
+      // Cloud Functions 호출
+      final callable = _functions.httpsCallable('sendEmailVerificationCode');
+      final result = await callable.call({
+        'email': email,
+        if (locale != null) 'locale': '${locale.languageCode}${locale.countryCode != null ? '-${locale.countryCode}' : ''}',
+      });
+      
+      return {
+        'success': result.data['success'] == true,
+        'message': result.data['message'] ?? '',
+      };
+    } on FirebaseFunctionsException catch (e) {
+      // 서버가 already-exists(이미 사용중) 에러를 반환한 경우
+      print('이메일 인증번호 전송 오류 (FirebaseFunctionsException): ${e.code} - ${e.message}');
+      _isLoading = false;
+      notifyListeners();
+      rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
+    } catch (e) {
+      print('이메일 인증번호 전송 오류: $e');
+      _isLoading = false;
+      notifyListeners();
+      return {
+        'success': false,
+        'message': '인증번호 전송 실패: $e',
+      };
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // 이메일 인증번호 검증
+  Future<bool> verifyEmailCode(String email, String code) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      // Cloud Functions 호출
+      final callable = _functions.httpsCallable('verifyEmailCode');
+      final result = await callable.call({
+        'email': email,
+        'code': code,
+      });
+      
+      return result.data['success'] == true;
+    } on FirebaseFunctionsException catch (e) {
+      // 서버가 already-exists(이미 사용중) 등을 반환한 경우 상위에서 구체 처리
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
+    } catch (e) {
+      print('이메일 인증번호 검증 오류: $e');
+      return false;
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  // 한양메일 인증 최종 확정(서버 Callable)
+  Future<bool> completeEmailVerification(String hanyangEmail) async {
+    if (_user == null) return false;
+
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      final callable = _functions.httpsCallable('finalizeHanyangEmailVerification');
+      await callable.call({ 'email': hanyangEmail });
+
+      await _loadUserData();
+      return true;
+    } on FirebaseFunctionsException catch (e) {
+      print('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
+    } catch (e) {
+      print('한양메일 인증 완료 처리 오류: $e');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
   }
 
   // 로그아웃

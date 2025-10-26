@@ -3,8 +3,11 @@
 // 푸시 알림 토큰 관리 및 메시지 처리
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'navigation_service.dart';
 
 // 백그라운드 메시지 핸들러 (최상위 함수여야 함)
 @pragma('vm:entry-point')
@@ -18,13 +21,73 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FlutterLocalNotificationsPlugin _localNotifications = 
+      FlutterLocalNotificationsPlugin();
+
+  // 로컬 알림 초기화
+  Future<void> _initializeLocalNotifications() async {
+    // Android 알림 채널 설정
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'high_importance_channel', // 채널 ID
+      'High Importance Notifications', // 채널 이름
+      description: 'This channel is used for important notifications.', // 채널 설명
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    // Android 알림 채널 생성
+    await _localNotifications
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // 초기화 설정
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    
+    final DarwinInitializationSettings initializationSettingsDarwin =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+
+    final InitializationSettings initializationSettings =
+        InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
+    );
+
+    await _localNotifications.initialize(
+      initializationSettings,
+      onDidReceiveNotificationResponse: (NotificationResponse response) async {
+        print('📱 알림 클릭: ${response.payload}');
+        // 포그라운드 로컬 알림 탭 시 딥링크 라우팅
+        final payload = response.payload;
+        if (payload != null && payload.isNotEmpty) {
+          try {
+            final Map<String, dynamic> data = jsonDecode(payload) as Map<String, dynamic>;
+            await NavigationService.handlePushNavigation(data);
+          } catch (e) {
+            print('⚠️ 로컬 알림 payload 파싱 실패: $e');
+          }
+        }
+      },
+    );
+
+    print('✅ 로컬 알림 초기화 완료');
+  }
 
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
       print('📱 FCM 초기화 시작: $userId');
 
-      // iOS 알림 권한 요청
+      // 로컬 알림 초기화
+      await _initializeLocalNotifications();
+
+      // iOS 및 Android 알림 권한 요청
       NotificationSettings settings = await _messaging.requestPermission(
         alert: true,
         announcement: false,
@@ -69,17 +132,15 @@ class FCMService {
         print('📱 내용: ${message.notification?.body}');
         print('📱 데이터: ${message.data}');
 
-        // 여기서 로컬 알림을 표시하거나 UI 업데이트 가능
-        // 필요한 경우 flutter_local_notifications 패키지 사용
+        // 로컬 알림 표시
+        _showLocalNotification(message);
       });
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
         print('📱 백그라운드에서 앱 열림: ${message.messageId}');
         print('📱 데이터: ${message.data}');
-        
-        // 알림을 통해 앱이 열렸을 때의 처리
-        // 예: 특정 화면으로 이동
+        await NavigationService.handlePushNavigation(message.data);
       });
 
       // 앱이 종료된 상태에서 알림을 통해 열렸을 때
@@ -87,14 +148,59 @@ class FCMService {
       if (initialMessage != null) {
         print('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
         print('📱 데이터: ${initialMessage.data}');
-        
-        // 알림을 통해 앱이 열렸을 때의 처리
+        await NavigationService.handlePushNavigation(initialMessage.data);
       }
 
       print('✅ FCM 초기화 완료');
     } catch (e) {
       print('❌ FCM 초기화 실패: $e');
       rethrow;
+    }
+  }
+
+  // 로컬 알림 표시
+  Future<void> _showLocalNotification(RemoteMessage message) async {
+    try {
+      final notification = message.notification;
+      if (notification == null) {
+        print('⚠️ 알림 데이터가 없습니다');
+        return;
+      }
+
+      const AndroidNotificationDetails androidDetails = 
+          AndroidNotificationDetails(
+        'high_importance_channel',
+        'High Importance Notifications',
+        channelDescription: 'This channel is used for important notifications.',
+        importance: Importance.high,
+        priority: Priority.high,
+        showWhen: true,
+        enableVibration: true,
+        playSound: true,
+      );
+
+      const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
+      );
+
+      const NotificationDetails details = NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      );
+
+      await _localNotifications.show(
+        message.hashCode,
+        notification.title,
+        notification.body,
+        details,
+        payload: jsonEncode(message.data),
+      );
+
+      print('✅ 로컬 알림 표시 완료');
+    } catch (e) {
+      print('❌ 로컬 알림 표시 실패: $e');
     }
   }
 

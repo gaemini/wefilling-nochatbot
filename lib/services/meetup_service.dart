@@ -184,6 +184,9 @@ class MeetupService {
               hostNickname: data['hostNickname'], // 주최자 닉네임 추가
               visibility: data['visibility'] ?? 'public', // 공개 범위 추가
               visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []), // 특정 카테고리 공개 추가
+              isCompleted: data['isCompleted'] ?? false,
+              hasReview: data['hasReview'] ?? false,
+              reviewId: data['reviewId'],
             );
           }).toList();
         });
@@ -273,6 +276,9 @@ class MeetupService {
         category: data['category'] ?? '기타',
         userId: data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+        isCompleted: data['isCompleted'] ?? false,
+        hasReview: data['hasReview'] ?? false,
+        reviewId: data['reviewId'],
       );
     }).toList();
   }
@@ -317,6 +323,9 @@ class MeetupService {
         category: data['category'] ?? '기타', // 카테고리 필드 추가
         userId: data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+        isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
+        hasReview: data['hasReview'] ?? false, // 후기 작성 여부
+        reviewId: data['reviewId'], // 후기 ID
       );
     } catch (e) {
       print('모임 정보 불러오기 오류: $e');
@@ -404,6 +413,9 @@ class MeetupService {
                     category: data['category'] ?? '기타',
                     userId: data['userId'], // 모임 주최자 ID 추가
                     hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+                  isCompleted: data['isCompleted'] ?? false,
+                  hasReview: data['hasReview'] ?? false,
+                  reviewId: data['reviewId'],
                   );
                 } else {
                   return null; // 검색 조건에 맞지 않으면 null 반환
@@ -495,101 +507,148 @@ class MeetupService {
     return weekDates[dayIndex];
   }
 
-  // 모임 참여 (알림 기능 추가)
+  // 모임 참여 (meetup_participants 컬렉션 사용, 즉시 승인)
   Future<bool> joinMeetup(String meetupId) async {
     try {
       final user = _auth.currentUser;
-      if (user == null) return false;
-
-      final meetupRef = _firestore.collection('meetups').doc(meetupId);
-
-      // 트랜잭션 전에 모임 정보 미리 가져오기
-      final meetupDoc = await meetupRef.get();
-      if (!meetupDoc.exists) {
-        print('모임 문서가 존재하지 않음: $meetupId');
+      if (user == null) {
+        print('❌ 로그인 필요');
         return false;
       }
 
-      final data = meetupDoc.data()!;
-      final hostId = data['userId'];
-      final meetupTitle = data['title'];
-      final maxParticipants = data['maxParticipants'] ?? 1;
-
-      // bool 타입 반환하는 트랜잭션 실행
-      bool success = await _firestore.runTransaction<bool>((transaction) async {
-        // 트랜잭션 내부에서 다시 문서 가져오기 (최신 데이터 확보)
-        final updatedDoc = await transaction.get(meetupRef);
-        if (!updatedDoc.exists) return false;
-
-        final updatedData = updatedDoc.data()!;
-        final List<dynamic> participants = List.from(
-          updatedData['participants'] ?? [],
-        );
-
-        // 이미 참여 중인지 확인
-        if (participants.contains(user.uid)) {
-          print('이미 참여 중인 모임: $meetupId');
-          return false;
-        }
-
-        // 정원 초과 확인
-        final currentParticipants = updatedData['currentParticipants'] ?? 1;
-        if (currentParticipants >= maxParticipants) {
-          print('모임 정원 초과: $meetupId');
-          return false;
-        }
-
-        // 참여자 추가
-        participants.add(user.uid);
-
-        // 참여자 수 업데이트
-        final newParticipantCount = currentParticipants + 1;
-
-        transaction.update(meetupRef, {
-          'participants': participants,
-          'currentParticipants': newParticipantCount,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
-
-        return true; // 트랜잭션 성공
-      });
-
-      // 트랜잭션 성공 및 정원이 다 찬 경우 알림 발송
-      if (success) {
-        // 현재 참여자 수 확인을 위해 다시 문서 조회
-        final updatedDoc = await meetupRef.get();
-        final currentParticipants =
-            updatedDoc.data()?['currentParticipants'] ?? 1;
-
-        if (currentParticipants >= maxParticipants) {
-          // 모임 객체 생성
-          final meetup = Meetup(
-            id: meetupId,
-            title: meetupTitle ?? '',
-            description: '', // 알림에 사용되지 않음
-            location: '', // 알림에 사용되지 않음
-            time: '', // 알림에 사용되지 않음
-            maxParticipants: maxParticipants,
-            currentParticipants: currentParticipants,
-            host: '', // 알림에 사용되지 않음
-            imageUrl: '', // 알림에 사용되지 않음
-            date: DateTime.now(), // 알림에 사용되지 않음
-          );
-
-          // 모임 주최자에게 알림 전송
-          await _notificationService.sendMeetupFullNotification(meetup, hostId);
-        }
+      // 이미 참여 중인지 확인
+      final existingParticipation = await getUserParticipationStatus(meetupId);
+      if (existingParticipation != null) {
+        print('⚠️ 이미 참여 중인 모임: $meetupId');
+        return false;
       }
 
-      return success;
+      // 모임 정보 가져오기
+      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      if (!meetupDoc.exists) {
+        print('❌ 모임 문서가 존재하지 않음: $meetupId');
+        return false;
+      }
+
+      final meetupData = meetupDoc.data()!;
+      final hostId = meetupData['userId'];
+      final meetupTitle = meetupData['title'] ?? '';
+      final maxParticipants = meetupData['maxParticipants'] ?? 1;
+      final currentParticipants = meetupData['currentParticipants'] ?? 1;
+
+      // 정원 초과 확인
+      if (currentParticipants >= maxParticipants) {
+        print('❌ 모임 정원 초과: $meetupId');
+        return false;
+      }
+
+      // 사용자 정보 가져오기
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (!userDoc.exists) {
+        print('❌ 사용자 정보 없음');
+        return false;
+      }
+
+      final userData = userDoc.data()!;
+      final participantId = '${meetupId}_${user.uid}';
+
+      // meetup_participants에 즉시 승인 상태로 참여 정보 생성
+      final participant = MeetupParticipant(
+        id: participantId,
+        meetupId: meetupId,
+        userId: user.uid,
+        userName: userData['nickname'] ?? userData['displayName'] ?? user.displayName ?? '익명',
+        userEmail: user.email ?? '',
+        userProfileImage: userData['photoURL'],
+        joinedAt: DateTime.now(),
+        status: ParticipantStatus.approved, // 즉시 승인
+        message: null,
+      );
+
+      await _firestore
+          .collection('meetup_participants')
+          .doc(participantId)
+          .set(participant.toJson());
+
+      // meetups 문서의 currentParticipants 증가
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'currentParticipants': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 모임 참여 성공: $meetupId');
+
+      // 정원이 다 찬 경우 알림 발송
+      final newCurrentParticipants = currentParticipants + 1;
+      if (newCurrentParticipants >= maxParticipants) {
+        // 모임 객체 생성
+        final meetup = Meetup(
+          id: meetupId,
+          title: meetupTitle,
+          description: '', // 알림에 사용되지 않음
+          location: '', // 알림에 사용되지 않음
+          time: '', // 알림에 사용되지 않음
+          maxParticipants: maxParticipants,
+          currentParticipants: newCurrentParticipants,
+          host: '', // 알림에 사용되지 않음
+          imageUrl: '', // 알림에 사용되지 않음
+          date: DateTime.now(), // 알림에 사용되지 않음
+        );
+
+        // 모임 주최자에게 알림 전송
+        await _notificationService.sendMeetupFullNotification(meetup, hostId);
+      }
+
+      return true;
     } catch (e) {
       print('모임 참여 오류: $e');
       return false;
     }
   }
 
-  // 모임 참여 취소 (participants 배열에서 제거)
+  // 모임 참여 취소 (meetup_participants 삭제)
   Future<bool> leaveMeetup(String meetupId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 로그인 필요');
+        return false;
+      }
+
+      // 참여 정보 삭제
+      final participantId = '${meetupId}_${user.uid}';
+      final participantDoc = await _firestore
+          .collection('meetup_participants')
+          .doc(participantId)
+          .get();
+
+      if (!participantDoc.exists) {
+        print('⚠️ 참여 기록이 없습니다: $meetupId');
+        return false;
+      }
+
+      // meetup_participants 문서 삭제
+      await _firestore
+          .collection('meetup_participants')
+          .doc(participantId)
+          .delete();
+
+      // meetups 문서의 currentParticipants 감소
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'currentParticipants': FieldValue.increment(-1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 모임 참여 취소 성공: $meetupId');
+      return true;
+    } catch (e) {
+      print('❌ 모임 참여 취소 오류: $e');
+      return false;
+    }
+  }
+
+  // 기존 leaveMeetup (배열 기반 - 사용 안함, 참고용으로 주석 처리)
+  Future<bool> _leaveMeetupOld(String meetupId) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
@@ -648,9 +707,11 @@ class MeetupService {
 
       print('🗑️ 모임 삭제 시작: meetupId=$meetupId, currentUser=${user.uid}');
 
-      // 모임 문서 가져오기
-      final meetupDoc =
-          await _firestore.collection('meetups').doc(meetupId).get();
+      // 모임 문서 가져오기 (서버에서 최신 데이터 가져오기)
+      final meetupDoc = await _firestore
+          .collection('meetups')
+          .doc(meetupId)
+          .get(const GetOptions(source: Source.server));
 
       // 문서가 없는 경우
       if (!meetupDoc.exists) {
@@ -660,6 +721,7 @@ class MeetupService {
 
       final data = meetupDoc.data()!;
       print('📄 모임 데이터: userId=${data['userId']}, hostNickname=${data['hostNickname']}, host=${data['host']}');
+      print('📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
 
       // 권한 체크: userId가 있으면 userId로, 없으면 hostNickname/host로 비교
       bool isOwner = false;
@@ -691,7 +753,47 @@ class MeetupService {
         return false;
       }
 
-      // 모임 삭제
+      // 후기가 있는 경우 후기 관련 데이터도 삭제
+      final reviewId = data['reviewId'] as String?;
+      if (reviewId != null && reviewId.isNotEmpty) {
+        print('🗑️ 후기 관련 데이터 삭제 시작: reviewId=$reviewId');
+        
+        try {
+          // 1. meetup_reviews 문서 삭제 (Cloud Function이 자동으로 users/{userId}/posts 삭제)
+          await _firestore.collection('meetup_reviews').doc(reviewId).delete();
+          print('✅ meetup_reviews 삭제 완료');
+          
+          // 2. review_requests 문서들 삭제
+          final reviewRequestsSnapshot = await _firestore
+              .collection('review_requests')
+              .where('metadata.reviewId', isEqualTo: reviewId)
+              .get();
+          
+          for (var doc in reviewRequestsSnapshot.docs) {
+            await doc.reference.delete();
+          }
+          print('✅ review_requests ${reviewRequestsSnapshot.docs.length}개 삭제 완료');
+        } catch (e) {
+          print('⚠️ 후기 데이터 삭제 중 오류 (계속 진행): $e');
+        }
+      }
+
+      // 3. meetup_participants 문서들 삭제
+      try {
+        final participantsSnapshot = await _firestore
+            .collection('meetup_participants')
+            .where('meetupId', isEqualTo: meetupId)
+            .get();
+        
+        for (var doc in participantsSnapshot.docs) {
+          await doc.reference.delete();
+        }
+        print('✅ meetup_participants ${participantsSnapshot.docs.length}개 삭제 완료');
+      } catch (e) {
+        print('⚠️ 참여자 데이터 삭제 중 오류 (계속 진행): $e');
+      }
+
+      // 4. 모임 문서 삭제
       await _firestore.collection('meetups').doc(meetupId).delete();
       print('✅ 모임 삭제 성공: meetupId=$meetupId');
       return true;
@@ -745,18 +847,30 @@ class MeetupService {
     String status,
   ) async {
     try {
+      print('🔍 참여자 조회 시작: meetupId=$meetupId, status=$status');
+      
+      // orderBy 제거하여 복합 인덱스 문제 회피
       final querySnapshot = await _firestore
           .collection('meetup_participants')
           .where('meetupId', isEqualTo: meetupId)
           .where('status', isEqualTo: status)
-          .orderBy('joinedAt', descending: false)
           .get();
 
-      return querySnapshot.docs
-          .map((doc) => MeetupParticipant.fromJson(doc.data()))
+      print('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
+      
+      final participants = querySnapshot.docs
+          .map((doc) {
+            print('  - 참여자: ${doc.data()['userName']} (${doc.id})');
+            return MeetupParticipant.fromJson(doc.data());
+          })
           .toList();
+      
+      // 클라이언트 측에서 정렬
+      participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+      
+      return participants;
     } catch (e) {
-      print('참여자 목록 조회 오류: $e');
+      print('❌ 참여자 목록 조회 오류: $e');
       return [];
     }
   }
@@ -937,6 +1051,9 @@ class MeetupService {
           hostNickname: data['hostNickname'],
           visibility: data['visibility'] ?? 'public',
           visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+          isCompleted: data['isCompleted'] ?? false,
+          hasReview: data['hasReview'] ?? false,
+          reviewId: data['reviewId'],
         );
         
         // 디버그: print('📄 모임 로드: ${meetup.title}');
@@ -1031,6 +1148,621 @@ class MeetupService {
     } catch (e) {
       print('❌ 친구 그룹별 모임 필터링 오류: $e');
       return [];
+    }
+  }
+
+  // ===== 모임 후기 관련 메서드 =====
+
+  /// 모임 완료 처리
+  Future<bool> markMeetupAsCompleted(String meetupId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return false;
+      }
+
+      // 모임 존재 및 권한 확인
+      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      if (!meetupDoc.exists) {
+        print('❌ 모임을 찾을 수 없음');
+        return false;
+      }
+
+      final meetupData = meetupDoc.data()!;
+      if (meetupData['userId'] != user.uid) {
+        print('❌ 모임장만 완료 처리 가능');
+        return false;
+      }
+
+      // 모임 완료 상태로 업데이트
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'isCompleted': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 모임 완료 처리 성공: $meetupId');
+      return true;
+    } catch (e) {
+      print('❌ 모임 완료 처리 오류: $e');
+      return false;
+    }
+  }
+
+  /// 모임 후기 생성
+  Future<String?> createMeetupReview({
+    required String meetupId,
+    required String imageUrl,
+    required String content,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return null;
+      }
+
+      // 모임 정보 가져오기
+      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      if (!meetupDoc.exists) {
+        print('❌ 모임을 찾을 수 없음');
+        return null;
+      }
+
+      final meetupData = meetupDoc.data()!;
+      final meetup = Meetup.fromJson({...meetupData, 'id': meetupId});
+
+      // 모임장 확인
+      if (meetup.userId != user.uid) {
+        print('❌ 모임장만 후기 작성 가능');
+        return null;
+      }
+
+      // 모임 완료 여부 확인
+      if (!meetup.isCompleted) {
+        print('❌ 모임이 완료되지 않음');
+        return null;
+      }
+
+      // 참여자 목록 가져오기
+      final participants = await getMeetupParticipantsByStatus(meetupId, 'approved');
+      final participantIds = participants
+          .where((p) => p.userId != user.uid) // 모임장 제외
+          .map((p) => p.userId)
+          .toList();
+
+      // 사용자 정보 가져오기
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final authorName = userDoc.data()?['nickname'] ?? 
+                        userDoc.data()?['displayName'] ?? 
+                        '익명';
+
+      // 후기 생성
+      final reviewDoc = await _firestore.collection('meetup_reviews').add({
+        'meetupId': meetupId,
+        'meetupTitle': meetup.title,
+        'authorId': user.uid,
+        'authorName': authorName,
+        'imageUrl': imageUrl,
+        'content': content,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': null,
+        'approvedParticipants': [],
+        'rejectedParticipants': [],
+        'pendingParticipants': participantIds,
+      });
+
+      final reviewId = reviewDoc.id;
+
+      // 모임에 후기 ID 저장
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'hasReview': true,
+        'reviewId': reviewId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 주최자 프로필에 후기 즉시 게시
+      await _publishReviewToUserProfile(
+        userId: user.uid,
+        reviewId: reviewId,
+        reviewData: {
+          'meetupId': meetupId,
+          'meetupTitle': meetup.title,
+          'imageUrl': imageUrl,
+          'content': content,
+        },
+      );
+
+      print('✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId');
+      return reviewId;
+    } catch (e) {
+      print('❌ 모임 후기 생성 오류: $e');
+      return null;
+    }
+  }
+
+  /// 모임 후기 조회
+  Future<Map<String, dynamic>?> getMeetupReview(String reviewId) async {
+    try {
+      final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음');
+        return null;
+      }
+
+      return {...reviewDoc.data()!, 'id': reviewDoc.id};
+    } catch (e) {
+      print('❌ 모임 후기 조회 오류: $e');
+      return null;
+    }
+  }
+
+  /// 모임 후기 수정
+  Future<bool> updateMeetupReview({
+    required String reviewId,
+    required String imageUrl,
+    required String content,
+  }) async {
+    try {
+      print('✏️ 후기 수정 시작: reviewId=$reviewId');
+      
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return false;
+      }
+
+      // 후기 존재 및 권한 확인
+      final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음');
+        return false;
+      }
+
+      final reviewData = reviewDoc.data()!;
+      if (reviewData['authorId'] != user.uid) {
+        print('❌ 작성자만 후기 수정 가능');
+        return false;
+      }
+
+      final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
+      final authorId = reviewData['authorId'];
+
+      print('📋 수정 대상: 참여자 ${approvedParticipants.length}명');
+
+      // 1. meetup_reviews 문서 업데이트
+      print('✏️ 1단계: meetup_reviews 문서 업데이트...');
+      await _firestore.collection('meetup_reviews').doc(reviewId).update({
+        'imageUrl': imageUrl,
+        'content': content,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      print('✅ meetup_reviews 업데이트 완료');
+
+      // 2. 모든 참여자 프로필의 후기도 업데이트 (주최자 + 수락한 참여자)
+      print('✏️ 2단계: 프로필 후기 업데이트...');
+      final allUserIds = [authorId, ...approvedParticipants];
+      print('📋 업데이트 대상 사용자: ${allUserIds.length}명');
+      
+      for (final userId in allUserIds) {
+        try {
+          // users/{userId}/posts/{reviewId} 문서가 존재하는지 확인
+          final postDoc = await _firestore
+              .collection('users')
+              .doc(userId)
+              .collection('posts')
+              .doc(reviewId)
+              .get();
+          
+          if (postDoc.exists) {
+            await _firestore
+                .collection('users')
+                .doc(userId)
+                .collection('posts')
+                .doc(reviewId)
+                .update({
+              'imageUrl': imageUrl,
+              'content': content,
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+            print('✅ 프로필 후기 업데이트: userId=$userId');
+          } else {
+            print('⚠️ 프로필 후기 없음 (건너뜀): userId=$userId');
+          }
+        } catch (e) {
+          print('⚠️ 프로필 후기 업데이트 실패 (계속 진행): userId=$userId, error=$e');
+        }
+      }
+
+      print('✅ 모임 후기 수정 완료: $reviewId');
+      return true;
+    } catch (e) {
+      print('❌ 모임 후기 수정 오류: $e');
+      return false;
+    }
+  }
+
+  /// 모임 후기 삭제
+  Future<bool> deleteMeetupReview(String reviewId) async {
+    try {
+      print('🗑️ 후기 삭제 시작: reviewId=$reviewId');
+      
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        throw Exception('로그인이 필요합니다');
+      }
+
+      print('👤 현재 사용자: ${user.uid}');
+
+      // 후기 존재 및 권한 확인
+      final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음');
+        throw Exception('후기를 찾을 수 없습니다');
+      }
+
+      final reviewData = reviewDoc.data()!;
+      print('📄 후기 데이터: authorId=${reviewData['authorId']}, meetupId=${reviewData['meetupId']}');
+      
+      if (reviewData['authorId'] != user.uid) {
+        print('❌ 작성자만 후기 삭제 가능: authorId=${reviewData['authorId']}, currentUser=${user.uid}');
+        throw Exception('작성자만 후기를 삭제할 수 있습니다');
+      }
+
+      final meetupId = reviewData['meetupId'];
+      final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
+      final authorId = reviewData['authorId'];
+
+      print('📋 삭제 대상: meetupId=$meetupId, 참여자 ${approvedParticipants.length}명');
+
+      // 1. 후기 삭제
+      print('🗑️ 1단계: meetup_reviews 문서 삭제...');
+      await _firestore.collection('meetup_reviews').doc(reviewId).delete();
+      print('✅ meetup_reviews 삭제 완료');
+
+      // 2. 모임에서 후기 정보 제거
+      print('🗑️ 2단계: meetups 문서 업데이트...');
+      try {
+        await _firestore.collection('meetups').doc(meetupId).update({
+          'hasReview': false,
+          'reviewId': null,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ meetups 업데이트 완료');
+      } catch (e) {
+        print('⚠️ meetups 업데이트 실패 (계속 진행): $e');
+      }
+
+      // 3. 관련 review_requests도 삭제
+      print('🗑️ 3단계: review_requests 삭제...');
+      try {
+        final requests = await _firestore
+            .collection('review_requests')
+            .where('metadata.reviewId', isEqualTo: reviewId)
+            .get();
+        
+        print('📋 삭제할 요청: ${requests.docs.length}개');
+        for (final doc in requests.docs) {
+          await doc.reference.delete();
+        }
+        print('✅ review_requests 삭제 완료');
+      } catch (e) {
+        print('⚠️ review_requests 삭제 실패 (계속 진행): $e');
+      }
+
+      // 4. 모든 참여자 프로필에서 후기 삭제 (주최자 + 수락한 참여자)
+      print('🗑️ 4단계: 프로필 후기 삭제...');
+      final allUserIds = [authorId, ...approvedParticipants];
+      print('📋 삭제 대상 사용자: ${allUserIds.length}명');
+      
+      for (final userId in allUserIds) {
+        try {
+          await _firestore
+              .collection('users')
+              .doc(userId)
+              .collection('posts')
+              .doc(reviewId)
+              .delete();
+          print('✅ 프로필에서 후기 삭제: userId=$userId');
+        } catch (e) {
+          print('⚠️ 프로필 후기 삭제 실패 (계속 진행): userId=$userId, error=$e');
+        }
+      }
+
+      print('✅ 모임 후기 삭제 완료: $reviewId');
+      return true;
+    } catch (e, stackTrace) {
+      print('❌ 모임 후기 삭제 오류: $e');
+      print('스택 트레이스: $stackTrace');
+      rethrow; // 에러를 다시 던져서 UI에서 처리할 수 있도록
+    }
+  }
+
+  /// 내가 수락한 모임 후기 목록 가져오기
+  Future<List<Map<String, dynamic>>> getMyApprovedReviews() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return [];
+      }
+
+      final reviewsSnapshot = await _firestore
+          .collection('meetup_reviews')
+          .where('approvedParticipants', arrayContains: user.uid)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return reviewsSnapshot.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+    } catch (e) {
+      print('❌ 내 후기 목록 조회 오류: $e');
+      return [];
+    }
+  }
+
+  /// 후기 수락 요청 전송
+  Future<bool> sendReviewApprovalRequests({
+    required String reviewId,
+    required List<String> participantIds,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return false;
+      }
+
+      // 후기 정보 가져오기
+      final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음');
+        return false;
+      }
+
+      final reviewData = reviewDoc.data()!;
+      final meetupId = reviewData['meetupId'];
+      final meetupTitle = reviewData['meetupTitle'];
+      final imageUrl = reviewData['imageUrl'];
+      final content = reviewData['content'];
+
+      // 사용자 정보 가져오기
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final requesterName = userDoc.data()?['nickname'] ?? 
+                           userDoc.data()?['displayName'] ?? 
+                           '익명';
+
+      // 각 참여자에게 요청 생성
+      for (final participantId in participantIds) {
+        // 참여자 정보 가져오기
+        final participantDoc = await _firestore.collection('users').doc(participantId).get();
+        final recipientName = participantDoc.data()?['nickname'] ?? 
+                             participantDoc.data()?['displayName'] ?? 
+                             '익명';
+
+        // review_request 생성
+        await _firestore.collection('review_requests').add({
+          'meetupId': meetupId,
+          'requesterId': user.uid,
+          'requesterName': requesterName,
+          'recipientId': participantId,
+          'recipientName': recipientName,
+          'meetupTitle': meetupTitle,
+          'message': content,
+          'imageUrls': [imageUrl],
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+          'respondedAt': null,
+          'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
+          'metadata': {'reviewId': reviewId},
+        });
+      }
+
+      print('✅ 후기 수락 요청 전송 완료: ${participantIds.length}명');
+      return true;
+    } catch (e) {
+      print('❌ 후기 수락 요청 전송 오류: $e');
+      return false;
+    }
+  }
+
+  /// 후기 요청 상태 조회
+  Future<Map<String, dynamic>?> getReviewRequestStatus(String requestId) async {
+    try {
+      final requestDoc = await _firestore.collection('review_requests').doc(requestId).get();
+      
+      if (!requestDoc.exists) {
+        print('❌ 요청을 찾을 수 없음: $requestId');
+        return null;
+      }
+      
+      return requestDoc.data();
+    } catch (e) {
+      print('❌ 요청 상태 조회 오류: $e');
+      return null;
+    }
+  }
+
+  /// 후기 수락/거절 처리
+  Future<bool> respondToReviewRequest({
+    required String requestId,
+    required bool accept,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return false;
+      }
+
+      // 요청 정보 가져오기
+      final requestDoc = await _firestore.collection('review_requests').doc(requestId).get();
+      if (!requestDoc.exists) {
+        print('❌ 요청을 찾을 수 없음');
+        return false;
+      }
+
+      final requestData = requestDoc.data()!;
+      if (requestData['recipientId'] != user.uid) {
+        print('❌ 권한 없음');
+        return false;
+      }
+
+      // 이미 응답한 경우 중복 처리 방지
+      final currentStatus = requestData['status'];
+      if (currentStatus == 'accepted' || currentStatus == 'rejected') {
+        print('⚠️ 이미 응답한 요청입니다: $currentStatus');
+        return false;
+      }
+
+      final reviewId = requestData['metadata']['reviewId'];
+
+      // 요청 상태 업데이트
+      await _firestore.collection('review_requests').doc(requestId).update({
+        'status': accept ? 'accepted' : 'rejected',
+        'respondedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 후기에 사용자 추가/제거
+      if (accept) {
+        await _firestore.collection('meetup_reviews').doc(reviewId).update({
+          'approvedParticipants': FieldValue.arrayUnion([user.uid]),
+          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+        });
+        
+        // 후기를 사용자 프로필에 게시
+        await _publishReviewToUserProfile(
+          userId: user.uid,
+          reviewId: reviewId,
+          reviewData: requestData,
+        );
+        
+        print('✅ 후기 수락 완료 및 프로필에 게시됨');
+      } else {
+        await _firestore.collection('meetup_reviews').doc(reviewId).update({
+          'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
+          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+        });
+        print('✅ 후기 거절 완료');
+      }
+
+      return true;
+    } catch (e) {
+      print('❌ 후기 수락/거절 처리 오류: $e');
+      return false;
+    }
+  }
+
+  /// 내가 받은 후기 요청 목록 가져오기
+  Future<List<Map<String, dynamic>>> getMyReviewRequests() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return [];
+      }
+
+      final requestsSnapshot = await _firestore
+          .collection('review_requests')
+          .where('recipientId', isEqualTo: user.uid)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return requestsSnapshot.docs
+          .map((doc) => {...doc.data(), 'id': doc.id})
+          .toList();
+    } catch (e) {
+      print('❌ 내 후기 요청 목록 조회 오류: $e');
+      return [];
+    }
+  }
+
+  /// 후기를 사용자 프로필에 게시 (내부 헬퍼 메서드)
+  Future<void> _publishReviewToUserProfile({
+    required String userId,
+    required String reviewId,
+    required Map<String, dynamic> reviewData,
+  }) async {
+    try {
+      print('📝 프로필에 후기 게시 시작: userId=$userId, reviewId=$reviewId');
+      print('📝 reviewData: $reviewData');
+      
+      // 후기 전체 정보 가져오기
+      final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음: reviewId=$reviewId');
+        return;
+      }
+      
+      final fullReviewData = reviewDoc.data()!;
+      print('📊 fullReviewData: $fullReviewData');
+      
+      final postData = {
+        'type': 'meetup_review',
+        'authorId': userId,
+        'meetupId': fullReviewData['meetupId'],
+        'meetupTitle': fullReviewData['meetupTitle'],
+        'imageUrl': fullReviewData['imageUrl'],
+        'content': fullReviewData['content'],
+        'reviewId': reviewId,
+        'createdAt': fullReviewData['createdAt'] ?? FieldValue.serverTimestamp(),
+        'visibility': 'public', // 후기는 공개
+        'isHidden': false,
+        'likeCount': 0,
+        'commentCount': 0,
+      };
+      
+      print('📤 저장할 데이터: $postData');
+      print('📍 저장 경로: users/$userId/posts/$reviewId');
+      
+      // users/{userId}/posts 컬렉션에 후기 게시
+      await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .doc(reviewId) // reviewId를 문서 ID로 사용하여 중복 방지
+          .set(postData);
+      
+      print('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
+      print('✅ 저장된 경로: users/$userId/posts/$reviewId');
+    } catch (e, stackTrace) {
+      print('❌ 프로필에 후기 게시 오류: $e');
+      print('❌ Stack trace: $stackTrace');
+      // 에러가 발생해도 전체 프로세스는 계속 진행
+      rethrow; // 에러를 다시 던져서 상위에서 확인 가능하도록
+    }
+  }
+
+  /// 후기 숨김/표시 토글
+  Future<bool> toggleReviewVisibility({
+    required String reviewId,
+    required bool hide,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('❌ 사용자 인증 필요');
+        return false;
+      }
+
+      // 사용자 프로필의 후기 문서 업데이트
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('posts')
+          .doc(reviewId)
+          .update({
+        'isHidden': hide,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 후기 ${hide ? "숨김" : "표시"} 처리 완료: $reviewId');
+      return true;
+    } catch (e) {
+      print('❌ 후기 숨김/표시 처리 오류: $e');
+      return false;
     }
   }
 }

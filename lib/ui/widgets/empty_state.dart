@@ -4,8 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
-import 'app_fab.dart';
-import '../../constants/app_constants.dart';
+import '../../l10n/app_localizations.dart';
 
 /// 2024-2025 트렌드 기반 빈 상태 위젯
 ///
@@ -65,15 +64,13 @@ class AppEmptyState extends StatelessWidget {
   });
 
   /// 모임이 없을 때 표시하는 빈 상태 (프리셋)
-  factory AppEmptyState.noMeetups({VoidCallback? onCreateMeetup}) {
+  factory AppEmptyState.noMeetups({required BuildContext context, VoidCallback? onCreateMeetup}) {
     return AppEmptyState(
       icon: IconStyles.groups,
-      title: 'Wefilling의 뜻을 아시나요?',
-      description: '"We"와 "filling"의 합성어로,\n사람과 사람 사이의 공간을 채운다는 뜻입니다.',
-      ctaText: '첫 모임 만들기',
-      ctaIcon: IconStyles.add,
-      onCtaPressed: onCreateMeetup,
-      secondaryCtaText: '모임 둘러보기',
+      title: AppLocalizations.of(context)!.wefillingMeaning,
+      description: AppLocalizations.of(context)!.wefillingExplanation,
+      // ctaText 및 onCtaPressed 제거하여 "Create Your First Meetup" 버튼 숨김
+      secondaryCtaText: AppLocalizations.of(context)!.searchMeetups,
       // 위필링 로고를 표시
       illustration: Container(
         width: 120,
@@ -111,31 +108,34 @@ class AppEmptyState extends StatelessWidget {
   }
 
   /// 친구가 없을 때 표시하는 빈 상태 (프리셋)
-  factory AppEmptyState.noFriends({VoidCallback? onSearchFriends}) {
+  factory AppEmptyState.noFriends({required BuildContext context, VoidCallback? onSearchFriends}) {
+    final l10n = AppLocalizations.of(context)!;
     return AppEmptyState(
       icon: IconStyles.group,
-      title: '함께할 친구를 찾아보세요',
-      description: '새로운 친구들과 즐거운 추억을 만들어보세요.\n같은 관심사를 가진 사람들이 기다리고 있어요.',
-      ctaText: '친구 찾기',
+      title: l10n.findFriends,
+      description: l10n.makeFriendsWithSameInterests,
+      ctaText: l10n.findFriendsAction,
       ctaIcon: IconStyles.search,
       onCtaPressed: onSearchFriends,
-      secondaryCtaText: '추천 친구 보기',
+      secondaryCtaText: l10n.viewRecommendedFriends,
     );
   }
 
   /// 검색 결과가 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noSearchResults({
+    required BuildContext context,
     String? searchQuery,
     VoidCallback? onClearSearch,
   }) {
+    final l10n = AppLocalizations.of(context)!;
     return AppEmptyState(
       icon: Icons.search_off_outlined,
-      title: '검색 결과가 없어요',
+      title: l10n.noSearchResults,
       description:
           searchQuery != null
-              ? '\'$searchQuery\'에 대한 결과가 없습니다.\n다른 검색어를 시도해보세요.'
-              : '검색 조건을 확인하고\n다시 시도해보세요.',
-      ctaText: '검색어 지우기',
+              ? '\'$searchQuery\' ${l10n.tryDifferentKeyword}'
+              : l10n.tryDifferentKeyword,
+      ctaText: l10n.clearSearchQuery,
       ctaIcon: Icons.clear,
       onCtaPressed: onClearSearch,
     );
@@ -160,44 +160,47 @@ class AppEmptyState extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: padding,
       color: backgroundColor,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 일러스트 또는 아이콘
-          _buildIllustration(colorScheme),
+      child: SingleChildScrollView(
+        padding: padding,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 일러스트 또는 아이콘
+            _buildIllustration(colorScheme),
 
-          const SizedBox(height: DesignTokens.s24),
+            const SizedBox(height: DesignTokens.s24),
 
-          // 제목
-          Text(
-            title,
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
+            // 제목
+            Text(
+              title,
+              style: theme.textTheme.headlineSmall?.copyWith(
+                color: colorScheme.onSurface,
+                fontWeight: FontWeight.w600,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
 
-          const SizedBox(height: DesignTokens.s12),
+            const SizedBox(height: DesignTokens.s12),
 
-          // 설명
-          Text(
-            description,
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-              height: 1.5,
+            // 설명
+            Text(
+              description,
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
-          ),
 
-          const SizedBox(height: DesignTokens.s24),
+            const SizedBox(height: DesignTokens.s24),
 
-          // CTA 버튼들
-          _buildActionButtons(theme, colorScheme),
-        ],
+            // CTA 버튼들
+            _buildActionButtons(theme, colorScheme),
+          ],
+        ),
       ),
     );
   }

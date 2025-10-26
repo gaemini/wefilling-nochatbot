@@ -20,6 +20,10 @@ import '../services/post_service.dart';
 import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
+import '../l10n/app_localizations.dart';
+import '../utils/country_flag_helper.dart';
+import 'login_screen.dart';
+import 'review_detail_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -65,9 +69,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               color: AppTheme.backgroundSecondary,
               child: TabBar(
                 controller: _tabController,
-                labelColor: AppTheme.primary,
-                unselectedLabelColor: Colors.grey,
-                indicatorColor: AppTheme.primary,
+                labelColor: const Color(0xFF646464), // 회색으로 변경
+                unselectedLabelColor: Colors.grey[400],
+                indicatorColor: const Color(0xFF646464), // 회색으로 변경
                 indicatorWeight: 2.5,
                 labelStyle: AppTheme.labelMedium.copyWith(
                   fontWeight: FontWeight.w600,
@@ -76,12 +80,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 tabs: [
                   Tab(
                     icon: Icon(Icons.grid_on_rounded, size: 16),
-                    text: '후기',
+                    text: AppLocalizations.of(context)!.reviews,
                     height: 48,
                   ),
                   Tab(
                     icon: Icon(Icons.bookmark_border_rounded, size: 16),
-                    text: '저장됨',
+                    text: AppLocalizations.of(context)!.saved,
                     height: 48,
                   ),
                 ],
@@ -152,16 +156,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   Container(
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      gradient: AppTheme.primaryGradient,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.primary.withOpacity(0.3),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      border: Border.all(
+                        color: const Color(0xFF646464), // 회색 톤
+                        width: 3,
+                      ),
                     ),
-                    padding: const EdgeInsets.all(3),
                     child: Container(
                       width: screenHeight < 700 ? 80 : 88,
                       height: screenHeight < 700 ? 80 : 88,
@@ -179,14 +178,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                 errorBuilder: (_, __, ___) => Icon(
                                   Icons.person,
                                   size: screenHeight < 700 ? 40 : 44,
-                                  color: AppTheme.primary,
+                                  color: const Color(0xFF4A90E2), // 위필링 로고색
                                 ),
                               ),
                             )
                           : Icon(
                               Icons.person,
                               size: screenHeight < 700 ? 40 : 44,
-                              color: AppTheme.primary,
+                              color: const Color(0xFF4A90E2), // 위필링 로고색
                             ),
                     ),
                   ),
@@ -199,7 +198,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          userData?['nickname'] ?? '사용자',
+                          userData?['nickname'] ?? AppLocalizations.of(context)!.user,
                           style: AppTheme.headlineMedium.copyWith(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
@@ -219,7 +218,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                               const SizedBox(width: 8),
                               Flexible(
                                 child: Text(
-                                  nationality,
+                                  CountryFlagHelper.getCountryInfo(nationality)
+                                      ?.getLocalizedName(Localizations.localeOf(context).languageCode) 
+                                      ?? nationality,
                                   style: AppTheme.bodyMedium.copyWith(
                                     color: Colors.black87,
                                     fontSize: 15,
@@ -231,6 +232,20 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                               ),
                             ],
                           ),
+                        // 한 줄 소개 (프로필에서만 표시)
+                        if (userData?['bio'] != null && (userData!['bio'] as String).isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            userData!['bio'],
+                            style: AppTheme.bodyMedium.copyWith(
+                              color: Colors.black87,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w400,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                         if (userData?['university'] != null) ...[
                           const SizedBox(height: 4),
                           Row(
@@ -265,7 +280,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black, width: 1.5),
+                  border: Border.all(color: const Color(0xFF646464), width: 1.5), // 회색 테두리
                   boxShadow: [
                     BoxShadow(
                       color: Colors.grey.withOpacity(0.1),
@@ -281,11 +296,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildStatItem('주최한 모임', icon: Icons.event_available, color: Colors.black),
-                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: Colors.black),
-                    _buildStatItem('참여한 모임', isJoined: true, icon: Icons.groups, color: Colors.black),
-                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: Colors.black),
-                    _buildStatItem('작성한 글', isPosts: true, icon: Icons.article, color: Colors.black),
+                    _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, icon: Icons.event_available, color: const Color(0xFF646464)), // 회색 아이콘
+                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)), // 회색 구분선
+                    _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF646464)),
+                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)),
+                    _buildStatItem(AppLocalizations.of(context)!.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF646464)),
                   ],
                 ),
               ),
@@ -307,7 +322,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     });
                   },
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: AppTheme.primary, width: 1.5),
+                    side: BorderSide(color: const Color(0xFF646464), width: 1.5), // 회색 테두리
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(DesignTokens.r12),
                     ),
@@ -316,9 +331,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     ),
                   ),
                   child: Text(
-                    '프로필 편집',
+                    AppLocalizations.of(context)!.profileEdit,
                     style: AppTheme.labelMedium.copyWith(
-                      color: AppTheme.primary,
+                      color: Colors.black, // 텍스트는 검은색 유지 (가독성)
                       fontWeight: FontWeight.bold,
                       fontSize: screenHeight < 700 ? 13 : 14, // 반응형 텍스트
                     ),
@@ -368,14 +383,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 16),
             Text(
-              '로그인이 필요합니다',
+              AppLocalizations.of(context)!.loginRequired,
               style: AppTheme.headlineMedium.copyWith(
                 color: AppTheme.primary,
               ),
             ),
             SizedBox(height: 8),
             Text(
-              '후기를 보려면 로그인해주세요',
+              AppLocalizations.of(context)!.loginToViewReviews,
               style: AppTheme.bodyMedium.copyWith(
                 color: Colors.grey[600],
               ),
@@ -446,7 +461,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '아직 작성한 후기가 없습니다',
+                  AppLocalizations.of(context)!.noReviewsYet,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
                     fontSize: 16,
@@ -454,7 +469,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 6),
                 Text(
-                  '모임에 참여하고 후기를 작성해보세요!',
+                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontSize: 13,
@@ -466,17 +481,19 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         }
         
         return GridView.builder(
-          padding: EdgeInsets.all(2),
+          padding: EdgeInsets.all(4),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
+            crossAxisCount: 2,
             crossAxisSpacing: 2,
             mainAxisSpacing: 2,
+            childAspectRatio: 1,
           ),
           itemCount: reviews.length,
           itemBuilder: (context, index) {
             final review = reviews[index];
             return GestureDetector(
               onTap: () => _openReviewDetail(review),
+              onLongPress: () => _showReviewOptions(review),
               child: Container(
                 decoration: BoxDecoration(
                   color: AppTheme.backgroundSecondary,
@@ -499,6 +516,33 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                         ),
                       ),
                     
+                    // 숨김 표시 오버레이
+                    if (review.hidden)
+                      Container(
+                        color: Colors.black54,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.visibility_off_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                AppLocalizations.of(context)!.hideReview,
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    
                     // 다중 이미지 표시
                     if (review.imageUrls.length > 1)
                       Positioned(
@@ -518,39 +562,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                         ),
                       ),
                     
-                    // 평점 표시
-                    Positioned(
-                      bottom: 4,
-                      left: 4,
-                      child: Container(
-                        padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.star_rounded,
-                              color: AppTheme.accentAmber,
-                              size: 12,
-                            ),
-                            SizedBox(width: 2),
-                            Text(
-                              '${review.rating}',
-                              style: AppTheme.labelSmall.copyWith(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    
                     // 좋아요 수 표시
-                    if (review.likedBy.isNotEmpty)
+                    if (review.likedBy.isNotEmpty && !review.hidden)
                       Positioned(
                         bottom: 4,
                         right: 4,
@@ -580,6 +593,27 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                           ),
                         ),
                       ),
+                    
+                    // 메뉴 버튼
+                    Positioned(
+                      top: 4,
+                      left: 4,
+                      child: GestureDetector(
+                        onTap: () => _showReviewOptions(review),
+                        child: Container(
+                          padding: EdgeInsets.all(4),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.more_vert,
+                            color: Colors.white,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -608,14 +642,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 16),
             Text(
-              '로그인이 필요합니다',
+              AppLocalizations.of(context)!.loginRequired,
               style: AppTheme.headlineMedium.copyWith(
                 color: AppTheme.primary,
               ),
             ),
             SizedBox(height: 8),
             Text(
-              '저장된 게시물을 보려면 로그인해주세요',
+              AppLocalizations.of(context)!.loginToViewSavedPosts,
               style: AppTheme.bodyMedium.copyWith(
                 color: Colors.grey[600],
               ),
@@ -648,7 +682,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '오류가 발생했습니다',
+                  AppLocalizations.of(context)!.error,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.accentRed,
                   ),
@@ -686,7 +720,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  '저장된 게시물이 없습니다',
+                  AppLocalizations.of(context)!.noSavedPosts,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
                     fontSize: 16,
@@ -694,7 +728,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 6),
                 Text(
-                  '관심 있는 게시물을 저장해보세요',
+                  AppLocalizations.of(context)!.saveInterestingPosts,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontSize: 13,
@@ -796,15 +830,22 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
+    final l10n = AppLocalizations.of(context)!;
     
     if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      return difference.inDays == 1 
+        ? '1${l10n.dayAgo}'
+        : l10n.daysAgoCount(difference.inDays);
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      return difference.inHours == 1
+        ? '1${l10n.hourAgo}'
+        : l10n.hoursAgoCount(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      return difference.inMinutes == 1
+        ? '1${l10n.minuteAgo}'
+        : l10n.minutesAgoCount(difference.inMinutes);
     } else {
-      return '방금 전';
+      return l10n.justNowTime;
     }
   }
 
@@ -852,9 +893,173 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   }
 
   void _openReviewDetail(ReviewPost review) {
-    // 후기 상세 페이지로 이동하는 기능 (현재는 비활성화)
-    // TODO: 후기 상세 페이지 구현 시 Navigator.push 추가
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ReviewDetailScreen(review: review),
+      ),
+    );
   }
+
+  void _showReviewOptions(ReviewPost review) {
+    showModalBottomSheet(
+      context: context,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(DesignTokens.r16),
+        ),
+      ),
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Container(
+            padding: EdgeInsets.all(DesignTokens.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                SizedBox(height: DesignTokens.s16),
+                
+                // 숨김/표시 옵션만 제공 (삭제는 불가)
+                _buildMenuItem(
+                  context,
+                  review.hidden 
+                    ? AppLocalizations.of(context)!.unhideReview
+                    : AppLocalizations.of(context)!.hideReview,
+                  review.hidden 
+                    ? Icons.visibility_rounded
+                    : Icons.visibility_off_rounded,
+                  () async {
+                    Navigator.pop(context);
+                    await _toggleReviewHidden(review);
+                  },
+                ),
+                
+                SizedBox(height: DesignTokens.s12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _toggleReviewHidden(ReviewPost review) async {
+    final l10n = AppLocalizations.of(context)!;
+    
+    // 확인 다이얼로그
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          review.hidden ? l10n.unhideReview : l10n.hideReview,
+        ),
+        content: Text(
+          review.hidden 
+            ? l10n.unhideReviewConfirm
+            : l10n.hideReviewConfirm,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.confirm),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // 숨김/표시 처리
+    final success = review.hidden
+        ? await _reviewService.unhideReview(review.id)
+        : await _reviewService.hideReview(review.id);
+
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            review.hidden ? l10n.reviewUnhidden : l10n.reviewHidden,
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            review.hidden ? l10n.reviewUnhideFailed : l10n.reviewHideFailed,
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // 후기 삭제 기능은 제거됨 (중복 등록 및 알림 문제 방지)
+  // 후기는 수정만 가능하며, 숨김 처리로 프로필에서 제외 가능
+  /*
+  Future<void> _deleteReview(ReviewPost review) async {
+    final l10n = AppLocalizations.of(context)!;
+    
+    // 확인 다이얼로그
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.delete),
+        content: Text(l10n.deleteReviewConfirmMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancel),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(
+              foregroundColor: BrandColors.error,
+            ),
+            child: Text(l10n.delete),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // 삭제 처리
+    final success = await _reviewService.deleteReview(review.id);
+
+    if (!mounted) return;
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.deleteReviewSuccess),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.deleteReviewFailed),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+  */
 
   void _showSettingsBottomSheet(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -882,7 +1087,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
                 SizedBox(height: DesignTokens.s16),
-                _buildMenuItem(context, '내 모임', Icons.group_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -891,7 +1096,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, '내 게시글', Icons.article_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.myPosts, Icons.article_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -900,7 +1105,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, '알림 설정', Icons.notifications_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.notificationSettings, Icons.notifications_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -909,7 +1114,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, '계정 설정', Icons.settings_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.accountSettings, Icons.settings_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -919,7 +1124,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 );
               }),
                 Divider(color: Colors.grey[300]),
-                _buildMenuItem(context, '로그아웃', Icons.logout_rounded, () async {
+                _buildMenuItem(context, AppLocalizations.of(context)!.logout, Icons.logout_rounded, () async {
                   Navigator.pop(context);
                   // 로그아웃 확인 다이얼로그 표시
                   _showLogoutConfirmDialog(context, authProvider);
@@ -977,12 +1182,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('로그아웃'),
-          content: const Text('정말 로그아웃하시겠습니까?'),
+          title: Text(AppLocalizations.of(context)!.logout),
+          content: Text(AppLocalizations.of(context)!.logoutConfirm),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1006,14 +1211,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 try {
                   await authProvider.signOut();
                   
-                  // 로딩 다이얼로그 닫기
+                  // 로딩 다이얼로그 닫기 후 로그인 화면으로 이동(스택 초기화)
                   if (context.mounted) {
                     Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('로그아웃되었습니다'),
-                        backgroundColor: Colors.green,
-                      ),
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      (route) => false,
                     );
                   }
                 } catch (e) {
@@ -1022,11 +1225,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('로그아웃 중 오류가 발생했습니다.\n다시 시도해주세요.'),
+                        content: Text(AppLocalizations.of(context)!.logoutError),
                         backgroundColor: BrandColors.error,
                         duration: const Duration(seconds: 3),
                         action: SnackBarAction(
-                          label: '재시도',
+                          label: AppLocalizations.of(context)!.retry,
                           textColor: Colors.white,
                           onPressed: () {
                             // 재시도 로직
@@ -1039,7 +1242,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   print('로그아웃 UI 오류: $e');
                 }
               },
-              child: const Text('로그아웃'),
+              child: Text(AppLocalizations.of(context)!.logout),
             ),
           ],
         );

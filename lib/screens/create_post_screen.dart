@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../services/post_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../l10n/app_localizations.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -165,7 +166,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               return AlertDialog(
-                title: const Text('공개할 카테고리 선택'),
+                title: Text(AppLocalizations.of(context)!.selectCategoriesToShare),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -190,11 +191,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: const Text('취소'),
+                    child: Text(AppLocalizations.of(context)!.cancel),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context, tempSelected),
-                    child: const Text('확인'),
+                    child: Text(AppLocalizations.of(context)!.confirm),
                   ),
                 ],
               );
@@ -282,7 +283,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(const SnackBar(content: Text('게시글이 등록되었습니다.')));
+            ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postCreated)));
           }
         } else {
           throw Exception("게시글 등록 실패");
@@ -294,8 +295,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             _isSubmitting = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('게시글 등록에 실패했습니다. 다시 시도해주세요.'),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.postCreateFailed),
               backgroundColor: Colors.red,
             ),
           );
@@ -336,7 +337,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('새 게시글 작성'),
+        title: Text(AppLocalizations.of(context)!.newPostCreation),
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 8),
@@ -363,7 +364,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 : Colors.grey[400],
                       ),
               label: Text(
-                _isSubmitting ? '등록 중...' : '등록',
+                _isSubmitting ? AppLocalizations.of(context)!.loading : AppLocalizations.of(context)!.registration,
                 style: TextStyle(
                   color: _canSubmit ? Colors.blue.shade700 : Colors.grey[400],
                   fontWeight: FontWeight.bold,
@@ -453,7 +454,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '작성자',
+                        AppLocalizations.of(context)!.author,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.blue.shade700,
@@ -477,8 +478,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '공개 범위',
+                    Text(
+                      AppLocalizations.of(context)!.visibilityScope,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -490,7 +491,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       children: [
                         Expanded(
                           child: RadioListTile<String>(
-                            title: const Text('전체 공개'),
+                            title: Text(AppLocalizations.of(context)!.publicPost),
                             value: 'public',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -507,7 +508,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                         Expanded(
                           child: RadioListTile<String>(
-                            title: const Text('카테고리별'),
+                            title: Text(AppLocalizations.of(context)!.categorySpecific),
                             value: 'category',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -543,8 +544,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             Expanded(
                               child: Text(
                                 _isAnonymous
-                                    ? '익명으로 게시됩니다. 댓글 작성자는 "글쓴이", "익명1", "익명2" 등으로 표시됩니다.'
-                                    : '작성자와 댓글 작성자의 실명이 표시됩니다.',
+                                    ? AppLocalizations.of(context)!.postAnonymously
+                                    : AppLocalizations.of(context)!.authorAndCommenterInfo,
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.blue.shade900,
@@ -555,8 +556,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                       ),
                       CheckboxListTile(
-                        title: const Text(
-                          '익명으로 게시',
+                        title: Text(
+                          AppLocalizations.of(context)!.postAnonymously,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -564,8 +565,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                         subtitle: Text(
                           _isAnonymous 
-                              ? '✓ 신원이 완전히 숨겨집니다'
-                              : '아이디가 공개됩니다',
+                              ? '✓ ' + AppLocalizations.of(context)!.postAnonymously
+                              : AppLocalizations.of(context)!.idWillBeShown,
                           style: TextStyle(
                             fontSize: 12,
                             color: _isAnonymous ? Colors.green.shade700 : Colors.grey.shade600,
@@ -603,7 +604,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    '카테고리 멤버에게만 공개되며, 작성자와 댓글 작성자의 실명이 표시됩니다.',
+                                    AppLocalizations.of(context)!.selectedGroupOnly,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.green.shade900,
@@ -619,8 +620,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             icon: const Icon(Icons.category, size: 18),
                             label: Text(
                               _selectedCategoryIds.isEmpty
-                                  ? '카테고리 선택 (필수)'
-                                  : '${_selectedCategoryIds.length}개 선택됨',
+                                  ? AppLocalizations.of(context)!.selectCategoryRequired
+                                  : '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
                             ),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
@@ -642,7 +643,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               TextField(
                 controller: _titleController,
                 decoration: InputDecoration(
-                  hintText: '제목을 입력하세요',
+                  hintText: AppLocalizations.of(context)!.enterTitle,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -676,7 +677,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ElevatedButton.icon(
                 onPressed: _selectImages,
                 icon: const Icon(Icons.image),
-                label: const Text('이미지 첨부'),
+                label: Text(AppLocalizations.of(context)!.imageAttachment),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: Colors.blue.shade700,
@@ -762,7 +763,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   controller: _contentController,
                   focusNode: _contentFocusNode,
                   decoration: InputDecoration(
-                    hintText: '내용을 입력하세요',
+                    hintText: AppLocalizations.of(context)!.enterContent,
                     border: InputBorder.none, // 테두리 없애기 (컨테이너가 이미 테두리를 가짐)
                     contentPadding: const EdgeInsets.all(16),
                     fillColor: Colors.transparent,

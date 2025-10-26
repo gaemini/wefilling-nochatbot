@@ -13,6 +13,10 @@ class AppNotification {
   final String message; // 알림 내용
   final String type; // 알림 유형 (예: 'meetup_full', 'new_comment' 등)
   final String? meetupId; // 관련 모임 ID (모임 관련 알림인 경우)
+  final String? postId; // 관련 게시글 ID (게시글 관련 알림인 경우)
+  final String? actorId; // 알림을 발생시킨 사용자 ID
+  final String? actorName; // 알림을 발생시킨 사용자 이름
+  final Map<String, dynamic>? data; // 알림 번역을 위한 추가 데이터
   final DateTime createdAt; // 알림 생성 시간
   final bool isRead; // 읽음 여부
 
@@ -23,6 +27,10 @@ class AppNotification {
     required this.message,
     required this.type,
     this.meetupId,
+    this.postId,
+    this.actorId,
+    this.actorName,
+    this.data,
     required this.createdAt,
     this.isRead = false,
   });
@@ -38,6 +46,10 @@ class AppNotification {
       message: data['message'] ?? '',
       type: data['type'] ?? '',
       meetupId: data['meetupId'],
+      postId: data['postId'],
+      actorId: data['actorId'],
+      actorName: data['actorName'],
+      data: data['data'] != null ? Map<String, dynamic>.from(data['data']) : null,
       createdAt:
           data['createdAt'] != null
               ? (data['createdAt'] as Timestamp).toDate()
@@ -54,6 +66,10 @@ class AppNotification {
       'message': message,
       'type': type,
       'meetupId': meetupId,
+      'postId': postId,
+      'actorId': actorId,
+      'actorName': actorName,
+      'data': data,
       'createdAt': FieldValue.serverTimestamp(),
       'isRead': isRead,
     };
@@ -68,6 +84,10 @@ class AppNotification {
       message: message,
       type: type,
       meetupId: meetupId,
+      postId: postId,
+      actorId: actorId,
+      actorName: actorName,
+      data: data,
       createdAt: createdAt,
       isRead: read,
     );

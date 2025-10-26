@@ -4,6 +4,7 @@
 // 사용자 프로필 정보 저장 및 검색
 // 닉네임 업데이트 기능
 
+import 'dart:io' show Platform;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -25,8 +26,11 @@ class AuthService {
   // 구글 로그인
   Future<UserCredential?> signInWithGoogle() async {
     try {
-      // Google Sign-In 초기화 (필요한 경우)
-      await _googleSignIn.initialize();
+      // Google Sign-In 초기화 (플랫폼별 분기)
+      final clientId = (Platform.isIOS || Platform.isMacOS)
+          ? '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com'
+          : null;
+      await _googleSignIn.initialize(clientId: clientId);
 
       // Google Sign-In 7.x API 사용
       final GoogleSignInAccount googleUser = await _googleSignIn.authenticate();
@@ -42,8 +46,7 @@ class AuthService {
       // Firebase에 로그인
       final userCredential = await _auth.signInWithCredential(credential);
 
-      // 사용자 정보 Firestore에 저장
-      await _storeUserData(userCredential.user!);
+      // 사용자 정보 Firestore에 저장하지 않음 (AuthProvider에서 처리)
 
       return userCredential;
     } catch (e) {
@@ -58,26 +61,26 @@ class AuthService {
     await _auth.signOut();
   }
 
-  // 사용자 정보 Firestore에 저장
-  Future<void> _storeUserData(User user) async {
-    // 사용자 문서 참조
-    final userDoc = _firestore.collection('users').doc(user.uid);
-
-    // 문서가 이미 존재하는지 확인
-    final docSnapshot = await userDoc.get();
-
-    if (!docSnapshot.exists) {
-      // 새 사용자면 기본 정보 저장
-      await userDoc.set({
-        'uid': user.uid,
-        'email': user.email,
-        'displayName': user.displayName ?? '',
-        'photoURL': user.photoURL ?? '',
-        'nickname': '', // 사용자가 나중에 설정할 닉네임
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-  }
+  // 사용자 정보 Firestore에 저장 (더 이상 사용하지 않음 - AuthProvider에서 처리)
+  // Future<void> _storeUserData(User user) async {
+  //   // 사용자 문서 참조
+  //   final userDoc = _firestore.collection('users').doc(user.uid);
+  //
+  //   // 문서가 이미 존재하는지 확인
+  //   final docSnapshot = await userDoc.get();
+  //
+  //   if (!docSnapshot.exists) {
+  //     // 새 사용자면 기본 정보 저장
+  //     await userDoc.set({
+  //       'uid': user.uid,
+  //       'email': user.email,
+  //       'displayName': user.displayName ?? '',
+  //       'photoURL': user.photoURL ?? '',
+  //       'nickname': '', // 사용자가 나중에 설정할 닉네임
+  //       'createdAt': FieldValue.serverTimestamp(),
+  //     });
+  //   }
+  // }
 
   // 닉네임 업데이트
   Future<void> updateNickname(String nickname) async {

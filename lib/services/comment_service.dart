@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
 import 'notification_service.dart';
+import 'content_filter_service.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -15,11 +16,14 @@ class CommentService {
 
   // 댓글 추가 (원댓글 또는 대댓글)
   Future<bool> addComment(
-    String postId, 
+    String postId,
     String content, {
     String? parentCommentId,
     String? replyToUserId,
     String? replyToUserNickname,
+    // 리뷰 댓글 지원을 위한 선택 파라미터
+    String? reviewOwnerUserId, // users/{userId}/posts/{postId} 경로의 ownerId
+    String? reviewTitle, // 알림용 제목 (예: meetupTitle)
   }) async {
     try {
       final user = _auth.currentUser;
@@ -53,27 +57,62 @@ class CommentService {
       // Firestore에 저장
       await _firestore.collection('comments').add(commentData);
 
-      // 게시글 정보 가져오기 (제목과 작성자 ID 필요)
-      final postDoc = await _firestore.collection('posts').doc(postId).get();
-      if (postDoc.exists && postDoc.data() != null) {
-        final postData = postDoc.data()!;
-        final postTitle = postData['title'] ?? '게시글';
-        final postAuthorId = postData['userId'];
-
-        // 게시글 작성자에게 알림 전송 (자기 자신이 댓글을 단 경우 제외)
-        if (postAuthorId != null && postAuthorId != user.uid) {
-          await _notificationService.sendNewCommentNotification(
-            postId,
-            postTitle,
-            postAuthorId,
-            nickname,
-            user.uid,
-          );
+      // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
+      String? targetAuthorId;
+      String notificationTitle = '게시글';
+      try {
+        final postDoc = await _firestore.collection('posts').doc(postId).get();
+        if (postDoc.exists && postDoc.data() != null) {
+          final postData = postDoc.data()!;
+          notificationTitle = postData['title'] ?? '게시글';
+          targetAuthorId = postData['userId'];
         }
+      } catch (_) {}
+
+      // posts/{postId}가 없으면 리뷰 정보 사용
+      targetAuthorId ??= reviewOwnerUserId;
+      if (reviewTitle != null) notificationTitle = reviewTitle;
+
+      print('💬 댓글 작성 완료 - 알림 전송 확인 중');
+      print('   대상 작성자: $targetAuthorId');
+      print('   댓글 작성자: ${user.uid}');
+      print('   제목: $notificationTitle');
+
+      // 대댓글인 경우: 원댓글 작성자에게 알림 전송
+      if (parentCommentId != null && replyToUserId != null && replyToUserId != user.uid) {
+        print('🔔 대댓글 알림 전송 시작... (대상: $replyToUserId)');
+        final notificationSent = await _notificationService.sendNewCommentNotification(
+          postId,
+          notificationTitle,
+          replyToUserId, // 원댓글 작성자에게 알림
+          nickname,
+          user.uid,
+        );
+        print(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
+      } 
+      // 원댓글: 대상 작성자에게 알림 (자기 자신 제외)
+      else if (parentCommentId == null && targetAuthorId != null && targetAuthorId != user.uid) {
+        print('🔔 댓글 알림 전송 시작... (작성자: $targetAuthorId)');
+        
+        // 리뷰 댓글인 경우 별도 알림 타입 사용
+        final isReview = reviewOwnerUserId != null;
+        
+        final notificationSent = await _notificationService.sendNewCommentNotification(
+          postId,
+          notificationTitle,
+          targetAuthorId,
+          nickname,
+          user.uid,
+          isReview: isReview,
+          reviewOwnerUserId: reviewOwnerUserId,
+        );
+        print(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
+      } else {
+        print('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
       }
 
-      // 게시글 문서에 댓글 수 업데이트
-      await _updateCommentCount(postId);
+      // 댓글 수 업데이트 (게시글/리뷰 모두 시도, 실패해도 무시)
+      await _updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId);
 
       return true;
     } catch (e) {
@@ -83,7 +122,7 @@ class CommentService {
   }
 
   // 게시글의 댓글 수 업데이트
-  Future<void> _updateCommentCount(String postId) async {
+  Future<void> _updateCommentCount(String postId, {String? reviewOwnerUserId}) async {
     try {
       // 해당 게시글의 댓글 수 계산
       final querySnapshot =
@@ -94,10 +133,31 @@ class CommentService {
 
       final commentCount = querySnapshot.docs.length;
 
-      // 게시글 문서 업데이트
-      await _firestore.collection('posts').doc(postId).update({
-        'commentCount': commentCount,
-      });
+      // 1) posts/{postId}가 존재하면 업데이트
+      try {
+        final postDoc = await _firestore.collection('posts').doc(postId).get();
+        if (postDoc.exists) {
+          await _firestore.collection('posts').doc(postId).update({
+            'commentCount': commentCount,
+          });
+        }
+      } catch (e) {
+        // 권한/존재하지 않음 → 무시
+      }
+
+      // 2) 리뷰 프로필 문서(users/{uid}/posts/{postId}) 업데이트 (권한 실패 시 무시)
+      if (reviewOwnerUserId != null && reviewOwnerUserId.isNotEmpty) {
+        try {
+          await _firestore
+              .collection('users')
+              .doc(reviewOwnerUserId)
+              .collection('posts')
+              .doc(postId)
+              .update({'commentCount': commentCount});
+        } catch (e) {
+          // 권한/존재하지 않음 → 무시
+        }
+      }
     } catch (e) {
       print('댓글 수 업데이트 오류: $e');
     }
@@ -112,11 +172,20 @@ class CommentService {
           // 정렬 부분 제거 - 인덱스 문제의 원인
           // .orderBy('createdAt', descending: false)
           .snapshots()
-          .map((snapshot) {
+          .asyncMap((snapshot) async {
             List<Comment> comments =
                 snapshot.docs.map((doc) {
                   return Comment.fromFirestore(doc);
                 }).toList();
+
+            // 차단된 사용자의 댓글 필터링
+            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+            if (blockedUserIds.isNotEmpty) {
+              comments = comments.where((comment) => 
+                comment.userId != null && 
+                !blockedUserIds.contains(comment.userId)
+              ).toList();
+            }
 
             // 클라이언트 측에서 정렬 수행
             comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));

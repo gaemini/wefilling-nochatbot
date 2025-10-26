@@ -35,6 +35,7 @@ dependencies:
   firebase_core: ^4.1.0
   firebase_auth: ^6.0.2
   firebase_messaging: ^16.0.2
+  flutter_local_notifications: ^18.0.1
   google_sign_in: ^7.2.0
   cloud_firestore: ^6.0.1
   cloud_functions: ^6.0.2
@@ -89,6 +90,8 @@ flutter_icons:
 # The following section is specific to Flutter packages.
 flutter:
   generate: true  # Add this line for l10n support
+  config:
+    enable-lldb-debugging: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

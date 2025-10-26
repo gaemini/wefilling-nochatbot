@@ -26,6 +26,9 @@ class Meetup {
   final String? hostNickname; // 주최자 닉네임
   final String visibility; // 공개 범위: 'public', 'friends', 'category'
   final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
+  final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
+  final bool hasReview; // 후기가 작성되었는지
+  final String? reviewId; // 작성된 후기 ID
 
   const Meetup({
     required this.id,
@@ -47,6 +50,9 @@ class Meetup {
     this.hostNickname,
     this.visibility = 'public', // 기본값: 전체 공개
     this.visibleToCategoryIds = const [],
+    this.isCompleted = false, // 기본값: 미완료
+    this.hasReview = false, // 기본값: 후기 없음
+    this.reviewId,
   });
 
   Meetup copyWith({
@@ -69,6 +75,9 @@ class Meetup {
     String? hostNickname,
     String? visibility,
     List<String>? visibleToCategoryIds,
+    bool? isCompleted,
+    bool? hasReview,
+    String? reviewId,
   }) {
     return Meetup(
       id: id ?? this.id,
@@ -90,6 +99,9 @@ class Meetup {
       hostNickname: hostNickname ?? this.hostNickname,
       visibility: visibility ?? this.visibility,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
+      isCompleted: isCompleted ?? this.isCompleted,
+      hasReview: hasReview ?? this.hasReview,
+      reviewId: reviewId ?? this.reviewId,
     );
   }
 
@@ -112,9 +124,11 @@ class Meetup {
     }
   }
 
-  // 포맷된 요일 문자열 반환
-  String getFormattedDayOfWeek() {
-    final dayNames = ['월', '화', '수', '목', '금', '토', '일'];
+  // 포맷된 요일 문자열 반환 (로케일 대응)
+  String getFormattedDayOfWeek({String languageCode = 'ko'}) {
+    final dayNamesKo = ['월', '화', '수', '목', '금', '토', '일'];
+    final dayNamesEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final dayNames = languageCode == 'en' ? dayNamesEn : dayNamesKo;
     // DateTime의 weekday는 1(월요일)부터 7(일요일)까지, 배열 인덱스는 0부터 시작하므로 -1
     final dayIndex = (date.weekday - 1) % 7;
     
@@ -131,15 +145,17 @@ class Meetup {
     return DateFormat('MM.dd').format(date);
   }
 
-  // 모임 상태 확인 (예정/진행중/종료)
-  String getStatus() {
+  // 모임 상태 확인 (예정/진행중/종료) - 로케일 대응
+  String getStatus({String languageCode = 'ko'}) {
     final now = DateTime.now();
 
     // 시간이 "미정"이거나 잘못된 형식인 경우 처리
     if (time.isEmpty || time == '미정' || !time.contains(':')) {
       // 날짜만으로 판단 (시간 정보 없음)
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      return now.isAfter(meetupDate) ? '종료' : '예정';
+      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      return now.isAfter(meetupDate) ? closed : upcoming;
     }
 
     // 날짜와 시간 문자열을 결합하여 DateTime 객체 생성
@@ -150,7 +166,9 @@ class Meetup {
     if (timeParts.length < 2) {
       // 시간 형식이 잘못된 경우 날짜만으로 판단
       final meetupDate = DateTime(date.year, date.month, date.day, 23, 59);
-      return now.isAfter(meetupDate) ? '종료' : '예정';
+      final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
+      final closed = languageCode == 'en' ? 'Closed' : '종료';
+      return now.isAfter(meetupDate) ? closed : upcoming;
     }
     
     final hour = int.tryParse(timeParts[0]) ?? 0;
@@ -186,12 +204,16 @@ class Meetup {
       endMinute,
     );
 
+    final upcoming = languageCode == 'en' ? 'Scheduled' : '예정';
+    final ongoing = languageCode == 'en' ? 'Ongoing' : '진행중';
+    final closed = languageCode == 'en' ? 'Closed' : '종료';
+
     if (now.isBefore(meetupDateTime)) {
-      return '예정';
+      return upcoming;
     } else if (now.isAfter(meetupEndDateTime)) {
-      return '종료';
+      return closed;
     } else {
-      return '진행중';
+      return ongoing;
     }
   }
 
@@ -213,7 +235,7 @@ class Meetup {
         return Icons.school_outlined;
       case '식사':
         return Icons.restaurant_outlined;
-      case '취미':
+      case '카페':
         return Icons.palette_outlined;
       case '문화':
         return Icons.theater_comedy_outlined;
@@ -229,7 +251,7 @@ class Meetup {
         return const Color(0xFF4A90E2); // 파란색
       case '식사':
         return const Color(0xFFFF9500); // 주황색
-      case '취미':
+      case '카페':
         return const Color(0xFF34C759); // 초록색
       case '문화':
         return const Color(0xFFAF52DE); // 보라색
@@ -245,7 +267,7 @@ class Meetup {
         return const Color(0xFFF0F7FF); // 연한 파란색
       case '식사':
         return const Color(0xFFFFF8F0); // 연한 주황색
-      case '취미':
+      case '카페':
         return const Color(0xFFF0FFF4); // 연한 초록색
       case '문화':
         return const Color(0xFFF8F0FF); // 연한 보라색
@@ -295,6 +317,9 @@ class Meetup {
       visibleToCategoryIds: json['visibleToCategoryIds'] != null
           ? List<String>.from(json['visibleToCategoryIds'] as List)
           : [],
+      isCompleted: json['isCompleted'] ?? false,
+      hasReview: json['hasReview'] ?? false,
+      reviewId: json['reviewId'],
     );
   }
 
@@ -332,6 +357,9 @@ class Meetup {
       'hostNickname': hostNickname,
       'visibility': visibility,
       'visibleToCategoryIds': visibleToCategoryIds,
+      'isCompleted': isCompleted,
+      'hasReview': hasReview,
+      'reviewId': reviewId,
     };
   }
 }

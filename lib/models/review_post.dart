@@ -3,6 +3,7 @@
 // 모임 후기, 사진, 평점, 태그 기능 포함
 
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 class ReviewPost {
   final String id;
@@ -20,6 +21,8 @@ class ReviewPost {
   final List<String> likedBy;
   final int commentCount;
   final PrivacyLevel privacyLevel;
+  final String? sourceReviewId; // meetup_reviews 원본 ID
+  final bool hidden; // 개별 프로필에서 숨김 처리
   
   ReviewPost({
     required this.id,
@@ -37,6 +40,8 @@ class ReviewPost {
     required this.likedBy,
     required this.commentCount,
     required this.privacyLevel,
+    this.sourceReviewId,
+    this.hidden = false,
   });
 
   factory ReviewPost.fromJson(Map<String, dynamic> json) {
@@ -59,6 +64,8 @@ class ReviewPost {
         (e) => e.toString() == 'PrivacyLevel.${json['privacyLevel']}',
         orElse: () => PrivacyLevel.friends,
       ),
+      sourceReviewId: json['sourceReviewId'],
+      hidden: json['hidden'] == true,
     );
   }
 
@@ -85,6 +92,8 @@ class ReviewPost {
         (e) => e.toString() == 'PrivacyLevel.${map['privacyLevel']}',
         orElse: () => PrivacyLevel.friends,
       ),
+      sourceReviewId: map['sourceReviewId'],
+      hidden: map['hidden'] == true,
     );
   }
 
@@ -105,6 +114,8 @@ class ReviewPost {
       'likedBy': likedBy,
       'commentCount': commentCount,
       'privacyLevel': privacyLevel.toString().split('.').last,
+      'sourceReviewId': sourceReviewId,
+      'hidden': hidden,
     };
   }
 
@@ -120,20 +131,30 @@ class ReviewPost {
   int get taggedUserCount => taggedUserIds.length;
 
   // 시간 표시용 포맷팅
-  String getFormattedTime() {
+  String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
+    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 7) {
       return '${createdAt.year}.${createdAt.month.toString().padLeft(2, '0')}.${createdAt.day.toString().padLeft(2, '0')}';
     } else if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      // 지역화 함수 호출
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      if (locale == 'ko') {
+        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
+      } else {
+        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
+      }
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      if (locale == 'ko') {
+        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
+      } else {
+        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
+      }
     } else {
-      return '방금 전';
+      return AppLocalizations.of(context)!.justNow;
     }
   }
 
@@ -154,6 +175,8 @@ class ReviewPost {
     List<String>? likedBy,
     int? commentCount,
     PrivacyLevel? privacyLevel,
+    String? sourceReviewId,
+    bool? hidden,
   }) {
     return ReviewPost(
       id: id ?? this.id,
@@ -171,6 +194,8 @@ class ReviewPost {
       likedBy: likedBy ?? this.likedBy,
       commentCount: commentCount ?? this.commentCount,
       privacyLevel: privacyLevel ?? this.privacyLevel,
+      sourceReviewId: sourceReviewId ?? this.sourceReviewId,
+      hidden: hidden ?? this.hidden,
     );
   }
 

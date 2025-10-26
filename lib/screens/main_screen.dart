@@ -23,16 +23,24 @@ import 'ad_showcase_screen.dart';
 import '../utils/firebase_debug_helper.dart';
 import 'firebase_security_rules_helper.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
+import '../l10n/app_localizations.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({Key? key}) : super(key: key);
+  final int initialTabIndex;
+  final String? initialMeetupId; // 알림에서 전달받을 모임 ID
+  
+  const MainScreen({
+    Key? key, 
+    this.initialTabIndex = 0,
+    this.initialMeetupId,
+  }) : super(key: key);
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _selectedIndex = 0; // 기본값으로 게시판 탭 선택
+  late int _selectedIndex; // 초기값은 initState에서 설정
   final NotificationService _notificationService = NotificationService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
@@ -41,6 +49,9 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    
+    // 초기 탭 인덱스 설정
+    _selectedIndex = widget.initialTabIndex;
     
     // Firebase Storage 테스트
     _testFirebaseStorage();
@@ -53,6 +64,11 @@ class _MainScreenState extends State<MainScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.registerStreamCleanup(_cleanupCallback);
+      
+      // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
+      if (authProvider.consumeSignupRequiredFlag()) {
+        _showSignupRequiredBanner();
+      }
     });
   }
 
@@ -75,7 +91,7 @@ class _MainScreenState extends State<MainScreen> {
   // 화면 목록 - 검색어를 전달할 수 있도록 수정
   List<Widget> get _screens => [
     BoardScreen(searchQuery: _searchController.text),
-    const MeetupHomePage(),
+    MeetupHomePage(initialMeetupId: widget.initialMeetupId),
     const MyPageScreen(),
     const FriendsMainPage(),
   ];
@@ -104,11 +120,11 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return '검색어를 입력하세요';
+        return AppLocalizations.of(context)!.enterSearchQuery;
       case 1:
-        return '검색어를 입력하세요';
+        return AppLocalizations.of(context)!.enterSearchQuery;
       default:
-        return '검색...';
+        return AppLocalizations.of(context)!.search;
     }
   }
 
@@ -290,6 +306,60 @@ service firebase.storage {
     );
   }
 
+  void _showSignupRequiredBanner() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: false,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Material(
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.orange.shade50,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade700),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            AppLocalizations.of(context)!.signupRequired,
+                            style: const TextStyle(fontSize: 15, height: 1.4),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '한양메일 인증을 완료한 후 회원가입을 진행해주세요.',
+                            style: TextStyle(fontSize: 13, color: Colors.orange.shade900),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('확인'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -418,26 +488,26 @@ service firebase.storage {
       bottomNavigationBar: AdaptiveBottomNavigation(
         selectedIndex: _selectedIndex,
         onItemTapped: _onItemTapped,
-        items: const [
+        items: [
           BottomNavigationItem(
             icon: Icons.forum_outlined,
             selectedIcon: Icons.forum,
-            label: AppConstants.BOARD,
+            label: AppLocalizations.of(context)!.board,
           ),
           BottomNavigationItem(
             icon: Icons.groups_outlined,
             selectedIcon: Icons.groups,
-            label: AppConstants.MEETUP,
+            label: AppLocalizations.of(context)!.meetup,
           ),
           BottomNavigationItem(
             icon: Icons.person_outline,
             selectedIcon: Icons.person,
-            label: AppConstants.MYPAGE,
+            label: AppLocalizations.of(context)!.myPage,
           ),
           BottomNavigationItem(
             icon: Icons.people_outline,
             selectedIcon: Icons.people,
-            label: '친구',
+            label: AppLocalizations.of(context)!.friends,
           ),
         ],
       ),

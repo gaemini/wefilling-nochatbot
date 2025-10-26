@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
+import '../screens/ad_showcase_screen.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -158,7 +159,15 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   Widget _buildBannerCard(AdBanner banner, int index) {
     return GestureDetector(
       key: ValueKey('banner_$index'), // AnimatedSwitcher를 위한 고유 키
-      onTap: () => _openUrl(banner.url),
+      onTap: () {
+        // 광고 목록 페이지로 이동
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => const AdShowcaseScreen(),
+          ),
+        );
+      },
       child: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

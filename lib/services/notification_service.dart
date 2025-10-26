@@ -32,19 +32,24 @@ class NotificationService {
   // 알림 생성
   Future<bool> createNotification({
     required String userId, // 알림을 받을 사용자 ID
-    required String title, // 알림 제목
-    required String message, // 알림 내용
+    required String title, // 알림 제목 (한글)
+    required String message, // 알림 내용 (한글)
     required String type, // 알림 유형
     String? meetupId, // 관련 모임 ID (선택사항)
     String? postId, // 관련 게시글 ID (선택사항)
     String? actorId, // 알림을 발생시킨 사용자 ID (선택사항)
     String? actorName, // 알림을 발생시킨 사용자 이름 (선택사항)
+    Map<String, dynamic>? data, // 알림 번역을 위한 추가 데이터
   }) async {
     try {
+      print('📬 알림 생성 시도: $type - $title');
+      print('   대상 사용자: $userId');
+      print('   게시글 ID: $postId');
+      
       // 알림 설정 확인 - 해당 유형의 알림이 비활성화되어 있으면 알림 생성 안 함
       final isEnabled = await _settingsService.isNotificationEnabled(type);
       if (!isEnabled) {
-        print('알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
+        print('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
         return false;
       }
 
@@ -57,15 +62,16 @@ class NotificationService {
         'postId': postId,
         'actorId': actorId,
         'actorName': actorName,
+        'data': data, // 번역을 위한 추가 데이터 저장
         'createdAt': FieldValue.serverTimestamp(),
         'isRead': false,
       };
 
-      await _firestore.collection('notifications').add(notificationData);
-      print('알림 생성 성공: $title');
+      final docRef = await _firestore.collection('notifications').add(notificationData);
+      print('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
       return true;
     } catch (e) {
-      print('알림 생성 오류: $e');
+      print('❌ 알림 생성 오류: $e');
       return false;
     }
   }
@@ -80,6 +86,10 @@ class NotificationService {
             '${meetup.title} 모임의 정원(${meetup.maxParticipants}명)이 모두 채워졌습니다.',
         type: NotificationSettingKeys.meetupFull,
         meetupId: meetup.id,
+        data: {
+          'meetupTitle': meetup.title,
+          'maxParticipants': meetup.maxParticipants,
+        },
       );
     } catch (e) {
       print('모임 정원 알림 오류: $e');
@@ -103,6 +113,9 @@ class NotificationService {
             message: '참여 예정이던 "${meetup.title}" 모임이 취소되었습니다.',
             type: NotificationSettingKeys.meetupCancelled,
             meetupId: meetup.id,
+            data: {
+              'meetupTitle': meetup.title,
+            },
           );
           allSuccess = allSuccess && success;
         }
@@ -120,22 +133,37 @@ class NotificationService {
     String postTitle,
     String postAuthorId,
     String commenterName,
-    String commenterId,
-  ) async {
+    String commenterId, {
+    bool isReview = false,
+    String? reviewOwnerUserId,
+  }) async {
     // 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
     if (postAuthorId == commenterId) {
       return true;
     }
 
     try {
+      final notificationType = isReview ? 'review_comment' : NotificationSettingKeys.newComment;
+      
       return await createNotification(
         userId: postAuthorId,
         title: '새 댓글이 달렸습니다',
-        message: '$commenterName님이 회원님의 게시글 "$postTitle"에 댓글을 남겼습니다.',
-        type: NotificationSettingKeys.newComment,
-        postId: postId,
+        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '게시글'} "$postTitle"에 댓글을 남겼습니다.',
+        type: notificationType,
+        postId: isReview ? null : postId,
         actorId: commenterId,
         actorName: commenterName,
+        data: {
+          'commenterName': commenterName,
+          'postTitle': postTitle,
+          if (isReview) ...{
+            'reviewId': postId,
+            'userId': reviewOwnerUserId ?? postAuthorId,
+            'reviewTitle': postTitle,
+            'meetupTitle': postTitle,
+          } else
+            'postId': postId,
+        },
       );
     } catch (e) {
       print('새 댓글 알림 오류: $e');
@@ -165,6 +193,10 @@ class NotificationService {
         postId: postId,
         actorId: likerId,
         actorName: likerName,
+        data: {
+          'likerName': likerName,
+          'postTitle': postTitle,
+        },
       );
     } catch (e) {
       print('좋아요 알림 오류: $e');

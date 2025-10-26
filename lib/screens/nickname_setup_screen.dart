@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/main_screen.dart';
+import '../utils/country_flag_helper.dart';
+import '../l10n/app_localizations.dart';
 
 class NicknameSetupScreen extends StatefulWidget {
   const NicknameSetupScreen({Key? key}) : super(key: key);
@@ -19,58 +21,6 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   final _nicknameController = TextEditingController();
   String _selectedNationality = '한국'; // 기본값
   bool _isLoading = false; // 로딩 상태
-
-  // 국적 목록 (필요에 따라 확장)
-  final List<String> _nationalities = [
-    '한국',
-    '미국',
-    '일본',
-    '중국',
-    '영국',
-    '프랑스',
-    '독일',
-    '캐나다',
-    '호주',
-    '러시아',
-    '이탈리아',
-    '스페인',
-    '브라질',
-    '멕시코',
-    '인도',
-    '인도네시아',
-    '필리핀',
-    '베트남',
-    '태국',
-    '싱가포르',
-    '말레이시아',
-    '아르헨티나',
-    '네덜란드',
-    '벨기에',
-    '스웨덴',
-    '노르웨이',
-    '덴마크',
-    '핀란드',
-    '폴란드',
-    '오스트리아',
-    '스위스',
-    '그리스',
-    '터키',
-    '이스라엘',
-    '이집트',
-    '사우디아라비아',
-    '남아프리카공화국',
-    '뉴질랜드',
-    '포르투갈',
-    '아일랜드',
-    '체코',
-    '헝가리',
-    '우크라이나',
-    '몽골',
-    '북한',
-    '대만',
-    '홍콩',
-    '기타',
-  ];
 
   // 폼 제출
   void _submitForm() async {
@@ -204,13 +154,17 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                   fillColor: Colors.white,
                 ),
                 value: _selectedNationality,
-                items:
-                    _nationalities.map((nationality) {
-                      return DropdownMenuItem(
-                        value: nationality,
-                        child: Text(nationality),
-                      );
-                    }).toList(),
+                items: CountryFlagHelper.allCountries.map((country) {
+                  final currentLanguage = Localizations.localeOf(context).languageCode;
+                  return DropdownMenuItem(
+                    value: country.korean, // 내부적으로는 한글 이름 저장
+                    child: Text(
+                      country.getLocalizedName(currentLanguage), // 현재 언어에 맞게 표시
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
                 onChanged: (value) {
                   if (value != null) {
                     setState(() {

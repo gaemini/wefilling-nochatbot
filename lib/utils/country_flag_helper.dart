@@ -17,6 +17,15 @@ class CountryInfo {
 
   /// 드롭다운에 표시할 텍스트 (영문 / 한글)
   String get displayText => '$english / $korean';
+  
+  /// 현재 언어에 맞는 국가 이름 반환
+  String getLocalizedName(String languageCode) {
+    if (languageCode == 'en') {
+      return english;
+    } else {
+      return korean;
+    }
+  }
 }
 
 /// 국가 정보 매핑 헬퍼

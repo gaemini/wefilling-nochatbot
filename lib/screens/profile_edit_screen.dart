@@ -12,6 +12,7 @@ import '../services/storage_service.dart';
 import '../services/post_service.dart';
 import '../constants/app_constants.dart';
 import '../utils/country_flag_helper.dart';
+import '../l10n/app_localizations.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -23,6 +24,7 @@ class ProfileEditScreen extends StatefulWidget {
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
+  String? _bio; // 한 줄 소개
   String _selectedNationality = '한국'; // 기본값 (한글 이름)
   final ImagePicker _imagePicker = ImagePicker();
   final StorageService _storageService = StorageService();
@@ -186,6 +188,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               nickname: _nicknameController.text.trim(),
               nationality: _selectedNationality,
               photoURL: '', // 빈 문자열로 유지
+              bio: _bio,
             );
           }
         }
@@ -210,6 +213,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             nickname: _nicknameController.text.trim(),
             nationality: _selectedNationality,
             photoURL: profileImageUrl, // 새로 업로드된 이미지 URL 전달
+            bio: _bio,
           );
         }
         // 이미지 변경 없이 닉네임/국적만 업데이트
@@ -217,6 +221,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           success = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
             nationality: _selectedNationality,
+            bio: _bio,
           );
         }
 
@@ -374,7 +379,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('프로필 편집'),
+        title: Text(AppLocalizations.of(context)!.profileEdit),
         actions: [
           // 저장 버튼
           _isSubmitting
@@ -391,9 +396,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               )
               : TextButton(
                 onPressed: _updateProfile,
-                child: const Text(
-                  '저장',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                child: Text(
+                  AppLocalizations.of(context)!.save,
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
         ],
@@ -409,9 +414,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               Center(
                 child: Column(
                   children: [
-                    const Text(
-                      '프로필 이미지',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    Text(
+                      AppLocalizations.of(context)!.profileImage,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
                     ),
                     const SizedBox(height: 16),
                     GestureDetector(
@@ -424,25 +429,19 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: AppTheme.primary,
+                                color: const Color(0xFF646464), // 마이프로필과 동일한 회색
                                 width: 3,
                               ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppTheme.primary.withOpacity(0.2),
-                                  blurRadius: 10,
-                                  offset: Offset(0, 4),
-                                ),
-                              ],
+                              // boxShadow 제거
                             ),
                             child: ClipOval(
                               child: _useDefaultImage
                                   ? Container(
-                                      color: AppTheme.primary.withOpacity(0.1),
+                                      color: Colors.grey[200],
                                       child: Icon(
                                         Icons.person,
                                         size: 40,
-                                        color: AppTheme.primary,
+                                        color: const Color(0xFF4A90E2), // 위필링 로고색
                                       ),
                                     )
                                   : _selectedImage != null
@@ -459,21 +458,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                     fit: BoxFit.cover,
                                                     errorBuilder: (context, error, stackTrace) {
                                                       return Container(
-                                                        color: AppTheme.primary.withOpacity(0.1),
+                                                        color: Colors.grey[200],
                                                         child: Icon(
                                                           Icons.person,
                                                           size: 40,
-                                                          color: AppTheme.primary,
+                                                          color: const Color(0xFF4A90E2), // 위필링 로고색
                                                         ),
                                                       );
                                                     },
                                                   )
                                                 : Container(
-                                                    color: AppTheme.primary.withOpacity(0.1),
+                                                    color: Colors.grey[200],
                                                     child: Icon(
                                                       Icons.person,
                                                       size: 40,
-                                                      color: AppTheme.primary,
+                                                      color: const Color(0xFF4A90E2), // 위필링 로고색
                                                     ),
                                                   );
                                           },
@@ -520,7 +519,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '탭하여 이미지 변경',
+                      AppLocalizations.of(context)!.tapToChangeImage,
                       style: TextStyle(
                         color: AppTheme.primary,
                         fontSize: 14,
@@ -559,6 +558,29 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
               const SizedBox(height: 24),
 
+  // 한 줄 소개 입력 (선택)
+  const Text(
+    'Bio',
+    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+  ),
+  const SizedBox(height: 8),
+  TextFormField(
+    maxLength: 60, // 영어/한국어 모두 안전한 길이
+    decoration: InputDecoration(
+      hintText: '한 줄 소개를 입력하세요 (선택)',
+      counterText: '', // 카운터 숨김
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      filled: true,
+      fillColor: Colors.white,
+    ),
+    onChanged: (value) {
+      _bio = value.trim();
+    },
+  ),
+  const SizedBox(height: 24),
+
               // 국적 선택
               const Text(
                 'Where are you from?',
@@ -576,10 +598,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 value: _selectedNationality,
                 isExpanded: true, // 긴 텍스트 표시를 위해
                 items: CountryFlagHelper.allCountries.map((country) {
+                  final currentLanguage = Localizations.localeOf(context).languageCode;
                   return DropdownMenuItem(
                     value: country.korean, // 내부적으로는 한글 이름 저장
                     child: Text(
-                      country.displayText, // 표시는 "영문 / 한글"
+                      country.getLocalizedName(currentLanguage), // 현재 언어에 맞게 표시
                       style: const TextStyle(fontSize: 14),
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -618,52 +641,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               strokeWidth: 2,
                             ),
                           )
-                          : const Text(
-                            '수정하기',
-                            style: TextStyle(
+                          : Text(
+                            AppLocalizations.of(context)!.update,
+                            style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
                             ),
                           ),
-                ),
-              ),
-              
-              const SizedBox(height: 12),
-              
-              // 모든 게시글 업데이트 버튼 (긴급용)
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: (_isSubmitting || _isForceUpdating) ? null : _forceUpdateAllContent,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    side: BorderSide(
-                      color: _isForceUpdating ? Colors.grey : Colors.orange, 
-                      width: 2
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: _isForceUpdating
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.orange,
-                          ),
-                        )
-                      : Icon(Icons.sync, color: Colors.orange),
-                  label: Text(
-                    _isForceUpdating ? '업데이트 중...' : '모든 게시글에 프로필 반영',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: _isForceUpdating ? Colors.grey : Colors.orange,
-                    ),
-                  ),
                 ),
               ),
             ],

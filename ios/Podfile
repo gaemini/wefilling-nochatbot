@@ -28,12 +28,9 @@ require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelpe
 flutter_ios_podfile_setup
 
 target 'Runner' do
-  use_frameworks!
-  
-  # 의존성 충돌 방지를 위한 명시적 버전 지정
-  # Firebase SDK 12.2.0과 호환되는 GoogleUtilities 버전 고정
-  pod 'GoogleUtilities', '~> 8.1'
-  
+  # Flutter 권장: 정적 링크로 전환하여 Pods_Runner 동적 프레임워크 링크 문제 방지
+  use_frameworks! :linkage => :static
+
   flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
   target 'RunnerTests' do
     inherit! :search_paths
@@ -44,18 +41,10 @@ post_install do |installer|
   installer.pods_project.targets.each do |target|
     flutter_additional_ios_build_settings(target)
     
-    # iOS 15.0 최소 버전 강제 설정
+    # iOS 15.0 최소 버전 강제 설정 및 Xcode 15+ 호환
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-      
-      # 컴파일러 오류 해결을 위한 설정
-      config.build_settings.delete 'IPHONEOS_DEPLOYMENT_TARGET'
-      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-      
-      # Apple Silicon Mac에서 시뮬레이터 아키텍처 제외 (중요!)
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386 x86_64'
-      
-      # Xcode 15+ 호환성 설정
       if config.build_settings['DEVELOPMENT_TEAM'].nil?
         config.build_settings['DEVELOPMENT_TEAM'] = ''
       end

@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../services/notification_settings_service.dart';
+import '../l10n/app_localizations.dart';
 
 class NotificationSettingsScreen extends StatefulWidget {
   const NotificationSettingsScreen({Key? key}) : super(key: key);
@@ -46,7 +47,7 @@ class _NotificationSettingsScreenState
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('설정을 불러오는 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loadSettingsError(e.toString()))));
       }
     }
   }
@@ -68,7 +69,7 @@ class _NotificationSettingsScreenState
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('설정을 저장하는 중 오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.saveSettingsError(e.toString()))));
       }
     }
   }
@@ -76,7 +77,7 @@ class _NotificationSettingsScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('알림 설정')),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.notificationSettings)),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -84,53 +85,73 @@ class _NotificationSettingsScreenState
                 children: [
                   // 설정 카테고리 - 모임 알림
                   _buildSettingCategory(
-                    title: '모임 알림',
+                    title: AppLocalizations.of(context)!.meetupNotifications,
                     icon: Icons.group,
                     color: Colors.blue,
                     children: [
+                      // 비공개 게시글 알림
                       _buildSettingItem(
-                        title: '모임 정원 마감 알림',
-                        subtitle: '내가 주최한 모임의 정원이 마감되면 알림',
+                        title: AppLocalizations.of(context)!.postNotifications,
+                        subtitle: 'Private posts only',
+                        settingKey: NotificationSettingKeys.postPrivate,
+                      ),
+                      _buildSettingItem(
+                        title: AppLocalizations.of(context)!.meetupFullAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.meetupFullAlertSubtitle,
                         settingKey: NotificationSettingKeys.meetupFull,
                       ),
                       _buildSettingItem(
-                        title: '모임 취소 알림',
-                        subtitle: '참여 신청한 모임이 취소되면 알림',
+                        title: AppLocalizations.of(context)!.meetupCancelledAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.meetupCancelledAlertSubtitle,
                         settingKey: NotificationSettingKeys.meetupCancelled,
                       ),
                     ],
                   ),
 
-                  // 설정 카테고리 - 게시글 알림
+                  // 설정 카테고리 - 게시글 알림 (비공개 전용)
                   _buildSettingCategory(
-                    title: '게시글 알림',
+                    title: AppLocalizations.of(context)!.postNotifications,
                     icon: Icons.article,
                     color: Colors.green,
                     children: [
                       _buildSettingItem(
-                        title: '댓글 알림',
-                        subtitle: '내 게시글에 댓글이 작성되면 알림',
-                        settingKey: NotificationSettingKeys.newComment,
+                        title: AppLocalizations.of(context)!.privatePostAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.privatePostAlertSubtitle,
+                        settingKey: NotificationSettingKeys.postPrivate,
                       ),
+                    ],
+                  ),
+                  // 설정 카테고리 - 친구 알림
+                  _buildSettingCategory(
+                    title: AppLocalizations.of(context)!.friendNotifications,
+                    icon: Icons.person_add_alt,
+                    color: Colors.purple,
+                    children: [
                       _buildSettingItem(
-                        title: '좋아요 알림',
-                        subtitle: '내 게시글에 좋아요가 추가되면 알림',
-                        settingKey: NotificationSettingKeys.newLike,
+                        title: AppLocalizations.of(context)!.friendRequestAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.friendRequestAlertSubtitle,
+                        settingKey: NotificationSettingKeys.friendRequest,
                       ),
                     ],
                   ),
 
                   // 추가 설정 - 알림 전체 ON/OFF
                   _buildSettingCategory(
-                    title: '전체 설정',
+                    title: AppLocalizations.of(context)!.generalSettings,
                     icon: Icons.settings,
                     color: Colors.orange,
                     children: [
                       _buildSettingItem(
-                        title: '모든 알림',
-                        subtitle: '모든 알림 활성화/비활성화',
+                        title: AppLocalizations.of(context)!.allNotifications,
+                        subtitle: AppLocalizations.of(context)!.allNotificationsSubtitle,
                         settingKey: NotificationSettingKeys.allNotifications,
                         isMainToggle: true,
+                      ),
+                      // 광고 업데이트
+                      _buildSettingItem(
+                        title: AppLocalizations.of(context)!.adUpdatesTitle,
+                        subtitle: AppLocalizations.of(context)!.adUpdatesSubtitle,
+                        settingKey: NotificationSettingKeys.adUpdates,
                       ),
                     ],
                   ),

@@ -7,10 +7,14 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart' as app_provider;
+import 'package:url_launcher/url_launcher.dart';
 import '../services/auth_service.dart';
 import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
 import 'blocked_users_screen.dart';
+import 'account_delete_stepper_screen.dart';
+import '../main.dart';
+import '../l10n/app_localizations.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -35,7 +39,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('계정 설정'),
+        title: Text(AppLocalizations.of(context)!.accountSettings),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -52,8 +56,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       // 계정 정보 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '계정 정보',
+                        child: Text(
+                          AppLocalizations.of(context)!.accountInfo,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -72,8 +76,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              const Text(
-                                '이메일',
+                              Text(
+                                AppLocalizations.of(context)!.email,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey,
@@ -81,12 +85,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                user?.email ?? '이메일 정보 없음',
+                                user?.email ?? AppLocalizations.of(context)!.email,
                                 style: const TextStyle(fontSize: 16),
                               ),
                               const SizedBox(height: 16),
-                              const Text(
-                                '로그인 방식',
+                              Text(
+                                AppLocalizations.of(context)!.loginMethod,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey,
@@ -94,9 +98,34 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                isGoogleLogin ? 'Google 계정' : '이메일/비밀번호',
+                                isGoogleLogin ? AppLocalizations.of(context)!.googleAccount : AppLocalizations.of(context)!.emailPassword,
                                 style: const TextStyle(fontSize: 16),
                               ),
+                              if (isGoogleLogin) ...[
+                                const SizedBox(height: 16),
+                                const Divider(height: 1),
+                                const SizedBox(height: 12),
+                                InkWell(
+                                  onTap: _openGoogleAccount,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.open_in_new, size: 20),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          AppLocalizations.of(context)!.manageGoogleAccount,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(Icons.chevron_right, color: Colors.grey[400]),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -104,41 +133,34 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
                       const SizedBox(height: 24),
 
-                      // 계정 보안 섹션
+                      // 언어 설정 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '계정 보안',
-                          style: TextStyle(
+                        child: Text(
+                          AppLocalizations.of(context)!.languageSettings,
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
 
-                      // 비밀번호 변경 (이메일 로그인인 경우만)
-                      if (!isGoogleLogin)
-                        _buildSettingItem(
-                          '비밀번호 변경',
-                          Icons.lock,
-                          () => _showResetPasswordDialog(),
-                        ),
-
-                      // 이메일 인증 (미인증 상태인 경우만)
-                      if (user != null && !user.emailVerified)
-                        _buildSettingItem(
-                          '이메일 인증',
-                          Icons.email,
-                          () => _sendEmailVerification(context),
-                        ),
+                      _buildSettingItem(
+                        AppLocalizations.of(context)!.language,
+                        Icons.language,
+                        () => _showLanguageDialog(context),
+                        subtitle: Localizations.localeOf(context).languageCode == 'ko' 
+                            ? AppLocalizations.of(context)!.korean 
+                            : AppLocalizations.of(context)!.english,
+                      ),
 
                       const SizedBox(height: 24),
 
                       // 법적 정보 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '법적 정보',
+                        child: Text(
+                          AppLocalizations.of(context)!.legalInfo,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -147,7 +169,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        '서비스 이용약관',
+                        AppLocalizations.of(context)!.termsOfService,
                         Icons.description_outlined,
                         () => Navigator.push(
                           context,
@@ -156,11 +178,20 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        '개인정보 처리방침',
+                        AppLocalizations.of(context)!.privacyPolicy,
                         Icons.privacy_tip_outlined,
                         () => Navigator.push(
                           context,
                           MaterialPageRoute(builder: (context) => const PrivacyPolicyScreen()),
+                        ),
+                      ),
+
+                      _buildSettingItem(
+                        AppLocalizations.of(context)!.openSourceLicenses,
+                        Icons.code,
+                        () => showLicensePage(
+                          context: context,
+                          applicationName: 'Wefilling',
                         ),
                       ),
 
@@ -169,8 +200,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       // 개인정보 보호 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '개인정보 보호',
+                        child: Text(
+                          AppLocalizations.of(context)!.privacyProtection,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -179,7 +210,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        '차단 목록',
+                        AppLocalizations.of(context)!.blockList,
                         Icons.block,
                         () => Navigator.push(
                           context,
@@ -192,9 +223,9 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       // 계정 관리 섹션
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
-                        child: const Text(
-                          '계정 관리',
-                          style: TextStyle(
+                        child: Text(
+                          AppLocalizations.of(context)!.accountManagement,
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
@@ -202,7 +233,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        '계정 삭제',
+                        AppLocalizations.of(context)!.deleteAccount,
                         Icons.delete_forever,
                         () => _showDeleteAccountConfirmation(context),
                         color: Colors.red,
@@ -222,6 +253,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     IconData icon,
     VoidCallback onTap, {
     Color? color,
+    String? subtitle,
   }) {
     return Card(
       elevation: 1,
@@ -236,15 +268,79 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
             children: [
               Icon(icon, color: color ?? Colors.black87),
               const SizedBox(width: 16),
-              Text(
-                title,
-                style: TextStyle(fontSize: 16, color: color ?? Colors.black87),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(fontSize: 16, color: color ?? Colors.black87),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              const Spacer(),
               Icon(Icons.chevron_right, color: Colors.grey[400]),
             ],
           ),
         ),
+      ),
+    );
+  }
+  
+  /// 언어 선택 다이얼로그 (국기 없이)
+  void _showLanguageDialog(BuildContext context) {
+    final currentLocale = Localizations.localeOf(context).languageCode;
+    
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          AppLocalizations.of(context)!.selectLanguage,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RadioListTile<String>(
+              title: Text(AppLocalizations.of(context)!.korean),
+              value: 'ko',
+              groupValue: currentLocale,
+              onChanged: (value) {
+                if (value != null) {
+                  MeetupApp.of(context)?.changeLanguage(value);
+                  Navigator.pop(dialogContext);
+                }
+              },
+            ),
+            RadioListTile<String>(
+              title: Text(AppLocalizations.of(context)!.english),
+              value: 'en',
+              groupValue: currentLocale,
+              onChanged: (value) {
+                if (value != null) {
+                  MeetupApp.of(context)?.changeLanguage(value);
+                  Navigator.pop(dialogContext);
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+        ],
       ),
     );
   }
@@ -318,87 +414,29 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
   // 계정 삭제 확인 다이얼로그
   void _showDeleteAccountConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('계정 삭제'),
-            content: const Text(
-              '계정을 삭제하면 모든 데이터가 영구적으로 삭제됩니다. 정말 삭제하시겠습니까?',
-              style: TextStyle(color: Colors.red),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('취소'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await _deleteAccount(context);
-                },
-                child: const Text('삭제', style: TextStyle(color: Colors.red)),
-              ),
-            ],
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AccountDeleteStepperScreen()),
     );
   }
 
-  // 계정 삭제 처리
-  Future<void> _deleteAccount(BuildContext context) async {
-    final authProvider = Provider.of<app_provider.AuthProvider>(
-      context,
-      listen: false,
-    );
+  // 기존 직접 삭제 로직은 서버 호출 기반 Stepper로 대체
 
-    final userId = _auth.currentUser?.uid;
-    if (userId == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('로그인된 사용자를 찾을 수 없습니다')),
-        );
-      }
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
+  // Google 계정 관리 페이지 열기 (외부 브라우저)
+  Future<void> _openGoogleAccount() async {
+    const String url = 'https://myaccount.google.com/';
+    final Uri uri = Uri.parse(url);
     try {
-      // AuthService의 완전한 회원탈퇴 함수 호출
-      await _authService.deleteUserAccount(userId);
-
-      // 로그아웃 처리
-      await authProvider.signOut();
-
-      if (mounted) {
-        // 앱 처음 화면으로 이동
-        Navigator.pushNamedAndRemoveUntil(context, '/', (route) => false);
-        
-        // 성공 메시지 (짧게 표시)
+      final bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('회원 탈퇴가 완료되었습니다'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
+          SnackBar(content: Text('Failed to open: $url')),
         );
       }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (mounted) {
-        // 재인증이 필요한 경우 등 오류 처리
-        String errorMessage = '오류가 발생했습니다';
-        
-        if (e.toString().contains('requires-recent-login')) {
-          errorMessage = '보안을 위해 다시 로그인한 후 탈퇴를 진행해주세요';
-        }
-        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$errorMessage: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 5),
-          ),
+          SnackBar(content: Text('Error opening link: $e')),
         );
       }
     }

@@ -168,7 +168,12 @@ class AdShowcaseScreen extends StatelessWidget {
 
           // 광고 목록 표시
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 16, // 하단 시스템 UI 영역 고려
+            ),
             itemCount: activeAds.length,
             itemBuilder: (context, index) {
               return _buildAdCard(context, activeAds[index], index);

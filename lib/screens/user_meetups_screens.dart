@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/meetup.dart';
+import '../l10n/app_localizations.dart';
 import '../services/user_stats_service.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../utils/error_handling_utils.dart';
@@ -36,12 +37,12 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('내 모임'),
+        title: Text(AppLocalizations.of(context)!.myMeetups),
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: '주최한 모임'),
-            Tab(text: '참여했던 모임'), // 텍스트 변경
+          tabs: [
+            Tab(text: AppLocalizations.of(context)!.hostedMeetups),
+            Tab(text: AppLocalizations.of(context)!.joinedMeetups),
           ],
         ),
       ),
@@ -58,7 +59,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (snapshot.hasError) {
                 return ErrorHandlingUtils.buildErrorWidget(
-                  '모임 정보를 불러오는 중 오류가 발생했습니다',
+                  AppLocalizations.of(context)!.meetupLoadError,
                   () => setState(() {}),
                 );
               }
@@ -67,7 +68,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (meetups.isEmpty) {
                 return ErrorHandlingUtils.buildEmptyWidget(
-                  '주최한 모임이 없습니다\n새로운 모임을 만들어보세요!',
+                  AppLocalizations.of(context)!.hostedMeetupsEmpty,
                 );
               }
 
@@ -85,7 +86,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (snapshot.hasError) {
                 return ErrorHandlingUtils.buildErrorWidget(
-                  '모임 정보를 불러오는 중 오류가 발생했습니다: ${snapshot.error}',
+                  AppLocalizations.of(context)!.meetupLoadError,
                   () => setState(() {}),
                 );
               }
@@ -96,7 +97,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
               // 빈 리스트 체크
               if (meetups.isEmpty) {
                 return ErrorHandlingUtils.buildEmptyWidget(
-                  '참여했던 모임이 없습니다\n다른 사용자의 모임에 참여해보세요!',
+                  AppLocalizations.of(context)!.joinedMeetupsEmpty,
                 );
               }
 
@@ -113,7 +114,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   Widget _buildMeetupList(List<Meetup> meetups) {
     // 빈 리스트 체크 추가
     if (meetups.isEmpty) {
-      return ErrorHandlingUtils.buildEmptyWidget('모임 목록이 비어 있습니다.');
+      return ErrorHandlingUtils.buildEmptyWidget(AppLocalizations.of(context)!.noMeetupsYet);
     }
 
     // 날짜별로 모임 정렬 (최신순으로 변경)
@@ -261,7 +262,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${meetup.currentParticipants}/${meetup.maxParticipants}명',
+                                  '${meetup.currentParticipants}/${meetup.maxParticipants}${AppLocalizations.of(context)!.peopleUnit}',
                                   style: TextStyle(color: Colors.grey[600]),
                                 ),
                                 const SizedBox(width: 8),
@@ -280,7 +281,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                       ),
                                     ),
                                     child: Text(
-                                      '마감',
+                                      AppLocalizations.of(context)!.fullShort,
                                       style: TextStyle(
                                         color: Colors.red[700],
                                         fontSize: 10,
@@ -301,7 +302,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '주최자: ${meetup.host}',
+                                  '${AppLocalizations.of(context)!.organizer}: ${meetup.host}',
                                   style: TextStyle(color: Colors.grey[600]),
                                 ),
                               ],

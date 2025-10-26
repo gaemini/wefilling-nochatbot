@@ -21,10 +21,14 @@ import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
+import 'screens/hanyang_email_verification_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
 import 'services/ad_banner_service.dart';
+import 'services/language_service.dart';
+import 'l10n/app_localizations.dart';
+import 'services/navigation_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -207,8 +211,52 @@ void main() async {
   );
 }
 
-class MeetupApp extends StatelessWidget {
+class MeetupApp extends StatefulWidget {
   const MeetupApp({super.key});
+  
+  @override
+  State<MeetupApp> createState() => _MeetupAppState();
+  
+  // 어디서든 접근 가능하도록 static 메서드 제공
+  static _MeetupAppState? of(BuildContext context) =>
+      context.findAncestorStateOfType<_MeetupAppState>();
+}
+
+class _MeetupAppState extends State<MeetupApp> {
+  Locale _locale = const Locale('ko'); // 기본 언어: 한국어
+  final LanguageService _languageService = LanguageService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLanguage();
+  }
+
+  /// 저장된 언어 불러오기
+  Future<void> _loadLanguage() async {
+    final languageCode = await _languageService.getLanguage();
+    if (mounted) {
+      setState(() {
+        _locale = Locale(languageCode);
+      });
+    }
+    if (kDebugMode) {
+      debugPrint('🌐 언어 로드 완료: $languageCode');
+    }
+  }
+
+  /// 언어 변경
+  void changeLanguage(String languageCode) {
+    if (_locale.languageCode != languageCode) {
+      setState(() {
+        _locale = Locale(languageCode);
+      });
+      _languageService.saveLanguage(languageCode);
+      if (kDebugMode) {
+        debugPrint('🌐 언어 변경: $languageCode');
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -216,21 +264,37 @@ class MeetupApp extends StatelessWidget {
       title: 'Wefilling',
       theme: AppTheme.light(),
       themeMode: ThemeMode.light, // 강제 라이트모드
+      locale: _locale, // 현재 선택된 언어
       localizationsDelegates: const [
+        AppLocalizations.delegate, // 앱 전용 번역
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [
-        Locale('ko', 'KR'), // 한국어
-        Locale('en', 'US'), // 영어
+        Locale('ko'), // 한국어
+        Locale('en'), // 영어
       ],
+      // 전역 탭-투-디스미스(빈 공간 탭 시 키보드 닫힘)
+      builder: (context, child) {
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            final currentFocus = FocusScope.of(context);
+            if (!currentFocus.hasPrimaryFocus && currentFocus.focusedChild != null) {
+              FocusManager.instance.primaryFocus?.unfocus();
+            }
+          },
+          child: child,
+        );
+      },
       routes: {
         '/edit-meetup': (context) {
           final meetup = ModalRoute.of(context)!.settings.arguments as Meetup;
           return EditMeetupScreen(meetup: meetup);
         },
       },
+      navigatorKey: NavigationService.navigatorKey,
       home: Consumer<app_auth.AuthProvider>(
         builder: (context, authProvider, _) {
           if (authProvider.isLoading) {
@@ -243,11 +307,12 @@ class MeetupApp extends StatelessWidget {
           // 로그인되어 있으면
           if (authProvider.isLoggedIn) {
             // 닉네임 설정 확인
-            if (authProvider.hasNickname) {
-              return const MainScreen();
-            } else {
+            if (!authProvider.hasNickname) {
               return const NicknameSetupScreen();
             }
+            
+            // 닉네임 있으면 메인 화면
+            return const MainScreen();
           }
 
           // 로그인되어 있지 않으면

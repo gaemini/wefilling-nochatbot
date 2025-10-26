@@ -29,7 +29,7 @@
 			<string>google-sign-in</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.700373659727-t3t89luvegusfl5cfeogsuf55go3uqmu</string>
+				<string>com.googleusercontent.apps.700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj</string>
 			</array>
 		</dict>
 	</array>
@@ -72,8 +72,14 @@
 			</dict>
 		</dict>
 	</dict>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>댓글, 좋아요 등의 알림을 받기 위해 권한이 필요합니다.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

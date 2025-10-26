@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/meetup.dart';
@@ -7,9 +9,9 @@ import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/country_flag_circle.dart';
-import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import '../l10n/app_localizations.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -40,8 +42,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final _friendCategoryService = FriendCategoryService();
   final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
   bool _isSubmitting = false;
-  String _selectedCategory = '기타'; // 카테고리 선택을 위한 상태 변수
-  final List<String> _categories = ['스터디', '식사', '취미', '문화', '기타'];
+  String _selectedCategory = 'study'; // 카테고리 키로 저장
+  StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
+  // 카테고리는 build 메서드에서 동적으로 생성
   
   // 공개 범위 관련 변수
   String _visibility = 'public'; // 'public', 'friends', 'category'
@@ -57,19 +60,28 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   // 30분 간격 시간 옵션 저장 리스트
   List<String> _timeOptions = [];
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
     _selectedDayIndex = widget.initialDayIndex;
-    // 선택된 날짜에 맞는 시간 옵션 생성 - initState에서 한 번 호출
-    _updateTimeOptions();
     // 친구 카테고리 로드
     _loadFriendCategories();
+  }
 
-    // 디버깅 출력 추가
-    print('초기 시간 옵션: $_timeOptions');
-    print('초기 선택된 시간: $_selectedTime');
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      _isInitialized = true;
+      // 선택된 날짜에 맞는 시간 옵션 생성 - context가 준비된 후 호출
+      _updateTimeOptions();
+      
+      // 디버깅 출력 추가
+      print('초기 시간 옵션: $_timeOptions');
+      print('초기 선택된 시간: $_selectedTime');
+    }
   }
 
   // 선택된 날짜에 맞는 시간 옵션 업데이트
@@ -86,7 +98,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         selectedDate.day == now.day;
 
     // 새로운 시간 옵션 리스트 - '미정' 옵션을 먼저 추가
-    List<String> newOptions = ['미정'];
+    List<String> newOptions = [AppLocalizations.of(context)!.undecided];
 
     // 오늘이면 현재 시간 이후만, 아니면 하루 전체 시간
     for (int hour = 0; hour < 24; hour++) {
@@ -120,13 +132,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _timeOptions = newOptions;
 
       // 항상 '미정'을 기본 선택으로 설정
-      _selectedTime = '미정';
+      _selectedTime = AppLocalizations.of(context)!.undecided;
     });
   }
 
   // 친구 카테고리 로드
   void _loadFriendCategories() {
-    _friendCategoryService.getCategoriesStream().listen((categories) {
+    _categoriesSubscription?.cancel();
+    _categoriesSubscription = _friendCategoryService.getCategoriesStream().listen((categories) {
       if (mounted) {
         setState(() {
           _friendCategories = categories;
@@ -140,6 +153,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _locationController.dispose();
+    _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
   }
@@ -151,10 +165,21 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
     // 선택된 날짜
     final DateTime selectedDate = weekDates[_selectedDayIndex];
-    // 요일 이름 가져오기 (월, 화, 수, ...)
-    final String weekdayName = _weekdayNames[selectedDate.weekday - 1];
-    final String dateStr =
-        '${selectedDate.month}월 ${selectedDate.day}일 ($weekdayName)';
+    
+    // 로케일에 따라 날짜 포맷팅
+    final locale = Localizations.localeOf(context).languageCode;
+    final String dateStr;
+    if (locale == 'ko') {
+      final koreanWeekdays = ['월', '화', '수', '목', '금', '토', '일'];
+      final weekdayName = koreanWeekdays[selectedDate.weekday - 1];
+      dateStr = '${selectedDate.month}월 ${selectedDate.day}일 ($weekdayName)';
+    } else {
+      // 영어 버전
+      final weekdayName = _weekdayNames[selectedDate.weekday - 1];
+      final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      final monthName = monthNames[selectedDate.month - 1];
+      dateStr = '$monthName ${selectedDate.day} ($weekdayName)';
+    }
 
     // 사용자 닉네임 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -266,7 +291,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               ],
                             ),
                             Text(
-                              '주최자',
+                              AppLocalizations.of(context)!.host,
                               style: TextStyle(
                                 color: Colors.grey[600],
                                 fontSize: 12,
@@ -289,7 +314,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          '날짜 선택',
+                          AppLocalizations.of(context)!.dateSelection,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -324,8 +349,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         children: List.generate(weekDates.length, (index) {
                           final bool isSelected = index == _selectedDayIndex;
                           final DateTime date = weekDates[index];
-                          final String weekday =
-                              _weekdayNames[date.weekday - 1];
+                          // 로케일에 따라 요일 이름 선택
+                          final locale = Localizations.localeOf(context).languageCode;
+                          final String weekday = locale == 'ko'
+                              ? ['월', '화', '수', '목', '금', '토', '일'][date.weekday - 1]
+                              : _weekdayNames[date.weekday - 1];
 
                           return Padding(
                             padding: const EdgeInsets.only(right: 10), // 칩 간격 10dp
@@ -408,8 +436,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '모임 정보',
+                    Text(
+                      AppLocalizations.of(context)!.meetupInfo,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -422,9 +450,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '제목',
-                          style: TextStyle(
+                        Text(
+                          AppLocalizations.of(context)!.title,
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
                             color: Color(0xFF666666),
@@ -434,7 +462,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         TextFormField(
                           controller: _titleController,
                           decoration: InputDecoration(
-                            hintText: '모임 제목을 입력하세요',
+                            hintText: AppLocalizations.of(context)!.enterMeetupTitle,
                             filled: true,
                             fillColor: Colors.white,
                             border: OutlineInputBorder(
@@ -454,7 +482,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           style: const TextStyle(fontSize: 14),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return '모임 제목을 입력해주세요';
+                              return AppLocalizations.of(context)!.pleaseEnterMeetupTitle;
                             }
                             return null;
                           },
@@ -469,9 +497,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '설명',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.description,
+                      style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: Color(0xFF666666),
@@ -481,7 +509,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     TextFormField(
                       controller: _descriptionController,
                       decoration: InputDecoration(
-                        hintText: '모임에 대한 설명을 입력해주세요',
+                        hintText: AppLocalizations.of(context)!.enterMeetupDescription,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -503,7 +531,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       maxLines: 6,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return '모임 설명을 입력해주세요';
+                          return AppLocalizations.of(context)!.pleaseEnterMeetupDescription;
                         }
                         return null;
                       },
@@ -516,8 +544,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '카테고리',
+                    Text(
+                      AppLocalizations.of(context)!.category,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -530,54 +558,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       physics: const BouncingScrollPhysics(),
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Row(
-                        children: _categories.map((category) {
-                          final isSelected = _selectedCategory == category;
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 12),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              child: InkWell(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedCategory = category;
-                                  });
-                                },
-                                borderRadius: BorderRadius.circular(20),
-                                child: Container(
-                                  height: 44,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: isSelected 
-                                        ? const Color(0xFF4A90E2)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(
-                                      color: isSelected 
-                                          ? const Color(0xFF4A90E2)
-                                          : const Color(0xFFE1E6EE),
-                                      width: 1,
-                                    ),
-                                    boxShadow: isSelected ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF4A90E2).withOpacity(0.2),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ] : null,
-                                  ),
-                                  child: Text(
-                                    category,
-                                    style: TextStyle(
-                                      color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        }).toList(),
+                        children: [
+                          _buildCategoryChip('study', AppLocalizations.of(context)!.study),
+                          _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
+                          _buildCategoryChip('hobby', AppLocalizations.of(context)!.hobby),
+                          _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
+                          _buildCategoryChip('other', AppLocalizations.of(context)!.other),
+                        ],
                       ),
                     ),
                   ],
@@ -588,8 +575,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '장소',
+                    Text(
+                      AppLocalizations.of(context)!.location,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -600,7 +587,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     TextFormField(
                       controller: _locationController,
                       decoration: InputDecoration(
-                        hintText: '모임 장소를 입력하세요',
+                        hintText: AppLocalizations.of(context)!.enterMeetupLocation,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -620,7 +607,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       style: const TextStyle(fontSize: 14),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return '장소를 입력해주세요';
+                          return AppLocalizations.of(context)!.pleaseEnterLocation;
                         }
                         return null;
                       },
@@ -635,7 +622,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   children: [
                     const SizedBox(height: 16),
                     Text(
-                      '시간 선택',
+                      AppLocalizations.of(context)!.timeSelection,
                       style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
@@ -645,7 +632,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8.0),
                         child: Text(
-                          '오늘은 이미 지난 시간입니다. \'미정\'으로 모임을 생성하거나 다른 날짜를 선택해주세요.',
+                          AppLocalizations.of(context)!.todayTimePassed,
                           style: TextStyle(
                             color: Colors.orange[700],
                             fontSize: 14,
@@ -697,7 +684,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '최대 인원',
+                      AppLocalizations.of(context)!.maxParticipants,
                       style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
@@ -717,7 +704,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           _participantOptions.map((int value) {
                             return DropdownMenuItem<int>(
                               value: value,
-                              child: Text('$value명'),
+                              child: Text('$value${AppLocalizations.of(context)!.people}'),
                             );
                           }).toList(),
                       onChanged: (value) {
@@ -736,8 +723,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '공개 범위',
+                    Text(
+                      AppLocalizations.of(context)!.visibilityScope,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -751,8 +738,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       children: [
                         // 전체 공개
                         RadioListTile<String>(
-                          title: const Text('전체 공개'),
-                          subtitle: const Text('모든 사용자가 볼 수 있습니다'),
+                          title: Text(AppLocalizations.of(context)!.publicPost),
+                          subtitle: Text(AppLocalizations.of(context)!.everyoneCanSee),
                           value: 'public',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -766,8 +753,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 친구만 공개
                         RadioListTile<String>(
-                          title: const Text('친구만 공개'),
-                          subtitle: const Text('내 친구들만 볼 수 있습니다'),
+                          title: Text(AppLocalizations.of(context)!.myFriendsOnly),
+                          subtitle: Text(AppLocalizations.of(context)!.myFriendsOnly),
                           value: 'friends',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -781,8 +768,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 특정 그룹만 공개
                         RadioListTile<String>(
-                          title: const Text('선택한 친구 그룹만'),
-                          subtitle: const Text('선택한 그룹의 친구들만 이 모임을 볼 수 있습니다'),
+                          title: Text(AppLocalizations.of(context)!.selectedFriendGroupOnly),
+                          subtitle: Text(AppLocalizations.of(context)!.selectedGroupOnly),
                           value: 'category',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -816,8 +803,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   color: Colors.orange[600],
                                 ),
                                 const SizedBox(width: 6),
-                                const Text(
-                                  '이 모임을 볼 수 있는 친구 그룹 선택',
+                                Text(
+                                  AppLocalizations.of(context)!.selectFriendGroupsForMeetup,
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
@@ -886,7 +873,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        '그룹을 선택하지 않으면 아무도 이 모임을 볼 수 없습니다',
+                                        AppLocalizations.of(context)!.noGroupSelectedWarning,
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.orange[700],
@@ -910,8 +897,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      '썸네일 설정 (선택사항)',
+                    Text(
+                      AppLocalizations.of(context)!.thumbnailSettingsOptional,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -979,8 +966,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   color: Colors.grey[400],
                                 ),
                                 const SizedBox(height: 8),
-                                const Text(
-                                  '썸네일 이미지',
+                                Text(
+                                  AppLocalizations.of(context)!.thumbnailImage,
                                   style: TextStyle(
                                     color: Color(0xFF666666),
                                     fontSize: 14,
@@ -1020,7 +1007,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           color: const Color(0xFF4A90E2),
                         ),
                         label: Text(
-                          _thumbnailImage != null ? '이미지 변경' : '이미지 첨부',
+                          _thumbnailImage != null 
+                              ? AppLocalizations.of(context)!.changeImage 
+                              : AppLocalizations.of(context)!.attachImage,
                           style: const TextStyle(
                             color: Color(0xFF4A90E2),
                             fontSize: 14,
@@ -1078,8 +1067,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             ),
                             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                           ),
-                          child: const Text(
-                            '취소',
+                          child: Text(
+                            AppLocalizations.of(context)!.cancel,
                             style: TextStyle(
                               color: Color(0xFF6B6B6B),
                               fontSize: 15,
@@ -1167,8 +1156,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         ScaffoldMessenger.of(
                                           context,
                                         ).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('모임이 생성되었습니다!'),
+                                          SnackBar(
+                                            content: Text(AppLocalizations.of(context)!.meetupCreated),
                                             backgroundColor: Colors.green,
                                           ),
                                         );
@@ -1221,8 +1210,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             color: Colors.white,
                           ),
                         )
-                      : const Text(
-                          '생성',
+                      : Text(
+                          AppLocalizations.of(context)!.createAction,
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
@@ -1251,8 +1240,8 @@ return Container(
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text(
-            '새로운 모임 생성',
+          Text(
+            AppLocalizations.of(context)!.createNewMeetup,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
@@ -1283,4 +1272,54 @@ return Container(
   ),
 );
 }
+
+  /// 카테고리 칩 위젯 생성
+  Widget _buildCategoryChip(String key, String label) {
+    final isSelected = _selectedCategory == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _selectedCategory = key;
+            });
+          },
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: isSelected 
+                  ? const Color(0xFF4A90E2)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected 
+                    ? const Color(0xFF4A90E2)
+                    : const Color(0xFFE1E6EE),
+                width: 1,
+              ),
+              boxShadow: isSelected ? [
+                BoxShadow(
+                  color: const Color(0xFF4A90E2).withOpacity(0.2),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ] : null,
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

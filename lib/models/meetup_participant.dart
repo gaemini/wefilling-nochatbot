@@ -73,8 +73,19 @@ class MeetupParticipant {
     }
   }
 
-  // 상태별 한국어 텍스트 반환
-  String getStatusText() {
+  // 상태 텍스트 반환 (로케일 대응)
+  String getStatusTextLocalized(String languageCode) {
+    if (languageCode == 'en') {
+      switch (status) {
+        case 'approved':
+          return 'Approved';
+        case 'rejected':
+          return 'Rejected';
+        case 'pending':
+        default:
+          return 'Pending';
+      }
+    }
     switch (status) {
       case 'approved':
         return '승인됨';

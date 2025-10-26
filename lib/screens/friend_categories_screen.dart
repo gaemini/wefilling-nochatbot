@@ -10,6 +10,7 @@ import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class FriendCategoriesScreen extends StatefulWidget {
   const FriendCategoriesScreen({super.key});
@@ -57,10 +58,35 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('친구 카테고리 관리'),
-        backgroundColor: BrandColors.primary,
-        foregroundColor: Colors.white,
+        title: Text(
+          AppLocalizations.of(context)!.friendCategoriesManagement,
+          style: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
+            fontSize: 18,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.grey[200]!,
+                  Colors.grey[100]!,
+                ],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+            ),
+          ),
+        ),
       ),
       body: StreamBuilder<List<FriendCategory>>(
         stream: _categoryService.getCategoriesStream(),
@@ -81,7 +107,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    '오류가 발생했습니다',
+                    AppLocalizations.of(context)!.error,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
@@ -108,9 +134,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             
             return AppEmptyState(
               icon: IconStyles.group,
-              title: '카테고리를 만들어보세요',
-              description: '친구들을 카테고리별로 정리하면\n더 체계적으로 관리할 수 있어요.',
-              ctaText: '첫 카테고리 만들기',
+              title: AppLocalizations.of(context)!.createFirstCategory,
+              description: AppLocalizations.of(context)!.createFirstCategoryDescription,
+              ctaText: AppLocalizations.of(context)!.newCategoryCreate,
               ctaIcon: IconStyles.add,
               onCtaPressed: () => _showCreateCategoryDialog(),
             );
@@ -129,8 +155,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       floatingActionButton: AppFab(
         icon: IconStyles.add,
         onPressed: () => _showCreateCategoryDialog(),
-        semanticLabel: '새 카테고리 만들기',
-        tooltip: '카테고리 추가',
+        semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
+        tooltip: AppLocalizations.of(context)!.addCategory,
         heroTag: 'add_category_fab',
       ),
     );
@@ -172,7 +198,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
-            '${category.friendIds.length}명의 친구',
+            AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
             style: TextStyle(
               color: BrandColors.neutral500,
               fontSize: 12,
@@ -202,7 +228,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 children: [
                   Icon(IconStyles.edit, size: 20),
                   const SizedBox(width: 12),
-                  const Text('수정'),
+                  Text(AppLocalizations.of(context)!.editAction),
                 ],
               ),
             ),
@@ -212,7 +238,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 children: [
                   Icon(Icons.delete_outline, size: 20, color: BrandColors.error),
                   const SizedBox(width: 12),
-                  Text('삭제', style: TextStyle(color: BrandColors.error)),
+                  Text(AppLocalizations.of(context)!.delete, style: TextStyle(color: BrandColors.error)),
                 ],
               ),
             ),
@@ -235,6 +261,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   }
 
   void _showCategoryDialog({FriendCategory? category}) {
+    if (!mounted) return;
+    
     final isEdit = category != null;
     final nameController = TextEditingController(text: category?.name ?? '');
     String selectedColor = category?.color ?? '#4A90E2';
@@ -244,16 +272,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text(isEdit ? '카테고리 수정' : '새 카테고리'),
+          title: Text(isEdit ? AppLocalizations.of(context)!.editCategory : AppLocalizations.of(context)!.newCategory),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 TextField(
                   controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: '카테고리 이름',
-                    hintText: '예: 대학 친구',
+                  decoration: InputDecoration(
+                    labelText: AppLocalizations.of(context)!.categoryName,
+                    hintText: AppLocalizations.of(context)!.categoryNameHint,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -274,7 +302,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('취소'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             ElevatedButton(
               style: ComponentStyles.primaryButton,
@@ -282,7 +310,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 final name = nameController.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('카테고리 이름을 입력해주세요')),
+                    SnackBar(content: Text(AppLocalizations.of(context)!.enterCategoryName)),
                   );
                   return;
                 }
@@ -310,18 +338,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isEdit ? '카테고리가 수정되었습니다' : '카테고리가 생성되었습니다'),
+                      content: Text(isEdit ? AppLocalizations.of(context)!.categoryUpdated : AppLocalizations.of(context)!.categoryCreated),
                     ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isEdit ? '카테고리 수정에 실패했습니다' : '카테고리 생성에 실패했습니다'),
+                      content: Text(isEdit ? AppLocalizations.of(context)!.categoryUpdateFailed : AppLocalizations.of(context)!.categoryCreateFailed),
                     ),
                   );
                 }
               },
-              child: Text(isEdit ? '수정' : '생성'),
+              child: Text(isEdit ? AppLocalizations.of(context)!.editAction : AppLocalizations.of(context)!.create),
             ),
           ],
         ),
@@ -338,7 +366,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('색상 선택', style: TextStyle(fontWeight: FontWeight.w500)),
+        Text(AppLocalizations.of(context)!.colorSelection, style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -383,7 +411,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('아이콘 선택', style: TextStyle(fontWeight: FontWeight.w500)),
+        Text(AppLocalizations.of(context)!.iconSelection, style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -420,18 +448,19 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   }
 
   void _showDeleteConfirmDialog(FriendCategory category) {
+    if (!mounted) return;
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('카테고리 삭제'),
+        title: Text(AppLocalizations.of(context)!.deleteCategory),
         content: Text(
-          '\'${category.name}\' 카테고리를 삭제하시겠습니까?\n\n'
-          '이 카테고리에 속한 친구들은 다른 카테고리로 이동됩니다.',
+          AppLocalizations.of(context)!.deleteCategoryConfirm(category.name),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('취소'),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -444,15 +473,15 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('카테고리가 삭제되었습니다')),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.categoryDeleted)),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('카테고리 삭제에 실패했습니다')),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.categoryDeleteFailed)),
                 );
               }
             },
-            child: const Text('삭제'),
+            child: Text(AppLocalizations.of(context)!.delete),
           ),
         ],
       ),
@@ -474,8 +503,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       if (success) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('기본 카테고리가 생성되었습니다'),
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.defaultCategoryCreated),
               duration: Duration(seconds: 2),
             ),
           );
@@ -486,7 +515,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('기본 카테고리 생성에 실패했습니다'),
+            content: Text(AppLocalizations.of(context)!.defaultCategoryFailed),
             backgroundColor: BrandColors.error,
           ),
         );

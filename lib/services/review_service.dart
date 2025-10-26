@@ -18,54 +18,85 @@ class ReviewService {
     }
 
     try {
+      // users/{userId}/posts 서브컬렉션에서 type='meetup_review'인 문서만 조회
       return _firestore
-          .collection('reviews')
-          .where('authorId', isEqualTo: user.uid)
+          .collection('users')
+          .doc(user.uid)
+          .collection('posts')
+          .where('type', isEqualTo: 'meetup_review')
           .snapshots()
-          .map((snapshot) {
+          .asyncMap((snapshot) async {
         final reviews = <ReviewPost>[];
+        
+        print('📊 후기 조회: ${snapshot.docs.length}개 문서 발견');
+        
+        // 실제 사용자 정보 한 번만 조회
+        String authorName = '익명';
+        String authorProfileImage = '';
+        
+        try {
+          final userDoc = await _firestore.collection('users').doc(user.uid).get();
+          if (userDoc.exists) {
+            final userData = userDoc.data()!;
+            authorName = userData['nickname'] ?? userData['displayName'] ?? '익명';
+            authorProfileImage = userData['photoURL'] ?? '';
+          }
+        } catch (e) {
+          print('⚠️ 사용자 정보 조회 실패: $e');
+        }
         
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data();
             
-            // 기본값으로 안전한 ReviewPost 생성
+            // 본인 프로필에서는 숨긴 후기도 표시 (hidden 필드만 설정)
+            // 다른 사람이 볼 때는 Firestore 규칙에서 차단됨
+            
+            // 실제 사용자 정보로 ReviewPost 생성
             final review = ReviewPost(
               id: doc.id,
-              authorId: data['authorId'] ?? user.uid,
-              authorName: data['authorName'] ?? '익명',
-              authorProfileImage: data['authorProfileImage'] ?? '',
+              authorId: user.uid,
+              authorName: authorName,
+              authorProfileImage: authorProfileImage,
               meetupId: data['meetupId'] ?? '',
               meetupTitle: data['meetupTitle'] ?? '모임',
-              imageUrls: List<String>.from(data['imageUrls'] ?? []),
+              imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
               content: data['content'] ?? '',
-              category: data['category'] ?? '일반',
-              rating: data['rating'] ?? 5,
-              taggedUserIds: List<String>.from(data['taggedUserIds'] ?? []),
+              category: '모임', // 모임 후기는 항상 '모임' 카테고리
+              rating: 5, // 기본 평점
+              taggedUserIds: [],
               createdAt: data['createdAt'] is Timestamp 
                   ? (data['createdAt'] as Timestamp).toDate() 
                   : DateTime.now(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: data['commentCount'] ?? 0,
-              privacyLevel: _parsePrivacyLevel(data['privacyLevel']),
+              privacyLevel: PrivacyLevel.public, // 모임 후기는 공개
+              sourceReviewId: data['reviewId'],
+              hidden: data['isHidden'] == true,
             );
             
             reviews.add(review);
+            if (data['isHidden'] == true) {
+              print('👁️ 숨겨진 후기 포함 (본인): ${doc.id} - ${review.meetupTitle}');
+            } else {
+              print('✅ 후기 추가: ${doc.id} - ${review.meetupTitle}');
+            }
           } catch (e) {
-            print('개별 후기 파싱 오류: $e');
+            print('❌ 개별 후기 파싱 오류: $e');
             // 개별 문서 오류는 건너뛰고 계속 진행
           }
         }
         
         // 메모리에서 정렬 (인덱스 문제 회피)
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        print('📋 최종 후기 목록: ${reviews.length}개');
         return reviews;
       }).handleError((error) {
-        print('후기 스트림 오류: $error');
+        print('❌ 후기 스트림 오류: $error');
         return <ReviewPost>[];
       });
     } catch (e) {
-      print('getUserReviews 오류: $e');
+      print('❌ getUserReviews 오류: $e');
       return Stream.value([]);
     }
   }
@@ -217,16 +248,27 @@ class ReviewService {
   // 특정 사용자의 후기 게시글 스트림 가져오기 (친구 프로필 조회용)
   Stream<List<ReviewPost>> getUserReviewsStream(String userId) {
     try {
+      // users/{userId}/posts 서브컬렉션에서 type='meetup_review'인 문서만 조회
       return _firestore
-          .collection('reviews')
-          .where('authorId', isEqualTo: userId)
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .where('type', isEqualTo: 'meetup_review')
           .snapshots()
           .map((snapshot) {
         final reviews = <ReviewPost>[];
         
+        print('📊 친구 후기 조회: ${snapshot.docs.length}개 문서 발견 (userId: $userId)');
+        
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data();
+            
+            // 다른 사람 프로필: isHidden이 true인 경우 건너뛰기
+            if (data['isHidden'] == true) {
+              print('⏭️ 숨겨진 후기 건너뛰기 (다른 사람 프로필): ${doc.id}');
+              continue;
+            }
             
             // 기본값으로 안전한 ReviewPost 생성
             final review = ReviewPost(
@@ -236,31 +278,200 @@ class ReviewService {
               authorProfileImage: data['authorProfileImage'] ?? '',
               meetupId: data['meetupId'] ?? '',
               meetupTitle: data['meetupTitle'] ?? '모임',
-              imageUrls: List<String>.from(data['imageUrls'] ?? []),
+              imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
               content: data['content'] ?? '',
-              category: data['category'] ?? '일반',
-              rating: data['rating'] ?? 5,
-              taggedUserIds: List<String>.from(data['taggedUserIds'] ?? []),
+              category: '모임', // 모임 후기는 항상 '모임' 카테고리
+              rating: 5, // 기본 평점
+              taggedUserIds: [],
               createdAt: data['createdAt'] is Timestamp 
                   ? (data['createdAt'] as Timestamp).toDate() 
                   : DateTime.now(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: data['commentCount'] ?? 0,
-              privacyLevel: _parsePrivacyLevel(data['privacyLevel']),
+              privacyLevel: PrivacyLevel.public, // 모임 후기는 공개
+              sourceReviewId: data['reviewId'],
+              hidden: data['isHidden'] == true,
             );
             
             reviews.add(review);
+            print('✅ 친구 후기 추가: ${doc.id} - ${review.meetupTitle}');
           } catch (e) {
-            print('후기 파싱 오류: $e');
+            print('❌ 후기 파싱 오류: $e');
             // 개별 문서 오류는 무시하고 계속 진행
           }
         }
         
+        // 메모리에서 정렬
+        reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        print('📋 최종 친구 후기 목록: ${reviews.length}개');
         return reviews;
       });
     } catch (e) {
-      print('후기 스트림 오류: $e');
+      print('❌ 후기 스트림 오류: $e');
       return Stream.value([]);
+    }
+  }
+
+  // 후기 숨김 처리
+  Future<bool> hideReview(String reviewId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다');
+      }
+
+      // users/{userId}/posts/{reviewId}에서 업데이트
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('posts')
+          .doc(reviewId)
+          .update({
+        'isHidden': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 후기 숨김 처리 완료: $reviewId');
+      return true;
+    } catch (e) {
+      print('❌ 후기 숨김 오류: $e');
+      return false;
+    }
+  }
+
+  // 후기 숨김 해제
+  Future<bool> unhideReview(String reviewId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다');
+      }
+
+      // users/{userId}/posts/{reviewId}에서 업데이트
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('posts')
+          .doc(reviewId)
+          .update({
+        'isHidden': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      print('✅ 후기 숨김 해제 완료: $reviewId');
+      return true;
+    } catch (e) {
+      print('❌ 후기 숨김 해제 오류: $e');
+      return false;
+    }
+  }
+
+  /// 후기 좋아요 토글
+  Future<bool> toggleReviewLike(String reviewId, String userId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다');
+      }
+
+      print('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
+
+      // users/{userId}/posts/{reviewId} 문서 가져오기
+      final reviewRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .doc(reviewId);
+
+      final reviewDoc = await reviewRef.get();
+      if (!reviewDoc.exists) {
+        print('❌ 후기를 찾을 수 없음');
+        return false;
+      }
+
+      final data = reviewDoc.data()!;
+      final likedBy = List<String>.from(data['likedBy'] ?? []);
+      final isLiked = likedBy.contains(user.uid);
+
+      if (isLiked) {
+        // 좋아요 취소
+        await reviewRef.update({
+          'likedBy': FieldValue.arrayRemove([user.uid]),
+          'likeCount': FieldValue.increment(-1),
+        });
+        print('💔 좋아요 취소 완료');
+      } else {
+        // 좋아요 추가
+        await reviewRef.update({
+          'likedBy': FieldValue.arrayUnion([user.uid]),
+          'likeCount': FieldValue.increment(1),
+        });
+        print('❤️ 좋아요 추가 완료');
+      }
+
+      return true;
+    } catch (e) {
+      print('❌ 좋아요 토글 오류: $e');
+      return false;
+    }
+  }
+
+  /// 특정 후기 실시간 스트림 (사용자 정보 포함)
+  Stream<ReviewPost?> getReviewStream(String reviewId, String userId) {
+    try {
+      return _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .doc(reviewId)
+          .snapshots()
+          .asyncMap((snapshot) async {
+        if (!snapshot.exists) {
+          return null;
+        }
+
+        final data = snapshot.data()!;
+        
+        // 실제 사용자 정보 가져오기
+        String authorName = '익명';
+        String authorProfileImage = '';
+        
+        try {
+          final userDoc = await _firestore.collection('users').doc(userId).get();
+          if (userDoc.exists) {
+            final userData = userDoc.data()!;
+            authorName = userData['nickname'] ?? userData['displayName'] ?? '익명';
+            authorProfileImage = userData['photoURL'] ?? '';
+          }
+        } catch (e) {
+          print('⚠️ 사용자 정보 조회 실패: $e');
+        }
+        
+        return ReviewPost(
+          id: snapshot.id,
+          authorId: userId,
+          authorName: authorName,
+          authorProfileImage: authorProfileImage,
+          meetupId: data['meetupId'] ?? '',
+          meetupTitle: data['meetupTitle'] ?? '모임',
+          imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
+          content: data['content'] ?? '',
+          category: '모임',
+          rating: 5,
+          taggedUserIds: [],
+          createdAt: data['createdAt'] is Timestamp
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          likedBy: List<String>.from(data['likedBy'] ?? []),
+          commentCount: data['commentCount'] ?? 0,
+          privacyLevel: PrivacyLevel.public,
+          sourceReviewId: data['reviewId'],
+          hidden: data['isHidden'] == true,
+        );
+      });
+    } catch (e) {
+      print('❌ 후기 스트림 오류: $e');
+      return Stream.value(null);
     }
   }
 

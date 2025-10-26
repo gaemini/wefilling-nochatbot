@@ -12,6 +12,7 @@ import '../ui/widgets/optimized_post_card.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import '../widgets/ad_banner_widget.dart';
+import '../l10n/app_localizations.dart';
 
 class BoardScreen extends StatefulWidget {
   final String? searchQuery;
@@ -181,9 +182,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (todayPosts.isEmpty) {
           return AppEmptyState(
             icon: Icons.calendar_today,
-            title: '당신의 스토리가 궁금해요.',
-            description: '사소한 궁금증부터 특별한 순간까지,\n당신의 이야기를 들려주세요.',
-            ctaText: '이야기 남기기',
+            title: AppLocalizations.of(context)!.yourStoryMatters,
+            description: AppLocalizations.of(context)!.shareYourMoments,
+            ctaText: AppLocalizations.of(context)!.writeStory,
             ctaIcon: Icons.edit,
             onCtaPressed: () {
               Navigator.push(
@@ -253,6 +254,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (posts.isEmpty) {
           if (_isSearching) {
             return AppEmptyState.noSearchResults(
+              context: context,
               searchQuery: _searchController.text,
               onClearSearch: _clearSearch,
             );
@@ -380,10 +382,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
     
     final Map<String, List<Post>> groups = {
-      '오늘': [],
-      '어제': [],
-      '이번 주': [],
-      '이전': [],
+      'today': [],
+      'yesterday': [],
+      'thisWeek': [],
+      'previous': [],
     };
     
     for (final post in posts) {
@@ -394,14 +396,14 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       );
       
       if (postDate.isAtSameMomentAs(today)) {
-        groups['오늘']!.add(post);
+        groups['today']!.add(post);
       } else if (postDate.isAtSameMomentAs(yesterday)) {
-        groups['어제']!.add(post);
+        groups['yesterday']!.add(post);
       } else if (postDate.isAfter(thisWeekStart.subtract(const Duration(days: 1))) && 
                  postDate.isBefore(yesterday)) {
-        groups['이번 주']!.add(post);
+        groups['thisWeek']!.add(post);
       } else {
-        groups['이전']!.add(post);
+        groups['previous']!.add(post);
       }
     }
     
@@ -417,50 +419,40 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 날짜 헤더 빌드
   Widget _buildDateHeader(String dateLabel) {
-    Color headerColor;
-    IconData headerIcon;
+    String displayLabel;
     
     switch (dateLabel) {
-      case '오늘':
-        headerColor = Colors.blue[600]!;
-        headerIcon = Icons.today;
+      case 'today':
+        displayLabel = AppLocalizations.of(context)!.today;
         break;
-      case '어제':
-        headerColor = Colors.orange[600]!;
-        headerIcon = Icons.history_toggle_off;
+      case 'yesterday':
+        displayLabel = AppLocalizations.of(context)!.yesterday;
         break;
-      case '이번 주':
-        headerColor = Colors.green[600]!;
-        headerIcon = Icons.date_range;
+      case 'thisWeek':
+        displayLabel = AppLocalizations.of(context)!.thisWeek;
         break;
-      default: // '이전'
-        headerColor = Colors.grey[600]!;
-        headerIcon = Icons.history;
+      default: // 'previous'
+        displayLabel = AppLocalizations.of(context)!.previous;
     }
     
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: headerColor.withOpacity(0.1),
+        color: Colors.transparent, // 배경색 제거
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: headerColor.withOpacity(0.3), width: 1),
+        border: Border.all(color: Colors.black, width: 1.5), // 진한 검은색 테두리
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            headerIcon,
-            color: headerColor,
-            size: 18,
-          ),
-          const SizedBox(width: 6),
+          // 아이콘 제거
           Text(
-            dateLabel,
-            style: TextStyle(
-              color: headerColor,
+            displayLabel,
+            style: const TextStyle(
+              color: Colors.black, // 진한 검은색 글씨
               fontSize: 14,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700, // 더 진하게
             ),
           ),
         ],

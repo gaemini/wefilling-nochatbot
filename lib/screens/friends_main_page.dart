@@ -10,6 +10,7 @@ import 'search_users_page.dart';
 import 'requests_page.dart';
 import 'friends_page.dart';
 import 'friend_categories_screen.dart';
+import '../l10n/app_localizations.dart';
 
 class FriendsMainPage extends StatefulWidget {
   const FriendsMainPage({super.key});
@@ -41,26 +42,59 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('친구'),
+        title: Text(AppLocalizations.of(context)!.friends),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: false,
           labelColor: Colors.blue,
           unselectedLabelColor: Colors.grey,
-          indicatorColor: Colors.blue,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 상하 패딩 추가
+          indicator: BoxDecoration(
+            color: const Color(0xFFE8F0FE),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          indicatorSize: TabBarIndicatorSize.tab,
           tabs: [
-            const Tab(icon: Icon(Icons.search), text: '검색'),
             Tab(
+              height: 64, // 탭 높이 증가
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.search, size: 24), // 아이콘 크기 증가
+                  const SizedBox(height: 4), // 간격 증가
+                  Text(
+                    AppLocalizations.of(context)!.search,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Tab(
+              height: 64, // 탭 높이 증가
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
                   final incomingCount = provider.incomingRequests.length;
                   return Stack(
                     children: [
-                      const Column(
+                      Column(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: [Icon(Icons.mail), Text('요청')],
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.mail, size: 24), // 아이콘 크기 증가
+                          const SizedBox(height: 4), // 간격 증가
+                          Text(
+                            AppLocalizations.of(context)!.requests,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                       if (incomingCount > 0)
                         Positioned(
@@ -77,9 +111,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                               minHeight: 16,
                             ),
                             child: Text(
-                              incomingCount > 99
-                                  ? '99+'
-                                  : incomingCount.toString(),
+                              incomingCount > 99 ? '99+' : incomingCount.toString(),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 10,
@@ -95,20 +127,63 @@ class _FriendsMainPageState extends State<FriendsMainPage>
               ),
             ),
             Tab(
+              height: 64, // 탭 높이 증가
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
                   final friendsCount = provider.friends.length;
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.people),
-                      Text('친구 ($friendsCount)'),
+                      const Icon(Icons.people, size: 24), // 아이콘 크기 증가
+                      const SizedBox(height: 4), // 간격 증가
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              AppLocalizations.of(context)!.friends,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              friendsCount > 99 ? '99+' : friendsCount.toString(),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   );
                 },
               ),
             ),
-            const Tab(icon: Icon(Icons.category), text: '카테고리'),
+            Tab(
+              height: 64, // 탭 높이 증가
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.category, size: 24), // 아이콘 크기 증가
+                  const SizedBox(height: 4), // 간격 증가
+                  Text(
+                    AppLocalizations.of(context)!.category,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

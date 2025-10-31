@@ -60,6 +60,47 @@ class _FriendsMainPageState extends State<FriendsMainPage>
           tabs: [
             Tab(
               height: 64, // 탭 높이 증가
+              child: Consumer<RelationshipProvider>(
+                builder: (context, provider, child) {
+                  final friendsCount = provider.friends.length;
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.people, size: 24), // 아이콘 크기 증가
+                      const SizedBox(height: 4), // 간격 증가
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              AppLocalizations.of(context)!.friends,
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              friendsCount > 99 ? '99+' : friendsCount.toString(),
+                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+            Tab(
+              height: 64, // 탭 높이 증가
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
@@ -128,47 +169,6 @@ class _FriendsMainPageState extends State<FriendsMainPage>
             ),
             Tab(
               height: 64, // 탭 높이 증가
-              child: Consumer<RelationshipProvider>(
-                builder: (context, provider, child) {
-                  final friendsCount = provider.friends.length;
-                  return Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.people, size: 24), // 아이콘 크기 증가
-                      const SizedBox(height: 4), // 간격 증가
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              AppLocalizations.of(context)!.friends,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              friendsCount > 99 ? '99+' : friendsCount.toString(),
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-            Tab(
-              height: 64, // 탭 높이 증가
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
@@ -190,19 +190,19 @@ class _FriendsMainPageState extends State<FriendsMainPage>
       body: TabBarView(
         controller: _tabController,
         children: const [
+          FriendsPage(),
           SearchUsersPage(),
           RequestsPage(),
-          FriendsPage(),
           FriendCategoriesScreen(),
         ],
       ),
       // 친구 찾기 FAB (검색 탭에서만 표시)
       floatingActionButton:
-          _tabController.index == 0
+          _tabController.index == 1
               ? AppFab.addFriend(
                 onPressed: () {
                   // 검색 탭으로 포커스 이동 또는 검색 기능 실행
-                  _tabController.animateTo(0);
+                  _tabController.animateTo(1);
                 },
                 heroTag: 'friends_search_fab',
               )

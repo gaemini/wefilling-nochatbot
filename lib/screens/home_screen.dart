@@ -367,18 +367,24 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           // 현재 선택된 날짜와 요일 표시 + 주차 네비게이션 (검색 모드가 아닐 때만)
           if (!_isSearching)
             Container(
+              height: 40, // 명시적인 높이 지정으로 두께 조절
               padding: const EdgeInsets.symmetric(
-                vertical: 2.0,
+                vertical: 0,
                 horizontal: 16.0,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // 이전 주 버튼
-                  AppIconButton(
-                    icon: Icons.chevron_left,
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     onPressed: _goToPreviousWeek,
-                    semanticLabel: '이전 주',
                   ),
                   
                   // 현재 날짜 정보 (탭하면 오늘로 이동)
@@ -388,8 +394,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       child: Text(
                         '$selectedDayString ($weekdayName)',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontSize: 15,
+                          fontSize: 14,
                           height: 1.2,
+                          fontWeight: FontWeight.w500,
                         ),
                         textAlign: TextAlign.center,
                       ),
@@ -397,10 +404,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   ),
                   
                   // 다음 주 버튼
-                  AppIconButton(
-                    icon: Icons.chevron_right,
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     onPressed: _goToNextWeek,
-                    semanticLabel: '다음 주',
                   ),
                 ],
               ),
@@ -438,7 +450,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                           keyExtractor: (meetup) => meetup.id,
                           padding: const EdgeInsets.only(
                             top: 8, // 상단 패딩 최소화
-                            bottom: 16,
+                            bottom: 90, // FAB을 위한 하단 여유 공간
                           ),
                           itemBuilder: (context, meetup, index) {
                             return OptimizedMeetupCard(

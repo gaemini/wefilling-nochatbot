@@ -231,6 +231,20 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           ),
                         ],
                       ),
+                    // 한 줄 소개 (상태메세지)
+                    if (_userData?['bio'] != null && (_userData!['bio'] as String).isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        _userData!['bio'],
+                        style: AppTheme.bodyMedium.copyWith(
+                          color: Colors.black87,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     if (university != null) ...[
                       const SizedBox(height: 4),
                       Row(

@@ -878,6 +878,18 @@ abstract class AppLocalizations {
   /// **'참여하기'**
   String get joinMeetup;
 
+  /// No description provided for @join.
+  ///
+  /// In ko, this message translates to:
+  /// **'참여'**
+  String get join;
+
+  /// No description provided for @participating.
+  ///
+  /// In ko, this message translates to:
+  /// **'참여중'**
+  String get participating;
+
   /// No description provided for @leaveMeetup.
   ///
   /// In ko, this message translates to:
@@ -1130,11 +1142,23 @@ abstract class AppLocalizations {
   /// **'내 댓글'**
   String get myComments;
 
+  /// No description provided for @review.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기'**
+  String get review;
+
   /// No description provided for @reviews.
   ///
   /// In ko, this message translates to:
   /// **'후기'**
   String get reviews;
+
+  /// No description provided for @checkReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기 확인'**
+  String get checkReview;
 
   /// No description provided for @saved.
   ///
@@ -3631,6 +3655,54 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'탈퇴한 계정'**
   String get deletedAccount;
+
+  /// No description provided for @visibilityPublic.
+  ///
+  /// In ko, this message translates to:
+  /// **'전체공개'**
+  String get visibilityPublic;
+
+  /// No description provided for @visibilityFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구공개'**
+  String get visibilityFriends;
+
+  /// No description provided for @cannotOpenLink.
+  ///
+  /// In ko, this message translates to:
+  /// **'링크를 열 수 없습니다'**
+  String get cannotOpenLink;
+
+  /// No description provided for @cancelMeetupMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말로 \"{meetupTitle}\" 모임을 취소하시겠습니까?'**
+  String cancelMeetupMessage(String meetupTitle);
+
+  /// No description provided for @warningTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'주의사항'**
+  String get warningTitle;
+
+  /// No description provided for @cancelMeetupWarning1.
+  ///
+  /// In ko, this message translates to:
+  /// **'취소된 모임은 복구할 수 없습니다'**
+  String get cancelMeetupWarning1;
+
+  /// No description provided for @cancelMeetupWarning2.
+  ///
+  /// In ko, this message translates to:
+  /// **'참여 중인 모든 사용자에게 알림이 발송됩니다'**
+  String get cancelMeetupWarning2;
+
+  /// No description provided for @yesCancel.
+  ///
+  /// In ko, this message translates to:
+  /// **'예, 취소합니다'**
+  String get yesCancel;
 }
 
 class _AppLocalizationsDelegate

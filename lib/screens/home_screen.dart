@@ -314,19 +314,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _loadMeetups();
   }
 
-  // 모임 생성 다이얼로그 표시
+  // 모임 생성 화면으로 이동
   void _showCreateMeetupDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.2), // 개선된 오버레이 색상
-      builder: (context) => CreateMeetupScreen(
-        initialDayIndex: _tabController.index,
-        onCreateMeetup: (index, meetup) {
-          // 모임이 생성되면 캐시 클리어하고 목록 새로고침
-          _meetupCache.clear();
-          _categoryMeetupCache.clear();
-          _loadMeetups();
-        },
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => CreateMeetupScreen(
+          initialDayIndex: _tabController.index,
+          onCreateMeetup: (index, meetup) {
+            // 모임이 생성되면 캐시 클리어하고 목록 새로고침
+            _meetupCache.clear();
+            _categoryMeetupCache.clear();
+            _loadMeetups();
+          },
+        ),
       ),
     );
   }
@@ -467,18 +467,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   /// 모임 상세 화면으로 이동
   void _navigateToMeetupDetail(Meetup meetup) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => MeetupDetailScreen(
-            meetup: meetup,
-            meetupId: meetup.id,
-            onMeetupDeleted: () {
-              _meetupCache.clear();
-              _categoryMeetupCache.clear();
-              _loadMeetups(); // 모임이 삭제되면 목록 새로고침
-            },
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MeetupDetailScreen(
+          meetup: meetup,
+          meetupId: meetup.id,
+          onMeetupDeleted: () {
+            _meetupCache.clear();
+            _categoryMeetupCache.clear();
+            _loadMeetups(); // 모임이 삭제되면 목록 새로고침
+          },
+        ),
+      ),
     );
   }
 
@@ -542,10 +543,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   _loadMeetups();
                 },
               ),
-
-            // 친구 그룹 필터 (검색 모드가 아닐 때만 표시)
-            if (!_isSearching)
-              _buildFriendGroupFilter(),
           ],
         ),
       ),
@@ -645,263 +642,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           }
         },
       ),
-    );
-  }
-
-  // 친구 그룹 필터 UI 빌드
-  Widget _buildFriendGroupFilter() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          // 필터 버튼
-          OutlinedButton.icon(
-            onPressed: () {
-              _showFriendFilterBottomSheet();
-            },
-            icon: Icon(
-              Icons.filter_list,
-              size: 18,
-              color: _friendFilter != 'all' 
-                ? const Color(0xFF4A90E2) 
-                : const Color(0xFF666666),
-            ),
-            label: Text(
-              _getFriendFilterDisplayText(),
-              style: TextStyle(
-                fontSize: 13,
-                color: _friendFilter != 'all' 
-                  ? const Color(0xFF4A90E2) 
-                  : const Color(0xFF666666),
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              minimumSize: const Size(0, 32),
-              side: BorderSide(
-                color: _friendFilter != 'all' 
-                  ? const Color(0xFF4A90E2) 
-                  : const Color(0xFFDDDDDD),
-                width: 1,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          
-          // 필터 초기화 버튼 (필터가 적용된 경우에만 표시)
-          if (_friendFilter != 'all') ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  _friendFilter = 'all';
-                });
-                _loadMeetups();
-              },
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF5F5F5),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.close,
-                  size: 16,
-                  color: Color(0xFF666666),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  // 친구 필터 표시 텍스트 가져오기
-  String _getFriendFilterDisplayText() {
-    switch (_friendFilter) {
-      case 'public':
-        return '전체 공개만';
-      case 'friends':
-        return '친구 모임만';
-      default:
-        if (_friendFilter.startsWith('category:')) {
-          final categoryId = _friendFilter.substring(9);
-          final category = _friendCategories.firstWhere(
-            (cat) => cat.id == categoryId,
-            orElse: () => FriendCategory(
-              id: '',
-              name: '알 수 없음',
-              description: '',
-              color: '',
-              iconName: '',
-              createdAt: DateTime.now(),
-              updatedAt: DateTime.now(),
-              userId: '',
-              friendIds: [],
-            ),
-          );
-          return '${category.name} 그룹';
-        }
-        return AppLocalizations.of(context)!.allMeetups;
-    }
-  }
-
-  // 친구 필터 바텀시트 표시
-  void _showFriendFilterBottomSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.3,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            return SafeArea(
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-              // 헤더
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    AppLocalizations.of(context)!.meetupFilter,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              
-              // 스크롤 가능한 필터 옵션들
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scrollController,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 필터 옵션들
-                      _buildFilterOption(
-                        title: AppLocalizations.of(context)!.allMeetups,
-                        subtitle: AppLocalizations.of(context)!.everyoneCanSee,
-                        value: 'all',
-                        icon: Icons.public,
-                      ),
-                      _buildFilterOption(
-                        title: AppLocalizations.of(context)!.publicMeetupsOnly,
-                        subtitle: AppLocalizations.of(context)!.showOnlyPublicMeetups,
-                        value: 'public',
-                        icon: Icons.language,
-                      ),
-                      _buildFilterOption(
-                        title: AppLocalizations.of(context)!.friendsMeetupsOnly,
-                        subtitle: AppLocalizations.of(context)!.showAllFriendsMeetups,
-                        value: 'friends',
-                        icon: Icons.people,
-                      ),
-                      
-                      // 친구 그룹별 필터
-                      if (_friendCategories.isNotEmpty) ...[
-                        const Divider(height: 24),
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 16,
-                              color: Colors.blue[600],
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              AppLocalizations.of(context)!.viewSpecificFriendGroup,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF666666),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          AppLocalizations.of(context)!.showSelectedGroupMeetups,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFF888888),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        
-                        ...(_friendCategories.map((category) => _buildFilterOption(
-                          title: category.name,
-                          subtitle: AppLocalizations.of(context)!.friendsCountInGroup(category.friendIds.length),
-                          value: 'category:${category.id}',
-                          icon: Icons.group,
-                        ))),
-                      ],
-                      
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-            ),
-          );
-          },
-        );
-      },
-    );
-  }
-
-  // 필터 옵션 아이템 빌드
-  Widget _buildFilterOption({
-    required String title,
-    required String subtitle,
-    required String value,
-    required IconData icon,
-  }) {
-    final isSelected = _friendFilter == value;
-    
-    return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? const Color(0xFF4A90E2) : const Color(0xFF666666),
-      ),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-          color: isSelected ? const Color(0xFF4A90E2) : null,
-        ),
-      ),
-      subtitle: Text(subtitle),
-      trailing: isSelected 
-        ? const Icon(Icons.check, color: Color(0xFF4A90E2))
-        : null,
-      onTap: () {
-        setState(() {
-          _friendFilter = value;
-        });
-        Navigator.pop(context);
-        _loadMeetups();
-      },
     );
   }
 }

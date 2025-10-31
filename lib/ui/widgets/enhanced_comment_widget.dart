@@ -99,7 +99,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('로그인이 필요합니다.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
         );
       }
       return;
@@ -357,7 +357,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       } else {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('링크를 열 수 없습니다: ${link.url}')),
+                            SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${link.url}')),
                           );
                         }
                       }

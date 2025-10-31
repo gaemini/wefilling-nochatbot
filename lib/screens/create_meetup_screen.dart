@@ -188,42 +188,43 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final nationality = authProvider.userData?['nationality'] ?? '';
     final photoURL = authProvider.user?.photoURL;
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      alignment: Alignment.center,
-      child: Container(
-        width: double.infinity,
-        height: MediaQuery.of(context).size.height * 0.82, // 82vh 높이
-        decoration: BoxDecoration(
-          color: const Color(0xFFFAFBFC), // 연한 배경색
-          borderRadius: BorderRadius.circular(20), // 전체 모서리 둥글게
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 18,
-              offset: const Offset(0, -2),
-            ),
-          ],
+    return Scaffold(
+      backgroundColor: const Color(0xFFFAFBFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+          onPressed: () => Navigator.of(context).pop(),
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20), // 전체 모서리 둥글게
-          child: Column(
-            children: [
-              // 헤더 고정
-              _buildHeader(),
-              // 스크롤 가능한 컨텐츠
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                const SizedBox(height: 18),
-
+        title: Text(
+          AppLocalizations.of(context)!.createNewMeetup,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(
+            height: 1,
+            color: const Color(0xFFE6EAF0),
+          ),
+        ),
+      ),
+      body: Column(
+        children: [
+          // 스크롤 가능한 컨텐츠
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                 // 개선된 주최자 정보 카드
                 Container(
                   height: 56,
@@ -1028,27 +1029,25 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   ],
                 ),
                 const SizedBox(height: 24),
-
-                // 하단 버튼
-                // 개선된 하단 버튼 (고정)
-                const SizedBox(height: 24),
                       ],
                     ),
                   ),
+              ),
+            ),
+          // 하단 고정 버튼 영역
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(
+                  color: const Color(0xFFE6EAF0),
+                  width: 1,
                 ),
               ),
-              // 하단 고정 버튼 영역
-              Container(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, MediaQuery.of(context).padding.bottom + 16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(
-                    top: BorderSide(
-                      color: const Color(0xFFE6EAF0),
-                      width: 1,
-                    ),
-                  ),
-                ),
+            ),
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
                 child: Row(
                   children: [
                     // 취소 버튼
@@ -1061,18 +1060,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             Navigator.of(context).pop();
                           },
                           style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Color(0xFF6B6B6B)),
+                            side: const BorderSide(color: Color(0xFFE6EAF0), width: 1.5),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                           ),
                           child: Text(
                             AppLocalizations.of(context)!.cancel,
-                            style: TextStyle(
-                              color: Color(0xFF6B6B6B),
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
                               fontSize: 15,
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ),
@@ -1192,85 +1190,41 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   }
                                 }
                               },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4A90E2),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    elevation: 2,
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  ),
-                  child: _isSubmitting
-                      ? const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF4A90E2),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            elevation: 0,
                           ),
-                        )
-                      : Text(
-                          AppLocalizations.of(context)!.createAction,
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  AppLocalizations.of(context)!.createAction,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-}
-
-// 개선된 헤더 빌더
-Widget _buildHeader() {
-return Container(
-  color: const Color(0xFFFAFBFC),
-  padding: const EdgeInsets.fromLTRB(16, 18, 8, 12),
-  child: Column(
-    children: [
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            AppLocalizations.of(context)!.createNewMeetup,
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A1A),
-            ),
-          ),
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-              color: Colors.transparent,
-            ),
-            child: IconButton(
-              icon: const Icon(Icons.close, size: 24),
-              onPressed: () => Navigator.of(context).pop(),
-              color: const Color(0xFF666666),
             ),
           ),
         ],
       ),
-      const SizedBox(height: 12),
-      Container(
-        height: 1,
-        color: const Color(0xFFE6EAF0),
-      ),
-    ],
-  ),
-);
+    );
 }
 
   /// 카테고리 칩 위젯 생성

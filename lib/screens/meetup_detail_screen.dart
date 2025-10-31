@@ -190,7 +190,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
@@ -200,31 +200,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
     final currentLang = Localizations.localeOf(context).languageCode;
     final status = _currentMeetup.getStatus(languageCode: currentLang);
     final isUpcoming = status == AppLocalizations.of(context)!.scheduled;
-    final size = MediaQuery.of(context).size;
 
-    return Dialog(
+    return Scaffold(
       backgroundColor: Colors.white,
-      elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: double.infinity,
-        constraints: BoxConstraints(
-          maxWidth: min(500, size.width - 40),
-          maxHeight: size.height * 0.7,
-        ),
+      body: SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // 헤더
             Container(
-              decoration: BoxDecoration(
+              decoration: const BoxDecoration(
                 color: Colors.blue,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(16),
-                  topRight: Radius.circular(16),
-                ),
               ),
               padding: const EdgeInsets.all(16),
               child: Column(
@@ -232,6 +218,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                 children: [
                   Row(
                     children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () => Navigator.pop(context),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -288,7 +281,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                       ),
                       const SizedBox(width: 4),
                       Text(
-                        _currentMeetup.time,
+                        _currentMeetup.time.isEmpty || _currentMeetup.time == '미정'
+                            ? AppLocalizations.of(context)!.undecided
+                            : _currentMeetup.time,
                         style: const TextStyle(color: Colors.white70),
                       ),
                     ],
@@ -308,8 +303,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     Colors.blue,
                     AppLocalizations.of(context)!.dateAndTime,
                     currentLang == 'ko'
-                        ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time}'
-                        : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty ? AppLocalizations.of(context)!.undecided : _currentMeetup.time}',
+                        ? '${_currentMeetup.date.month}월 ${_currentMeetup.date.day}일 (${_currentMeetup.getFormattedDayOfWeek(languageCode: currentLang)}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? AppLocalizations.of(context)!.undecided : _currentMeetup.time}'
+                        : '${DateFormat('MMM d', 'en').format(_currentMeetup.date)} (${_currentMeetup.getFormattedDayOfWeek(languageCode: 'en')}) ${_currentMeetup.time.isEmpty || _currentMeetup.time == '미정' ? AppLocalizations.of(context)!.undecided : _currentMeetup.time}',
                   ),
                   _buildInfoItem(
                     Icons.location_on,
@@ -346,12 +341,22 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     AppLocalizations.of(context)!.category,
                     _currentMeetup.category,
                   ),
-
-                  // 모임 이미지
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: _buildMeetupImage(),
+                  // 공개 범위 (항상 표시)
+                  _buildInfoItem(
+                    (_currentMeetup.visibility == 'friends' || _currentMeetup.visibility == 'category') ? Icons.people : Icons.public,
+                    (_currentMeetup.visibility == 'friends' || _currentMeetup.visibility == 'category') ? Colors.orange : Colors.green,
+                    AppLocalizations.of(context)!.visibilityScope,
+                    (_currentMeetup.visibility == 'friends' || _currentMeetup.visibility == 'category')
+                        ? AppLocalizations.of(context)!.visibilityFriends
+                        : AppLocalizations.of(context)!.visibilityPublic,
                   ),
+
+                  // 모임 이미지 (이미지가 있을 때만 표시)
+                  if (!_currentMeetup.isDefaultImage())
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: _buildMeetupImage(),
+                    ),
                   
                   // 모임 설명
                   Padding(
@@ -1812,7 +1817,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '정말로 "${_currentMeetup.title}" 모임을 취소하시겠습니까?',
+              AppLocalizations.of(context)!.cancelMeetupMessage(_currentMeetup.title),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -1836,7 +1841,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                            color: Colors.orange[700]),
                       const SizedBox(width: 4),
                       Text(
-                        '주의사항',
+                        AppLocalizations.of(context)!.warningTitle,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -1846,10 +1851,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '• 취소된 모임은 복구할 수 없습니다\n'
-                    '• 참여 중인 모든 사용자에게 알림이 발송됩니다',
-                    style: TextStyle(
+                  Text(
+                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning1}\n'
+                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning2}',
+                    style: const TextStyle(
                       fontSize: 13,
                       height: 1.4,
                     ),
@@ -1865,9 +1870,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
             style: TextButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
-            child: const Text(
-              '아니오',
-              style: TextStyle(
+            child: Text(
+              AppLocalizations.of(context)!.no,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
               ),
@@ -1883,9 +1888,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
-            child: const Text(
-              '예, 취소합니다',
-              style: TextStyle(
+            child: Text(
+              AppLocalizations.of(context)!.yesCancel,
+              style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),

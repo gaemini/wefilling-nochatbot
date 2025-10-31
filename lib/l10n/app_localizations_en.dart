@@ -403,6 +403,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get joinMeetup => 'Join';
 
   @override
+  String get join => 'Join';
+
+  @override
+  String get participating => 'Joined';
+
+  @override
   String get leaveMeetup => 'Leave';
 
   @override
@@ -529,7 +535,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get myComments => 'My Comments';
 
   @override
+  String get review => 'Review';
+
+  @override
   String get reviews => 'Reviews';
+
+  @override
+  String get checkReview => 'Check Review';
 
   @override
   String get saved => 'Saved';
@@ -1909,4 +1921,30 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deletedAccount => 'Deleted Account';
+
+  @override
+  String get visibilityPublic => 'Public';
+
+  @override
+  String get visibilityFriends => 'Friends Only';
+
+  @override
+  String get cannotOpenLink => 'Cannot open link';
+
+  @override
+  String cancelMeetupMessage(String meetupTitle) {
+    return 'Are you sure you want to cancel \"$meetupTitle\" meetup?';
+  }
+
+  @override
+  String get warningTitle => 'Warning';
+
+  @override
+  String get cancelMeetupWarning1 => 'Cancelled meetups cannot be recovered';
+
+  @override
+  String get cancelMeetupWarning2 => 'All participants will be notified';
+
+  @override
+  String get yesCancel => 'Yes, Cancel';
 }

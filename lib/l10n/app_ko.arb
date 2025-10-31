@@ -130,6 +130,8 @@
   "cancelMeetupConfirm": "모임 취소 확인",
   "meetupDetail": "모임 상세",
   "joinMeetup": "참여하기",
+  "join": "참여",
+  "participating": "참여중",
   "leaveMeetup": "나가기",
   "meetupTitle": "모임 제목",
   "enterMeetupTitle": "모임 제목을 입력하세요",
@@ -172,7 +174,9 @@
   "myPosts": "내 게시글",
   "myMeetups": "내 모임",
   "myComments": "내 댓글",
+  "review": "후기",
   "reviews": "후기",
+  "checkReview": "후기 확인",
   "saved": "저장된",
   "yourStoryMatters": "당신의 스토리가 궁금해요",
   "shareYourMoments": "사소한 공감증부터 특별한 순간까지,\n당신의 이야기를 들려주세요.",
@@ -786,5 +790,20 @@
       }
     }
   },
-  "deletedAccount": "탈퇴한 계정"
+  "deletedAccount": "탈퇴한 계정",
+  "visibilityPublic": "전체공개",
+  "visibilityFriends": "친구공개",
+  "cannotOpenLink": "링크를 열 수 없습니다",
+  "cancelMeetupMessage": "정말로 \"{meetupTitle}\" 모임을 취소하시겠습니까?",
+  "@cancelMeetupMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "warningTitle": "주의사항",
+  "cancelMeetupWarning1": "취소된 모임은 복구할 수 없습니다",
+  "cancelMeetupWarning2": "참여 중인 모든 사용자에게 알림이 발송됩니다",
+  "yesCancel": "예, 취소합니다"
 }

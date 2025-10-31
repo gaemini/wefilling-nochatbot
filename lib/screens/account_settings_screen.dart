@@ -405,7 +405,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: ${e.toString()}')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${e.toString()}')));
       }
     } finally {
       setState(() => _isLoading = false);

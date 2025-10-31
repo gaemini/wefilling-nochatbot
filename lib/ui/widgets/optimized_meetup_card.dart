@@ -16,6 +16,7 @@ import '../dialogs/report_dialog.dart';
 import '../dialogs/block_dialog.dart';
 import '../../screens/edit_meetup_screen.dart';
 import '../../screens/review_approval_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// 최적화된 모임 카드
 class OptimizedMeetupCard extends StatefulWidget {
@@ -87,74 +88,480 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     }
   }
 
+  /// URL 여부 확인
+  bool _isUrl(String text) {
+    return text.startsWith('http://') || 
+           text.startsWith('https://') ||
+           text.startsWith('www.');
+  }
+
+  /// 위치 URL 열기
+  Future<void> _openLocationUrl(String location) async {
+    if (!_isUrl(location)) return;
+
+    try {
+      final Uri url = Uri.parse(location);
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.cannotOpenLink),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('URL 열기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.error),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return Card(
-      elevation: 2,
-      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0.5,
+      margin: const EdgeInsets.only(bottom: 10),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: colorScheme.outline.withOpacity(0.2)),
       ),
-        child: InkWell(
-          onTap: widget.onTap,
-          borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // 헤더 (카테고리 뱃지 + 더 많은 옵션)
-              _buildHeader(context, colorScheme),
+              // 헤더 (작성자 + 더보기 버튼만)
+              _buildCompactHeader(context, colorScheme),
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
 
               // 모임 제목
               Text(
                 currentMeetup.title,
-                style: theme.textTheme.titleLarge?.copyWith( // titleMedium → titleLarge
-                  fontWeight: FontWeight.w700, // w600 → w700
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
                   color: colorScheme.onSurface,
-                  fontSize: 18, // 명시적 크기 지정
+                  fontSize: 16,
+                  height: 1.3,
                 ),
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
 
-              const SizedBox(height: 10), // 8 → 10
+              const SizedBox(height: 8),
 
-              // 모임 설명
-              if (currentMeetup.description.isNotEmpty) ...[
-                Text(
-                  currentMeetup.description,
-                  style: theme.textTheme.bodyLarge?.copyWith( // bodyMedium → bodyLarge
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 15, // 명시적 크기 지정
-                    height: 1.4, // 줄 높이 추가
+              // 위치
+              Row(
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    size: 16,
+                    color: colorScheme.primary.withOpacity(0.7),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-              ],
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => _openLocationUrl(currentMeetup.location),
+                      child: Text(
+                        currentMeetup.location,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: _isUrl(currentMeetup.location)
+                              ? colorScheme.primary
+                              : colorScheme.onSurfaceVariant,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          decoration: _isUrl(currentMeetup.location)
+                              ? TextDecoration.underline
+                              : null,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
 
-              // 모임 정보 (날짜, 시간, 장소)
-              _buildMeetupInfo(currentMeetup, theme, colorScheme),
+              const SizedBox(height: 10),
 
-              const SizedBox(height: 12),
+              // 참가자 수 + 참여하기 버튼 (같은 줄)
+              Row(
+                children: [
+                  // 참가자 수 (세련된 배지)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: colorScheme.primary.withOpacity(0.3),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.people,
+                          size: 16,
+                          color: colorScheme.primary,
+                        ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${currentMeetup.currentParticipants}/${currentMeetup.maxParticipants}${AppLocalizations.of(context)!.peopleUnit}',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.primary,
+                      ),
+                    ),
+                      ],
+                    ),
+                  ),
 
-              // 참가자 정보와 참여하기 버튼
-              _buildParticipantInfoWithJoinButton(currentMeetup, theme, colorScheme),
+                  const Spacer(),
 
-              // 모임 이미지 (항상 표시 - 없으면 기본 이미지)
-              const SizedBox(height: 12),
-              _buildMeetupImage(currentMeetup),
+                  // 참여하기/나가기 버튼 (오른쪽)
+                  _buildCompactJoinButton(currentMeetup, theme, colorScheme),
+                ],
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 컴팩트 헤더 (작성자 + 더보기 버튼)
+  Widget _buildCompactHeader(BuildContext context, ColorScheme colorScheme) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final theme = Theme.of(context);
+    
+    return Row(
+      children: [
+        // 작성자 정보 (더 명확하게)
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceVariant,
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: colorScheme.primary.withOpacity(0.3),
+              width: 1.5,
+            ),
+          ),
+          child: currentMeetup.hostPhotoURL.isNotEmpty
+              ? ClipOval(
+                  child: Image.network(
+                    currentMeetup.hostPhotoURL,
+                    width: 24,
+                    height: 24,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.person,
+                      size: 14,
+                      color: BrandColors.neutral500,
+                    ),
+                  ),
+                )
+              : Icon(
+                  Icons.person,
+                  size: 14,
+                  color: BrandColors.neutral500,
+                ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            currentMeetup.hostNickname ?? currentMeetup.host,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        // 공개 범위 배지 (항상 표시)
+        const SizedBox(width: 6),
+        _buildCompactVisibilityBadge(context, colorScheme),
+        // 더보기 버튼만 (카테고리 뱃지 없이)
+        if (currentUser != null)
+          FutureBuilder<bool>(
+            future: _checkIsMyMeetup(currentUser),
+            builder: (context, snapshot) {
+              final isMyMeetup = snapshot.data ?? false;
+              final shouldHideMenu = isMyMeetup && (currentMeetup.isCompleted || currentMeetup.hasReview);
+              
+              if (shouldHideMenu) return const SizedBox.shrink();
+              
+              return Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceVariant.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  iconSize: 20,
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  itemBuilder: (context) => isMyMeetup 
+                      ? [
+                          PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.edit_outlined, size: 16),
+                                const SizedBox(width: 8),
+                                Text(AppLocalizations.of(context)!.editMeetup),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'cancel',
+                            child: Row(
+                              children: [
+                                const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                                const SizedBox(width: 8),
+                                Text(
+                                  AppLocalizations.of(context)!.cancelMeetupButton,
+                                  style: const TextStyle(color: Colors.red),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ]
+                      : [
+                          PopupMenuItem(
+                            value: 'report',
+                            child: Row(
+                              children: [
+                                Icon(Icons.report_outlined, size: 16, color: Colors.red[600]),
+                                const SizedBox(width: 8),
+                                Text(AppLocalizations.of(context)!.reportAction),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'block',
+                            child: Row(
+                              children: [
+                                Icon(Icons.block, size: 16, color: Colors.red[600]),
+                                const SizedBox(width: 8),
+                                Text(AppLocalizations.of(context)!.blockAction),
+                              ],
+                            ),
+                          ),
+                        ],
+                  onSelected: (value) => _handleMenuAction(context, value),
+                ),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  /// 컴팩트 참여 버튼
+  Widget _buildCompactJoinButton(
+    Meetup currentMeetup,
+    ThemeData theme,
+    ColorScheme colorScheme,
+  ) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return const SizedBox.shrink();
+
+    // 내가 만든 모임이면 버튼 숨김
+    if (currentMeetup.userId == currentUser.uid) {
+      return const SizedBox.shrink();
+    }
+
+    // 참여 상태 확인 중이면 로딩
+    if (isCheckingParticipation) {
+      return ElevatedButton(
+        onPressed: null,
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          minimumSize: const Size(80, 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+        ),
+        child: const SizedBox(
+          height: 16,
+          width: 16,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    final current = currentMeetup.currentParticipants;
+    final max = currentMeetup.maxParticipants;
+    final isOpen = current < max;
+
+    // 참여 중인 경우 - 나가기 버튼
+    if (isParticipating) {
+      if (currentMeetup.hasReview == true) {
+        return ElevatedButton(
+          onPressed: () => _viewAndRespondToReview(currentMeetup),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green[600],
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            minimumSize: const Size(80, 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: Text(
+            AppLocalizations.of(context)!.checkReview,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        );
+      } else {
+        return ElevatedButton(
+          onPressed: () => _leaveMeetup(currentMeetup),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.orange[600],
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            minimumSize: const Size(80, 32),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: Text(
+            AppLocalizations.of(context)!.leaveMeetup,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
+            ),
+          ),
+        );
+      }
+    }
+
+    // 마감된 모임
+    if (!isOpen) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        constraints: const BoxConstraints(minWidth: 80, minHeight: 32),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey[400]!, width: 1),
+        ),
+        child: Text(
+          AppLocalizations.of(context)!.fullShort,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey[700],
+            letterSpacing: 0.3,
+          ),
+        ),
+      );
+    }
+
+    // 참여 가능한 모임 - 참여하기 버튼
+    return ElevatedButton(
+      onPressed: () => _joinMeetup(currentMeetup),
+      style: ElevatedButton.styleFrom(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        minimumSize: const Size(80, 32),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: Text(
+        AppLocalizations.of(context)!.joinMeetup,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+
+  /// 헤더용 컴팩트 공개 범위 배지
+  Widget _buildCompactVisibilityBadge(BuildContext context, ColorScheme colorScheme) {
+    // 'friends' 또는 'category'는 친구공개로 표시
+    // 'public'만 전체공개로 표시
+    final bool isFriendsOnly = currentMeetup.visibility == 'friends' || 
+                               currentMeetup.visibility == 'category';
+    final Color badgeColor = isFriendsOnly ? Colors.orange : Colors.green;
+    final String visibilityText = isFriendsOnly 
+        ? AppLocalizations.of(context)!.visibilityFriends
+        : AppLocalizations.of(context)!.visibilityPublic;
+    final IconData icon = isFriendsOnly ? Icons.people : Icons.public;
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: badgeColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: badgeColor.withOpacity(0.25),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            icon,
+            size: 10,
+            color: badgeColor,
+          ),
+          const SizedBox(width: 3),
+          Text(
+            visibilityText,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: badgeColor,
+            ),
+          ),
+        ],
       ),
     );
   }

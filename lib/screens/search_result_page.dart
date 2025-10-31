@@ -380,20 +380,21 @@ class _SearchResultPageState extends State<SearchResultPage> {
     );
   }
 
-  // 모임 상세 다이얼로그 표시
+  // 모임 상세 화면으로 이동
   void _showMeetupDetail(Meetup meetup) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      builder: (context) => MeetupDetailScreen(
-        meetup: meetup,
-        meetupId: meetup.id,
-        onMeetupDeleted: () {
-          // 모임이 삭제되면 검색 결과 새로고침
-          if (_searchController.text.isNotEmpty) {
-            _performSearch(_searchController.text);
-          }
-        },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MeetupDetailScreen(
+          meetup: meetup,
+          meetupId: meetup.id,
+          onMeetupDeleted: () {
+            // 모임이 삭제되면 검색 결과 새로고침
+            if (_searchController.text.isNotEmpty) {
+              _performSearch(_searchController.text);
+            }
+          },
+        ),
       ),
     );
   }

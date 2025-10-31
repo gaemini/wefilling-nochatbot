@@ -399,6 +399,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get joinMeetup => '참여하기';
 
   @override
+  String get join => '참여';
+
+  @override
+  String get participating => '참여중';
+
+  @override
   String get leaveMeetup => '나가기';
 
   @override
@@ -525,7 +531,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get myComments => '내 댓글';
 
   @override
+  String get review => '후기';
+
+  @override
   String get reviews => '후기';
+
+  @override
+  String get checkReview => '후기 확인';
 
   @override
   String get saved => '저장된';
@@ -1852,4 +1864,30 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get deletedAccount => '탈퇴한 계정';
+
+  @override
+  String get visibilityPublic => '전체공개';
+
+  @override
+  String get visibilityFriends => '친구공개';
+
+  @override
+  String get cannotOpenLink => '링크를 열 수 없습니다';
+
+  @override
+  String cancelMeetupMessage(String meetupTitle) {
+    return '정말로 \"$meetupTitle\" 모임을 취소하시겠습니까?';
+  }
+
+  @override
+  String get warningTitle => '주의사항';
+
+  @override
+  String get cancelMeetupWarning1 => '취소된 모임은 복구할 수 없습니다';
+
+  @override
+  String get cancelMeetupWarning2 => '참여 중인 모든 사용자에게 알림이 발송됩니다';
+
+  @override
+  String get yesCancel => '예, 취소합니다';
 }

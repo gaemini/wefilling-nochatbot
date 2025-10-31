@@ -154,17 +154,18 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
           ),
           child: InkWell(
             onTap: () {
-              showDialog(
-                context: context,
-                builder:
-                    (context) => MeetupDetailScreen(
-                      meetup: meetup,
-                      meetupId: meetup.id,
-                      onMeetupDeleted: () {
-                        Navigator.pop(context);
-                        setState(() {});
-                      },
-                    ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => MeetupDetailScreen(
+                    meetup: meetup,
+                    meetupId: meetup.id,
+                    onMeetupDeleted: () {
+                      Navigator.pop(context);
+                      setState(() {});
+                    },
+                  ),
+                ),
               );
             },
             borderRadius: BorderRadius.circular(12),

@@ -39,6 +39,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSaved = false;
   bool _isTogglingSave = false;
   late Post _currentPost;
+  final PageController _imagePageController = PageController();
+  int _currentImageIndex = 0;
 
   // 이미지 재시도 관련 상태
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
@@ -69,6 +71,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   @override
   void dispose() {
     _commentController.dispose();
+    _imagePageController.dispose();
     _scrollController.dispose();
     _commentFocusNode.dispose();
     super.dispose();
@@ -156,7 +159,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('저장 처리 중 오류가 발생했습니다'),
+            content: Text(AppLocalizations.of(context)!.error),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 2),
           ),
@@ -194,7 +197,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!isLoggedIn || user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('좋아요를 누르려면 로그인이 필요합니다.')));
+      ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loginToComment)));
       return;
     }
 
@@ -242,7 +245,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('좋아요 업데이트에 실패했습니다.')));
+          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed)));
         });
       }
 
@@ -255,7 +258,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -317,7 +320,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
         setState(() {
           _isDeleting = false;
         });
@@ -442,7 +445,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -493,7 +496,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
@@ -927,28 +930,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   // 게시글 이미지
                   if (_currentPost.imageUrls.isNotEmpty) ...[
                     const SizedBox(height: 16),
-                    SizedBox(
-                      height: MediaQuery.of(context).size.height * 0.5, // 화면 높이의 50%
-                      child: PageView.builder(
-                        itemCount: _currentPost.imageUrls.length,
-                        itemBuilder: (context, index) {
-                          final imageUrl = _currentPost.imageUrls[index];
-                          print('이미지 표시 시도: $imageUrl');
-                          print('이미지 번호: $index, URL 길이: ${imageUrl.length}');
-
-                          return GestureDetector(
-                            onTap: () {
-                              // 이미지 전체 화면으로 보기
-                              showDialog(
-                                context: context,
-                                builder:
-                                    (context) => Dialog(
+                    Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [
+                        SizedBox(
+                          height: MediaQuery.of(context).size.height * 0.5,
+                          child: PageView.builder(
+                            controller: _imagePageController,
+                            onPageChanged: (i) => setState(() => _currentImageIndex = i),
+                            itemCount: _currentPost.imageUrls.length,
+                            itemBuilder: (context, index) {
+                              final imageUrl = _currentPost.imageUrls[index];
+                              return GestureDetector(
+                                onTap: () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => Dialog(
                                       insetPadding: const EdgeInsets.all(8),
                                       child: InteractiveViewer(
                                         panEnabled: true,
-                                        boundaryMargin: const EdgeInsets.all(
-                                          20,
-                                        ),
+                                        boundaryMargin: const EdgeInsets.all(20),
                                         minScale: 0.5,
                                         maxScale: 3.0,
                                         child: _buildRetryableImage(
@@ -958,23 +959,60 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                         ),
                                       ),
                                     ),
+                                  );
+                                },
+                                child: Container(
+                                  width: double.infinity,
+                                  margin: const EdgeInsets.symmetric(horizontal: 0),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(0),
+                                    child: _buildRetryableImage(
+                                      imageUrl,
+                                      fit: BoxFit.cover,
+                                      isFullScreen: false,
+                                    ),
+                                  ),
+                                ),
                               );
                             },
+                          ),
+                        ),
+                        if (_currentPost.imageUrls.length > 1)
+                          Positioned(
+                            bottom: 12,
                             child: Container(
-                              width: double.infinity, // 전체 너비 사용
-                              margin: const EdgeInsets.symmetric(horizontal: 0), // 좌우 여백 완전 제거
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(0), // 모서리 둥글기 제거하여 더 크게
-                                child: _buildRetryableImage(
-                                  imageUrl,
-                                  fit: BoxFit.cover, // contain → cover로 변경하여 화면 가득 채움
-                                  isFullScreen: false,
-                                ),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.55),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: List.generate(
+                                      _currentPost.imageUrls.length,
+                                      (i) => Container(
+                                        width: 6,
+                                        height: 6,
+                                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: i == _currentImageIndex ? Colors.white : Colors.white.withOpacity(0.47),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
                               ),
                             ),
-                          );
-                        },
-                      ),
+                          ),
+                      ],
                     ),
                   ],
 

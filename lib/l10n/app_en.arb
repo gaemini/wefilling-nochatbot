@@ -130,6 +130,8 @@
   "cancelMeetupConfirm": "Confirm Meetup Cancellation",
   "meetupDetail": "Meetup Detail",
   "joinMeetup": "Join",
+  "join": "Join",
+  "participating": "Joined",
   "leaveMeetup": "Leave",
   "meetupTitle": "Meetup Title",
   "enterMeetupTitle": "Enter meetup title",
@@ -172,7 +174,9 @@
   "myPosts": "My Posts",
   "myMeetups": "My Meetups",
   "myComments": "My Comments",
+  "review": "Review",
   "reviews": "Reviews",
+  "checkReview": "Check Review",
   "saved": "Saved",
   "yourStoryMatters": "We're Curious\nAbout Your Story",
   "shareYourMoments": "From small moments of empathy\nto special occasions,\nshare your story with us.",
@@ -787,5 +791,20 @@
       }
     }
   },
-  "deletedAccount": "Deleted Account"
+  "deletedAccount": "Deleted Account",
+  "visibilityPublic": "Public",
+  "visibilityFriends": "Friends Only",
+  "cannotOpenLink": "Cannot open link",
+  "cancelMeetupMessage": "Are you sure you want to cancel \"{meetupTitle}\" meetup?",
+  "@cancelMeetupMessage": {
+    "placeholders": {
+      "meetupTitle": {
+        "type": "String"
+      }
+    }
+  },
+  "warningTitle": "Warning",
+  "cancelMeetupWarning1": "Cancelled meetups cannot be recovered",
+  "cancelMeetupWarning2": "All participants will be notified",
+  "yesCancel": "Yes, Cancel"
 }

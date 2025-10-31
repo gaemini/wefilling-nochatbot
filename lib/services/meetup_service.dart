@@ -175,7 +175,7 @@ class MeetupService {
                           ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
               hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
               imageUrl:
-                  data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+                  data['thumbnailImageUrl'] ?? '',
               thumbnailContent: data['thumbnailContent'] ?? '',
               thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
               date: meetupDate,
@@ -269,7 +269,7 @@ class MeetupService {
             data['hostNickname'] == 'dev99'
                 ? '한국'
                 : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-        imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+        imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
         date: meetupDate,
@@ -316,7 +316,7 @@ class MeetupService {
             data['hostNickname'] == 'dev99'
                 ? '한국'
                 : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-        imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+        imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
         date: meetupDate,
@@ -477,7 +477,7 @@ class MeetupService {
                   currentParticipants: data['currentParticipants'] ?? 1,
                   host: data['hostNickname'] ?? '익명',
                   hostNationality: data['hostNationality'] ?? '',
-                  imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+                  imageUrl: data['thumbnailImageUrl'] ?? '',
                   thumbnailContent: data['thumbnailContent'] ?? '',
                   thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
                   date: meetupDate,
@@ -1042,7 +1042,7 @@ class MeetupService {
           currentParticipants: data['currentParticipants'] ?? 1,
           host: data['hostNickname'] ?? '익명',
           hostNationality: data['hostNationality'] ?? '',
-          imageUrl: data['thumbnailImageUrl'] ?? AppConstants.DEFAULT_IMAGE_URL,
+          imageUrl: data['thumbnailImageUrl'] ?? '',
           thumbnailContent: data['thumbnailContent'] ?? '',
           thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
           date: meetupDate,

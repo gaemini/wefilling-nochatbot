@@ -86,7 +86,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newSavedStatus ? '게시물이 저장되었습니다' : '저장이 취소되었습니다'),
+            content: Text(newSavedStatus 
+                ? AppLocalizations.of(context)!.postSaved 
+                : AppLocalizations.of(context)!.postUnsaved),
             duration: Duration(seconds: 1),
             backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
           ),
@@ -99,7 +101,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다'),
+            content: Text(AppLocalizations.of(context)!.error),
             backgroundColor: AppTheme.accentRed,
           ),
         );

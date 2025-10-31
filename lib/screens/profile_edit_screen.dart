@@ -249,7 +249,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('오류가 발생했습니다: $e')));
+          ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
         }
       } finally {
         if (mounted) {

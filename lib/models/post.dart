@@ -74,17 +74,9 @@ class Post {
       // 복수형 처리를 위해 지역화 함수 호출 (숫자를 인자로 전달)
       return AppLocalizations.of(context)!.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
-      } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
-      }
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
-      } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
-      }
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }

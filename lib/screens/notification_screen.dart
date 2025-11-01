@@ -578,23 +578,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
-      if (locale == 'ko') {
-        return '${difference.inDays}${AppLocalizations.of(context)!.daysAgo}';
-      } else {
-        return '${difference.inDays}${difference.inDays == 1 ? ' day ago' : ' days ago'}';
-      }
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
-      } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
-      }
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
-      } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
-      }
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }

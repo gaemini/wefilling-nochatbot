@@ -3,13 +3,17 @@
 // const 생성자, 메모이제이션, 이미지 최적화
 
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/post.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
+import '../../services/dm_service.dart';
 import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
+import '../../screens/dm_chat_screen.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -51,6 +55,7 @@ class OptimizedPostCard extends StatefulWidget {
 
 class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final PostService _postService = PostService();
+  final DMService _dmService = DMService();
   bool _isSaved = false;
   bool _isLoading = false;
 
@@ -342,25 +347,53 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ),
             ),
             
-            // 북마크 버튼 (상단 오른쪽으로 이동)
-            GestureDetector(
-              onTap: _toggleSave,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                child: _isLoading
-                    ? SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
-                        ),
-                      )
-                    : Icon(
-                        _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
-                        size: 20,
-                        color: Colors.black87, // 검은색으로 통일
-                      ),
+            // DM 버튼 (본인 게시글 제외, 익명 제외, 삭제 계정 제외)
+            if (_shouldShowDMButton(post))
+              SizedBox(
+                width: 32,
+                height: 32,
+                child: Material(
+                  color: Colors.grey[100],
+                  shape: const CircleBorder(),
+                  child: InkWell(
+                    customBorder: const CircleBorder(),
+                    onTap: () => _openDM(post),
+                    child: Center(
+                      child: _buildDMIcon(),
+                    ),
+                  ),
+                ),
+              ),
+
+            const SizedBox(width: 6),
+
+            // 북마크 버튼 (DM과 평행 정렬, 동일 사이즈)
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Material(
+                color: Colors.grey[100],
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: _isLoading ? null : _toggleSave,
+                  child: Center(
+                    child: _isLoading
+                        ? SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+                            ),
+                          )
+                        : Icon(
+                            _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
+                            size: 18,
+                            color: Colors.black87,
+                          ),
+                  ),
+                ),
               ),
             ),
           ],
@@ -519,19 +552,112 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return '$year.$month.$day';
       }
     } else if (difference.inHours > 0) {
-      if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
-      } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
-      }
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
-      } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
-      }
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
+    }
+  }
+
+  /// DM 버튼을 표시할지 확인
+  bool _shouldShowDMButton(Post post) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    // 로그인하지 않은 경우
+    if (currentUser == null) return false;
+    
+    // 본인 게시글인 경우
+    if (post.userId == currentUser.uid) return false;
+    
+    // 익명 게시글인 경우
+    if (post.isAnonymous) return true; // 익명도 DM 가능 (계획 참조)
+    
+    // 탈퇴한 계정인 경우
+    if (post.author.isEmpty || post.author == 'Deleted') return false;
+    
+    return true;
+  }
+
+  /// 커스텀 DM 아이콘 (첨부 아이콘 사용, 없으면 기본 아이콘으로 폴백)
+  Widget _buildDMIcon() {
+    // 종이 비행기 아이콘을 45도 기울여 직관적 방향성 부여
+    return Transform.rotate(
+      angle: -math.pi / 4,
+      child: Icon(Icons.send_rounded, size: 18, color: Colors.grey[700]),
+    );
+  }
+
+  /// DM 대화방 열기
+  Future<void> _openDM(Post post) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // 로딩 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      // 대화방 가져오기 또는 생성
+      final conversationId = await _dmService.getOrCreateConversation(
+        post.userId,
+        postId: post.id,
+        isOtherUserAnonymous: post.isAnonymous,
+      );
+
+      // 로딩 다이얼로그 닫기
+      if (mounted) Navigator.pop(context);
+
+      if (conversationId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // DM 화면으로 이동
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: post.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 로딩 다이얼로그 닫기
+      if (mounted) Navigator.pop(context);
+      
+      print('DM 열기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 

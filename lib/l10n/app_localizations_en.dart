@@ -867,15 +867,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get notificationDeleted => 'Notification deleted';
 
   @override
-  String daysAgo(Object count) {
-    return '$count day(s) ago';
+  String daysAgo(int count) {
+    return '${count}d ago';
   }
 
   @override
-  String get hoursAgo => ' hours ago';
+  String hoursAgo(int count) {
+    return '${count}h ago';
+  }
 
   @override
-  String get minutesAgo => ' minutes ago';
+  String minutesAgo(int count) {
+    return '${count}m ago';
+  }
 
   @override
   String get justNow => 'Just now';
@@ -1947,4 +1951,83 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get yesCancel => 'Yes, Cancel';
+
+  @override
+  String get dm => 'DM';
+
+  @override
+  String get directMessage => 'Direct Message';
+
+  @override
+  String get newMessage => 'New Message';
+
+  @override
+  String get sendMessage => 'Send Message';
+
+  @override
+  String get typeMessage => 'Type a message';
+
+  @override
+  String get noConversations => 'No conversations yet';
+
+  @override
+  String get startFirstConversation => 'Start your first conversation!';
+
+  @override
+  String get cannotSendDM => 'Cannot send message to this user';
+
+  @override
+  String get blockedUser => 'This user is blocked';
+
+  @override
+  String get anonymousUser => 'Anonymous';
+
+  @override
+  String get anonymousMessage => 'Anonymous Message';
+
+  @override
+  String dmFrom(String name) {
+    return 'Message from $name';
+  }
+
+  @override
+  String get read => 'Read';
+
+  @override
+  String get unread => 'Unread';
+
+  @override
+  String get maxMessageLength => 'Message must be 500 characters or less';
+
+  @override
+  String get messageEmpty => 'Please enter a message';
+
+  @override
+  String get messageSent => 'Message sent';
+
+  @override
+  String get messageSendFailed => 'Failed to send message';
+
+  @override
+  String conversationWith(String name) {
+    return 'Chat with $name';
+  }
+
+  @override
+  String get loadingMessages => 'Loading messages...';
+
+  @override
+  String get noMessages => 'No messages yet';
+
+  @override
+  String get blockThisUser => 'Block this user';
+
+  @override
+  String get blockConfirm => 'Are you sure you want to block this user?';
+
+  @override
+  String get dmNotAvailable => 'Messaging is not available';
+
+  @override
+  String get friendsOnly => 'You can only message friends';
 }

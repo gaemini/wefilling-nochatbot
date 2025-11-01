@@ -805,5 +805,69 @@
   "warningTitle": "주의사항",
   "cancelMeetupWarning1": "취소된 모임은 복구할 수 없습니다",
   "cancelMeetupWarning2": "참여 중인 모든 사용자에게 알림이 발송됩니다",
-  "yesCancel": "예, 취소합니다"
+  "yesCancel": "예, 취소합니다",
+  "dm": "DM",
+  "directMessage": "다이렉트 메시지",
+  "newMessage": "새 메시지",
+  "sendMessage": "메시지 보내기",
+  "typeMessage": "메시지를 입력하세요",
+  "noConversations": "대화 내역이 없습니다",
+  "startFirstConversation": "첫 대화를 시작해보세요!",
+  "cannotSendDM": "이 사용자에게 메시지를 보낼 수 없습니다",
+  "blockedUser": "차단된 사용자입니다",
+  "anonymousUser": "익명",
+  "anonymousMessage": "익명의 메시지",
+  "dmFrom": "{name}님의 메시지",
+  "@dmFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "read": "읽음",
+  "unread": "읽지 않음",
+  "justNow": "방금",
+  "minutesAgo": "{count}분 전",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursAgo": "{count}시간 전",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "daysAgo": "{count}일 전",
+  "@daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "maxMessageLength": "메시지는 최대 500자까지 입력 가능합니다",
+  "messageEmpty": "메시지를 입력해주세요",
+  "messageSent": "메시지를 전송했습니다",
+  "messageSendFailed": "메시지 전송에 실패했습니다",
+  "conversationWith": "{name}님과의 대화",
+  "@conversationWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "loadingMessages": "메시지를 불러오는 중...",
+  "noMessages": "아직 메시지가 없습니다",
+  "blockThisUser": "이 사용자 차단하기",
+  "blockConfirm": "정말로 차단하시겠습니까?",
+  "dmNotAvailable": "메시지 기능을 사용할 수 없습니다",
+  "friendsOnly": "친구에게만 메시지를 보낼 수 있습니다"
 }

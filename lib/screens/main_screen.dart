@@ -19,6 +19,7 @@ import 'home_screen.dart'; // MeetupHomePage 클래스가 있는 파일
 import 'friends_main_page.dart';
 import 'search_result_page.dart';
 import 'ad_showcase_screen.dart';
+import 'dm_list_screen.dart';
 
 import '../utils/firebase_debug_helper.dart';
 import 'firebase_security_rules_helper.dart';
@@ -92,6 +93,7 @@ class _MainScreenState extends State<MainScreen> {
   List<Widget> get _screens => [
     BoardScreen(searchQuery: _searchController.text),
     MeetupHomePage(initialMeetupId: widget.initialMeetupId),
+    const DMListScreen(),
     const MyPageScreen(),
     const FriendsMainPage(),
   ];
@@ -498,6 +500,11 @@ service firebase.storage {
             icon: Icons.groups_outlined,
             selectedIcon: Icons.groups,
             label: AppLocalizations.of(context)!.meetup,
+          ),
+          BottomNavigationItem(
+            icon: Icons.chat_bubble_outline,
+            selectedIcon: Icons.chat_bubble,
+            label: AppLocalizations.of(context)!.dm,
           ),
           BottomNavigationItem(
             icon: Icons.person_outline,

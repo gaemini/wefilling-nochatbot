@@ -572,5 +572,113 @@ service cloud.firestore {
     }
     
     // ===== 기존 호환성 유지 끝 =====
+    
+    // ===== DM(Direct Message) 컬렉션 =====
+    match /conversations/{conversationId} {
+      // conversationId 형식: {작은uid}_{큰uid} (사전순 정렬)
+      
+      // ===== 헬퍼 함수 =====
+      function otherUid() {
+        return request.resource.data.participants[0] == request.auth.uid
+          ? request.resource.data.participants[1]
+          : request.resource.data.participants[0];
+      }
+
+      function pairId(uid1, uid2) {
+        return uid1 < uid2 ? (uid1 + '__' + uid2) : (uid2 + '__' + uid1);
+      }
+
+      // 친구 여부 확인
+      function isFriendWith(other) {
+        return exists(/databases/$(database)/documents/friendships/$(pairId(request.auth.uid, other)));
+      }
+
+      // 게시글을 통해 DM 허용 여부(익명 글 또는 전체공개 글)
+      function canDMViaPost() {
+        return request.resource.data.keys().hasAny(['postId']) &&
+          exists(/databases/$(database)/documents/posts/$(request.resource.data.postId)) &&
+          get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.userId == otherUid() &&
+          (
+            get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.isAnonymous == true ||
+            get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.visibility == 'public'
+          );
+      }
+      
+      // 개별 문서 읽기: 존재하지 않는 문서도 확인 가능하도록 허용
+      // (대화방 존재 여부 체크 시 permission-denied 방지)
+      allow get: if request.auth != null &&
+        (resource == null || request.auth.uid in resource.data.participants);
+      
+      // 목록 조회: 로그인한 사용자만 (쿼리 조건으로 필터링됨)
+      allow list: if request.auth != null;
+      
+      // 생성: 필수 필드 최소화 + 친구이거나(OR) 게시글(익명/전체공개)을 통해 DM 가능
+      allow create: if request.auth != null &&
+        // 본인이 participants 배열에 포함
+        request.auth.uid in request.resource.data.participants &&
+        // 정확히 2명의 참여자
+        request.resource.data.participants.size() == 2 &&
+        // 필수 필드 존재 (유연하게)
+        request.resource.data.keys().hasAll([
+          'participants', 'participantNames', 'participantPhotos',
+          'isAnonymous', 'unreadCount', 'createdAt'
+        ]) &&
+        // 친구이거나, 게시글(익명/전체공개) DM 허용 조건 만족
+        (isFriendWith(otherUid()) || canDMViaPost());
+      
+      // 수정: 메시지 관련 필드만 변경 허용
+      allow update: if request.auth != null &&
+        request.auth.uid in resource.data.participants &&
+        // participants는 변경 불가
+        request.resource.data.participants == resource.data.participants &&
+        // 메시지 관련 필드만 변경 가능
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'unreadCount', 'updatedAt']);
+      
+      // 삭제: 금지 (대화방 숨김은 클라이언트에서 UI로만 처리)
+      allow delete: if false;
+      
+      // ===== 메시지 서브컬렉션 =====
+      match /messages/{messageId} {
+        // 읽기: 대화방 참여자만
+        // get() 호출 최소화를 위해 함수 사용
+        function isParticipant() {
+          return request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
+        }
+        
+        // 개별 메시지 읽기
+        allow get: if request.auth != null && isParticipant();
+        
+        // 메시지 목록 조회
+        allow list: if request.auth != null && isParticipant();
+        
+        // 생성: 핵심 검증만 유지
+        allow create: if request.auth != null &&
+          isParticipant() &&
+          // 발신자는 본인
+          request.auth.uid == request.resource.data.senderId &&
+          // 메시지는 비어있지 않음
+          request.resource.data.text.size() > 0 &&
+          // 메시지 길이 제한 (500자)
+          request.resource.data.text.size() <= 500 &&
+          // 초기 읽음 상태는 false
+          request.resource.data.isRead == false;
+        
+        // 수정: 읽음 처리 로직만 유지
+        allow update: if request.auth != null &&
+          isParticipant() &&
+          // 수신자만 읽음 처리 가능
+          request.auth.uid != resource.data.senderId &&
+          // isRead만 false→true로 변경
+          resource.data.isRead == false &&
+          request.resource.data.isRead == true &&
+          // 다른 필드는 변경 불가
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isRead', 'readAt']);
+        
+        // 삭제: 금지 (메시지는 영구 보존)
+        allow delete: if false;
+      }
+    }
   }
 }

@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
+import '../services/dm_service.dart';
 import '../models/review_post.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
@@ -12,6 +13,7 @@ import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
 import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'review_detail_screen.dart';
+import 'dm_chat_screen.dart';
 import '../utils/country_flag_helper.dart';
 
 class FriendProfileScreen extends StatefulWidget {
@@ -37,6 +39,7 @@ class FriendProfileScreen extends StatefulWidget {
 class _FriendProfileScreenState extends State<FriendProfileScreen> {
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
+  final DMService _dmService = DMService();
   
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
@@ -300,6 +303,34 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               ],
             ),
           ),
+          
+          const SizedBox(height: 16),
+          
+          // DM 버튼
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: _openDM,
+              icon: const Icon(Icons.message, size: 20),
+              label: Text(
+                AppLocalizations.of(context)!.sendMessage,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A90E2),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  side: const BorderSide(color: Colors.black, width: 1.5),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -532,6 +563,68 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ],
       ),
     );
+  }
+
+  /// DM 대화방 열기
+  Future<void> _openDM() async {
+    // 로딩 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      // 대화방 가져오기 또는 생성 (친구 프로필이므로 isFriend=true)
+      final conversationId = await _dmService.getOrCreateConversation(
+        widget.userId,
+        isOtherUserAnonymous: false,
+        isFriend: true, // 친구 프로필에서 호출
+      );
+
+      // 로딩 다이얼로그 닫기
+      if (mounted) Navigator.pop(context);
+
+      if (conversationId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      // DM 화면으로 이동
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: widget.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 로딩 다이얼로그 닫기
+      if (mounted) Navigator.pop(context);
+      
+      print('DM 열기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
 }

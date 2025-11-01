@@ -806,5 +806,69 @@
   "warningTitle": "Warning",
   "cancelMeetupWarning1": "Cancelled meetups cannot be recovered",
   "cancelMeetupWarning2": "All participants will be notified",
-  "yesCancel": "Yes, Cancel"
+  "yesCancel": "Yes, Cancel",
+  "dm": "DM",
+  "directMessage": "Direct Message",
+  "newMessage": "New Message",
+  "sendMessage": "Send Message",
+  "typeMessage": "Type a message",
+  "noConversations": "No conversations yet",
+  "startFirstConversation": "Start your first conversation!",
+  "cannotSendDM": "Cannot send message to this user",
+  "blockedUser": "This user is blocked",
+  "anonymousUser": "Anonymous",
+  "anonymousMessage": "Anonymous Message",
+  "dmFrom": "Message from {name}",
+  "@dmFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "read": "Read",
+  "unread": "Unread",
+  "justNow": "Just now",
+  "minutesAgo": "{count}m ago",
+  "@minutesAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "hoursAgo": "{count}h ago",
+  "@hoursAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "daysAgo": "{count}d ago",
+  "@daysAgo": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "maxMessageLength": "Message must be 500 characters or less",
+  "messageEmpty": "Please enter a message",
+  "messageSent": "Message sent",
+  "messageSendFailed": "Failed to send message",
+  "conversationWith": "Chat with {name}",
+  "@conversationWith": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "loadingMessages": "Loading messages...",
+  "noMessages": "No messages yet",
+  "blockThisUser": "Block this user",
+  "blockConfirm": "Are you sure you want to block this user?",
+  "dmNotAvailable": "Messaging is not available",
+  "friendsOnly": "You can only message friends"
 }

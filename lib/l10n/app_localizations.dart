@@ -1782,24 +1782,24 @@ abstract class AppLocalizations {
   ///
   /// In ko, this message translates to:
   /// **'{count}일 전'**
-  String daysAgo(Object count);
+  String daysAgo(int count);
 
   /// No description provided for @hoursAgo.
   ///
   /// In ko, this message translates to:
-  /// **'시간 전'**
-  String get hoursAgo;
+  /// **'{count}시간 전'**
+  String hoursAgo(int count);
 
   /// No description provided for @minutesAgo.
   ///
   /// In ko, this message translates to:
-  /// **'분 전'**
-  String get minutesAgo;
+  /// **'{count}분 전'**
+  String minutesAgo(int count);
 
   /// No description provided for @justNow.
   ///
   /// In ko, this message translates to:
-  /// **'방금 전'**
+  /// **'방금'**
   String get justNow;
 
   /// No description provided for @markAllAsRead.
@@ -3703,6 +3703,156 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'예, 취소합니다'**
   String get yesCancel;
+
+  /// No description provided for @dm.
+  ///
+  /// In ko, this message translates to:
+  /// **'DM'**
+  String get dm;
+
+  /// No description provided for @directMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'다이렉트 메시지'**
+  String get directMessage;
+
+  /// No description provided for @newMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'새 메시지'**
+  String get newMessage;
+
+  /// No description provided for @sendMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지 보내기'**
+  String get sendMessage;
+
+  /// No description provided for @typeMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지를 입력하세요'**
+  String get typeMessage;
+
+  /// No description provided for @noConversations.
+  ///
+  /// In ko, this message translates to:
+  /// **'대화 내역이 없습니다'**
+  String get noConversations;
+
+  /// No description provided for @startFirstConversation.
+  ///
+  /// In ko, this message translates to:
+  /// **'첫 대화를 시작해보세요!'**
+  String get startFirstConversation;
+
+  /// No description provided for @cannotSendDM.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 사용자에게 메시지를 보낼 수 없습니다'**
+  String get cannotSendDM;
+
+  /// No description provided for @blockedUser.
+  ///
+  /// In ko, this message translates to:
+  /// **'차단된 사용자입니다'**
+  String get blockedUser;
+
+  /// No description provided for @anonymousUser.
+  ///
+  /// In ko, this message translates to:
+  /// **'익명'**
+  String get anonymousUser;
+
+  /// No description provided for @anonymousMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'익명의 메시지'**
+  String get anonymousMessage;
+
+  /// No description provided for @dmFrom.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님의 메시지'**
+  String dmFrom(String name);
+
+  /// No description provided for @read.
+  ///
+  /// In ko, this message translates to:
+  /// **'읽음'**
+  String get read;
+
+  /// No description provided for @unread.
+  ///
+  /// In ko, this message translates to:
+  /// **'읽지 않음'**
+  String get unread;
+
+  /// No description provided for @maxMessageLength.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지는 최대 500자까지 입력 가능합니다'**
+  String get maxMessageLength;
+
+  /// No description provided for @messageEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지를 입력해주세요'**
+  String get messageEmpty;
+
+  /// No description provided for @messageSent.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지를 전송했습니다'**
+  String get messageSent;
+
+  /// No description provided for @messageSendFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지 전송에 실패했습니다'**
+  String get messageSendFailed;
+
+  /// No description provided for @conversationWith.
+  ///
+  /// In ko, this message translates to:
+  /// **'{name}님과의 대화'**
+  String conversationWith(String name);
+
+  /// No description provided for @loadingMessages.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지를 불러오는 중...'**
+  String get loadingMessages;
+
+  /// No description provided for @noMessages.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 메시지가 없습니다'**
+  String get noMessages;
+
+  /// No description provided for @blockThisUser.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 사용자 차단하기'**
+  String get blockThisUser;
+
+  /// No description provided for @blockConfirm.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말로 차단하시겠습니까?'**
+  String get blockConfirm;
+
+  /// No description provided for @dmNotAvailable.
+  ///
+  /// In ko, this message translates to:
+  /// **'메시지 기능을 사용할 수 없습니다'**
+  String get dmNotAvailable;
+
+  /// No description provided for @friendsOnly.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구에게만 메시지를 보낼 수 있습니다'**
+  String get friendsOnly;
 }
 
 class _AppLocalizationsDelegate

@@ -11,6 +11,9 @@ import '../models/comment.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
 import '../services/storage_service.dart';
+import '../services/dm_service.dart';
+import 'dm_chat_screen.dart';
+import 'dart:math' as math;
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
@@ -28,6 +31,7 @@ class PostDetailScreen extends StatefulWidget {
 class _PostDetailScreenState extends State<PostDetailScreen> {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
+  final DMService _dmService = DMService();
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
@@ -66,6 +70,72 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _checkIfUserSavedPost();
     // 디버그용: 이미지 URL 확인
     _logImageUrls();
+  }
+
+  /// 게시글 상세에서 DM 열기
+  Future<void> _openDMFromDetail() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // 로딩 표시
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final conversationId = await _dmService.getOrCreateConversation(
+        _currentPost.userId,
+        postId: _currentPost.id,
+        isOtherUserAnonymous: _currentPost.isAnonymous,
+      );
+
+      if (mounted) Navigator.pop(context); // 로딩 닫기
+
+      if (conversationId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: _currentPost.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      print('DM 열기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -1047,6 +1117,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               _isLiked ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
+      const SizedBox(width: 12),
+
+      // DM 버튼 (좋아요 오른쪽) - 가독성 향상: 더 크고 더 선명한 색상
+      SizedBox(
+        width: 36,
+        height: 36,
+        child: Material(
+          color: Colors.blue[50],
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: _openDMFromDetail,
+            child: Center(
+              child: Transform.rotate(
+                angle: -math.pi / 4,
+                child: Icon(
+                  Icons.send_rounded,
+                  size: 22,
+                  color: Colors.blue[700],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
                       const Spacer(),
                     ],
                   ),

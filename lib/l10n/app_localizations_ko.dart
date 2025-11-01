@@ -854,18 +854,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get notificationDeleted => '알림이 삭제되었습니다';
 
   @override
-  String daysAgo(Object count) {
+  String daysAgo(int count) {
     return '$count일 전';
   }
 
   @override
-  String get hoursAgo => '시간 전';
+  String hoursAgo(int count) {
+    return '$count시간 전';
+  }
 
   @override
-  String get minutesAgo => '분 전';
+  String minutesAgo(int count) {
+    return '$count분 전';
+  }
 
   @override
-  String get justNow => '방금 전';
+  String get justNow => '방금';
 
   @override
   String get markAllAsRead => '모든 알림 읽음';
@@ -1890,4 +1894,83 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get yesCancel => '예, 취소합니다';
+
+  @override
+  String get dm => 'DM';
+
+  @override
+  String get directMessage => '다이렉트 메시지';
+
+  @override
+  String get newMessage => '새 메시지';
+
+  @override
+  String get sendMessage => '메시지 보내기';
+
+  @override
+  String get typeMessage => '메시지를 입력하세요';
+
+  @override
+  String get noConversations => '대화 내역이 없습니다';
+
+  @override
+  String get startFirstConversation => '첫 대화를 시작해보세요!';
+
+  @override
+  String get cannotSendDM => '이 사용자에게 메시지를 보낼 수 없습니다';
+
+  @override
+  String get blockedUser => '차단된 사용자입니다';
+
+  @override
+  String get anonymousUser => '익명';
+
+  @override
+  String get anonymousMessage => '익명의 메시지';
+
+  @override
+  String dmFrom(String name) {
+    return '$name님의 메시지';
+  }
+
+  @override
+  String get read => '읽음';
+
+  @override
+  String get unread => '읽지 않음';
+
+  @override
+  String get maxMessageLength => '메시지는 최대 500자까지 입력 가능합니다';
+
+  @override
+  String get messageEmpty => '메시지를 입력해주세요';
+
+  @override
+  String get messageSent => '메시지를 전송했습니다';
+
+  @override
+  String get messageSendFailed => '메시지 전송에 실패했습니다';
+
+  @override
+  String conversationWith(String name) {
+    return '$name님과의 대화';
+  }
+
+  @override
+  String get loadingMessages => '메시지를 불러오는 중...';
+
+  @override
+  String get noMessages => '아직 메시지가 없습니다';
+
+  @override
+  String get blockThisUser => '이 사용자 차단하기';
+
+  @override
+  String get blockConfirm => '정말로 차단하시겠습니까?';
+
+  @override
+  String get dmNotAvailable => '메시지 기능을 사용할 수 없습니다';
+
+  @override
+  String get friendsOnly => '친구에게만 메시지를 보낼 수 있습니다';
 }

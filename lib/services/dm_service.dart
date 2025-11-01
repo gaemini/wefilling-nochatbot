@@ -18,9 +18,16 @@ class DMService {
   final Map<String, List<DMMessage>> _messageCache = {};
 
   /// conversationId 생성 (사전순 정렬)
-  String _generateConversationId(String uid1, String uid2) {
+  /// - 일반 DM: "uidA_uidB"
+  /// - 익명 게시글 기반 DM: "anon_uidA_uidB_<postId>" 로 분리하여
+  ///   기존 실명 대화방과는 다른 별개의 대화방을 보장한다.
+  String _generateConversationId(String uid1, String uid2, {bool anonymous = false, String? postId}) {
     final sorted = [uid1, uid2]..sort();
-    return '${sorted[0]}_${sorted[1]}';
+    if (!anonymous) {
+      return '${sorted[0]}_${sorted[1]}';
+    }
+    final suffix = (postId != null && postId.isNotEmpty) ? postId : DateTime.now().millisecondsSinceEpoch.toString();
+    return 'anon_${sorted[0]}_${sorted[1]}_$suffix';
   }
 
   /// 차단 확인
@@ -132,7 +139,12 @@ class DMService {
       }
 
       // conversationId 생성
-      final conversationId = _generateConversationId(currentUser.uid, otherUserId);
+      final conversationId = _generateConversationId(
+        currentUser.uid,
+        otherUserId,
+        anonymous: isOtherUserAnonymous,
+        postId: postId,
+      );
 
       // 기존 대화방 확인
       final existingConv = await _firestore

@@ -1396,19 +1396,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        IconButton(
-                          icon: _isSubmittingComment
+                      // 입력 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
+                      (isLoggedIn)
+                          ? (_isSubmittingComment
                               ? const SizedBox(
-                                  width: 24,
-                                  height: 24,
+                                  width: 36,
+                                  height: 36,
                                   child: CircularProgressIndicator(strokeWidth: 2),
                                 )
-                              : const Icon(Icons.send),
-                          onPressed: (isLoggedIn && !_isSubmittingComment)
-                              ? _submitComment
-                              : null,
-                          color: Colors.blue[600], // 항상 파란색으로 통일
-                        ),
+                              : InkWell(
+                                  onTap: _submitComment,
+                                  customBorder: const CircleBorder(),
+                                  child: Container
+                                  (
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue[600],
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.arrow_upward_rounded,
+                                        color: Colors.white,
+                                        size: 22,
+                                      ),
+                                    ),
+                                  ),
+                                ))
+                          : const SizedBox.shrink(),
                       ],
                     ),
                   ),

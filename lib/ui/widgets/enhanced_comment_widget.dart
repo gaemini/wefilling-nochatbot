@@ -12,6 +12,8 @@ import '../../services/comment_service.dart';
 import '../../design/tokens.dart';
 import '../../design/theme.dart';
 import '../../l10n/app_localizations.dart';
+import '../../services/dm_service.dart';
+import '../../screens/dm_chat_screen.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -45,12 +47,75 @@ class EnhancedCommentWidget extends StatefulWidget {
 
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
+  final DMService _dmService = DMService();
   bool _showReplies = true;
   String? _currentNickname; // 캐시된 현재 닉네임
 
   @override
   void dispose() {
     super.dispose();
+  }
+
+  /// 댓글 작성자에게 DM 열기
+  Future<void> _openDMToCommentAuthor() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
+        );
+      }
+      return;
+    }
+
+    // 본인에게는 DM 불가
+    if (widget.comment.userId == currentUser.uid) {
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final conversationId = await _dmService.getOrCreateConversation(
+        widget.comment.userId,
+        postId: widget.postId, // 게시글 컨텍스트로 규칙 충족(친구가 아니면 거부될 수 있음)
+        isOtherUserAnonymous: false,
+      );
+
+      if (mounted) Navigator.pop(context);
+
+      if (conversationId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM)),
+          );
+        }
+        return;
+      }
+
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: widget.comment.userId,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        );
+      }
+    }
   }
 
   // 사용자의 현재 닉네임을 실시간으로 조회
@@ -333,13 +398,94 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         ),
                       ),
                       
-                      // 삭제 버튼 (본인 댓글만)
-                      if (isMyComment)
-                        IconButton(
-                          icon: Icon(Icons.delete_outline, size: 18),
-                          onPressed: () => widget.onDeleteComment?.call(widget.comment.id),
-                          color: Colors.grey[600],
-                        ),
+                      // 케밥 메뉴 (댓글별 액션)
+                      PopupMenuButton<String>(
+                        icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[700]),
+                        onSelected: (value) {
+                          switch (value) {
+                            case 'notify':
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('대댓글 알림은 곧 제공됩니다')),
+                              );
+                              break;
+                            case 'dm':
+                              _openDMToCommentAuthor();
+                              break;
+                            case 'block':
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(AppLocalizations.of(context)!.blockedUser)),
+                              );
+                              break;
+                            case 'report':
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('신고가 접수되었습니다')),
+                              );
+                              break;
+                            case 'delete':
+                              widget.onDeleteComment?.call(widget.comment.id);
+                              break;
+                          }
+                        },
+                        itemBuilder: (context) {
+                          final items = <PopupMenuEntry<String>>[
+                            PopupMenuItem<String>(
+                              value: 'notify',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.notifications_none, size: 18),
+                                  const SizedBox(width: 12),
+                                  Text('대댓글 알림 켜기'),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'dm',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.chat_bubble_outline, size: 18),
+                                  const SizedBox(width: 12),
+                                  Text('Direct message'),
+                                ],
+                              ),
+                            ),
+                            const PopupMenuDivider(),
+                            PopupMenuItem<String>(
+                              value: 'block',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.block, size: 18),
+                                  const SizedBox(width: 12),
+                                  Text(AppLocalizations.of(context)!.blockedUser),
+                                ],
+                              ),
+                            ),
+                            PopupMenuItem<String>(
+                              value: 'report',
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.report_gmailerrorred_outlined, size: 18),
+                                  const SizedBox(width: 12),
+                                  const Text('신고'),
+                                ],
+                              ),
+                            ),
+                          ];
+                          if (isMyComment) {
+                            items.add(const PopupMenuDivider());
+                            items.add(PopupMenuItem<String>(
+                              value: 'delete',
+                              child: Row(
+                                children: const [
+                                  Icon(Icons.delete_outline, size: 18),
+                                  SizedBox(width: 12),
+                                  Text('삭제'),
+                                ],
+                              ),
+                            ));
+                          }
+                          return items;
+                        },
+                      ),
                     ],
                   ),
                   

@@ -476,23 +476,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
             
             const SizedBox(width: 8),
             
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: _messageController.text.trim().isEmpty 
-                    ? Colors.grey[300] 
-                    : DMColors.myMessageBg,
-                shape: BoxShape.circle,
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: const Icon(
-                  Icons.send,
-                  color: Colors.white,
-                  size: 20,
+            // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
+            InkWell(
+              onTap: _messageController.text.trim().isEmpty ? null : _sendMessage,
+              customBorder: const CircleBorder(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _messageController.text.trim().isEmpty
+                      ? Colors.grey[300]
+                      : DMColors.myMessageBg,
+                  shape: BoxShape.circle,
                 ),
-                onPressed: _messageController.text.trim().isEmpty ? null : _sendMessage,
+                child: const Center(
+                  child: Icon(
+                    Icons.arrow_upward_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
+                ),
               ),
             ),
           ],

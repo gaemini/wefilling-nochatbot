@@ -38,24 +38,10 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
-    return AppBar(
-      title: Text(
-        AppLocalizations.of(context)!.dm,
-        style: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.w600,
-          color: Colors.black87,
-        ),
-      ),
-      elevation: 0,
-      backgroundColor: Colors.white,
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(0.5),
-        child: Container(
-          color: Colors.grey[200],
-          height: 0.5,
-        ),
-      ),
+    // 상단 "DM" 제목을 제거하고, 툴바 높이를 0으로 하여 빈 공간도 없앱니다.
+    return const PreferredSize(
+      preferredSize: Size.zero,
+      child: SizedBox.shrink(),
     );
   }
 
@@ -232,10 +218,13 @@ class _DMListScreenState extends State<DMListScreen> {
       conversation.lastMessageTime,
     );
 
-    // 익명인 경우 로컬라이제이션 적용
-    final displayName = isAnonymous 
-        ? AppLocalizations.of(context)!.anonymousUser 
-        : otherUserName;
+    // 제목 결정: 익명 글 DM이면 게시글 제목(dmTitle) 우선, 그 외엔 기존 표시
+    final dmTitle = conversation.dmTitle;
+    final displayName = (dmTitle != null && dmTitle.isNotEmpty)
+        ? dmTitle
+        : (isAnonymous 
+            ? AppLocalizations.of(context)!.anonymousUser 
+            : otherUserName);
 
     return Material(
       color: Colors.white,
@@ -266,9 +255,9 @@ class _DMListScreenState extends State<DMListScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // 이름
-                        Flexible(
+                        Expanded(
                           child: Text(
                             displayName,
                             style: const TextStyle(
@@ -280,10 +269,6 @@ class _DMListScreenState extends State<DMListScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        
-                        const SizedBox(width: 8),
-                        
-                        // 시간
                         Text(
                           timeString,
                           style: TextStyle(

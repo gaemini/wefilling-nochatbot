@@ -3,9 +3,11 @@
 // 게시글 내용, 좋아요, 댓글 표시
 // 댓글 작성 및 게시글 삭제 기능
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../services/post_service.dart';
@@ -18,6 +20,7 @@ import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../l10n/app_localizations.dart';
+import '../design/tokens.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -45,6 +48,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   late Post _currentPost;
   final PageController _imagePageController = PageController();
   int _currentImageIndex = 0;
+  
+  // 이미지 페이지 인디케이터 표시 상태
+  bool _showPageIndicator = false;
+  Timer? _indicatorTimer;
 
   // 이미지 재시도 관련 상태
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
@@ -70,6 +77,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _checkIfUserSavedPost();
     // 디버그용: 이미지 URL 확인
     _logImageUrls();
+    
+    // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
+    if (_currentPost.imageUrls.length > 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPageIndicatorTemporarily();
+      });
+    }
+  }
+  
+  @override
+  void dispose() {
+    _commentController.dispose();
+    _scrollController.dispose();
+    _commentFocusNode.dispose();
+    _imagePageController.dispose();
+    _indicatorTimer?.cancel(); // Timer 정리
+    super.dispose();
+  }
+  
+  // 페이지 인디케이터를 표시하고 1초 후 자동으로 숨김
+  void _showPageIndicatorTemporarily() {
+    setState(() {
+      _showPageIndicator = true;
+    });
+    
+    // 기존 타이머가 있으면 취소
+    _indicatorTimer?.cancel();
+    
+    // 1초 후 숨김
+    _indicatorTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _showPageIndicator = false;
+        });
+      }
+    });
   }
 
   /// 게시글 상세에서 DM 열기
@@ -174,15 +217,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   @override
-  void dispose() {
-    _commentController.dispose();
-    _imagePageController.dispose();
-    _scrollController.dispose();
-    _commentFocusNode.dispose();
-    super.dispose();
-  }
-
-
   Future<void> _checkIfUserIsAuthor() async {
     // Post 객체에 이미 userId가 있으므로 직접 비교
     final user = FirebaseAuth.instance.currentUser;
@@ -1009,17 +1043,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
-                  // 제목 (사진 위에 표시)
+                  // 제목 (Pretendard Bold - 모바일 UI 원칙 준수)
                   if (_currentPost.title.isNotEmpty) ...[
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: Text(
                         _currentPost.title,
                         style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Pretendard',
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700, // Bold
                           color: Colors.black,
                           height: 1.3,
+                          letterSpacing: -0.3,
                         ),
                       ),
                     ),
@@ -1033,7 +1069,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         children: [
                           PageView.builder(
                             controller: _imagePageController,
-                            onPageChanged: (i) => setState(() => _currentImageIndex = i),
+                            onPageChanged: (i) {
+                              setState(() => _currentImageIndex = i);
+                              _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
+                            },
                             itemCount: _currentPost.imageUrls.length,
                             itemBuilder: (context, index) {
                               final imageUrl = _currentPost.imageUrls[index];
@@ -1087,18 +1126,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             },
                           ),
                           // 이미지 인디케이터 (점 형식으로 하단 중앙에 표시)
-                          if (_currentPost.imageUrls.length > 1)
+                          if (_currentPost.imageUrls.length > 1 && _showPageIndicator)
                             Positioned(
                               bottom: 12,
                               left: 0,
                               right: 0,
                               child: Center(
-                                child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.55),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
+                                child: AnimatedOpacity(
+                                  opacity: _showPageIndicator ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.55),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1131,6 +1173,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     ),
                                   ],
                                 ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1141,7 +1184,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                   // 액션 버튼들 (인스타그램 스타일)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
                         // 좋아요 버튼

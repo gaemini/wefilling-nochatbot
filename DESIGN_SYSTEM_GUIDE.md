@@ -1,7 +1,8 @@
-# 디자인 시스템 사용 가이드
+# 향상된 디자인 시스템 가이드 - Instagram 영감 + 독창성
 
 ## 개요
-이 문서는 앱의 일관된 디자인 시스템 사용을 위한 가이드라인입니다.
+이 문서는 Instagram의 세련된 디자인에서 영감을 받아 개발된 독창적인 디자인 시스템 사용 가이드입니다.
+가독성과 통일감을 최우선으로 하며, 현대적이고 완성도 높은 UI를 제공합니다.
 
 ## 필수 Import 규칙
 
@@ -14,39 +15,59 @@ import '../../design/tokens.dart';  // screens 폴더 파일의 경우
 ```
 
 **사용하는 클래스들:**
-- `BrandColors` - 브랜드 색상 (primary, secondary, 카테고리별 색상 등)
-- `IconStyles` - 통일된 아이콘 (outlined 스타일)
-- `ComponentStyles` - 컴포넌트 스타일 (버튼, 검색창 등)
-- `DesignTokens` - 간격, 반지름, elevation 등
+- `BrandColors` - Instagram 영감 색상 팔레트 (그라디언트, 모던 컬러)
+- `TypographyStyles` - 향상된 타이포그래피 시스템 (가독성 최적화)
+- `ComponentStyles` - Instagram 스타일 컴포넌트 (버튼, 카드, 액션 등)
+- `IconStyles` - 통일된 아이콘 시스템
+- `DesignTokens` - 간격, 반지름, 애니메이션 등
 
-## 브랜드 컬러 사용법
+## 향상된 브랜드 컬러 시스템
 
-### 주요 브랜드 컬러
+### Instagram 영감 Primary Colors
 ```dart
-BrandColors.primary        // #4A90E2 (메인 블루)
-BrandColors.secondary      // #6BC9A5 (보조 그린)
-BrandColors.success        // #27AE60 (성공 상태)
-BrandColors.error          // #E74C3C (오류 상태)
-BrandColors.warning        // #F39C12 (경고 상태)
+BrandColors.primary        // #6366F1 (모던 인디고)
+BrandColors.primaryLight   // #818CF8 (밝은 인디고)
+BrandColors.secondary      // #EC4899 (인스타그램 핑크)
+BrandColors.accent         // #10B981 (에메랄드 그린)
 ```
 
-### 카테고리별 컬러
+### 그라디언트 사용
 ```dart
-BrandColors.study          // #4A90E2 (스터디)
-BrandColors.food           // #FF8C42 (식사)
-BrandColors.hobby          // #6BC9A5 (취미)
-BrandColors.culture        // #9B59B6 (문화)
-BrandColors.general        // #95A5A6 (기타)
+BrandColors.primaryGradient  // 인디고→퍼플→핑크 그라디언트
+BrandColors.subtleGradient   // 부드러운 배경 그라디언트
 ```
 
-### 중성 컬러
+### 텍스트 컬러 (가독성 최적화)
 ```dart
-BrandColors.neutral50      // 가장 밝은 회색
-BrandColors.neutral100     // 밝은 회색
-BrandColors.neutral200     // ...
-BrandColors.neutral500     // 중간 회색 (보조 텍스트용)
-BrandColors.neutral600     // 어두운 회색 (아이콘용)
-BrandColors.neutral900     // 가장 어두운 회색
+BrandColors.textPrimary    // #0F172A (매우 진한 슬레이트)
+BrandColors.textSecondary  // #475569 (중간 슬레이트)
+BrandColors.textTertiary   // #64748B (밝은 슬레이트)
+BrandColors.textHint       // #94A3B8 (매우 밝은 슬레이트)
+```
+
+## 향상된 타이포그래피 시스템
+
+### Instagram 스타일 텍스트
+```dart
+// 사용자명 (굵고 작음)
+TypographyStyles.username
+
+// 캡션 (일반 굵기, 가독성 좋음)
+TypographyStyles.caption
+
+// 좋아요 수 (굵게)
+TypographyStyles.likeCount
+
+// 시간 표시 (작고 연하게)
+TypographyStyles.timestamp
+```
+
+### 계층적 제목 시스템
+```dart
+TypographyStyles.displayLarge    // 36px, w800 (히어로 섹션)
+TypographyStyles.headlineLarge   // 24px, w700 (페이지 제목)
+TypographyStyles.titleLarge      // 18px, w600 (카드 제목)
+TypographyStyles.bodyLarge       // 16px, w400 (본문)
 ```
 
 ## 아이콘 사용법
@@ -73,37 +94,58 @@ IconStyles.culture         // Icons.theater_comedy_outlined
 IconStyles.general         // Icons.groups_outlined
 ```
 
-## 컴포넌트 스타일 사용법
+## Instagram 스타일 컴포넌트 시스템
 
-### 버튼 스타일
+### 향상된 버튼 스타일
 ```dart
-// Primary 버튼
+// Primary 버튼 (플랫한 디자인, 둥근 모서리)
 ElevatedButton(
   style: ComponentStyles.primaryButton,
   onPressed: onPressed,
-  child: Text('버튼 텍스트'),
+  child: Text('버튼 텍스트', style: TypographyStyles.buttonText),
 )
 
-// Secondary 버튼
+// Secondary 버튼 (세련된 테두리)
 OutlinedButton(
   style: ComponentStyles.secondaryButton,
   onPressed: onPressed,
   child: Text('버튼 텍스트'),
 )
+```
 
-// Text 버튼
-TextButton(
-  style: ComponentStyles.textButton,
-  onPressed: onPressed,
-  child: Text('버튼 텍스트'),
+### Instagram 스타일 액션 버튼
+```dart
+// 좋아요 버튼
+ComponentStyles.likeButton(
+  isLiked: isLiked,
+  onTap: () => toggleLike(),
+  size: 26,
+)
+
+// 북마크 버튼
+ComponentStyles.bookmarkButton(
+  isBookmarked: isBookmarked,
+  onTap: () => toggleBookmark(),
+  size: 26,
+)
+
+// 공유 버튼
+ComponentStyles.shareButton(
+  onTap: () => share(),
+  size: 26,
 )
 ```
 
-### 검색창 스타일
+### 향상된 입력 필드
 ```dart
+// 검색창 (더 둥글게)
 TextField(
   decoration: ComponentStyles.searchFieldDecoration,
-  // 다른 속성들...
+)
+
+// 댓글 입력창 (Instagram 스타일)
+TextField(
+  decoration: ComponentStyles.commentFieldDecoration,
 )
 ```
 

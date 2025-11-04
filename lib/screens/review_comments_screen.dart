@@ -257,9 +257,9 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                         ),
                       )
                     : const Icon(
-                        Icons.send_rounded,
+                        Icons.arrow_upward_rounded,
                         color: Colors.white,
-                        size: 20,
+                        size: 22,
                       ),
               ),
             ),

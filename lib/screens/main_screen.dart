@@ -46,6 +46,7 @@ class _MainScreenState extends State<MainScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   late VoidCallback _cleanupCallback;
+  String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
 
   @override
   void initState() {
@@ -53,6 +54,8 @@ class _MainScreenState extends State<MainScreen> {
     
     // 초기 탭 인덱스 설정
     _selectedIndex = widget.initialTabIndex;
+    // 알림으로 넘어온 모임 ID는 최초 1회만 사용하도록 보관
+    _pendingMeetupId = widget.initialMeetupId;
     
     // Firebase Storage 테스트
     _testFirebaseStorage();
@@ -69,6 +72,14 @@ class _MainScreenState extends State<MainScreen> {
       // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
       if (authProvider.consumeSignupRequiredFlag()) {
         _showSignupRequiredBanner();
+      }
+
+      // Meetups 탭이 표시되고 알림 모임 ID가 남아있다면, 이번 렌더 이후에 소모 처리
+      if (_selectedIndex == 1 && _pendingMeetupId != null) {
+        // 한 번 전달 후 null로 만들어 재진입 시 자동 오픈 방지
+        setState(() {
+          _pendingMeetupId = null;
+        });
       }
     });
   }
@@ -92,7 +103,8 @@ class _MainScreenState extends State<MainScreen> {
   // 화면 목록 - 검색어를 전달할 수 있도록 수정
   List<Widget> get _screens => [
     BoardScreen(searchQuery: _searchController.text),
-    MeetupHomePage(initialMeetupId: widget.initialMeetupId),
+    // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
+    MeetupHomePage(initialMeetupId: _pendingMeetupId),
     const DMListScreen(),
     const MyPageScreen(),
     const FriendsMainPage(),
@@ -103,6 +115,17 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _selectedIndex = index;
     });
+
+    // Meetups 탭으로 이동하는 순간, 아직 소모되지 않은 모임 ID가 있다면 바로 소모 처리
+    if (index == 1 && _pendingMeetupId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() {
+            _pendingMeetupId = null;
+          });
+        }
+      });
+    }
   }
 
 

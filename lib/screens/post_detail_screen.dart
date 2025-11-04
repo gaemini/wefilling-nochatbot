@@ -85,33 +85,68 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
-    // 로딩 표시
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(child: CircularProgressIndicator()),
-    );
-
     try {
-      final conversationId = await _dmService.getOrCreateConversation(
-        _currentPost.userId,
-        postId: _currentPost.id,
-        isOtherUserAnonymous: _currentPost.isAnonymous,
-      );
-
-      if (mounted) Navigator.pop(context); // 로딩 닫기
-
-      if (conversationId == null) {
+      // post.userId가 올바른 Firebase UID인지 확인
+      print('🔍 DM 대상 확인 (상세페이지):');
+      print('  - post.id: ${_currentPost.id}');
+      print('  - post.userId: ${_currentPost.userId}');
+      print('  - post.isAnonymous: ${_currentPost.isAnonymous}');
+      print('  - currentUser.uid: ${currentUser.uid}');
+      
+      // 본인에게 DM 전송 체크 (익명 포함)
+      if (_currentPost.userId == currentUser.uid) {
+        print('❌ 본인 게시글에는 DM 불가');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.cannotSendDM),
-              duration: const Duration(seconds: 2),
+              content: Text('본인에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
             ),
           );
         }
         return;
       }
+      
+      // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
+      final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
+      if (!uidPattern.hasMatch(_currentPost.userId)) {
+        print('❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('이 게시글 작성자에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // userId가 'deleted' 또는 빈 문자열인 경우 체크
+      if (_currentPost.userId == 'deleted' || _currentPost.userId.isEmpty) {
+        print('❌ 탈퇴했거나 삭제된 사용자');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('탈퇴한 사용자에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
+      final conversationId = _dmService.generateConversationId(
+        _currentPost.userId,
+        postId: _currentPost.id,
+        isOtherUserAnonymous: _currentPost.isAnonymous,
+      );
+      
+      print('✅ DM conversation ID 생성: $conversationId');
 
       if (mounted) {
         Navigator.push(
@@ -125,12 +160,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context);
-      print('DM 열기 오류: $e');
+      print('❌ DM 열기 오류: $e');
+      print('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text(AppLocalizations.of(context)!.cannotSendDM),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -899,113 +934,104 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           Expanded(
             child: SingleChildScrollView(
               controller: _scrollController,
-              padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 작성자 정보 영역 (Review Details 스타일)
-                  Padding(
-                    padding: const EdgeInsets.all(16),
+                  // 작성자 정보 헤더 (인스타그램 스타일)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     child: Row(
                       children: [
-                        // 프로필 사진 (48px)
+                        // 프로필 사진 (인스타그램 크기)
                         Container(
-                          width: 48,
-                          height: 48,
+                          width: 32,
+                          height: 32,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: Colors.grey[300],
+                            color: Colors.grey[200],
                           ),
                           child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
                               ? ClipOval(
                                   child: Image.network(
                                     _currentPost.authorPhotoURL,
-                                    width: 48,
-                                    height: 48,
+                                    width: 32,
+                                    height: 32,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Icon(
                                       Icons.person,
                                       color: Colors.grey[600],
-                                      size: 24,
+                                      size: 18,
                                     ),
                                   ),
                                 )
                               : Icon(
                                   Icons.person,
                                   color: Colors.grey[600],
-                                  size: 24,
+                                  size: 18,
                                 ),
                         ),
                         const SizedBox(width: 12),
-                        // 작성자 이름
-                        Text(
-                          _currentPost.isAnonymous ? '익명' : _currentPost.author,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        // 국기 (있는 경우)
-                        if (_currentPost.authorNationality.isNotEmpty)
-                          CountryFlagCircle(
-                            nationality: _currentPost.authorNationality,
-                            size: 20,
-                          ),
-                        const Spacer(),
-                        // 시간
-                        Text(
-                          _currentPost.getFormattedTime(context),
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 작성자 이름
+                              Row(
+                                children: [
+                                  Text(
+                                    _currentPost.isAnonymous ? '익명' : _currentPost.author,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.black,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  if (_currentPost.authorNationality.isNotEmpty)
+                                    CountryFlagCircle(
+                                      nationality: _currentPost.authorNationality,
+                                      size: 16,
+                                    ),
+                                ],
+                              ),
+                              // 시간
+                              Text(
+                                _currentPost.getFormattedTime(context),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
                     ),
                   ),
-                  
-                  // 제목 영역 (있는 경우)
+
+                  // 제목 (사진 위에 표시)
                   if (_currentPost.title.isNotEmpty) ...[
-                    const SizedBox(height: 20),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                       child: Text(
                         _currentPost.title,
                         style: const TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
                           color: Colors.black,
-                          height: 1.4,
+                          height: 1.3,
                         ),
                       ),
                     ),
                   ],
 
-                  // 본문
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      _currentPost.content,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        height: 1.6,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-
-                  // 게시글 이미지
+                  // 게시글 이미지 (인스타그램 스타일 - 전체 너비, 좌우 여백 없음)
                   if (_currentPost.imageUrls.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.5,
-                          child: PageView.builder(
+                    AspectRatio(
+                      aspectRatio: 1.0, // 정사각형 비율 (인스타그램 스타일)
+                      child: Stack(
+                        children: [
+                          PageView.builder(
                             controller: _imagePageController,
                             onPageChanged: (i) => setState(() => _currentImageIndex = i),
                             itemCount: _currentPost.imageUrls.length,
@@ -1015,135 +1041,165 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 onTap: () {
                                   showDialog(
                                     context: context,
+                                    barrierColor: Colors.black87,
                                     builder: (context) => Dialog(
-                                      insetPadding: const EdgeInsets.all(8),
-                                      child: InteractiveViewer(
-                                        panEnabled: true,
-                                        boundaryMargin: const EdgeInsets.all(20),
-                                        minScale: 0.5,
-                                        maxScale: 3.0,
-                                        child: _buildRetryableImage(
-                                          imageUrl,
-                                          fit: BoxFit.contain,
-                                          isFullScreen: true,
-                                        ),
+                                      backgroundColor: Colors.black,
+                                      insetPadding: EdgeInsets.zero,
+                                      child: Stack(
+                                        children: [
+                                          Center(
+                                            child: InteractiveViewer(
+                                              panEnabled: true,
+                                              boundaryMargin: const EdgeInsets.all(20),
+                                              minScale: 0.5,
+                                              maxScale: 3.0,
+                                              child: _buildRetryableImage(
+                                                imageUrl,
+                                                fit: BoxFit.contain,
+                                                isFullScreen: true,
+                                              ),
+                                            ),
+                                          ),
+                                          Positioned(
+                                            top: 50,
+                                            right: 20,
+                                            child: IconButton(
+                                              onPressed: () => Navigator.pop(context),
+                                              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   );
                                 },
                                 child: Container(
                                   width: double.infinity,
-                                  margin: const EdgeInsets.symmetric(horizontal: 0),
-                                  child: ClipRRect(
-                                    borderRadius: BorderRadius.circular(0),
-                                    child: _buildRetryableImage(
-                                      imageUrl,
-                                      fit: BoxFit.cover,
-                                      isFullScreen: false,
-                                    ),
+                                  height: double.infinity,
+                                  color: Colors.black,
+                                  child: _buildRetryableImage(
+                                    imageUrl,
+                                    fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
+                                    isFullScreen: false,
                                   ),
                                 ),
                               );
                             },
                           ),
-                        ),
-                        if (_currentPost.imageUrls.length > 1)
-                          Positioned(
-                            bottom: 12,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.55),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: List.generate(
-                                      _currentPost.imageUrls.length,
-                                      (i) => Container(
-                                        width: 6,
-                                        height: 6,
-                                        margin: const EdgeInsets.symmetric(horizontal: 3),
-                                        decoration: BoxDecoration(
-                                          shape: BoxShape.circle,
-                                          color: i == _currentImageIndex ? Colors.white : Colors.white.withOpacity(0.47),
+                          // 이미지 인디케이터 (점 형식으로 하단 중앙에 표시)
+                          if (_currentPost.imageUrls.length > 1)
+                            Positioned(
+                              bottom: 12,
+                              left: 0,
+                              right: 0,
+                              child: Center(
+                                child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.55),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    // 점 인디케이터
+                                    Row(
+                                      children: List.generate(
+                                        _currentPost.imageUrls.length,
+                                        (i) => Container(
+                                          width: 6,
+                                          height: 6,
+                                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: i == _currentImageIndex 
+                                                ? Colors.white 
+                                                : Colors.white.withOpacity(0.47),
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
-                                    style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
+                                    const SizedBox(width: 8),
+                                    // 숫자 표시
+                                    Text(
+                                      '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                ),
                               ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ],
 
-                  // 좋아요 섹션
-                  const SizedBox(height: 24),
-                  Row(
-                    children: [
-                      // 좋아요 버튼
-                      IconButton(
-                        icon: Icon(
-                          _isLiked ? Icons.favorite : Icons.favorite_border,
-                          color: _isLiked ? Colors.red : Colors.grey,
-                          size: 28, // 버튼 크기 증가
+                  // 액션 버튼들 (인스타그램 스타일)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Row(
+                      children: [
+                        // 좋아요 버튼
+                        IconButton(
+                          icon: Icon(
+                            _isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: _isLiked ? Colors.red : Colors.black,
+                            size: 24,
+                          ),
+                          onPressed: _isTogglingLike ? null : _toggleLike,
+                          splashRadius: 20,
                         ),
-                        onPressed:
-                            _isTogglingLike
-                                ? null
-                                : () {
-                                  // 버튼 클릭 시 좋아요 토글 함수 호출
-                                  _toggleLike();
-                                },
-                        splashColor: Colors.red.withAlpha(76), // 눌렀을 때 효과 추가
-                        splashRadius: 24,
-                      ),
-                      // 좋아요 수
-                      Text(
-                        '${_currentPost.likes}',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: _isLiked ? Colors.red : Colors.grey[700],
-                          fontWeight:
-                              _isLiked ? FontWeight.bold : FontWeight.normal,
-                        ),
-                      ),
-      const SizedBox(width: 12),
+                        
+                        // DM 버튼 (본인 글이 아닌 경우만)
+                        if (FirebaseAuth.instance.currentUser != null &&
+                            _currentPost.userId != FirebaseAuth.instance.currentUser!.uid)
+                          IconButton(
+                            icon: Transform.rotate(
+                              angle: -math.pi / 4, // 45도 기울임
+                              child: const Icon(
+                                Icons.send_rounded,
+                                color: Colors.black,
+                                size: 24,
+                              ),
+                            ),
+                            onPressed: _openDMFromDetail,
+                            splashRadius: 20,
+                          ),
+                      ],
+                    ),
+                  ),
 
-      // DM 버튼 (좋아요 오른쪽) - 가독성 향상: 더 크고 더 선명한 색상
-      SizedBox(
-        width: 36,
-        height: 36,
-        child: Material(
-          color: Colors.blue[50],
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: _openDMFromDetail,
-            child: Center(
-              child: Transform.rotate(
-                angle: -math.pi / 4,
-                child: Icon(
-                  Icons.send_rounded,
-                  size: 22,
-                  color: Colors.blue[700],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-                      const Spacer(),
-                    ],
+                  // 좋아요 수 표시 (인스타그램 스타일)
+                  if (_currentPost.likes > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(
+                        '좋아요 ${_currentPost.likes}개',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                    ),
+
+                  // 본문 영역 (인스타그램 스타일)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Text(
+                      _currentPost.content,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.4,
+                        color: Colors.black,
+                        fontWeight: FontWeight.normal,
+                      ),
+                    ),
                   ),
 
                   // 댓글 섹션 타이틀
@@ -1276,22 +1332,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
 
-          // 댓글 입력 영역 (하단 고정)
-          SafeArea(
-            child: Container(
-              decoration: BoxDecoration(
-                // 항상 흰색 배경 (노란색 배경 제거)
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withAlpha(51),
-                    spreadRadius: 1,
-                    blurRadius: 3,
-                    offset: const Offset(0, -1),
-                  ),
-                ],
+          // 댓글 입력 영역 (하단 고정, overflow 방지)
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade200, width: 1),
               ),
-              child: Column(
+            ),
+            child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // 대댓글 모드 상단 바 (미니멀 디자인)
@@ -1347,9 +1396,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   
                   // 입력창
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16.0,
-                      vertical: 12.0,
+                    padding: EdgeInsets.only(
+                      left: 16.0,
+                      right: 16.0,
+                      top: 8.0,
+                      bottom: MediaQuery.of(context).viewInsets.bottom > 0 
+                          ? 8.0  // 키보드가 올라온 경우
+                          : MediaQuery.of(context).padding.bottom + 8.0,  // 하단 safe area 고려
                     ),
                     child: Row(
                       children: [
@@ -1383,11 +1436,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     : BorderSide.none,
                               ),
                               filled: true,
-                              fillColor: Colors.grey[100], // 항상 동일한 회색 배경
+                              fillColor: Colors.grey[50], // 더 밝은 회색 배경으로 통일
                               contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 20,
-                                vertical: 12,
+                                horizontal: 16,
+                                vertical: 10,
                               ),
+                              isDense: true, // 높이 최소화
                             ),
                             minLines: 1,
                             maxLines: 5,
@@ -1407,10 +1461,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               : InkWell(
                                   onTap: _submitComment,
                                   customBorder: const CircleBorder(),
-                                  child: Container
-                                  (
-                                    width: 40,
-                                    height: 40,
+                                  child: Container(
+                                    width: 36,
+                                    height: 36,
                                     decoration: BoxDecoration(
                                       color: Colors.blue[600],
                                       shape: BoxShape.circle,
@@ -1419,7 +1472,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       child: Icon(
                                         Icons.arrow_upward_rounded,
                                         color: Colors.white,
-                                        size: 22,
+                                        size: 20,
                                       ),
                                     ),
                                   ),
@@ -1429,7 +1482,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
                 ],
-              ),
             ),
           ),
         ],

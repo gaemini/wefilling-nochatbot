@@ -56,6 +56,44 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     super.dispose();
   }
 
+  /// 신고 다이얼로그
+  Future<void> _showReportDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.report_gmailerrorred_outlined, color: Colors.red, size: 22),
+              SizedBox(width: 8),
+              Text('신고'),
+            ],
+          ),
+          content: const Text('해당 댓글을 신고하시겠습니까?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: const Text('신고'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      // 실제 신고 로직 연동 전까지 안내만 표시
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('신고가 접수되었습니다')),
+      );
+    }
+  }
+
   /// 댓글 작성자에게 DM 열기
   Future<void> _openDMToCommentAuthor() async {
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -73,29 +111,34 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
     try {
-      final conversationId = await _dmService.getOrCreateConversation(
-        widget.comment.userId,
-        postId: widget.postId, // 게시글 컨텍스트로 규칙 충족(친구가 아니면 거부될 수 있음)
-        isOtherUserAnonymous: false,
-      );
-
-      if (mounted) Navigator.pop(context);
-
-      if (conversationId == null) {
+      // comment.userId가 올바른 Firebase UID인지 확인
+      print('🔍 DM 대상 확인 (댓글):');
+      print('  - comment.userId: ${widget.comment.userId}');
+      print('  - comment.author: ${widget.comment.authorNickname}');
+      
+      // Firebase Auth UID 형식 검증 (28자 영숫자)
+      final uidPattern = RegExp(r'^[a-zA-Z0-9]{28}$');
+      if (!uidPattern.hasMatch(widget.comment.userId)) {
+        print('❌ 잘못된 userId 형식: ${widget.comment.userId}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM)),
+            SnackBar(
+              content: Text('댓글 작성자 정보가 올바르지 않습니다'),
+              duration: const Duration(seconds: 3),
+            ),
           );
         }
         return;
       }
+      
+      final conversationId = await _dmService.prepareConversationId(
+        widget.comment.userId,
+        isOtherUserAnonymous: false,
+        postId: widget.postId,
+      );
+      
+      print('✅ DM conversation ID 생성됨: $conversationId');
 
       if (mounted) {
         Navigator.push(
@@ -109,10 +152,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         );
       }
     } catch (e) {
-      if (mounted) Navigator.pop(context);
+      print('❌ DM 열기 오류: $e');
+      print('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM)),
         );
       }
     }
@@ -401,25 +445,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       // 케밥 메뉴 (댓글별 액션)
                       PopupMenuButton<String>(
                         icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[700]),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         onSelected: (value) {
                           switch (value) {
-                            case 'notify':
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('대댓글 알림은 곧 제공됩니다')),
-                              );
-                              break;
                             case 'dm':
                               _openDMToCommentAuthor();
                               break;
-                            case 'block':
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(AppLocalizations.of(context)!.blockedUser)),
-                              );
-                              break;
                             case 'report':
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('신고가 접수되었습니다')),
-                              );
+                              _showReportDialog();
                               break;
                             case 'delete':
                               widget.onDeleteComment?.call(widget.comment.id);
@@ -428,16 +461,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         },
                         itemBuilder: (context) {
                           final items = <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'notify',
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.notifications_none, size: 18),
-                                  const SizedBox(width: 12),
-                                  Text('대댓글 알림 켜기'),
-                                ],
-                              ),
-                            ),
                             PopupMenuItem<String>(
                               value: 'dm',
                               child: Row(
@@ -449,16 +472,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               ),
                             ),
                             const PopupMenuDivider(),
-                            PopupMenuItem<String>(
-                              value: 'block',
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.block, size: 18),
-                                  const SizedBox(width: 12),
-                                  Text(AppLocalizations.of(context)!.blockedUser),
-                                ],
-                              ),
-                            ),
                             PopupMenuItem<String>(
                               value: 'report',
                               child: Row(

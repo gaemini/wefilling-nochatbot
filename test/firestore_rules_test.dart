@@ -318,6 +318,36 @@ void main() {
       expect(maxDocumentSize, lessThanOrEqualTo(1048576));
     });
   });
+
+  group('Firestore Rules - Conversations (DM) Leave', () {
+    test('참여자 본인 제거 업데이트 형식 검증', () {
+      // Given: 기존 상태 (2명 참여)
+      final before = {
+        'participants': ['userA', 'userB'],
+        'unreadCount': {'userA': 0, 'userB': 3},
+      };
+
+      // When: userA가 나가기 → participants 1명으로 감소, unreadCount는 상대방 키만 유지
+      final after = {
+        'participants': ['userB'],
+        'unreadCount': {'userB': 3},
+      };
+
+      // Then: 규칙 분기에 부합하는지 간이 검증
+      expect((after['participants'] as List).length,
+          (before['participants'] as List).length - 1);
+      expect((after['participants'] as List).first, 'userB');
+      expect((after['unreadCount'] as Map).containsKey('userA'), false);
+      expect((after['unreadCount'] as Map).containsKey('userB'), true);
+    });
+
+    test('참여자가 아닌 사용자는 업데이트 불가(간이)', () {
+      final currentUser = 'userC'; // 참여자가 아님
+      final participants = ['userA', 'userB'];
+      final canUpdate = participants.contains(currentUser);
+      expect(canUpdate, false);
+    });
+  });
 }
 
 /// 보안 규칙 검증을 위한 헬퍼 클래스

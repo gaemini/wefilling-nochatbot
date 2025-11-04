@@ -304,7 +304,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         // 공개 범위 배지 (항상 표시)
         const SizedBox(width: 6),
         _buildCompactVisibilityBadge(context, colorScheme),
-        // 더보기 버튼만 (카테고리 뱃지 없이)
+        const SizedBox(width: 4),
+        // 더보기 버튼만 (원 배경 제거, 아이콘만 표시)
         if (currentUser != null)
           FutureBuilder<bool>(
             future: _checkIsMyMeetup(currentUser),
@@ -313,75 +314,67 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               final shouldHideMenu = isMyMeetup && (currentMeetup.isCompleted || currentMeetup.hasReview);
               
               if (shouldHideMenu) return const SizedBox.shrink();
-              
-              return Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceVariant.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(16),
+
+              return PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                iconSize: 20,
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 20,
+                  color: colorScheme.onSurfaceVariant,
                 ),
-                child: PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  iconSize: 20,
-                  icon: Icon(
-                    Icons.more_vert,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  itemBuilder: (context) => isMyMeetup 
-                      ? [
-                          PopupMenuItem(
-                            value: 'edit',
-                            child: Row(
-                              children: [
-                                const Icon(Icons.edit_outlined, size: 16),
-                                const SizedBox(width: 8),
-                                Text(AppLocalizations.of(context)!.editMeetup),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'cancel',
-                            child: Row(
-                              children: [
-                                const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
-                                const SizedBox(width: 8),
-                                Text(
-                                  AppLocalizations.of(context)!.cancelMeetupButton,
-                                  style: const TextStyle(color: Colors.red),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ]
-                      : [
-                          PopupMenuItem(
-                            value: 'report',
-                            child: Row(
-                              children: [
-                                Icon(Icons.report_outlined, size: 16, color: Colors.red[600]),
-                                const SizedBox(width: 8),
-                                Text(AppLocalizations.of(context)!.reportAction),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'block',
-                            child: Row(
-                              children: [
-                                Icon(Icons.block, size: 16, color: Colors.red[600]),
-                                const SizedBox(width: 8),
-                                Text(AppLocalizations.of(context)!.blockAction),
-                              ],
-                            ),
-                          ),
-                        ],
-                  onSelected: (value) => _handleMenuAction(context, value),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
+                itemBuilder: (context) => isMyMeetup 
+                    ? [
+                        PopupMenuItem(
+                          value: 'edit',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.edit_outlined, size: 16),
+                              const SizedBox(width: 8),
+                              Text(AppLocalizations.of(context)!.editMeetup),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'cancel',
+                          child: Row(
+                            children: [
+                              const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                              const SizedBox(width: 8),
+                              Text(
+                                AppLocalizations.of(context)!.cancelMeetupButton,
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]
+                    : [
+                        PopupMenuItem(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(Icons.report_outlined, size: 16, color: Colors.red[600]),
+                              const SizedBox(width: 8),
+                              Text(AppLocalizations.of(context)!.reportAction),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'block',
+                          child: Row(
+                            children: [
+                              Icon(Icons.block, size: 16, color: Colors.red[600]),
+                              const SizedBox(width: 8),
+                              Text(AppLocalizations.of(context)!.blockAction),
+                            ],
+                          ),
+                        ),
+                      ],
+                onSelected: (value) => _handleMenuAction(context, value),
               );
             },
           ),

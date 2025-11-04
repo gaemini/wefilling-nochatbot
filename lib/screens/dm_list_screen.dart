@@ -9,6 +9,7 @@ import '../services/dm_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -23,6 +24,21 @@ class DMListScreen extends StatefulWidget {
 class _DMListScreenState extends State<DMListScreen> {
   final DMService _dmService = DMService();
   final _currentUser = FirebaseAuth.instance.currentUser;
+  Set<String> _hiddenConversationIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHiddenConversations();
+  }
+
+  Future<void> _loadHiddenConversations() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList('hidden_conversations') ?? <String>[];
+    setState(() {
+      _hiddenConversationIds = list.toSet();
+    });
+  }
   
   // 상단 배너(친구 / 익명) 필터
   DMFilter _filter = DMFilter.friends;
@@ -92,8 +108,21 @@ class _DMListScreenState extends State<DMListScreen> {
         
         // 필터 적용: 친구 / 익명
         final filtered = conversations.where((c) {
+          // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
+          final isSelfDM = c.participants.length == 2 && 
+                           c.participants[0] == _currentUser!.uid && 
+                           c.participants[1] == _currentUser!.uid;
+          
+          // 본인 DM은 무조건 숨김
+          if (isSelfDM) return false;
+          
           final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
-          return _filter == DMFilter.friends ? !isAnon : isAnon;
+          final passesType = _filter == DMFilter.friends ? !isAnon : isAnon;
+          final notHiddenLocal = !_hiddenConversationIds.contains(c.id);
+          final notArchivedServer = !(c.archivedBy.contains(_currentUser!.uid));
+          // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
+          final hasOtherParticipant = c.participants.length >= 2;
+          return passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
         }).toList();
 
         if (filtered.isEmpty) {

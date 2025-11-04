@@ -128,18 +128,23 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
         final formattedDate = DateFormat('yyyy-MM-dd').format(meetup.date);
 
         // 모임 상태 확인
-        final String statusText = meetup.getStatus();
+        final String statusText = meetup.getStatus(
+          languageCode: Localizations.localeOf(context).languageCode,
+        );
         Color statusColor;
 
         // 상태에 따른 색상 설정
         switch (statusText) {
           case '예정':
+          case 'Scheduled':
             statusColor = Colors.green;
             break;
           case '진행중':
+          case 'Ongoing':
             statusColor = Colors.blue;
             break;
           case '종료':
+          case 'Closed':
             statusColor = Colors.grey;
             break;
           default:

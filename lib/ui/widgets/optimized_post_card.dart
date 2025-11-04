@@ -611,29 +611,78 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
 
     try {
-      // 대화방 가져오기 또는 생성
-      final conversationId = await _dmService.getOrCreateConversation(
-        post.userId,
-        postId: post.id,
-        isOtherUserAnonymous: post.isAnonymous,
-      );
-
-      // 로딩 다이얼로그 닫기
-      if (mounted) Navigator.pop(context);
-
-      if (conversationId == null) {
+      // post.userId가 올바른 Firebase UID인지 확인
+      print('🔍 DM 대상 확인:');
+      print('  - post.id: ${post.id}');
+      print('  - post.userId: ${post.userId}');
+      print('  - post.isAnonymous: ${post.isAnonymous}');
+      print('  - post.author: ${post.author}');
+      print('  - currentUser.uid: ${currentUser.uid}');
+      
+      // 본인에게 DM 전송 체크 (익명 포함)
+      if (post.userId == currentUser.uid) {
+        print('❌ 본인 게시글에는 DM 불가');
+        // 로딩 다이얼로그 닫기
+        if (mounted) Navigator.pop(context);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.cannotSendDM),
-              duration: const Duration(seconds: 2),
+              content: Text('본인에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
             ),
           );
         }
         return;
       }
+      
+      // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
+      final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
+      if (!uidPattern.hasMatch(post.userId)) {
+        print('❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
+        // 로딩 다이얼로그 닫기
+        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('이 게시글 작성자에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // userId가 'deleted' 또는 빈 문자열인 경우 체크
+      if (post.userId == 'deleted' || post.userId.isEmpty) {
+        print('❌ 탈퇴했거나 삭제된 사용자');
+        // 로딩 다이얼로그 닫기
+        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('탈퇴한 사용자에게는 메시지를 보낼 수 없습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+      
+      // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
+      final conversationId = _dmService.generateConversationId(
+        post.userId,
+        postId: post.id,
+        isOtherUserAnonymous: post.isAnonymous,
+      );
+      
+      // 로딩 다이얼로그 닫기
+      if (mounted) Navigator.pop(context);
+      
+      print('✅ DM conversation ID: $conversationId');
 
-      // DM 화면으로 이동
       if (mounted) {
         Navigator.push(
           context,
@@ -649,11 +698,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
       
-      print('DM 열기 오류: $e');
+      print('❌ DM 열기 오류: $e');
+      print('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text(AppLocalizations.of(context)!.cannotSendDM),
             duration: const Duration(seconds: 2),
           ),
         );

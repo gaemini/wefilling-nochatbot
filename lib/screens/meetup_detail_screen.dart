@@ -331,7 +331,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
                         _currentMeetup.hostNationality.isNotEmpty
                             ? CountryFlagCircle(
                               nationality: _currentMeetup.hostNationality,
-                              size: 24, // 20 → 24로 증가
+                              size: 28, // 가독성을 위해 확대
                             )
                             : null,
                   ),
@@ -2098,7 +2098,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> {
             if (nationality != null && nationality!.isNotEmpty)
               Text(
                 CountryFlagHelper.getFlagEmoji(nationality!),
-                style: const TextStyle(fontSize: 16),
+                style: const TextStyle(fontSize: 22), // 국기 가독성 향상
               ),
           ],
         );

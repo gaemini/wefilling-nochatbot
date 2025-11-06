@@ -61,6 +61,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   final Map<String, bool> _participationStatusCache = {};
   final Map<String, DateTime> _participationCacheTime = {};
   static const Duration _cacheValidDuration = Duration(seconds: 30);
+  
+  // Stream 구독 관리
+  final Map<String, StreamSubscription?> _participationSubscriptions = {};
 
   // 주차 네비게이션을 위한 기준 날짜
   DateTime _currentWeekAnchor = DateTime.now();
@@ -105,6 +108,12 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     // 스트림 구독 정리
     _friendCategoriesSubscription?.cancel();
     _friendCategoriesSubscription = null;
+    
+    // 참여 상태 Stream 구독 모두 취소
+    for (final subscription in _participationSubscriptions.values) {
+      subscription?.cancel();
+    }
+    _participationSubscriptions.clear();
     
     // 서비스 정리
     _friendCategoryService.dispose();
@@ -871,94 +880,67 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<MeetupParticipant?>(
-      stream: _getCachedParticipationStream(meetup.id),
-      builder: (context, snapshot) {
-        // 캐시된 상태 확인
-        final cachedStatus = _getCachedParticipationStatus(meetup.id);
-        
-        // 로딩 중일 때도 버튼 표시 (비활성화 상태)
-        final isLoading = snapshot.connectionState == ConnectionState.waiting && cachedStatus == null;
-        final isParticipating = cachedStatus ?? (snapshot.hasData && 
-            snapshot.data?.status == ParticipantStatus.approved);
+    // 캐시된 상태 확인 (즉시 반영)
+    final cachedStatus = _getCachedParticipationStatus(meetup.id);
+    
+    // 캐시가 없으면 백그라운드에서 로드
+    if (cachedStatus == null && !_participationSubscriptions.containsKey(meetup.id)) {
+      _loadParticipationStatus(meetup.id);
+    }
+    
+    final isParticipating = cachedStatus ?? false;
 
-        // 새로운 데이터가 있으면 캐시 업데이트 (mounted 체크)
-        if (snapshot.hasData && mounted) {
-          _updateParticipationCache(meetup.id, snapshot.data?.status == ParticipantStatus.approved);
+    return GestureDetector(
+      onTap: () async {
+        if (isParticipating) {
+          await _leaveMeetup(meetup);
+        } else {
+          await _joinMeetup(meetup);
         }
-
-        return GestureDetector(
-          onTap: isLoading ? null : () async {
-            if (isParticipating) {
-              await _leaveMeetup(meetup);
-            } else {
-              await _joinMeetup(meetup);
-            }
-          },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-              color: isLoading 
-                  ? Colors.grey.shade400
-                  : isParticipating 
-                      ? const Color(0xFFEF4444) 
-                      : const Color(0xFF5865F2),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              isLoading 
-                  ? '...'
-                  : isParticipating ? '나가기' : '참여하기',
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        );
       },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isParticipating 
+              ? const Color(0xFFEF4444) 
+              : const Color(0xFF5865F2),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          isParticipating ? '나가기' : '참여하기',
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+      ),
     );
   }
-
-  // 캐시된 참여 상태 스트림 생성
-  Stream<MeetupParticipant?> _getCachedParticipationStream(String meetupId) async* {
+  
+  // 참여 상태를 백그라운드에서 로드
+  void _loadParticipationStatus(String meetupId) {
     if (!mounted) return;
     
-    final cachedStatus = _getCachedParticipationStatus(meetupId);
+    // 이미 구독이 있으면 무시
+    if (_participationSubscriptions.containsKey(meetupId)) return;
     
-    if (cachedStatus != null && mounted) {
-      // 캐시된 상태를 먼저 반환
-      yield cachedStatus ? 
-          MeetupParticipant(
-            id: 'cached',
-            meetupId: meetupId,
-            userId: FirebaseAuth.instance.currentUser?.uid ?? '',
-            userName: '',
-            userEmail: '',
-            joinedAt: DateTime.now(),
-            status: ParticipantStatus.approved,
-          ) : null;
-    }
+    _participationSubscriptions[meetupId] = null; // 플래그 설정
     
-    // 실제 데이터를 가져와서 반환
-    if (mounted) {
-      try {
-        final actualStatus = await _meetupService.getUserParticipationStatus(meetupId);
-        if (mounted) {
-          yield actualStatus;
-        }
-      } catch (e) {
-        print('참여 상태 조회 오류: $e');
-        // 캐시된 상태가 있으면 그것을 유지, 없으면 null
-        if (cachedStatus == null && mounted) {
-          yield null;
-        }
+    _meetupService.getUserParticipationStatus(meetupId).then((participant) {
+      if (mounted) {
+        final isParticipating = participant?.status == ParticipantStatus.approved;
+        _updateParticipationCache(meetupId, isParticipating);
+        // 상태가 변경되었으면 UI 업데이트
+        setState(() {});
       }
-    }
+    }).catchError((e) {
+      print('참여 상태 로드 오류: $e');
+    });
   }
+
 
   // 캐시된 참여 상태 조회
   bool? _getCachedParticipationStatus(String meetupId) {

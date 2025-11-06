@@ -604,12 +604,22 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          AppSkeletonList.cards(
-                            itemCount: 3,
-                            padding: const EdgeInsets.only(top: 8, bottom: 16),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        children: List.generate(3, (index) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Container(
+                            height: 180,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[200],
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                              ),
+                            ),
                           ),
-                        ],
+                        )),
                       );
                     }
                     

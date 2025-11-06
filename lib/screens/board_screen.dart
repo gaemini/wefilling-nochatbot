@@ -47,6 +47,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _postService.dispose();
     print('✅ BoardScreen dispose 완료');
     super.dispose();
   }
@@ -142,6 +143,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
+        if (!mounted) {
+          return const SizedBox.shrink();
+        }
+        
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -274,6 +279,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
+        if (!mounted) {
+          return const SizedBox.shrink();
+        }
+        
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링

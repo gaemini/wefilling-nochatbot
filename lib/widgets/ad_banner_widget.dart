@@ -45,7 +45,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
         _startAutoScroll();
       }
     } catch (e) {
-      print('📢 [${widget.widgetId}] 광고 배너 로드 오류: $e');
+      // 광고 배너 로드 오류 (조용히 처리)
     }
   }
 
@@ -54,20 +54,15 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     _autoScrollTimer = null;
     
     if (_banners.length <= 1) {
-      print('📢 [${widget.widgetId}] 광고가 1개 이하여서 자동 스크롤 비활성화');
       return;
     }
 
     if (!mounted) {
-      print('📢 [${widget.widgetId}] 위젯이 dispose되어 자동 스크롤 시작 안함');
       return;
     }
-
-    print('📢 [${widget.widgetId}] 자동 스크롤 시작: ${_banners.length}개 광고');
     
     _autoScrollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!mounted) {
-        print('📢 [${widget.widgetId}] 위젯이 dispose되어 타이머 취소');
         timer.cancel();
         _autoScrollTimer = null;
         return;
@@ -77,15 +72,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
         setState(() {
           _currentIndex = (_currentIndex + 1) % _banners.length;
         });
-        
-        print('📢 [${widget.widgetId}] 인덱스 변경: $_currentIndex/${_banners.length}');
       }
     });
   }
 
   @override
   void dispose() {
-    print('📢 [${widget.widgetId}] AdBannerWidget dispose 호출');
     _autoScrollTimer?.cancel();
     _autoScrollTimer = null;
     super.dispose();

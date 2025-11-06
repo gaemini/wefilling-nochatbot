@@ -2,6 +2,7 @@
 // 게시판 화면 - 게시글 목록 표시 및 관리
 // 검색, 필터링, 작성 기능 포함
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/post_service.dart';
@@ -23,11 +24,14 @@ class BoardScreen extends StatefulWidget {
   State<BoardScreen> createState() => _BoardScreenState();
 }
 
-class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStateMixin {
+class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final PostService _postService = PostService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   late TabController _tabController;
+  
+  @override
+  bool get wantKeepAlive => true; // 탭 전환 시 상태 유지
 
   @override
   void initState() {
@@ -68,6 +72,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 필수
     return Scaffold(
       backgroundColor: const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
       body: Column(

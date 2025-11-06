@@ -47,7 +47,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    _postService.dispose();
     print('✅ BoardScreen dispose 완료');
     super.dispose();
   }

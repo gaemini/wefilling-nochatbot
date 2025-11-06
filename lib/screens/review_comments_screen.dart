@@ -174,7 +174,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
     );
   }
 
-  Widget _buildCommentInput(AppLocalizations l10n) {
+  Widget _buildCommentInput(AppLocalizations? l10n) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,

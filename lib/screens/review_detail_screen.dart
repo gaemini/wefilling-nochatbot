@@ -280,7 +280,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     );
   }
 
-  Widget _buildAuthorHeader(ReviewPost review, AppLocalizations l10n) {
+  Widget _buildAuthorHeader(ReviewPost review, AppLocalizations? l10n) {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Row(
@@ -470,7 +470,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     );
   }
 
-  Widget _buildLikeCount(ReviewPost review, AppLocalizations l10n) {
+  Widget _buildLikeCount(ReviewPost review, AppLocalizations? l10n) {
     if (review.likeCount == 0) {
       return const SizedBox.shrink();
     }
@@ -488,7 +488,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     );
   }
 
-  Widget _buildContent(ReviewPost review, AppLocalizations l10n) {
+  Widget _buildContent(ReviewPost review, AppLocalizations? l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Column(
@@ -530,7 +530,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     );
   }
 
-  Widget _buildParticipantsSection(AppLocalizations l10n) {
+  Widget _buildParticipantsSection(AppLocalizations? l10n) {
     // 참여자가 없으면 섹션 숨김
     if (_participants.isEmpty) {
       return const SizedBox.shrink();

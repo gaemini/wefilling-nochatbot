@@ -986,11 +986,37 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
+      // 참여자 문서 ID 생성
       final participantId = '${meetupId}_${user.uid}';
+      
+      // 먼저 문서가 존재하는지 확인
+      final participantDoc = await _firestore
+          .collection('meetup_participants')
+          .doc(participantId)
+          .get();
+      
+      if (!participantDoc.exists) {
+        print('⚠️ 참여자 문서가 존재하지 않음: $participantId');
+        return false;
+      }
+
+      // 문서 삭제
       await _firestore
           .collection('meetup_participants')
           .doc(participantId)
           .delete();
+
+      // 모임의 currentParticipants 감소
+      final meetupRef = _firestore.collection('meetups').doc(meetupId);
+      await _firestore.runTransaction((transaction) async {
+        final meetupDoc = await transaction.get(meetupRef);
+        if (meetupDoc.exists) {
+          final currentCount = meetupDoc.data()?['currentParticipants'] ?? 1;
+          transaction.update(meetupRef, {
+            'currentParticipants': currentCount > 0 ? currentCount - 1 : 0,
+          });
+        }
+      });
 
       print('✅ 모임 참여 취소 성공: $meetupId');
       return true;

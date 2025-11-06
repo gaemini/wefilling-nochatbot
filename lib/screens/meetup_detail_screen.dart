@@ -1393,77 +1393,41 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임 참여하기
   Future<void> _joinMeetup() async {
-    setState(() {
-      _isLoading = true;
-    });
+    // 즉시 로컬 상태 업데이트 (깜빡임 방지)
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _isParticipant = true;
+        _currentMeetup = _currentMeetup.copyWith(
+          currentParticipants: _currentMeetup.currentParticipants + 1,
+        );
+      });
+    }
 
     try {
       final success = await _meetupService.joinMeetup(widget.meetupId);
 
       if (success) {
-        // 즉시 로컬 상태 업데이트 (깜빡임 방지)
+        // 백그라운드에서 참여자 목록 새로고침
+        Future.microtask(() async {
+          await _loadParticipants();
+          _checkIfUserIsParticipant();
+        });
+
         if (mounted) {
           setState(() {
-            _isParticipant = true;
-            _currentMeetup = _currentMeetup.copyWith(
-              currentParticipants: _currentMeetup.currentParticipants + 1,
-            );
             _isLoading = false;
           });
-        }
-
-        // 참여 후 참여자 목록 새로고침
-        await _loadParticipants();
-        _checkIfUserIsParticipant();
-
-        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoined),
+              content: Text(AppLocalizations.of(context)?.meetupJoined ?? '모임에 참여했습니다'),
               backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
       } else {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoinFailed),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      print('모임 참여 오류: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  /// 모임 나가기
-  Future<void> _leaveMeetup() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final success = await _meetupService.cancelMeetupParticipation(widget.meetupId);
-
-      if (success) {
-        // 즉시 로컬 상태 업데이트 (깜빡임 방지)
+        // 실패 시 상태 롤백
         if (mounted) {
           setState(() {
             _isParticipant = false;
@@ -1474,43 +1438,123 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             );
             _isLoading = false;
           });
-        }
-
-        // 참여 후 참여자 목록 새로고침
-        await _loadParticipants();
-        _checkIfUserIsParticipant();
-
-        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetup),
-              backgroundColor: Colors.orange,
+              content: Text(AppLocalizations.of(context)?.meetupJoinFailed ?? '모임 참여에 실패했습니다'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
-      } else {
+      }
+    } catch (e) {
+      print('모임 참여 오류: $e');
+      // 오류 시 상태 롤백
+      if (mounted) {
+        setState(() {
+          _isParticipant = false;
+          _currentMeetup = _currentMeetup.copyWith(
+            currentParticipants: _currentMeetup.currentParticipants > 0 
+                ? _currentMeetup.currentParticipants - 1 
+                : 0,
+          );
+          _isLoading = false;
+        });
+        
+        String errorMessage = '모임 참여에 실패했습니다';
+        if (e.toString().contains('permission-denied')) {
+          errorMessage = '권한이 없습니다. 다시 시도해주세요';
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// 모임 나가기
+  Future<void> _leaveMeetup() async {
+    // 즉시 로컬 상태 업데이트 (깜빡임 방지)
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _isParticipant = false;
+        _currentMeetup = _currentMeetup.copyWith(
+          currentParticipants: _currentMeetup.currentParticipants > 0 
+              ? _currentMeetup.currentParticipants - 1 
+              : 0,
+        );
+      });
+    }
+
+    try {
+      final success = await _meetupService.cancelMeetupParticipation(widget.meetupId);
+
+      if (success) {
+        // 백그라운드에서 참여자 목록 새로고침
+        Future.microtask(() async {
+          await _loadParticipants();
+          _checkIfUserIsParticipant();
+        });
+
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed),
+              content: Text(AppLocalizations.of(context)?.meetupLeft ?? '모임에서 나갔습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // 실패 시 상태 롤백
+        if (mounted) {
+          setState(() {
+            _isParticipant = true;
+            _currentMeetup = _currentMeetup.copyWith(
+              currentParticipants: _currentMeetup.currentParticipants + 1,
+            );
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)?.leaveMeetupFailed ?? '모임 나가기에 실패했습니다'),
               backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
       }
     } catch (e) {
       print('모임 나가기 오류: $e');
+      // 오류 시 상태 롤백
       if (mounted) {
         setState(() {
+          _isParticipant = true;
+          _currentMeetup = _currentMeetup.copyWith(
+            currentParticipants: _currentMeetup.currentParticipants + 1,
+          );
           _isLoading = false;
         });
+        
+        String errorMessage = '모임 나가기에 실패했습니다';
+        if (e.toString().contains('permission-denied')) {
+          errorMessage = '권한이 없습니다. 다시 시도해주세요';
+        }
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }

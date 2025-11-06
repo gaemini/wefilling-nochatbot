@@ -1035,7 +1035,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.leaveMeetup ?? '모임에서 나갔습니다'),
+              content: Text(AppLocalizations.of(context)?.meetupLeft ?? '모임에서 나갔습니다'),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 2),
             ),
@@ -1058,12 +1058,18 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       // 오류 시 캐시 롤백
       _updateParticipationCache(meetup.id, true);
       print('모임 나가기 오류: $e');
+      
+      String errorMessage = '모임 나가기에 실패했습니다';
+      if (e.toString().contains('permission-denied')) {
+        errorMessage = '권한이 없습니다. 다시 시도해주세요';
+      }
+      
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)?.error ?? '오류'}: $e'),
+            content: Text(errorMessage),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 2),
+            duration: const Duration(seconds: 3),
           ),
         );
       }

@@ -42,7 +42,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.friends ?? ""),
+        title: Text(AppLocalizations.of(context)!.friends ?? ""),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
@@ -74,7 +74,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                         children: [
                           Flexible(
                             child: Text(
-                              AppLocalizations.of(context)?.friends,
+                              AppLocalizations.of(context)!.friends,
                               style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -108,7 +108,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   const Icon(Icons.search, size: 24), // 아이콘 크기 증가
                   const SizedBox(height: 4), // 간격 증가
                   Text(
-                    AppLocalizations.of(context)?.search,
+                    AppLocalizations.of(context)!.search,
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -130,7 +130,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                           const Icon(Icons.mail, size: 24), // 아이콘 크기 증가
                           const SizedBox(height: 4), // 간격 증가
                           Text(
-                            AppLocalizations.of(context)?.requests,
+                            AppLocalizations.of(context)!.requests,
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -176,7 +176,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   const Icon(Icons.category, size: 24), // 아이콘 크기 증가
                   const SizedBox(height: 4), // 간격 증가
                   Text(
-                    AppLocalizations.of(context)?.category,
+                    AppLocalizations.of(context)!.category,
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

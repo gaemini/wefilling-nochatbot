@@ -113,8 +113,8 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 친구 삭제
   Future<void> _unfriend(UserProfile friend) async {
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)?.removeFriend,
-      AppLocalizations.of(context)?.unfriendConfirm(friend.displayNameOrNickname),
+      AppLocalizations.of(context)!.removeFriend,
+      AppLocalizations.of(context)!.unfriendConfirm(friend.displayNameOrNickname),
     );
 
     if (confirmed) {
@@ -122,13 +122,13 @@ class _FriendsPageState extends State<FriendsPage> {
       final success = await provider.unfriend(friend.uid);
 
       if (success) {
-        _showSnackBar(AppLocalizations.of(context)?.unfriendSuccess, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.unfriendSuccess, Colors.red);
         // 필터링된 목록에서도 제거
         setState(() {
           _filteredFriends.removeWhere((f) => f.uid == friend.uid);
         });
       } else {
-        _showSnackBar(AppLocalizations.of(context)?.unfriendFailed, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.unfriendFailed, Colors.red);
       }
     }
   }
@@ -136,8 +136,8 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 사용자 차단
   Future<void> _blockUser(UserProfile user) async {
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)?.blockUser,
-      AppLocalizations.of(context)?.blockUserConfirm(user.displayNameOrNickname),
+      AppLocalizations.of(context)!.blockUser,
+      AppLocalizations.of(context)!.blockUserConfirm(user.displayNameOrNickname),
     );
 
     if (confirmed) {
@@ -145,13 +145,13 @@ class _FriendsPageState extends State<FriendsPage> {
       final success = await provider.blockUser(user.uid);
 
       if (success) {
-        _showSnackBar(AppLocalizations.of(context)?.userBlockedSuccess, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.userBlockedSuccess, Colors.red);
         // 필터링된 목록에서도 제거
         setState(() {
           _filteredFriends.removeWhere((f) => f.uid == user.uid);
         });
       } else {
-        _showSnackBar(AppLocalizations.of(context)?.userBlockFailed, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.userBlockFailed, Colors.red);
       }
     }
   }
@@ -178,7 +178,7 @@ class _FriendsPageState extends State<FriendsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+                child: Text(AppLocalizations.of(context)!.cancel ?? ""),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -186,7 +186,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(AppLocalizations.of(context)?.confirm ?? ""),
+                child: Text(AppLocalizations.of(context)!.confirm ?? ""),
               ),
             ],
           ),
@@ -212,7 +212,7 @@ class _FriendsPageState extends State<FriendsPage> {
       );
     } catch (e) {
       _showSnackBar(
-        AppLocalizations.of(context)?.cannotLoadProfile,
+        AppLocalizations.of(context)!.cannotLoadProfile,
         Colors.red,
       );
       print('프로필 이동 오류: $e');
@@ -230,7 +230,7 @@ class _FriendsPageState extends State<FriendsPage> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.person, color: Colors.blue),
-                  title: Text(AppLocalizations.of(context)?.viewProfile ?? ""),
+                  title: Text(AppLocalizations.of(context)!.viewProfile ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _navigateToProfile(friend);
@@ -238,7 +238,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.group, color: Colors.green),
-                  title: Text(AppLocalizations.of(context)?.groupSettings ?? ""),
+                  title: Text(AppLocalizations.of(context)!.groupSettings ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _showGroupSelectionDialog(friend);
@@ -249,7 +249,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     Icons.person_remove,
                     color: Colors.orange,
                   ),
-                  title: Text(AppLocalizations.of(context)?.removeFriendAction ?? ""),
+                  title: Text(AppLocalizations.of(context)!.removeFriendAction ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _unfriend(friend);
@@ -257,7 +257,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.block, color: Colors.red),
-                  title: Text(AppLocalizations.of(context)?.blockAction ?? ""),
+                  title: Text(AppLocalizations.of(context)!.blockAction ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _blockUser(friend);
@@ -284,15 +284,15 @@ class _FriendsPageState extends State<FriendsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.groupSettingsFor(friend.displayNameOrNickname) ?? ""),
+        title: Text(AppLocalizations.of(context)!.groupSettingsFor(friend.displayNameOrNickname) ?? ""),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 그룹 없음 옵션
               RadioListTile<String?>(
-                title: Text(AppLocalizations.of(context)?.noGroup ?? ""),
-                subtitle: Text(AppLocalizations.of(context)?.notInAnyGroup ?? ""),
+                title: Text(AppLocalizations.of(context)!.noGroup ?? ""),
+                subtitle: Text(AppLocalizations.of(context)!.notInAnyGroup ?? ""),
                 value: null,
                 groupValue: currentCategoryId,
                 onChanged: (value) {
@@ -309,7 +309,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 Padding(
                   padding: EdgeInsets.all(16.0),
                   child: Text(
-                    AppLocalizations.of(context)?.noFriendGroupsYet,
+                    AppLocalizations.of(context)!.noFriendGroupsYet,
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey,
@@ -322,7 +322,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   return RadioListTile<String?>(
                     title: Text(category.name),
                     subtitle: Text(
-                      AppLocalizations.of(context)?.friendsInGroup(category.friendIds.length),
+                      AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
                     ),
                     value: category.id,
                     groupValue: currentCategoryId,
@@ -355,7 +355,7 @@ class _FriendsPageState extends State<FriendsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
           ),
         ],
       ),
@@ -378,7 +378,7 @@ class _FriendsPageState extends State<FriendsPage> {
           }
         }
         success = true;
-        _showSnackBar(AppLocalizations.of(context)?.removedFromAllGroups(friend.displayNameOrNickname), Colors.blue);
+        _showSnackBar(AppLocalizations.of(context)!.removedFromAllGroups(friend.displayNameOrNickname), Colors.blue);
       } else {
         // 선택한 그룹에 추가 (기존 그룹에서는 자동으로 제거됨)
         success = await _categoryService.addFriendToCategory(
@@ -389,18 +389,18 @@ class _FriendsPageState extends State<FriendsPage> {
         if (success) {
           final selectedCategory = _friendCategories.firstWhere((cat) => cat.id == categoryId);
           _showSnackBar(
-            AppLocalizations.of(context)?.addedToGroup(friend.displayNameOrNickname, selectedCategory.name),
+            AppLocalizations.of(context)!.addedToGroup(friend.displayNameOrNickname, selectedCategory.name),
             Colors.green
           );
         }
       }
       
       if (!success && categoryId != null) {
-        _showSnackBar(AppLocalizations.of(context)?.groupAssignmentFailed, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.groupAssignmentFailed, Colors.red);
       }
     } catch (e) {
       print('그룹 배정 오류: $e');
-      _showSnackBar(AppLocalizations.of(context)?.errorOccurred, Colors.red);
+      _showSnackBar(AppLocalizations.of(context)!.errorOccurred, Colors.red);
     }
   }
 
@@ -595,7 +595,7 @@ class _FriendsPageState extends State<FriendsPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: AppLocalizations.of(context)?.searchByFriendName,
+          hintText: AppLocalizations.of(context)!.searchByFriendName,
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
@@ -605,8 +605,8 @@ class _FriendsPageState extends State<FriendsPage> {
                       _searchController.clear();
                       _filterFriends('');
                     },
-                    semanticLabel: AppLocalizations.of(context)?.close,
-                    tooltip: AppLocalizations.of(context)?.close,
+                    semanticLabel: AppLocalizations.of(context)!.close,
+                    tooltip: AppLocalizations.of(context)!.close,
                   )
                   : null,
           border: OutlineInputBorder(
@@ -755,7 +755,7 @@ class _FriendsPageState extends State<FriendsPage> {
           Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
           const SizedBox(height: 16),
           Text(
-            AppLocalizations.of(context)?.error,
+            AppLocalizations.of(context)!.error,
             style: TextStyle(
               fontSize: 18,
               color: Colors.red[600],
@@ -773,7 +773,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onPressed: () {
               context.read<RelationshipProvider>().clearError();
             },
-            child: Text(AppLocalizations.of(context)?.retryAction ?? ""),
+            child: Text(AppLocalizations.of(context)!.retryAction ?? ""),
           ),
         ],
       ),

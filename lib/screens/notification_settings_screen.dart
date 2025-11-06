@@ -47,7 +47,7 @@ class _NotificationSettingsScreenState
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.loadSettingsError(e.toString() ?? ""))));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loadSettingsError(e.toString() ?? ""))));
       }
     }
   }
@@ -69,7 +69,7 @@ class _NotificationSettingsScreenState
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.saveSettingsError(e.toString() ?? ""))));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.saveSettingsError(e.toString() ?? ""))));
       }
     }
   }
@@ -77,7 +77,7 @@ class _NotificationSettingsScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(AppLocalizations.of(context)?.notificationSettings ?? "")),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.notificationSettings ?? "")),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())
@@ -85,24 +85,24 @@ class _NotificationSettingsScreenState
                 children: [
                   // 설정 카테고리 - 모임 알림
                   _buildSettingCategory(
-                    title: AppLocalizations.of(context)?.meetupNotifications,
+                    title: AppLocalizations.of(context)!.meetupNotifications,
                     icon: Icons.group,
                     color: Colors.blue,
                     children: [
                       // 비공개 게시글 알림
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.postNotifications,
+                        title: AppLocalizations.of(context)!.postNotifications,
                         subtitle: 'Private posts only',
                         settingKey: NotificationSettingKeys.postPrivate,
                       ),
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.meetupFullAlertTitle,
-                        subtitle: AppLocalizations.of(context)?.meetupFullAlertSubtitle,
+                        title: AppLocalizations.of(context)!.meetupFullAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.meetupFullAlertSubtitle,
                         settingKey: NotificationSettingKeys.meetupFull,
                       ),
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.meetupCancelledAlertTitle,
-                        subtitle: AppLocalizations.of(context)?.meetupCancelledAlertSubtitle,
+                        title: AppLocalizations.of(context)!.meetupCancelledAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.meetupCancelledAlertSubtitle,
                         settingKey: NotificationSettingKeys.meetupCancelled,
                       ),
                     ],
@@ -110,26 +110,26 @@ class _NotificationSettingsScreenState
 
                   // 설정 카테고리 - 게시글 알림 (비공개 전용)
                   _buildSettingCategory(
-                    title: AppLocalizations.of(context)?.postNotifications,
+                    title: AppLocalizations.of(context)!.postNotifications,
                     icon: Icons.article,
                     color: Colors.green,
                     children: [
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.privatePostAlertTitle,
-                        subtitle: AppLocalizations.of(context)?.privatePostAlertSubtitle,
+                        title: AppLocalizations.of(context)!.privatePostAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.privatePostAlertSubtitle,
                         settingKey: NotificationSettingKeys.postPrivate,
                       ),
                     ],
                   ),
                   // 설정 카테고리 - 친구 알림
                   _buildSettingCategory(
-                    title: AppLocalizations.of(context)?.friendNotifications,
+                    title: AppLocalizations.of(context)!.friendNotifications,
                     icon: Icons.person_add_alt,
                     color: Colors.purple,
                     children: [
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.friendRequestAlertTitle,
-                        subtitle: AppLocalizations.of(context)?.friendRequestAlertSubtitle,
+                        title: AppLocalizations.of(context)!.friendRequestAlertTitle,
+                        subtitle: AppLocalizations.of(context)!.friendRequestAlertSubtitle,
                         settingKey: NotificationSettingKeys.friendRequest,
                       ),
                     ],
@@ -137,20 +137,20 @@ class _NotificationSettingsScreenState
 
                   // 추가 설정 - 알림 전체 ON/OFF
                   _buildSettingCategory(
-                    title: AppLocalizations.of(context)?.generalSettings,
+                    title: AppLocalizations.of(context)!.generalSettings,
                     icon: Icons.settings,
                     color: Colors.orange,
                     children: [
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.allNotifications,
-                        subtitle: AppLocalizations.of(context)?.allNotificationsSubtitle,
+                        title: AppLocalizations.of(context)!.allNotifications,
+                        subtitle: AppLocalizations.of(context)!.allNotificationsSubtitle,
                         settingKey: NotificationSettingKeys.allNotifications,
                         isMainToggle: true,
                       ),
                       // 광고 업데이트
                       _buildSettingItem(
-                        title: AppLocalizations.of(context)?.adUpdatesTitle,
-                        subtitle: AppLocalizations.of(context)?.adUpdatesSubtitle,
+                        title: AppLocalizations.of(context)!.adUpdatesTitle,
+                        subtitle: AppLocalizations.of(context)!.adUpdatesSubtitle,
                         settingKey: NotificationSettingKeys.adUpdates,
                       ),
                     ],

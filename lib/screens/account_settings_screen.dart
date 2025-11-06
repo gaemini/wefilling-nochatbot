@@ -39,7 +39,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.accountSettings ?? ""),
+        title: Text(AppLocalizations.of(context)!.accountSettings ?? ""),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -57,7 +57,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.accountInfo,
+                          AppLocalizations.of(context)!.accountInfo,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -77,7 +77,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                AppLocalizations.of(context)?.email,
+                                AppLocalizations.of(context)!.email,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey,
@@ -85,12 +85,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                user?.email ?? AppLocalizations.of(context)?.email,
+                                user?.email ?? AppLocalizations.of(context)!.email,
                                 style: const TextStyle(fontSize: 16),
                               ),
                               const SizedBox(height: 16),
                               Text(
-                                AppLocalizations.of(context)?.loginMethod,
+                                AppLocalizations.of(context)!.loginMethod,
                                 style: TextStyle(
                                   fontSize: 16,
                                   color: Colors.grey,
@@ -98,7 +98,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                isGoogleLogin ? (AppLocalizations.of(context)?.googleAccount ?? "") : AppLocalizations.of(context)?.emailPassword,
+                                isGoogleLogin ? (AppLocalizations.of(context)!.googleAccount ?? "") : AppLocalizations.of(context)!.emailPassword,
                                 style: const TextStyle(fontSize: 16),
                               ),
                               if (isGoogleLogin) ...[
@@ -114,7 +114,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          AppLocalizations.of(context)?.manageGoogleAccount,
+                                          AppLocalizations.of(context)!.manageGoogleAccount,
                                           style: const TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w500,
@@ -137,7 +137,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.languageSettings,
+                          AppLocalizations.of(context)!.languageSettings,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -146,11 +146,11 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.language,
+                        AppLocalizations.of(context)!.language,
                         Icons.language,
                         () => _showLanguageDialog(context),
                         subtitle: Localizations.localeOf(context).languageCode == 'ko' 
-                            ? (AppLocalizations.of(context)?.korean ?? "") : AppLocalizations.of(context)?.english,
+                            ? (AppLocalizations.of(context)!.korean ?? "") : AppLocalizations.of(context)!.english,
                       ),
 
                       const SizedBox(height: 24),
@@ -159,7 +159,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.legalInfo,
+                          AppLocalizations.of(context)!.legalInfo,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -168,7 +168,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.termsOfService,
+                        AppLocalizations.of(context)!.termsOfService,
                         Icons.description_outlined,
                         () => Navigator.push(
                           context,
@@ -177,7 +177,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.privacyPolicy,
+                        AppLocalizations.of(context)!.privacyPolicy,
                         Icons.privacy_tip_outlined,
                         () => Navigator.push(
                           context,
@@ -186,7 +186,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.openSourceLicenses,
+                        AppLocalizations.of(context)!.openSourceLicenses,
                         Icons.code,
                         () => showLicensePage(
                           context: context,
@@ -200,7 +200,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.privacyProtection,
+                          AppLocalizations.of(context)!.privacyProtection,
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -209,7 +209,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.blockList,
+                        AppLocalizations.of(context)!.blockList,
                         Icons.block,
                         () => Navigator.push(
                           context,
@@ -223,7 +223,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.accountManagement,
+                          AppLocalizations.of(context)!.accountManagement,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -232,7 +232,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       _buildSettingItem(
-                        AppLocalizations.of(context)?.deleteAccount,
+                        AppLocalizations.of(context)!.deleteAccount,
                         Icons.delete_forever,
                         () => _showDeleteAccountConfirmation(context),
                         color: Colors.red,
@@ -304,14 +304,14 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(
-          AppLocalizations.of(context)?.selectLanguage,
+          AppLocalizations.of(context)!.selectLanguage,
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)?.korean ?? ""),
+              title: Text(AppLocalizations.of(context)!.korean ?? ""),
               value: 'ko',
               groupValue: currentLocale,
               onChanged: (value) {
@@ -322,7 +322,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               },
             ),
             RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)?.english ?? ""),
+              title: Text(AppLocalizations.of(context)!.english ?? ""),
               value: 'en',
               groupValue: currentLocale,
               onChanged: (value) {
@@ -337,7 +337,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
           ),
         ],
       ),
@@ -404,7 +404,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: ${e.toString()}')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${e.toString()}')));
       }
     } finally {
       setState(() => _isLoading = false);

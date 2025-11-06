@@ -143,7 +143,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             meetupId: meetupId,
             onMeetupDeleted: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppLocalizations.of(context)?.meetupCancelled ?? '모임이 취소되었습니다')),
+                SnackBar(content: Text(AppLocalizations.of(context)!.meetupCancelled ?? '모임이 취소되었습니다')),
               );
             },
           ),
@@ -970,7 +970,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.meetupJoined ?? '모임에 참여했습니다'),
+              content: Text(AppLocalizations.of(context)!.meetupJoined ?? '모임에 참여했습니다'),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 2),
             ),
@@ -982,7 +982,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.meetupJoinFailed ?? '모임 참여에 실패했습니다'),
+              content: Text(AppLocalizations.of(context)!.meetupJoinFailed ?? '모임 참여에 실패했습니다'),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 2),
             ),
@@ -996,7 +996,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)?.error ?? '오류'}: $e'),
+            content: Text('${AppLocalizations.of(context)!.error ?? '오류'}: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 2),
           ),
@@ -1017,7 +1017,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.leaveMeetup ?? '모임에서 나갔습니다'),
+              content: Text(AppLocalizations.of(context)!.leaveMeetup ?? '모임에서 나갔습니다'),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 2),
             ),
@@ -1029,7 +1029,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.leaveMeetupFailed ?? '모임 나가기에 실패했습니다'),
+              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? '모임 나가기에 실패했습니다'),
               backgroundColor: Colors.red,
               duration: const Duration(seconds: 2),
             ),

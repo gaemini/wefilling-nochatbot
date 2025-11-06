@@ -134,7 +134,7 @@ class UserTile extends StatelessWidget {
             Icon(Icons.people, size: 16, color: Colors.grey[600]),
             const SizedBox(width: 4),
             Text(
-              AppLocalizations.of(context)?.friendsCount(user.friendsCount),
+              AppLocalizations.of(context)!.friendsCount(user.friendsCount),
               style: TextStyle(fontSize: 12, color: Colors.grey[600]),
             ),
           ],

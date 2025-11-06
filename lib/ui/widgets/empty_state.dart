@@ -67,10 +67,10 @@ class AppEmptyState extends StatelessWidget {
   factory AppEmptyState.noMeetups({required BuildContext context, VoidCallback? onCreateMeetup}) {
     return AppEmptyState(
       icon: IconStyles.groups,
-      title: AppLocalizations.of(context)?.wefillingMeaning,
-      description: AppLocalizations.of(context)?.wefillingExplanation,
+      title: AppLocalizations.of(context)!.wefillingMeaning,
+      description: AppLocalizations.of(context)!.wefillingExplanation,
       // ctaText 및 onCtaPressed 제거하여 "Create Your First Meetup" 버튼 숨김
-      secondaryCtaText: AppLocalizations.of(context)?.searchMeetups,
+      secondaryCtaText: AppLocalizations.of(context)!.searchMeetups,
       // 위필링 로고를 표시
       illustration: Container(
         width: 120,

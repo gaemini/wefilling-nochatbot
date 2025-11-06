@@ -120,7 +120,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)?.loginRequired ?? ""),
+          content: Text(AppLocalizations.of(context)!.loginRequired ?? ""),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -207,7 +207,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.cannotSendDM ?? ""),
+            content: Text(AppLocalizations.of(context)!.cannotSendDM ?? ""),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -282,7 +282,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              newSavedStatus ? (AppLocalizations.of(context)?.postSaved ?? "") : AppLocalizations.of(context)?.postUnsaved
+              newSavedStatus ? (AppLocalizations.of(context)!.postSaved ?? "") : AppLocalizations.of(context)!.postUnsaved
             ),
             backgroundColor: newSavedStatus ? Colors.green : Colors.grey,
             duration: Duration(seconds: 1),
@@ -297,7 +297,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.error ?? ""),
+            content: Text(AppLocalizations.of(context)!.error ?? ""),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 2),
           ),
@@ -335,7 +335,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!isLoggedIn || user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.loginToComment ?? "")));
+      ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loginToComment ?? "")));
       return;
     }
 
@@ -383,7 +383,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.commentLikeFailed ?? "")));
+          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
         });
       }
 
@@ -396,7 +396,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -414,17 +414,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           context: context,
           builder:
               (context) => AlertDialog(
-                title: Text(AppLocalizations.of(context)?.deletePost ?? ""),
-                content: Text(AppLocalizations.of(context)?.deletePostConfirm ?? ""),
+                title: Text(AppLocalizations.of(context)!.deletePost ?? ""),
+                content: Text(AppLocalizations.of(context)!.deletePostConfirm ?? ""),
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(false),
-                    child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+                    child: Text(AppLocalizations.of(context)!.cancel ?? ""),
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(true),
                     style: TextButton.styleFrom(foregroundColor: Colors.red),
-                    child: Text(AppLocalizations.of(context)?.delete ?? ""),
+                    child: Text(AppLocalizations.of(context)!.delete ?? ""),
                   ),
                 ],
               ),
@@ -445,11 +445,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Navigator.of(context).pop(true); // true를 반환하여 삭제되었음을 알림
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.postDeleted ?? "")));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleted ?? "")));
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.postDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleteFailed ?? "")));
         setState(() {
           _isDeleting = false;
         });
@@ -458,7 +458,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
         setState(() {
           _isDeleting = false;
         });
@@ -576,14 +576,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed ?? "")));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
       }
     } catch (e) {
       print('❌ 댓글 작성 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -600,12 +600,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.commentDeleted ?? "")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
       );
       await _refreshPost();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.commentDeleteFailed ?? "")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")),
       );
     }
   }
@@ -621,20 +621,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success && mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.commentDeleted ?? "")));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
 
         // 게시글 정보 새로고침 (댓글 수 업데이트)
         await _refreshPost();
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.commentDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
@@ -648,24 +648,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     if (difference.inDays > 0) {
       if (locale == 'ko') {
-        return '${difference.inDays}${AppLocalizations.of(context)?.daysAgo}';
+        return '${difference.inDays}${AppLocalizations.of(context)!.daysAgo}';
       } else {
         return '${difference.inDays}${difference.inDays == 1 ? ' day ago' : ' days ago'}';
       }
     } else if (difference.inHours > 0) {
       if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)?.hoursAgo}';
+        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
       } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)?.hoursAgo}';
+        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
       }
     } else if (difference.inMinutes > 0) {
       if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)?.minutesAgo}';
+        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
       } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)?.minutesAgo}';
+        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
       }
     } else {
-      return AppLocalizations.of(context)?.justNow ?? "";
+      return AppLocalizations.of(context)!.justNow ?? "";
     }
   }
 
@@ -691,7 +691,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 익명 게시글인 경우
     // 글쓴이인 경우
     if (comment.userId == _currentPost.userId) {
-      return AppLocalizations.of(context)?.author ?? "";
+      return AppLocalizations.of(context)!.author ?? "";
     }
     
     // 다른 사람인 경우 익명 번호 할당
@@ -922,7 +922,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       resizeToAvoidBottomInset: true,
       backgroundColor: Colors.white, // 상세 화면은 흰색 배경 유지
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.post ?? '게시글'),
+        title: Text(AppLocalizations.of(context)!.post ?? '게시글'),
         actions: [
           // 게시글 저장 버튼
           _isTogglingSave
@@ -939,7 +939,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   _isSaved ? Icons.bookmark : Icons.bookmark_border,
                   color: Colors.black87, // 검은색으로 통일
                 ),
-                tooltip: _isSaved ? (AppLocalizations.of(context)?.unsave ?? '저장 취소') : (AppLocalizations.of(context)?.savePost ?? '게시글 저장'),
+                tooltip: _isSaved ? (AppLocalizations.of(context)!.unsave ?? '저장 취소') : (AppLocalizations.of(context)!.savePost ?? '게시글 저장'),
                 onPressed: _toggleSave,
               ),
           // 게시글 삭제 버튼 (작성자인 경우에만)
@@ -957,7 +957,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 : IconButton(
                   icon: const Icon(Icons.delete_outline),
                   color: Colors.red,
-                  tooltip: AppLocalizations.of(context)?.deletePost ?? '게시글 삭제',
+                  tooltip: AppLocalizations.of(context)!.deletePost ?? '게시글 삭제',
                   onPressed: _deletePost,
                 ),
         ],
@@ -1360,7 +1360,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          AppLocalizations.of(context)?.comments,
+                          AppLocalizations.of(context)!.comments,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -1414,7 +1414,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (snapshot.hasError) {
                         return Center(
                           child: Text(
-                            '${AppLocalizations.of(context)?.loadingComments}: ${snapshot.error}',
+                            '${AppLocalizations.of(context)!.loadingComments}: ${snapshot.error}',
                           ),
                         );
                       }
@@ -1425,7 +1425,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       if (allComments.isEmpty) {
                         return Padding(
                           padding: const EdgeInsets.all(16.0),
-                          child: Center(child: Text(AppLocalizations.of(context)?.firstCommentPrompt ?? "")),
+                          child: Center(child: Text(AppLocalizations.of(context)!.firstCommentPrompt ?? "")),
                         );
                       }
 
@@ -1506,7 +1506,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              AppLocalizations.of(context)?.replyingTo(_replyToUserName ?? ''),
+                              AppLocalizations.of(context)!.replyingTo(_replyToUserName ?? ''),
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
@@ -1551,8 +1551,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             decoration: InputDecoration(
                               hintText: isLoggedIn 
                                   ? (_isReplyMode 
-                                      ? (AppLocalizations.of(context)?.writeReplyHint ?? "") : AppLocalizations.of(context)?.enterComment)
-                                  : AppLocalizations.of(context)?.loginToComment,
+                                      ? (AppLocalizations.of(context)!.writeReplyHint ?? "") : AppLocalizations.of(context)!.enterComment)
+                                  : AppLocalizations.of(context)!.loginToComment,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(24),
                                 borderSide: _isReplyMode 

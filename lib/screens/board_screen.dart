@@ -255,8 +255,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
           child: AppEmptyState(
             icon: Icons.calendar_today,
-            title: AppLocalizations.of(context)?.yourStoryMatters ?? '당신의 이야기가 중요합니다',
-            description: AppLocalizations.of(context)?.shareYourMoments ?? '순간을 공유해보세요',
+            title: AppLocalizations.of(context)!.yourStoryMatters ?? '당신의 이야기가 중요합니다',
+            description: AppLocalizations.of(context)!.shareYourMoments ?? '순간을 공유해보세요',
             illustration: const SizedBox.shrink(),
             padding: EdgeInsets.zero,
           ),
@@ -551,13 +551,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     
     switch (dateLabel) {
       case 'yesterday':
-        displayLabel = AppLocalizations.of(context)?.yesterday ?? '어제';
+        displayLabel = AppLocalizations.of(context)!.yesterday ?? '어제';
         break;
       case 'thisWeek':
-        displayLabel = AppLocalizations.of(context)?.thisWeek ?? '이번 주';
+        displayLabel = AppLocalizations.of(context)!.thisWeek ?? '이번 주';
         break;
       default: // 'previous'
-        displayLabel = AppLocalizations.of(context)?.previous ?? '이전';
+        displayLabel = AppLocalizations.of(context)!.previous ?? '이전';
     }
     
     // 테두리 없이 폰트로만 구분

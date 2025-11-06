@@ -174,7 +174,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.blockList ?? ""),
+        title: Text(AppLocalizations.of(context)!.blockList ?? ""),
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         leading: IconButton(

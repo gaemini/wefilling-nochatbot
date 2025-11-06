@@ -348,10 +348,10 @@ class _CompactChip extends StatelessWidget {
     );
 
     return Semantics(
-      label: '$displayLabel ${AppLocalizations.of(context)?.category}${isSelected ? ", ${AppLocalizations.of(context)?.selected}" : ""}',
+      label: '$displayLabel ${AppLocalizations.of(context)!.category}${isSelected ? ", ${AppLocalizations.of(context)!.selected}" : ""}',
       button: true,
       selected: isSelected,
-      onTapHint: '${isSelected ? (AppLocalizations.of(context)?.cancel ?? "") : AppLocalizations.of(context)?.select}',
+      onTapHint: '${isSelected ? (AppLocalizations.of(context)!.cancel ?? "") : AppLocalizations.of(context)!.select}',
       child: Container(
         decoration: BoxDecoration(
           color: backgroundColor,
@@ -510,7 +510,7 @@ class CompactAppBar extends StatelessWidget implements PreferredSizeWidget {
 
 /// 카테고리 라벨을 번역하는 헬퍼 함수
 String _getLocalizedLabel(BuildContext context, String label) {
-  final localizations = AppLocalizations.of(context)?;
+  final localizations = AppLocalizations.of(context)!;
   
   switch (label) {
     case 'all':

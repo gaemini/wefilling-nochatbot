@@ -77,13 +77,13 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(accept
-                  ? (AppLocalizations.of(context)?.reviewAccepted ?? "") : AppLocalizations.of(context)?.reviewRejected),
+                  ? (AppLocalizations.of(context)!.reviewAccepted ?? "") : AppLocalizations.of(context)!.reviewRejected),
             ),
           );
           Navigator.of(context).pop(true);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)?.reviewProcessError ?? "")),
+            SnackBar(content: Text(AppLocalizations.of(context)!.reviewProcessError ?? "")),
           );
         }
       }
@@ -91,7 +91,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
       print('❌ 후기 수락/거절 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.error ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.error ?? "")),
         );
       }
     } finally {
@@ -158,7 +158,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          AppLocalizations.of(context)?.reviewByAuthor(widget.authorName),
+                          AppLocalizations.of(context)!.reviewByAuthor(widget.authorName),
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.blue[700],
@@ -217,7 +217,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
 
             // 후기 내용
             Text(
-              AppLocalizations.of(context)?.reviewContent,
+              AppLocalizations.of(context)!.reviewContent,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -257,7 +257,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      AppLocalizations.of(context)?.reviewApprovalInfo,
+                      AppLocalizations.of(context)!.reviewApprovalInfo,
                       style: TextStyle(
                         color: Colors.amber[900],
                         fontSize: 13,

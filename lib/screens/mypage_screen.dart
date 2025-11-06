@@ -80,12 +80,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 tabs: [
                   Tab(
                     icon: Icon(Icons.grid_on_rounded, size: 16),
-                    text: AppLocalizations.of(context)?.reviews,
+                    text: AppLocalizations.of(context)!.reviews,
                     height: 48,
                   ),
                   Tab(
                     icon: Icon(Icons.bookmark_border_rounded, size: 16),
-                    text: AppLocalizations.of(context)?.saved,
+                    text: AppLocalizations.of(context)!.saved,
                     height: 48,
                   ),
                 ],
@@ -198,7 +198,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          userData?['nickname'] ?? AppLocalizations.of(context)?.user,
+                          userData?['nickname'] ?? AppLocalizations.of(context)!.user,
                           style: AppTheme.headlineMedium.copyWith(
                             color: Colors.black,
                             fontWeight: FontWeight.bold,
@@ -296,11 +296,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _buildStatItem(AppLocalizations.of(context)?.hostedMeetups, icon: Icons.event_available, color: const Color(0xFF646464)), // 회색 아이콘
+                    _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, icon: Icons.event_available, color: const Color(0xFF646464)), // 회색 아이콘
                     Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)), // 회색 구분선
-                    _buildStatItem(AppLocalizations.of(context)?.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF646464)),
+                    _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF646464)),
                     Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)),
-                    _buildStatItem(AppLocalizations.of(context)?.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF646464)),
+                    _buildStatItem(AppLocalizations.of(context)!.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF646464)),
                   ],
                 ),
               ),
@@ -331,7 +331,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     ),
                   ),
                   child: Text(
-                    AppLocalizations.of(context)?.profileEdit,
+                    AppLocalizations.of(context)!.profileEdit,
                     style: AppTheme.labelMedium.copyWith(
                       color: Colors.black, // 텍스트는 검은색 유지 (가독성)
                       fontWeight: FontWeight.bold,
@@ -383,14 +383,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 16),
             Text(
-              AppLocalizations.of(context)?.loginRequired,
+              AppLocalizations.of(context)!.loginRequired,
               style: AppTheme.headlineMedium.copyWith(
                 color: AppTheme.primary,
               ),
             ),
             SizedBox(height: 8),
             Text(
-              AppLocalizations.of(context)?.loginToViewReviews,
+              AppLocalizations.of(context)!.loginToViewReviews,
               style: AppTheme.bodyMedium.copyWith(
                 color: Colors.grey[600],
               ),
@@ -461,7 +461,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)?.noReviewsYet,
+                  AppLocalizations.of(context)!.noReviewsYet,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
                     fontSize: 16,
@@ -469,7 +469,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 6),
                 Text(
-                  AppLocalizations.of(context)?.joinMeetupAndWriteReview,
+                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontSize: 13,
@@ -531,7 +531,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                               ),
                               SizedBox(height: 4),
                               Text(
-                                AppLocalizations.of(context)?.hideReview,
+                                AppLocalizations.of(context)!.hideReview,
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 10,
@@ -642,14 +642,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 16),
             Text(
-              AppLocalizations.of(context)?.loginRequired,
+              AppLocalizations.of(context)!.loginRequired,
               style: AppTheme.headlineMedium.copyWith(
                 color: AppTheme.primary,
               ),
             ),
             SizedBox(height: 8),
             Text(
-              AppLocalizations.of(context)?.loginToViewSavedPosts,
+              AppLocalizations.of(context)!.loginToViewSavedPosts,
               style: AppTheme.bodyMedium.copyWith(
                 color: Colors.grey[600],
               ),
@@ -682,7 +682,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)?.error,
+                  AppLocalizations.of(context)!.error,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.accentRed,
                   ),
@@ -720,7 +720,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)?.noSavedPosts,
+                  AppLocalizations.of(context)!.noSavedPosts,
                   style: AppTheme.headlineMedium.copyWith(
                     color: AppTheme.primary,
                     fontSize: 16,
@@ -728,7 +728,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 SizedBox(height: 6),
                 Text(
-                  AppLocalizations.of(context)?.saveInterestingPosts,
+                  AppLocalizations.of(context)!.saveInterestingPosts,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontSize: 13,
@@ -930,7 +930,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 _buildMenuItem(
                   context,
                   review.hidden 
-                    ? (AppLocalizations.of(context)?.unhideReview ?? "") : AppLocalizations.of(context)?.hideReview,
+                    ? (AppLocalizations.of(context)!.unhideReview ?? "") : AppLocalizations.of(context)!.hideReview,
                   review.hidden 
                     ? Icons.visibility_rounded
                     : Icons.visibility_off_rounded,
@@ -1086,7 +1086,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
                 SizedBox(height: DesignTokens.s16),
-                _buildMenuItem(context, AppLocalizations.of(context)?.myMeetups, Icons.group_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -1095,7 +1095,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, AppLocalizations.of(context)?.myPosts, Icons.article_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.myPosts, Icons.article_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -1104,7 +1104,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, AppLocalizations.of(context)?.notificationSettings, Icons.notifications_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.notificationSettings, Icons.notifications_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -1113,7 +1113,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                _buildMenuItem(context, AppLocalizations.of(context)?.accountSettings, Icons.settings_rounded, () {
+                _buildMenuItem(context, AppLocalizations.of(context)!.accountSettings, Icons.settings_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
                   context,
@@ -1123,7 +1123,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 );
               }),
                 Divider(color: Colors.grey[300]),
-                _buildMenuItem(context, AppLocalizations.of(context)?.logout, Icons.logout_rounded, () async {
+                _buildMenuItem(context, AppLocalizations.of(context)!.logout, Icons.logout_rounded, () async {
                   Navigator.pop(context);
                   // 로그아웃 확인 다이얼로그 표시
                   _showLogoutConfirmDialog(context, authProvider);
@@ -1181,12 +1181,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text(AppLocalizations.of(context)?.logout ?? ""),
-          content: Text(AppLocalizations.of(context)?.logoutConfirm ?? ""),
+          title: Text(AppLocalizations.of(context)!.logout ?? ""),
+          content: Text(AppLocalizations.of(context)!.logoutConfirm ?? ""),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+              child: Text(AppLocalizations.of(context)!.cancel ?? ""),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1224,11 +1224,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(AppLocalizations.of(context)?.logoutError ?? ""),
+                        content: Text(AppLocalizations.of(context)!.logoutError ?? ""),
                         backgroundColor: BrandColors.error,
                         duration: const Duration(seconds: 3),
                         action: SnackBarAction(
-                          label: AppLocalizations.of(context)?.retry,
+                          label: AppLocalizations.of(context)!.retry,
                           textColor: Colors.white,
                           onPressed: () {
                             // 재시도 로직
@@ -1241,7 +1241,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   print('로그아웃 UI 오류: $e');
                 }
               },
-              child: Text(AppLocalizations.of(context)?.logout ?? ""),
+              child: Text(AppLocalizations.of(context)!.logout ?? ""),
             ),
           ],
         );

@@ -166,7 +166,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           return StatefulBuilder(
             builder: (context, setDialogState) {
               return AlertDialog(
-                title: Text(AppLocalizations.of(context)?.selectCategoriesToShare ?? ""),
+                title: Text(AppLocalizations.of(context)!.selectCategoriesToShare ?? ""),
                 content: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -191,11 +191,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 actions: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+                    child: Text(AppLocalizations.of(context)!.cancel ?? ""),
                   ),
                   TextButton(
                     onPressed: () => Navigator.pop(context, tempSelected),
-                    child: Text(AppLocalizations.of(context)?.confirm ?? ""),
+                    child: Text(AppLocalizations.of(context)!.confirm ?? ""),
                   ),
                 ],
               );
@@ -283,7 +283,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(
               context,
-            ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.postCreated ?? "")));
+            ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postCreated ?? "")));
           }
         } else {
           throw Exception("게시글 등록 실패");
@@ -296,7 +296,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.postCreateFailed ?? ""),
+              content: Text(AppLocalizations.of(context)!.postCreateFailed ?? ""),
               backgroundColor: Colors.red,
             ),
           );
@@ -337,7 +337,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.newPostCreation ?? ""),
+        title: Text(AppLocalizations.of(context)!.newPostCreation ?? ""),
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 8),
@@ -364,7 +364,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 : Colors.grey[400],
                       ),
               label: Text(
-                _isSubmitting ? (AppLocalizations.of(context)?.loading ?? "") : AppLocalizations.of(context)?.registration,
+                _isSubmitting ? (AppLocalizations.of(context)!.loading ?? "") : AppLocalizations.of(context)!.registration,
                 style: TextStyle(
                   color: _canSubmit ? Colors.blue.shade700 : Colors.grey[400],
                   fontWeight: FontWeight.bold,
@@ -454,7 +454,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        AppLocalizations.of(context)?.author,
+                        AppLocalizations.of(context)!.author,
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.blue.shade700,
@@ -479,7 +479,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.visibilityScope,
+                      AppLocalizations.of(context)!.visibilityScope,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -491,7 +491,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       children: [
                         Expanded(
                           child: RadioListTile<String>(
-                            title: Text(AppLocalizations.of(context)?.publicPost ?? ""),
+                            title: Text(AppLocalizations.of(context)!.publicPost ?? ""),
                             value: 'public',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -508,7 +508,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                         Expanded(
                           child: RadioListTile<String>(
-                            title: Text(AppLocalizations.of(context)?.categorySpecific ?? ""),
+                            title: Text(AppLocalizations.of(context)!.categorySpecific ?? ""),
                             value: 'category',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -544,7 +544,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             Expanded(
                               child: Text(
                                 _isAnonymous
-                                    ? (AppLocalizations.of(context)?.postAnonymously ?? "") : AppLocalizations.of(context)?.authorAndCommenterInfo,
+                                    ? (AppLocalizations.of(context)!.postAnonymously ?? "") : AppLocalizations.of(context)!.authorAndCommenterInfo,
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: Colors.blue.shade900,
@@ -556,7 +556,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       ),
                       CheckboxListTile(
                         title: Text(
-                          AppLocalizations.of(context)?.postAnonymously,
+                          AppLocalizations.of(context)!.postAnonymously,
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.bold,
@@ -564,8 +564,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                         subtitle: Text(
                           _isAnonymous 
-                              ? '✓ ' + AppLocalizations.of(context)?.postAnonymously
-                              : AppLocalizations.of(context)?.idWillBeShown,
+                              ? '✓ ' + AppLocalizations.of(context)!.postAnonymously
+                              : AppLocalizations.of(context)!.idWillBeShown,
                           style: TextStyle(
                             fontSize: 12,
                             color: _isAnonymous ? Colors.green.shade700 : Colors.grey.shade600,
@@ -603,7 +603,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    AppLocalizations.of(context)?.selectedGroupOnly,
+                                    AppLocalizations.of(context)!.selectedGroupOnly,
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: Colors.green.shade900,
@@ -619,7 +619,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             icon: const Icon(Icons.category, size: 18),
                             label: Text(
                               _selectedCategoryIds.isEmpty
-                                  ? (AppLocalizations.of(context)?.selectCategoryRequired ?? "") : '${_selectedCategoryIds.length}${AppLocalizations.of(context)?.selectedCount}',
+                                  ? (AppLocalizations.of(context)!.selectCategoryRequired ?? "") : '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
                             ),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
@@ -641,7 +641,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               TextField(
                 controller: _titleController,
                 decoration: InputDecoration(
-                  hintText: AppLocalizations.of(context)?.enterTitle,
+                  hintText: AppLocalizations.of(context)!.enterTitle,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(color: Colors.grey.shade300),
@@ -675,7 +675,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ElevatedButton.icon(
                 onPressed: _selectImages,
                 icon: const Icon(Icons.image),
-                label: Text(AppLocalizations.of(context)?.imageAttachment ?? ""),
+                label: Text(AppLocalizations.of(context)!.imageAttachment ?? ""),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
                   backgroundColor: Colors.blue.shade700,
@@ -761,7 +761,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   controller: _contentController,
                   focusNode: _contentFocusNode,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)?.enterContent,
+                    hintText: AppLocalizations.of(context)!.enterContent,
                     border: InputBorder.none, // 테두리 없애기 (컨테이너가 이미 테두리를 가짐)
                     contentPadding: const EdgeInsets.all(16),
                     fillColor: Colors.transparent,

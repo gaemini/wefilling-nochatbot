@@ -249,7 +249,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         if (mounted) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')));
+          ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
         }
       } finally {
         if (mounted) {
@@ -379,7 +379,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.profileEdit ?? ""),
+        title: Text(AppLocalizations.of(context)!.profileEdit ?? ""),
         actions: [
           // 저장 버튼
           _isSubmitting
@@ -397,7 +397,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               : TextButton(
                 onPressed: _updateProfile,
                 child: Text(
-                  AppLocalizations.of(context)?.save,
+                  AppLocalizations.of(context)!.save,
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -415,7 +415,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 child: Column(
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.profileImage,
+                      AppLocalizations.of(context)!.profileImage,
                       style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
                     ),
                     const SizedBox(height: 16),
@@ -519,7 +519,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      AppLocalizations.of(context)?.tapToChangeImage,
+                      AppLocalizations.of(context)!.tapToChangeImage,
                       style: TextStyle(
                         color: AppTheme.primary,
                         fontSize: 14,
@@ -642,7 +642,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             ),
                           )
                           : Text(
-                            AppLocalizations.of(context)?.update,
+                            AppLocalizations.of(context)!.update,
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,

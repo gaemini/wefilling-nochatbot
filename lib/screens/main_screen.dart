@@ -145,11 +145,11 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return AppLocalizations.of(context)?.enterSearchQuery ?? "";
+        return AppLocalizations.of(context)!.enterSearchQuery ?? "";
       case 1:
-        return AppLocalizations.of(context)?.enterSearchQuery ?? "";
+        return AppLocalizations.of(context)!.enterSearchQuery ?? "";
       default:
-        return AppLocalizations.of(context)?.search ?? "";
+        return AppLocalizations.of(context)!.search ?? "";
     }
   }
 
@@ -359,7 +359,7 @@ service firebase.storage {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            AppLocalizations.of(context)?.signupRequired,
+                            AppLocalizations.of(context)!.signupRequired,
                             style: const TextStyle(fontSize: 15, height: 1.4),
                           ),
                           const SizedBox(height: 8),
@@ -517,27 +517,27 @@ service firebase.storage {
           BottomNavigationItem(
             icon: Icons.article_outlined, // 게시판 아이콘 변경 (DM과 구분)
             selectedIcon: Icons.article,
-            label: AppLocalizations.of(context)?.board ?? '게시판',
+            label: AppLocalizations.of(context)!.board ?? '게시판',
           ),
           BottomNavigationItem(
             icon: Icons.groups_outlined,
             selectedIcon: Icons.groups,
-            label: AppLocalizations.of(context)?.meetup ?? '모임',
+            label: AppLocalizations.of(context)!.meetup ?? '모임',
           ),
           BottomNavigationItem(
             icon: Icons.chat_bubble_outline,
             selectedIcon: Icons.chat_bubble,
-            label: AppLocalizations.of(context)?.dm ?? 'DM',
+            label: AppLocalizations.of(context)!.dm ?? 'DM',
           ),
           BottomNavigationItem(
             icon: Icons.person_outline,
             selectedIcon: Icons.person,
-            label: AppLocalizations.of(context)?.myPage ?? '마이페이지',
+            label: AppLocalizations.of(context)!.myPage ?? '마이페이지',
           ),
           BottomNavigationItem(
             icon: Icons.people_outline,
             selectedIcon: Icons.people,
-            label: AppLocalizations.of(context)?.friends ?? '친구',
+            label: AppLocalizations.of(context)!.friends ?? '친구',
           ),
         ],
       ),

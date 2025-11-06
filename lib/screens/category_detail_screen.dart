@@ -140,7 +140,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       padding: const EdgeInsets.all(16),
                       color: Colors.grey[100],
                       child: Text(
-                        AppLocalizations.of(context)?.friendsInGroup(_friends.length),
+                        AppLocalizations.of(context)!.friendsInGroup(_friends.length),
                         style: TextStyle(
                           color: BrandColors.neutral700,
                           fontSize: 14,

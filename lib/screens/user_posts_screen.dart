@@ -20,7 +20,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(AppLocalizations.of(context)?.myPosts ?? "")),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)!.myPosts ?? "")),
       body: StreamBuilder<List<Post>>(
         stream: _userStatsService.getUserPosts(),
         builder: (context, snapshot) {
@@ -29,13 +29,13 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
           }
 
           if (snapshot.hasError) {
-            return Center(child: Text(AppLocalizations.of(context)?.error ?? ""));
+            return Center(child: Text(AppLocalizations.of(context)!.error ?? ""));
           }
 
           final posts = snapshot.data ?? [];
 
           if (posts.isEmpty) {
-            return Center(child: Text(AppLocalizations.of(context)?.noWrittenPosts ?? ""));
+            return Center(child: Text(AppLocalizations.of(context)!.noWrittenPosts ?? ""));
           }
 
           return Column(
@@ -47,7 +47,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
                 child: Row(
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.totalPostsCount(posts.length),
+                      AppLocalizations.of(context)!.totalPostsCount(posts.length),
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[700],

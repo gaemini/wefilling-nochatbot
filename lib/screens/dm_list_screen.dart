@@ -66,7 +66,7 @@ class _DMListScreenState extends State<DMListScreen> {
     if (_currentUser == null) {
       return _buildEmptyState(
         icon: Icons.login,
-        title: AppLocalizations.of(context)?.loginRequired ?? '로그인이 필요합니다',
+        title: AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다',
         subtitle: '',
       );
     }
@@ -101,8 +101,8 @@ class _DMListScreenState extends State<DMListScreen> {
         if (conversations.isEmpty) {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
-            title: AppLocalizations.of(context)?.noConversations ?? '대화가 없습니다',
-            subtitle: AppLocalizations.of(context)?.startFirstConversation ?? '첫 대화를 시작해보세요',
+            title: AppLocalizations.of(context)!.noConversations ?? '대화가 없습니다',
+            subtitle: AppLocalizations.of(context)!.startFirstConversation ?? '첫 대화를 시작해보세요',
           );
         }
         
@@ -129,8 +129,8 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
-                ? (AppLocalizations.of(context)?.friends ?? "") : AppLocalizations.of(context)?.anonymousUser,
-            subtitle: AppLocalizations.of(context)?.noConversations,
+                ? (AppLocalizations.of(context)!.friends ?? "") : AppLocalizations.of(context)!.anonymousUser,
+            subtitle: AppLocalizations.of(context)!.noConversations,
           );
         }
 
@@ -184,7 +184,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 44,
                         alignment: Alignment.center,
                         child: Text(
-                          AppLocalizations.of(context)?.friends,
+                          AppLocalizations.of(context)!.friends,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -203,7 +203,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 44,
                         alignment: Alignment.center,
                         child: Text(
-                          AppLocalizations.of(context)?.anonymousUser,
+                          AppLocalizations.of(context)!.anonymousUser,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -254,7 +254,7 @@ class _DMListScreenState extends State<DMListScreen> {
     final displayName = (dmTitle != null && dmTitle.isNotEmpty)
         ? dmTitle
         : (isAnonymous 
-            ? (AppLocalizations.of(context)?.anonymousUser ?? "") : otherUserName);
+            ? (AppLocalizations.of(context)!.anonymousUser ?? "") : otherUserName);
 
     return Material(
       color: Colors.white,
@@ -314,7 +314,7 @@ class _DMListScreenState extends State<DMListScreen> {
                     // 마지막 메시지
                     Text(
                       conversation.lastMessage.isEmpty 
-                          ? (AppLocalizations.of(context)?.noMessages ?? "") : conversation.lastMessage,
+                          ? (AppLocalizations.of(context)!.noMessages ?? "") : conversation.lastMessage,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[700],
@@ -426,7 +426,7 @@ class _DMListScreenState extends State<DMListScreen> {
           const CircularProgressIndicator(),
           const SizedBox(height: 16),
           Text(
-            AppLocalizations.of(context)?.loadingMessages,
+            AppLocalizations.of(context)!.loadingMessages,
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
@@ -450,7 +450,7 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            AppLocalizations.of(context)?.error,
+            AppLocalizations.of(context)!.error,
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,

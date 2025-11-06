@@ -57,9 +57,9 @@ class _RequestsPageState extends State<RequestsPage>
 
     if (mounted) {
       if (success) {
-        _showSnackBar(AppLocalizations.of(context)?.friendRequestAccepted, Colors.green);
+        _showSnackBar(AppLocalizations.of(context)!.friendRequestAccepted, Colors.green);
       } else {
-        _showSnackBar(AppLocalizations.of(context)?.friendRequestAcceptFailed, Colors.red);
+        _showSnackBar(AppLocalizations.of(context)!.friendRequestAcceptFailed, Colors.red);
       }
     }
   }
@@ -69,8 +69,8 @@ class _RequestsPageState extends State<RequestsPage>
     if (!mounted) return;
     
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)?.rejectFriendRequest,
-      AppLocalizations.of(context)?.confirmRejectFriendRequest,
+      AppLocalizations.of(context)!.rejectFriendRequest,
+      AppLocalizations.of(context)!.confirmRejectFriendRequest,
     );
 
     if (confirmed && mounted) {
@@ -79,9 +79,9 @@ class _RequestsPageState extends State<RequestsPage>
 
       if (mounted) {
         if (success) {
-          _showSnackBar(AppLocalizations.of(context)?.friendRequestRejected, Colors.orange);
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejected, Colors.orange);
         } else {
-          _showSnackBar(AppLocalizations.of(context)?.friendRequestRejectFailed, Colors.red);
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejectFailed, Colors.red);
         }
       }
     }
@@ -92,8 +92,8 @@ class _RequestsPageState extends State<RequestsPage>
     if (!mounted) return;
     
     final confirmed = await _showConfirmDialog(
-      AppLocalizations.of(context)?.cancelFriendRequest,
-      AppLocalizations.of(context)?.confirmCancelFriendRequest,
+      AppLocalizations.of(context)!.cancelFriendRequest,
+      AppLocalizations.of(context)!.confirmCancelFriendRequest,
     );
 
     if (confirmed && mounted) {
@@ -102,9 +102,9 @@ class _RequestsPageState extends State<RequestsPage>
 
       if (mounted) {
         if (success) {
-          _showSnackBar(AppLocalizations.of(context)?.friendRequestCancelledSuccess, Colors.orange);
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelledSuccess, Colors.orange);
         } else {
-          _showSnackBar(AppLocalizations.of(context)?.friendRequestCancelFailed, Colors.red);
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelFailed, Colors.red);
         }
       }
     }
@@ -132,7 +132,7 @@ class _RequestsPageState extends State<RequestsPage>
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+                child: Text(AppLocalizations.of(context)!.cancel ?? ""),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -140,7 +140,7 @@ class _RequestsPageState extends State<RequestsPage>
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(AppLocalizations.of(context)?.confirm ?? ""),
+                child: Text(AppLocalizations.of(context)!.confirm ?? ""),
               ),
             ],
           ),
@@ -186,8 +186,8 @@ class _RequestsPageState extends State<RequestsPage>
                     fontWeight: FontWeight.normal,
                   ),
                   tabs: [
-                    Tab(text: AppLocalizations.of(context)?.receivedRequests),
-                    Tab(text: AppLocalizations.of(context)?.sentRequests),
+                    Tab(text: AppLocalizations.of(context)!.receivedRequests),
+                    Tab(text: AppLocalizations.of(context)!.sentRequests),
                   ],
                 ),
               ),
@@ -219,8 +219,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         if (provider.incomingRequests.isEmpty) {
           return _buildEmptyState(
-            AppLocalizations.of(context)?.noReceivedRequests,
-            AppLocalizations.of(context)?.newRequestsWillAppearHere,
+            AppLocalizations.of(context)!.noReceivedRequests,
+            AppLocalizations.of(context)!.newRequestsWillAppearHere,
             Icons.inbox,
           );
         }
@@ -237,7 +237,7 @@ class _RequestsPageState extends State<RequestsPage>
                   return Card(
                     child: ListTile(
                       leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)?.loading ?? ""),
+                      title: Text(AppLocalizations.of(context)!.loading ?? ""),
                     ),
                   );
                 }
@@ -270,8 +270,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         if (provider.outgoingRequests.isEmpty) {
           return _buildEmptyState(
-            AppLocalizations.of(context)?.noSentRequests,
-            AppLocalizations.of(context)?.searchToSendRequest,
+            AppLocalizations.of(context)!.noSentRequests,
+            AppLocalizations.of(context)!.searchToSendRequest,
             Icons.send,
           );
         }
@@ -288,7 +288,7 @@ class _RequestsPageState extends State<RequestsPage>
                   return Card(
                     child: ListTile(
                       leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)?.loading ?? ""),
+                      title: Text(AppLocalizations.of(context)!.loading ?? ""),
                     ),
                   );
                 }
@@ -377,7 +377,7 @@ class _RequestsPageState extends State<RequestsPage>
                     foregroundColor: Colors.white,
                     minimumSize: const Size(60, 32),
                   ),
-                  child: Text(AppLocalizations.of(context)?.accept, style: const TextStyle(fontSize: 12)),
+                  child: Text(AppLocalizations.of(context)!.accept, style: const TextStyle(fontSize: 12)),
                 ),
                 const SizedBox(height: 8),
                 OutlinedButton(
@@ -387,7 +387,7 @@ class _RequestsPageState extends State<RequestsPage>
                     side: const BorderSide(color: Colors.red),
                     minimumSize: const Size(60, 32),
                   ),
-                  child: Text(AppLocalizations.of(context)?.reject, style: const TextStyle(fontSize: 12)),
+                  child: Text(AppLocalizations.of(context)!.reject, style: const TextStyle(fontSize: 12)),
                 ),
               ],
             ),
@@ -465,7 +465,7 @@ class _RequestsPageState extends State<RequestsPage>
                 side: const BorderSide(color: Colors.orange),
                 minimumSize: const Size(60, 32),
               ),
-              child: Text(AppLocalizations.of(context)?.cancelAction, style: const TextStyle(fontSize: 12)),
+              child: Text(AppLocalizations.of(context)!.cancelAction, style: const TextStyle(fontSize: 12)),
             ),
           ],
         ),

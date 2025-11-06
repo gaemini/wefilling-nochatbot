@@ -13,7 +13,7 @@ class TermsScreen extends StatelessWidget {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.termsOfService ?? ""),
+        title: Text(AppLocalizations.of(context)!.termsOfService ?? ""),
         backgroundColor: Theme.of(context).colorScheme.surface,
         foregroundColor: Theme.of(context).colorScheme.onSurface,
         elevation: 0,

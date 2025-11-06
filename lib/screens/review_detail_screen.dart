@@ -653,7 +653,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.error ?? ""),
+            content: Text(AppLocalizations.of(context)!.error ?? ""),
             backgroundColor: Colors.red,
           ),
         );

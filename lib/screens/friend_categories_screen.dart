@@ -59,7 +59,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          AppLocalizations.of(context)?.friendCategoriesManagement,
+          AppLocalizations.of(context)!.friendCategoriesManagement,
           style: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.w600,
@@ -107,7 +107,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    AppLocalizations.of(context)?.error,
+                    AppLocalizations.of(context)!.error,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
@@ -134,9 +134,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             
             return AppEmptyState(
               icon: IconStyles.group,
-              title: AppLocalizations.of(context)?.createFirstCategory,
-              description: AppLocalizations.of(context)?.createFirstCategoryDescription,
-              ctaText: AppLocalizations.of(context)?.newCategoryCreate,
+              title: AppLocalizations.of(context)!.createFirstCategory,
+              description: AppLocalizations.of(context)!.createFirstCategoryDescription,
+              ctaText: AppLocalizations.of(context)!.newCategoryCreate,
               ctaIcon: IconStyles.add,
               onCtaPressed: () => _showCreateCategoryDialog(),
             );
@@ -155,8 +155,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       floatingActionButton: AppFab(
         icon: IconStyles.add,
         onPressed: () => _showCreateCategoryDialog(),
-        semanticLabel: AppLocalizations.of(context)?.newCategoryCreate,
-        tooltip: AppLocalizations.of(context)?.addCategory,
+        semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
+        tooltip: AppLocalizations.of(context)!.addCategory,
         heroTag: 'add_category_fab',
       ),
     );
@@ -198,7 +198,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
-            AppLocalizations.of(context)?.friendsInGroup(category.friendIds.length),
+            AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
             style: TextStyle(
               color: BrandColors.neutral500,
               fontSize: 12,
@@ -228,7 +228,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 children: [
                   Icon(IconStyles.edit, size: 20),
                   const SizedBox(width: 12),
-                  Text(AppLocalizations.of(context)?.editAction ?? ""),
+                  Text(AppLocalizations.of(context)!.editAction ?? ""),
                 ],
               ),
             ),
@@ -238,7 +238,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 children: [
                   Icon(Icons.delete_outline, size: 20, color: BrandColors.error),
                   const SizedBox(width: 12),
-                  Text(AppLocalizations.of(context)?.delete, style: TextStyle(color: BrandColors.error)),
+                  Text(AppLocalizations.of(context)!.delete, style: TextStyle(color: BrandColors.error)),
                 ],
               ),
             ),
@@ -272,7 +272,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text(isEdit ? (AppLocalizations.of(context)?.editCategory ?? "") : AppLocalizations.of(context)?.newCategory),
+          title: Text(isEdit ? (AppLocalizations.of(context)!.editCategory ?? "") : AppLocalizations.of(context)!.newCategory),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -280,8 +280,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 TextField(
                   controller: nameController,
                   decoration: InputDecoration(
-                    labelText: AppLocalizations.of(context)?.categoryName,
-                    hintText: AppLocalizations.of(context)?.categoryNameHint,
+                    labelText: AppLocalizations.of(context)!.categoryName,
+                    hintText: AppLocalizations.of(context)!.categoryNameHint,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -302,7 +302,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+              child: Text(AppLocalizations.of(context)!.cancel ?? ""),
             ),
             ElevatedButton(
               style: ComponentStyles.primaryButton,
@@ -310,7 +310,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 final name = nameController.text.trim();
                 if (name.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.of(context)?.enterCategoryName ?? "")),
+                    SnackBar(content: Text(AppLocalizations.of(context)!.enterCategoryName ?? "")),
                   );
                   return;
                 }
@@ -338,18 +338,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isEdit ? (AppLocalizations.of(context)?.categoryUpdated ?? "") : AppLocalizations.of(context)?.categoryCreated),
+                      content: Text(isEdit ? (AppLocalizations.of(context)!.categoryUpdated ?? "") : AppLocalizations.of(context)!.categoryCreated),
                     ),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(isEdit ? (AppLocalizations.of(context)?.categoryUpdateFailed ?? "") : AppLocalizations.of(context)?.categoryCreateFailed),
+                      content: Text(isEdit ? (AppLocalizations.of(context)!.categoryUpdateFailed ?? "") : AppLocalizations.of(context)!.categoryCreateFailed),
                     ),
                   );
                 }
               },
-              child: Text(isEdit ? (AppLocalizations.of(context)?.editAction ?? "") : AppLocalizations.of(context)?.create),
+              child: Text(isEdit ? (AppLocalizations.of(context)!.editAction ?? "") : AppLocalizations.of(context)!.create),
             ),
           ],
         ),
@@ -366,7 +366,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(AppLocalizations.of(context)?.colorSelection, style: TextStyle(fontWeight: FontWeight.w500)),
+        Text(AppLocalizations.of(context)!.colorSelection, style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -411,7 +411,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(AppLocalizations.of(context)?.iconSelection, style: TextStyle(fontWeight: FontWeight.w500)),
+        Text(AppLocalizations.of(context)!.iconSelection, style: TextStyle(fontWeight: FontWeight.w500)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -453,14 +453,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.deleteCategory ?? ""),
+        title: Text(AppLocalizations.of(context)!.deleteCategory ?? ""),
         content: Text(
-          AppLocalizations.of(context)?.deleteCategoryConfirm(category.name),
+          AppLocalizations.of(context)!.deleteCategoryConfirm(category.name),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
+            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -473,15 +473,15 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               
               if (success) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context)?.categoryDeleted ?? "")),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.categoryDeleted ?? "")),
                 );
               } else {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context)?.categoryDeleteFailed ?? "")),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.categoryDeleteFailed ?? "")),
                 );
               }
             },
-            child: Text(AppLocalizations.of(context)?.delete ?? ""),
+            child: Text(AppLocalizations.of(context)!.delete ?? ""),
           ),
         ],
       ),
@@ -504,7 +504,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.defaultCategoryCreated ?? ""),
+              content: Text(AppLocalizations.of(context)!.defaultCategoryCreated ?? ""),
               duration: Duration(seconds: 2),
             ),
           );
@@ -515,7 +515,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.defaultCategoryFailed ?? ""),
+            content: Text(AppLocalizations.of(context)!.defaultCategoryFailed ?? ""),
             backgroundColor: BrandColors.error,
           ),
         );

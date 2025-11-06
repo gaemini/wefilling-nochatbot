@@ -98,7 +98,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         selectedDate.day == now.day;
 
     // 새로운 시간 옵션 리스트 - '미정' 옵션을 먼저 추가
-    List<String> newOptions = [AppLocalizations.of(context)?.undecided];
+    List<String> newOptions = [AppLocalizations.of(context)!.undecided];
 
     // 오늘이면 현재 시간 이후만, 아니면 하루 전체 시간
     for (int hour = 0; hour < 24; hour++) {
@@ -132,7 +132,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _timeOptions = newOptions;
 
       // 항상 '미정'을 기본 선택으로 설정
-      _selectedTime = AppLocalizations.of(context)?.undecided ?? "";
+      _selectedTime = AppLocalizations.of(context)!.undecided ?? "";
     });
   }
 
@@ -199,7 +199,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
-          AppLocalizations.of(context)?.createNewMeetup,
+          AppLocalizations.of(context)!.createNewMeetup,
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -292,7 +292,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               ],
                             ),
                             Text(
-                              AppLocalizations.of(context)?.host,
+                              AppLocalizations.of(context)!.host,
                               style: TextStyle(
                                 color: Colors.grey[600],
                                 fontSize: 12,
@@ -315,7 +315,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          AppLocalizations.of(context)?.dateSelection,
+                          AppLocalizations.of(context)!.dateSelection,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -438,7 +438,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.meetupInfo,
+                      AppLocalizations.of(context)!.meetupInfo,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -452,7 +452,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          AppLocalizations.of(context)?.title,
+                          AppLocalizations.of(context)!.title,
                           style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w500,
@@ -463,7 +463,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         TextFormField(
                           controller: _titleController,
                           decoration: InputDecoration(
-                            hintText: AppLocalizations.of(context)?.enterMeetupTitle,
+                            hintText: AppLocalizations.of(context)!.enterMeetupTitle,
                             filled: true,
                             fillColor: Colors.white,
                             border: OutlineInputBorder(
@@ -483,7 +483,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           style: const TextStyle(fontSize: 14),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return AppLocalizations.of(context)?.pleaseEnterMeetupTitle ?? "";
+                              return AppLocalizations.of(context)!.pleaseEnterMeetupTitle ?? "";
                             }
                             return null;
                           },
@@ -499,7 +499,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.description,
+                      AppLocalizations.of(context)!.description,
                       style: const TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -510,7 +510,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     TextFormField(
                       controller: _descriptionController,
                       decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)?.enterMeetupDescription,
+                        hintText: AppLocalizations.of(context)!.enterMeetupDescription,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -532,7 +532,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       maxLines: 6,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)?.pleaseEnterMeetupDescription ?? "";
+                          return AppLocalizations.of(context)!.pleaseEnterMeetupDescription ?? "";
                         }
                         return null;
                       },
@@ -546,7 +546,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.category,
+                      AppLocalizations.of(context)!.category,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -560,11 +560,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: Row(
                         children: [
-                          _buildCategoryChip('study', AppLocalizations.of(context)?.study),
-                          _buildCategoryChip('meal', AppLocalizations.of(context)?.meal),
-                          _buildCategoryChip('hobby', AppLocalizations.of(context)?.hobby),
-                          _buildCategoryChip('culture', AppLocalizations.of(context)?.culture),
-                          _buildCategoryChip('other', AppLocalizations.of(context)?.other),
+                          _buildCategoryChip('study', AppLocalizations.of(context)!.study),
+                          _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
+                          _buildCategoryChip('hobby', AppLocalizations.of(context)!.hobby),
+                          _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
+                          _buildCategoryChip('other', AppLocalizations.of(context)!.other),
                         ],
                       ),
                     ),
@@ -577,7 +577,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.location,
+                      AppLocalizations.of(context)!.location,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -588,7 +588,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     TextFormField(
                       controller: _locationController,
                       decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)?.enterMeetupLocation,
+                        hintText: AppLocalizations.of(context)!.enterMeetupLocation,
                         filled: true,
                         fillColor: Colors.white,
                         border: OutlineInputBorder(
@@ -608,7 +608,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       style: const TextStyle(fontSize: 14),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)?.pleaseEnterLocation ?? "";
+                          return AppLocalizations.of(context)!.pleaseEnterLocation ?? "";
                         }
                         return null;
                       },
@@ -623,7 +623,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   children: [
                     const SizedBox(height: 16),
                     Text(
-                      AppLocalizations.of(context)?.timeSelection,
+                      AppLocalizations.of(context)!.timeSelection,
                       style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
@@ -633,7 +633,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 8.0),
                         child: Text(
-                          AppLocalizations.of(context)?.todayTimePassed,
+                          AppLocalizations.of(context)!.todayTimePassed,
                           style: TextStyle(
                             color: Colors.orange[700],
                             fontSize: 14,
@@ -685,7 +685,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.maxParticipants,
+                      AppLocalizations.of(context)!.maxParticipants,
                       style: TextStyle(fontSize: 12, color: Colors.grey[700]),
                     ),
                     const SizedBox(height: 8),
@@ -705,7 +705,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           _participantOptions.map((int value) {
                             return DropdownMenuItem<int>(
                               value: value,
-                              child: Text('$value${AppLocalizations.of(context)?.people}'),
+                              child: Text('$value${AppLocalizations.of(context)!.people}'),
                             );
                           }).toList(),
                       onChanged: (value) {
@@ -725,7 +725,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.visibilityScope,
+                      AppLocalizations.of(context)!.visibilityScope,
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
@@ -739,8 +739,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       children: [
                         // 전체 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.publicPost ?? ""),
-                          subtitle: Text(AppLocalizations.of(context)?.everyoneCanSee ?? ""),
+                          title: Text(AppLocalizations.of(context)!.publicPost ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)!.everyoneCanSee ?? ""),
                           value: 'public',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -754,8 +754,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 친구만 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.myFriendsOnly ?? ""),
-                          subtitle: Text(AppLocalizations.of(context)?.myFriendsOnly ?? ""),
+                          title: Text(AppLocalizations.of(context)!.myFriendsOnly ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)!.myFriendsOnly ?? ""),
                           value: 'friends',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -769,8 +769,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 특정 그룹만 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.selectedFriendGroupOnly ?? ""),
-                          subtitle: Text(AppLocalizations.of(context)?.selectedGroupOnly ?? ""),
+                          title: Text(AppLocalizations.of(context)!.selectedFriendGroupOnly ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)!.selectedGroupOnly ?? ""),
                           value: 'category',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -805,7 +805,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  AppLocalizations.of(context)?.selectFriendGroupsForMeetup,
+                                  AppLocalizations.of(context)!.selectFriendGroupsForMeetup,
                                   style: TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w600,
@@ -874,7 +874,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                     const SizedBox(width: 6),
                                     Expanded(
                                       child: Text(
-                                        AppLocalizations.of(context)?.noGroupSelectedWarning,
+                                        AppLocalizations.of(context)!.noGroupSelectedWarning,
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.orange[700],
@@ -899,7 +899,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)?.thumbnailSettingsOptional,
+                      AppLocalizations.of(context)!.thumbnailSettingsOptional,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
@@ -968,7 +968,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  AppLocalizations.of(context)?.thumbnailImage,
+                                  AppLocalizations.of(context)!.thumbnailImage,
                                   style: TextStyle(
                                     color: Color(0xFF666666),
                                     fontSize: 14,
@@ -1009,7 +1009,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         ),
                         label: Text(
                           _thumbnailImage != null 
-                              ? (AppLocalizations.of(context)?.changeImage ?? "") : AppLocalizations.of(context)?.attachImage,
+                              ? (AppLocalizations.of(context)!.changeImage ?? "") : AppLocalizations.of(context)!.attachImage,
                           style: const TextStyle(
                             color: Color(0xFF4A90E2),
                             fontSize: 14,
@@ -1065,7 +1065,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             ),
                           ),
                           child: Text(
-                            AppLocalizations.of(context)?.cancel,
+                            AppLocalizations.of(context)!.cancel,
                             style: const TextStyle(
                               color: Color(0xFF666666),
                               fontSize: 15,
@@ -1154,7 +1154,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           context,
                                         ).showSnackBar(
                                           SnackBar(
-                                            content: Text(AppLocalizations.of(context)?.meetupCreated ?? ""),
+                                            content: Text(AppLocalizations.of(context)!.meetupCreated ?? ""),
                                             backgroundColor: Colors.green,
                                           ),
                                         );
@@ -1207,7 +1207,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   ),
                                 )
                               : Text(
-                                  AppLocalizations.of(context)?.createAction,
+                                  AppLocalizations.of(context)!.createAction,
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,

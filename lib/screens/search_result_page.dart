@@ -104,11 +104,11 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   String _pageTitle(BuildContext context) {
     return widget.boardType == 'meeting' 
-        ? (AppLocalizations.of(context)?.activityBoard ?? "") : AppLocalizations.of(context)?.infoBoard;
+        ? (AppLocalizations.of(context)!.activityBoard ?? "") : AppLocalizations.of(context)!.infoBoard;
   }
 
   String _searchHint(BuildContext context) {
-    return AppLocalizations.of(context)?.enterSearchQuery ?? "";
+    return AppLocalizations.of(context)!.enterSearchQuery ?? "";
   }
 
   @override
@@ -215,7 +215,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
             ),
             const SizedBox(height: 16),
             Text(
-              AppLocalizations.of(context)?.pleaseEnterSearchQuery,
+              AppLocalizations.of(context)!.pleaseEnterSearchQuery,
               style: TextStyle(
                 fontSize: 16,
                 color: Colors.grey.shade600,

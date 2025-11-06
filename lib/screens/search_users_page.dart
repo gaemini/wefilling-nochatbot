@@ -312,7 +312,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: AppLocalizations.of(context)?.enterSearchQuery,
+          hintText: AppLocalizations.of(context)!.enterSearchQuery,
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
@@ -322,8 +322,8 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
                       _searchController.clear();
                       context.read<RelationshipProvider>().clearSearchResults();
                     },
-                    semanticLabel: AppLocalizations.of(context)?.clearSearchQuery,
-                    tooltip: AppLocalizations.of(context)?.close,
+                    semanticLabel: AppLocalizations.of(context)!.clearSearchQuery,
+                    tooltip: AppLocalizations.of(context)!.close,
                   )
                   : null,
           border: OutlineInputBorder(
@@ -375,7 +375,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         Icon(Icons.search, size: 64, color: Colors.grey[400]),
         const SizedBox(height: 16),
         Text(
-          AppLocalizations.of(context)?.searchUsers,
+          AppLocalizations.of(context)!.searchUsers,
           style: TextStyle(
             fontSize: 18,
             color: Colors.grey[600],
@@ -384,7 +384,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          AppLocalizations.of(context)?.searchByNicknameOrName,
+          AppLocalizations.of(context)!.searchByNicknameOrName,
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 14, color: Colors.grey[500]),
         ),

@@ -52,6 +52,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   List<Meetup> _filteredMeetups = [];
   bool _isLoading = false;
   bool _isTabChanging = false;
+  bool _isRefreshing = false; // 수동 새로고침 상태
+  int _refreshKey = 0; // Stream 재구독을 위한 키
 
   // 캐시 관련 변수
   final Map<int, List<Meetup>> _meetupCache = {};
@@ -582,23 +584,56 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 모임 목록
   Widget _buildMeetupList(DateTime selectedDate) {
-    return Container(
-      padding: const EdgeInsets.only(top: 16),
+    return Column(
+      children: [
+        // 상단 로딩 인디케이터
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          height: _isRefreshing ? 3 : 0,
+          child: _isRefreshing
+              ? const LinearProgressIndicator(
+                  backgroundColor: Color(0xFFE5E7EB),
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                )
+              : null,
+        ),
+        
+        // 모임 목록
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.only(top: 16),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, animation) {
                 return FadeTransition(opacity: animation, child: child);
               },
-        child: _isSearching
-            ? _buildSearchResults()
-                      : RefreshIndicator(
+              child: _isSearching
+                  ? _buildSearchResults()
+                  : RefreshIndicator(
                 color: const Color(0xFF5865F2),
                 backgroundColor: Colors.white,
-                        onRefresh: () async {
-                  // 새로고침 시 잠시 대기
-                  await Future.delayed(const Duration(milliseconds: 500));
+                onRefresh: () async {
+                  // Stream 재구독을 통한 최신 데이터 로드
+                  if (mounted) {
+                    setState(() {
+                      _isRefreshing = true;
+                      _refreshKey++; // 키 변경으로 StreamBuilder 재생성
+                      _participationStatusCache.clear(); // 참여 상태 캐시 클리어
+                      _participationCacheTime.clear();
+                    });
+                  }
+                  
+                  // 최소 시각적 피드백 시간
+                  await Future.delayed(const Duration(milliseconds: 800));
+                  
+                  if (mounted) {
+                    setState(() {
+                      _isRefreshing = false;
+                    });
+                  }
                 },
                 child: StreamBuilder<List<Meetup>>(
+                  key: ValueKey('meetup_stream_$_refreshKey'), // 키로 재생성
                   stream: _meetupService.getMeetupsByDay(_tabController.index),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
@@ -684,7 +719,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     );
                   },
                 ),
-        ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -933,7 +971,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         final isParticipating = participant?.status == ParticipantStatus.approved;
         _updateParticipationCache(meetupId, isParticipating);
         // 상태가 변경되었으면 UI 업데이트
-        setState(() {});
+                  setState(() {});
       }
     }).catchError((e) {
       print('참여 상태 로드 오류: $e');
@@ -961,7 +999,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   Future<void> _joinMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
     if (mounted) {
-      setState(() {
+                  setState(() {
         _updateParticipationCache(meetup.id, true);
       });
     }
@@ -1181,8 +1219,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           // 장소와 참여자 정보
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
+              child: Column(
+                children: [
                 Row(
                   children: [
                     AppSkeleton(
@@ -1212,9 +1250,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       width: 60,
                       height: 14,
                       borderRadius: BorderRadius.circular(4),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
               ],
             ),
           ),

@@ -961,13 +961,20 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 모임 참여하기
   Future<void> _joinMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
-    _updateParticipationCache(meetup.id, true);
+    if (mounted) {
+      setState(() {
+        _updateParticipationCache(meetup.id, true);
+      });
+    }
     
     try {
       final success = await _meetupService.joinMeetup(meetup.id);
       
       if (success) {
         if (mounted) {
+          setState(() {
+            _updateParticipationCache(meetup.id, true);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.meetupJoined ?? '모임에 참여했습니다'),
@@ -978,8 +985,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         }
       } else {
         // 실패 시 캐시 롤백
-        _updateParticipationCache(meetup.id, false);
         if (mounted) {
+          setState(() {
+            _updateParticipationCache(meetup.id, false);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.meetupJoinFailed ?? '모임 참여에 실패했습니다'),
@@ -991,7 +1000,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       }
     } catch (e) {
       // 오류 시 캐시 롤백
-      _updateParticipationCache(meetup.id, false);
+      if (mounted) {
+        setState(() {
+          _updateParticipationCache(meetup.id, false);
+        });
+      }
       print('모임 참여 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1008,13 +1021,20 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 모임 나가기
   Future<void> _leaveMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
-    _updateParticipationCache(meetup.id, false);
+    if (mounted) {
+      setState(() {
+        _updateParticipationCache(meetup.id, false);
+      });
+    }
     
     try {
       final success = await _meetupService.cancelMeetupParticipation(meetup.id);
       
       if (success) {
         if (mounted) {
+          setState(() {
+            _updateParticipationCache(meetup.id, false);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.leaveMeetup ?? '모임에서 나갔습니다'),
@@ -1025,8 +1045,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         }
       } else {
         // 실패 시 캐시 롤백
-        _updateParticipationCache(meetup.id, true);
         if (mounted) {
+          setState(() {
+            _updateParticipationCache(meetup.id, true);
+          });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? '모임 나가기에 실패했습니다'),
@@ -1038,7 +1060,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       }
     } catch (e) {
       // 오류 시 캐시 롤백
-      _updateParticipationCache(meetup.id, true);
+      if (mounted) {
+        setState(() {
+          _updateParticipationCache(meetup.id, true);
+        });
+      }
       print('모임 나가기 오류: $e');
       
       String errorMessage = '모임 나가기에 실패했습니다';

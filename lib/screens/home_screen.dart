@@ -604,21 +604,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return ListView(
                         physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                         children: List.generate(3, (index) => Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          child: Container(
-                            height: 180,
-                            decoration: BoxDecoration(
-                              color: Colors.grey[200],
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
-                              ),
-                            ),
-                          ),
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildMeetupSkeleton(),
                         )),
                       );
                     }
@@ -1151,5 +1140,116 @@ class _MeetupHomePageState extends State<MeetupHomePage>
            date.day == now.day;
   }
 
+  /// 모임 카드 스켈레톤 (로딩 시 표시)
+  Widget _buildMeetupSkeleton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 제목 영역
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: AppSkeleton(
+                    height: 20,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AppSkeleton(
+                  width: 60,
+                  height: 24,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ],
+            ),
+          ),
+          
+          // 장소와 참여자 정보
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    AppSkeleton(
+                      width: 16,
+                      height: 16,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: AppSkeleton(
+                        height: 14,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    AppSkeleton(
+                      width: 16,
+                      height: 16,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    const SizedBox(width: 4),
+                    AppSkeleton(
+                      width: 60,
+                      height: 14,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // 하단: 호스트 정보와 버튼
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                AppSkeleton(
+                  width: 32,
+                  height: 32,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: AppSkeleton(
+                    height: 14,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                AppSkeleton(
+                  width: 70,
+                  height: 32,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
 }

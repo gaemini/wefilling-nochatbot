@@ -216,18 +216,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           ...List.generate(5, (index) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
-                ),
-              ),
-            ),
+            child: _buildPostSkeleton(),
           )),
         ],
       ),
@@ -386,18 +375,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           ...List.generate(5, (index) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Container(
-              height: 120,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
-                ),
-              ),
-            ),
+            child: _buildPostSkeleton(),
           )),
         ],
       ),
@@ -676,6 +654,101 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   /// 전체 목록에서의 인덱스 찾기
   int _getGlobalIndex(List<Post> allPosts, Post targetPost) {
     return allPosts.indexWhere((post) => post.id == targetPost.id);
+  }
+
+  /// 게시글 카드 스켈레톤 (로딩 시 표시)
+  Widget _buildPostSkeleton() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 헤더: 작성자 정보
+          Row(
+            children: [
+              AppSkeleton(
+                width: 32,
+                height: 32,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AppSkeleton(
+                      width: 100,
+                      height: 14,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    const SizedBox(height: 4),
+                    AppSkeleton(
+                      width: 60,
+                      height: 12,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // 제목
+          AppSkeleton(
+            width: double.infinity,
+            height: 18,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          
+          const SizedBox(height: 8),
+          
+          // 내용 (2줄)
+          AppSkeleton(
+            width: double.infinity,
+            height: 14,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          const SizedBox(height: 6),
+          AppSkeleton(
+            width: 200,
+            height: 14,
+            borderRadius: BorderRadius.circular(4),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // 하단: 좋아요, 댓글 수
+          Row(
+            children: [
+              AppSkeleton(
+                width: 50,
+                height: 12,
+                borderRadius: BorderRadius.circular(4),
+              ),
+              const SizedBox(width: 12),
+              AppSkeleton(
+                width: 50,
+                height: 12,
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
 }

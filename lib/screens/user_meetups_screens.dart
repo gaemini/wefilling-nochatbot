@@ -37,7 +37,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.myMeetups),
+        title: Text(AppLocalizations.of(context)?.myMeetups ?? ""),
         bottom: TabBar(
           controller: _tabController,
           tabs: [

@@ -47,7 +47,7 @@ class _NotificationSettingsScreenState
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.loadSettingsError(e.toString()))));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.loadSettingsError(e.toString() ?? ""))));
       }
     }
   }
@@ -69,7 +69,7 @@ class _NotificationSettingsScreenState
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.saveSettingsError(e.toString()))));
+        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)?.saveSettingsError(e.toString() ?? ""))));
       }
     }
   }
@@ -77,7 +77,7 @@ class _NotificationSettingsScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(AppLocalizations.of(context)?.notificationSettings)),
+      appBar: AppBar(title: Text(AppLocalizations.of(context)?.notificationSettings ?? "")),
       body:
           _isLoading
               ? const Center(child: CircularProgressIndicator())

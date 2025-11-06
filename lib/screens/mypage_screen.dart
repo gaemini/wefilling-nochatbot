@@ -830,22 +830,22 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     if (difference.inDays > 0) {
       return difference.inDays == 1 
-        ? '1${l10n.dayAgo}'
-        : l10n.daysAgoCount(difference.inDays);
+        ? '1${l10n?.dayAgo ?? ""}'
+        : l10n?.daysAgoCount ?? ""(difference.inDays);
     } else if (difference.inHours > 0) {
       return difference.inHours == 1
-        ? '1${l10n.hourAgo}'
-        : l10n.hoursAgoCount(difference.inHours);
+        ? '1${l10n?.hourAgo ?? ""}'
+        : l10n?.hoursAgoCount ?? ""(difference.inHours);
     } else if (difference.inMinutes > 0) {
       return difference.inMinutes == 1
-        ? '1${l10n.minuteAgo}'
-        : l10n.minutesAgoCount(difference.inMinutes);
+        ? '1${l10n?.minuteAgo ?? ""}'
+        : l10n?.minutesAgoCount ?? ""(difference.inMinutes);
     } else {
-      return l10n.justNowTime;
+      return l10n?.justNowTime ?? "";
     }
   }
 
@@ -930,8 +930,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 _buildMenuItem(
                   context,
                   review.hidden 
-                    ? AppLocalizations.of(context)?.unhideReview
-                    : AppLocalizations.of(context)?.hideReview,
+                    ? (AppLocalizations.of(context)?.unhideReview ?? "") : AppLocalizations.of(context)?.hideReview,
                   review.hidden 
                     ? Icons.visibility_rounded
                     : Icons.visibility_off_rounded,
@@ -951,28 +950,28 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   }
 
   Future<void> _toggleReviewHidden(ReviewPost review) async {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     // 확인 다이얼로그
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
-          review.hidden ? l10n.unhideReview : l10n.hideReview,
+          review.hidden ? l10n?.unhideReview ?? "" : l10n?.hideReview ?? "",
         ),
         content: Text(
           review.hidden 
-            ? l10n.unhideReviewConfirm
-            : l10n.hideReviewConfirm,
+            ? l10n?.unhideReviewConfirm ?? ""
+            : l10n?.hideReviewConfirm ?? "",
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
+            child: Text(l10n?.cancel ?? ""),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(l10n.confirm),
+            child: Text(l10n?.confirm ?? ""),
           ),
         ],
       ),
@@ -991,7 +990,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            review.hidden ? l10n.reviewUnhidden : l10n.reviewHidden,
+            review.hidden ? l10n?.reviewUnhidden ?? "" : l10n?.reviewHidden ?? "",
           ),
           backgroundColor: Colors.green,
         ),
@@ -1000,7 +999,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            review.hidden ? l10n.reviewUnhideFailed : l10n.reviewHideFailed,
+            review.hidden ? l10n?.reviewUnhideFailed ?? "" : l10n?.reviewHideFailed ?? "",
           ),
           backgroundColor: Colors.red,
         ),
@@ -1012,25 +1011,25 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   // 후기는 수정만 가능하며, 숨김 처리로 프로필에서 제외 가능
   /*
   Future<void> _deleteReview(ReviewPost review) async {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     // 확인 다이얼로그
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(l10n.delete),
-        content: Text(l10n.deleteReviewConfirmMessage),
+        title: Text(l10n?.delete ?? ""),
+        content: Text(l10n?.deleteReviewConfirmMessage ?? ""),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(l10n.cancel),
+            child: Text(l10n?.cancel ?? ""),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             style: TextButton.styleFrom(
               foregroundColor: BrandColors.error,
             ),
-            child: Text(l10n.delete),
+            child: Text(l10n?.delete ?? ""),
           ),
         ],
       ),
@@ -1046,14 +1045,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.deleteReviewSuccess),
+          content: Text(l10n?.deleteReviewSuccess ?? ""),
           backgroundColor: Colors.green,
         ),
       );
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.deleteReviewFailed),
+          content: Text(l10n?.deleteReviewFailed ?? ""),
           backgroundColor: Colors.red,
         ),
       );
@@ -1182,12 +1181,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: Text(AppLocalizations.of(context)?.logout),
-          content: Text(AppLocalizations.of(context)?.logoutConfirm),
+          title: Text(AppLocalizations.of(context)?.logout ?? ""),
+          content: Text(AppLocalizations.of(context)?.logoutConfirm ?? ""),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(AppLocalizations.of(context)?.cancel),
+              child: Text(AppLocalizations.of(context)?.cancel ?? ""),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1225,7 +1224,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(AppLocalizations.of(context)?.logoutError),
+                        content: Text(AppLocalizations.of(context)?.logoutError ?? ""),
                         backgroundColor: BrandColors.error,
                         duration: const Duration(seconds: 3),
                         action: SnackBarAction(
@@ -1242,7 +1241,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   print('로그아웃 UI 오류: $e');
                 }
               },
-              child: Text(AppLocalizations.of(context)?.logout),
+              child: Text(AppLocalizations.of(context)?.logout ?? ""),
             ),
           ],
         );

@@ -379,7 +379,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.profileEdit),
+        title: Text(AppLocalizations.of(context)?.profileEdit ?? ""),
         actions: [
           // 저장 버튼
           _isSubmitting

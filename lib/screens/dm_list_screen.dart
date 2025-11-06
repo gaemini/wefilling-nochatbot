@@ -129,8 +129,7 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
-                ? AppLocalizations.of(context)?.friends
-                : AppLocalizations.of(context)?.anonymousUser,
+                ? (AppLocalizations.of(context)?.friends ?? "") : AppLocalizations.of(context)?.anonymousUser,
             subtitle: AppLocalizations.of(context)?.noConversations,
           );
         }
@@ -255,8 +254,7 @@ class _DMListScreenState extends State<DMListScreen> {
     final displayName = (dmTitle != null && dmTitle.isNotEmpty)
         ? dmTitle
         : (isAnonymous 
-            ? AppLocalizations.of(context)?.anonymousUser 
-            : otherUserName);
+            ? (AppLocalizations.of(context)?.anonymousUser ?? "") : otherUserName);
 
     return Material(
       color: Colors.white,
@@ -316,8 +314,7 @@ class _DMListScreenState extends State<DMListScreen> {
                     // 마지막 메시지
                     Text(
                       conversation.lastMessage.isEmpty 
-                          ? AppLocalizations.of(context)?.noMessages 
-                          : conversation.lastMessage,
+                          ? (AppLocalizations.of(context)?.noMessages ?? "") : conversation.lastMessage,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[700],

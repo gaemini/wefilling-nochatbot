@@ -77,13 +77,13 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
 
     if (success) {
-      _showSnackBar(l10n.friendRequestSent, Colors.green);
+      _showSnackBar(l10n?.friendRequestSent ?? "", Colors.green);
     } else {
       // Provider의 구체적인 오류 메시지 표시
-      final errorMessage = provider.errorMessage ?? l10n.friendRequestFailed;
+      final errorMessage = provider.errorMessage ?? l10n?.friendRequestFailed ?? "";
       _showSnackBar(errorMessage, Colors.red);
     }
   }
@@ -97,12 +97,12 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
 
     if (success) {
-      _showSnackBar(l10n.friendRequestCancelled, Colors.orange);
+      _showSnackBar(l10n?.friendRequestCancelled ?? "", Colors.orange);
     } else {
-      _showSnackBar(l10n.friendRequestCancelFailed, Colors.red);
+      _showSnackBar(l10n?.friendRequestCancelFailed ?? "", Colors.red);
     }
   }
 
@@ -110,10 +110,10 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _unfriend(String otherUid) async {
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmDialog(
-      l10n.removeFriend,
-      l10n.confirmUnfriend,
+      l10n?.removeFriend ?? "",
+      l10n?.confirmUnfriend ?? "",
     );
 
     if (confirmed && mounted) {
@@ -122,9 +122,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
       if (mounted) {
         if (success) {
-          _showSnackBar(l10n.unfriendedUser, Colors.orange);
+          _showSnackBar(l10n?.unfriendedUser ?? "", Colors.orange);
         } else {
-          _showSnackBar(l10n.unfriendFailed, Colors.red);
+          _showSnackBar(l10n?.unfriendFailed ?? "", Colors.red);
         }
       }
     }
@@ -134,10 +134,10 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   // Future<void> _blockUser(String targetUid) async {
   //   if (!mounted) return;
   //   
-  //   final l10n = AppLocalizations.of(context)?;
+  //   final l10n = AppLocalizations.of(context);
   //   final confirmed = await _showConfirmDialog(
-  //     l10n.blockUser,
-  //     l10n.blockUserDescription,
+  //     l10n?.blockUser ?? "",
+  //     l10n?.blockUserDescription ?? "",
   //   );
 
   //   if (confirmed && mounted) {
@@ -146,9 +146,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   //     if (mounted) {
   //       if (success) {
-  //         _showSnackBar(l10n.userBlocked, Colors.red);
+  //         _showSnackBar(l10n?.userBlocked ?? "", Colors.red);
   //       } else {
-  //         _showSnackBar(l10n.userBlockFailed, Colors.red);
+  //         _showSnackBar(l10n?.userBlockFailed ?? "", Colors.red);
   //       }
   //     }
   //   }
@@ -158,10 +158,10 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _unblockUser(String targetUid) async {
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showConfirmDialog(
-      l10n.unblockUser,
-      l10n.confirmUnblock,
+      l10n?.unblockUser ?? "",
+      l10n?.confirmUnblock ?? "",
     );
 
     if (confirmed && mounted) {
@@ -170,9 +170,9 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
       if (mounted) {
         if (success) {
-          _showSnackBar(l10n.userUnblocked, Colors.green);
+          _showSnackBar(l10n?.userUnblocked ?? "", Colors.green);
         } else {
-          _showSnackBar(l10n.unblockFailed, Colors.red);
+          _showSnackBar(l10n?.unblockFailed ?? "", Colors.red);
         }
       }
     }
@@ -213,7 +213,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 확인 다이얼로그 표시
   Future<bool> _showConfirmDialog(String title, String message) async {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final result = await showDialog<bool>(
       context: context,
       builder:
@@ -223,7 +223,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(l10n.cancel),
+                child: Text(l10n?.cancel ?? ""),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -231,7 +231,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(l10n.confirm),
+                child: Text(l10n?.confirm ?? ""),
               ),
             ],
           ),
@@ -394,7 +394,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 검색 결과 없음 상태 위젯
   Widget _buildNoResultsState() {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -402,7 +402,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           Icon(Icons.person_off, size: 64, color: Colors.grey[400]),
           const SizedBox(height: 16),
           Text(
-            l10n.noResultsFound,
+            l10n?.noResultsFound ?? "",
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey[600],
@@ -411,7 +411,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            l10n.tryDifferentSearch,
+            l10n?.tryDifferentSearch ?? "",
             style: TextStyle(fontSize: 14, color: Colors.grey[500]),
           ),
         ],
@@ -421,7 +421,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 에러 상태 위젯
   Widget _buildErrorState(String errorMessage) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -429,7 +429,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
           Icon(Icons.error_outline, size: 64, color: Colors.red[400]),
           const SizedBox(height: 16),
           Text(
-            l10n.error,
+            l10n?.error ?? "",
             style: TextStyle(
               fontSize: 18,
               color: Colors.red[600],
@@ -447,7 +447,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
             onPressed: () {
               context.read<RelationshipProvider>().clearError();
             },
-            child: Text(l10n.retryAction),
+            child: Text(l10n?.retryAction ?? ""),
           ),
         ],
       ),

@@ -1186,8 +1186,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     const SizedBox(width: 8),
                     Text(
                       isFull
-                          ? AppLocalizations.of(context)?.completeOrCancelMeetup
-                          : AppLocalizations.of(context)?.cancelMeetup,
+                          ? (AppLocalizations.of(context)?.completeOrCancelMeetup ?? "") : AppLocalizations.of(context)?.cancelMeetup,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
@@ -1600,8 +1599,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 ),
               )
             : Text(isFull
-                ? AppLocalizations.of(context)?.completeOrCancelMeetup
-                : AppLocalizations.of(context)?.cancelMeetup),
+                ? (AppLocalizations.of(context)?.completeOrCancelMeetup ?? "") : AppLocalizations.of(context)?.cancelMeetup),
       );
     }
 
@@ -1624,7 +1622,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   color: Colors.white,
                 ),
               )
-            : Text(AppLocalizations.of(context)?.writeMeetupReview),
+            : Text(AppLocalizations.of(context)?.writeMeetupReview ?? ""),
       );
     }
 
@@ -1639,7 +1637,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        child: Text(AppLocalizations.of(context)?.editReview),
+        child: Text(AppLocalizations.of(context)?.editReview ?? ""),
       ),
     );
   }
@@ -1663,7 +1661,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 color: Colors.white,
               ),
             )
-          : Text(AppLocalizations.of(context)?.viewAndRespondToReview),
+          : Text(AppLocalizations.of(context)?.viewAndRespondToReview ?? ""),
     );
   }
 
@@ -1671,7 +1669,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   Future<void> _navigateToReviewApproval() async {
     if (_currentMeetup.reviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound ?? "")),
       );
       return;
     }
@@ -1748,7 +1746,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             print('❌ 후기 요청 재전송 실패');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed)),
+                SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed ?? "")),
               );
             }
             return;
@@ -1757,7 +1755,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           print('❌ reviewId가 없음');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
+              SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound ?? "")),
             );
           }
           return;
@@ -1801,10 +1799,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     // 이미 응답한 경우 상태 표시 다이얼로그
     final bool alreadyResponded = currentStatus != 'pending';
     final String statusText = currentStatus == 'accepted' 
-        ? AppLocalizations.of(context)?.reviewAccepted
-        : currentStatus == 'rejected'
-            ? AppLocalizations.of(context)?.reviewRejected
-            : '';
+        ? (AppLocalizations.of(context)?.reviewAccepted ?? "") : currentStatus == 'rejected'
+            ? (AppLocalizations.of(context)?.reviewRejected ?? "") : '';
     final MaterialColor statusColor = currentStatus == 'accepted' 
         ? Colors.green 
         : Colors.red;
@@ -1939,7 +1935,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           border: Border.all(color: Colors.grey[200]!),
                         ),
                         child: Text(
-                          content.isEmpty ? AppLocalizations.of(context)?.noContent : content,
+                          content.isEmpty ? (AppLocalizations.of(context)?.noContent ?? "") : content,
                           style: const TextStyle(
                             fontSize: 15,
                             height: 1.6,
@@ -1996,7 +1992,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                                 await _handleReviewResponse(requestId, false);
                               },
                               icon: const Icon(Icons.close),
-                              label: Text(AppLocalizations.of(context)?.reviewReject),
+                              label: Text(AppLocalizations.of(context)?.reviewReject ?? ""),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.red[600],
                                 side: BorderSide(color: Colors.red[400]!, width: 1.5),
@@ -2015,7 +2011,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                                 await _handleReviewResponse(requestId, true);
                               },
                               icon: const Icon(Icons.check),
-                              label: Text(AppLocalizations.of(context)?.reviewAccept),
+                              label: Text(AppLocalizations.of(context)?.reviewAccept ?? ""),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green[600],
                                 foregroundColor: Colors.white,
@@ -2033,7 +2029,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text(AppLocalizations.of(context)?.close),
+                          child: Text(AppLocalizations.of(context)?.close ?? ""),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: statusColor,
                             foregroundColor: Colors.white,
@@ -2065,8 +2061,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           SnackBar(
             content: Text(
               accept
-                  ? AppLocalizations.of(context)?.reviewAccepted
-                  : AppLocalizations.of(context)?.reviewRejected,
+                  ? (AppLocalizations.of(context)?.reviewAccepted ?? "") : AppLocalizations.of(context)?.reviewRejected,
             ),
             backgroundColor: accept ? Colors.green : Colors.orange,
           ),
@@ -2077,7 +2072,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         print('⚠️ 후기 응답 실패 - 이미 응답했거나 권한 없음');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.reviewAlreadyResponded),
+            content: Text(AppLocalizations.of(context)?.reviewAlreadyResponded ?? ""),
             backgroundColor: Colors.orange,
           ),
         );
@@ -2278,14 +2273,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkedCompleted)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkedCompleted ?? "")),
         );
       } else if (mounted) {
         setState(() {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkCompleteFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkCompleteFailed ?? "")),
         );
       }
     } catch (e) {
@@ -2320,7 +2315,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   Future<void> _navigateToEditReview() async {
     if (_currentMeetup.reviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound ?? "")),
       );
       return;
     }
@@ -2330,7 +2325,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (reviewData == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed ?? "")),
         );
       }
       return;
@@ -2359,12 +2354,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.deleteReviewTitle),
-        content: Text(AppLocalizations.of(context)?.deleteReviewConfirmMessage),
+        title: Text(AppLocalizations.of(context)?.deleteReviewTitle ?? ""),
+        content: Text(AppLocalizations.of(context)?.deleteReviewConfirmMessage ?? ""),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)?.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -2374,7 +2369,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: Text(AppLocalizations.of(context)?.delete),
+            child: Text(AppLocalizations.of(context)?.delete ?? ""),
           ),
         ],
       ),
@@ -2388,7 +2383,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed),
+            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed ?? ""),
             backgroundColor: Colors.red,
           ),
         );
@@ -2418,7 +2413,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.reviewDeleted),
+            content: Text(AppLocalizations.of(context)?.reviewDeleted ?? ""),
             backgroundColor: Colors.green,
           ),
         );
@@ -2431,7 +2426,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed),
+            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed ?? ""),
             backgroundColor: Colors.red,
           ),
         );
@@ -2446,11 +2441,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         // 에러 메시지를 더 명확하게 표시
         String errorMessage = AppLocalizations.of(context)?.error ?? "오류";
         if (e.toString().contains('로그인이 필요합니다')) {
-          errorMessage = AppLocalizations.of(context)?.loginRequired;
+          errorMessage = AppLocalizations.of(context)?.loginRequired ?? "";
         } else if (e.toString().contains('후기를 찾을 수 없습니다')) {
-          errorMessage = AppLocalizations.of(context)?.reviewNotFound;
+          errorMessage = AppLocalizations.of(context)?.reviewNotFound ?? "";
         } else if (e.toString().contains('작성자만')) {
-          errorMessage = AppLocalizations.of(context)?.noPermission;
+          errorMessage = AppLocalizations.of(context)?.noPermission ?? "";
         } else {
           errorMessage = '${AppLocalizations.of(context)?.reviewDeleteFailed}: ${e.toString()}';
         }
@@ -2476,7 +2471,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           children: [
             Icon(Icons.help_outline, color: Colors.orange[600]),
             const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)?.cancelMeetupConfirm),
+            Text(AppLocalizations.of(context)?.cancelMeetupConfirm ?? ""),
           ],
         ),
         content: Column(
@@ -2638,8 +2633,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             children: [
                         Text(
                           Localizations.localeOf(context).languageCode == 'ko'
-                              ? AppLocalizations.of(context)?.participantsCountLabel(displayCount)
-                              : 'Participants ($displayCount)',
+                              ? (AppLocalizations.of(context)?.participantsCountLabel(displayCount) ?? "") : 'Participants ($displayCount)',
                     style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 18,

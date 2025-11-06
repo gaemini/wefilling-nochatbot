@@ -132,7 +132,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _timeOptions = newOptions;
 
       // 항상 '미정'을 기본 선택으로 설정
-      _selectedTime = AppLocalizations.of(context)?.undecided;
+      _selectedTime = AppLocalizations.of(context)?.undecided ?? "";
     });
   }
 
@@ -483,7 +483,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           style: const TextStyle(fontSize: 14),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
-                              return AppLocalizations.of(context)?.pleaseEnterMeetupTitle;
+                              return AppLocalizations.of(context)?.pleaseEnterMeetupTitle ?? "";
                             }
                             return null;
                           },
@@ -532,7 +532,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       maxLines: 6,
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)?.pleaseEnterMeetupDescription;
+                          return AppLocalizations.of(context)?.pleaseEnterMeetupDescription ?? "";
                         }
                         return null;
                       },
@@ -608,7 +608,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       style: const TextStyle(fontSize: 14),
                       validator: (value) {
                         if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)?.pleaseEnterLocation;
+                          return AppLocalizations.of(context)?.pleaseEnterLocation ?? "";
                         }
                         return null;
                       },
@@ -739,8 +739,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       children: [
                         // 전체 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.publicPost),
-                          subtitle: Text(AppLocalizations.of(context)?.everyoneCanSee),
+                          title: Text(AppLocalizations.of(context)?.publicPost ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)?.everyoneCanSee ?? ""),
                           value: 'public',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -754,8 +754,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 친구만 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.myFriendsOnly),
-                          subtitle: Text(AppLocalizations.of(context)?.myFriendsOnly),
+                          title: Text(AppLocalizations.of(context)?.myFriendsOnly ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)?.myFriendsOnly ?? ""),
                           value: 'friends',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -769,8 +769,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         
                         // 특정 그룹만 공개
                         RadioListTile<String>(
-                          title: Text(AppLocalizations.of(context)?.selectedFriendGroupOnly),
-                          subtitle: Text(AppLocalizations.of(context)?.selectedGroupOnly),
+                          title: Text(AppLocalizations.of(context)?.selectedFriendGroupOnly ?? ""),
+                          subtitle: Text(AppLocalizations.of(context)?.selectedGroupOnly ?? ""),
                           value: 'category',
                           groupValue: _visibility,
                           onChanged: (value) {
@@ -1009,8 +1009,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         ),
                         label: Text(
                           _thumbnailImage != null 
-                              ? AppLocalizations.of(context)?.changeImage 
-                              : AppLocalizations.of(context)?.attachImage,
+                              ? (AppLocalizations.of(context)?.changeImage ?? "") : AppLocalizations.of(context)?.attachImage,
                           style: const TextStyle(
                             color: Color(0xFF4A90E2),
                             fontSize: 14,
@@ -1155,7 +1154,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           context,
                                         ).showSnackBar(
                                           SnackBar(
-                                            content: Text(AppLocalizations.of(context)?.meetupCreated),
+                                            content: Text(AppLocalizations.of(context)?.meetupCreated ?? ""),
                                             backgroundColor: Colors.green,
                                           ),
                                         );

@@ -77,14 +77,13 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(accept
-                  ? AppLocalizations.of(context)?.reviewAccepted
-                  : AppLocalizations.of(context)?.reviewRejected),
+                  ? (AppLocalizations.of(context)?.reviewAccepted ?? "") : AppLocalizations.of(context)?.reviewRejected),
             ),
           );
           Navigator.of(context).pop(true);
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)?.reviewProcessError)),
+            SnackBar(content: Text(AppLocalizations.of(context)?.reviewProcessError ?? "")),
           );
         }
       }
@@ -92,7 +91,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
       print('❌ 후기 수락/거절 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.error)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.error ?? "")),
         );
       }
     } finally {
@@ -106,13 +105,13 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     // 로딩 중
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(
-          title: Text(l10n.reviewApprovalRequest),
+          title: Text(l10n?.reviewApprovalRequest ?? ""),
           elevation: 0,
         ),
         body: const Center(
@@ -126,7 +125,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.reviewApprovalRequest),
+        title: Text(l10n?.reviewApprovalRequest ?? ""),
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -294,8 +293,8 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                     Expanded(
                       child: Text(
                         _currentStatus == 'accepted'
-                            ? l10n.reviewAlreadyAccepted
-                            : l10n.reviewAlreadyRejected,
+                            ? l10n?.reviewAlreadyAccepted ?? ""
+                            : l10n?.reviewAlreadyRejected ?? "",
                         style: TextStyle(
                           color: _currentStatus == 'accepted' ? Colors.green[900] : Colors.red[900],
                           fontSize: 15,
@@ -332,7 +331,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                 ),
                               )
                             : Text(
-                                l10n.reject,
+                                l10n?.reject ?? "",
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
@@ -364,7 +363,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                 ),
                               )
                             : Text(
-                                l10n.accept,
+                                l10n?.accept ?? "",
                                 style: TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,

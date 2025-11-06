@@ -145,12 +145,12 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final currentLang = Localizations.localeOf(context).languageCode;
     
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.editMeetup),
+        title: Text(l10n?.editMeetup ?? ""),
         actions: [
           TextButton(
             onPressed: _isLoading ? null : _updateMeetup,
@@ -161,7 +161,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Text(
-                    l10n.save,
+                    l10n?.save ?? "",
                     style: const TextStyle(
                       color: Colors.blue,
                       fontWeight: FontWeight.w600,
@@ -181,16 +181,16 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               TextFormField(
                 controller: _titleController,
                 decoration: InputDecoration(
-                  labelText: l10n.meetupTitle,
-                  hintText: l10n.enterMeetupTitle,
+                  labelText: l10n?.meetupTitle ?? "",
+                  hintText: l10n?.enterMeetupTitle ?? "",
                   border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return l10n.pleaseEnterTitle;
+                    return l10n?.pleaseEnterTitle ?? "";
                   }
                   if (value.trim().length < 2) {
-                    return l10n.titleMinLength;
+                    return l10n?.titleMinLength ?? "";
                   }
                   return null;
                 },
@@ -203,14 +203,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 controller: _descriptionController,
                 maxLines: 4,
                 decoration: InputDecoration(
-                  labelText: l10n.meetupDescription,
-                  hintText: l10n.enterMeetupDescription,
+                  labelText: l10n?.meetupDescription ?? "",
+                  hintText: l10n?.enterMeetupDescription ?? "",
                   border: const OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return l10n.pleaseEnterDescription;
+                    return l10n?.pleaseEnterDescription ?? "";
                   }
                   return null;
                 },
@@ -222,7 +222,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               DropdownButtonFormField<String>(
                 value: _selectedCategory,
                 decoration: InputDecoration(
-                  labelText: l10n.category,
+                  labelText: l10n?.category ?? "",
                   border: const OutlineInputBorder(),
                 ),
                 items: _categoryKeys.map((String categoryKey) {
@@ -278,7 +278,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                       const Icon(Icons.calendar_today),
                       const SizedBox(width: 12),
                       Text(
-                        '${l10n.date}: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
+                        '${l10n?.date ?? ""}: ${_selectedDate.year}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}',
                         style: const TextStyle(fontSize: 16),
                       ),
                       const Spacer(),
@@ -294,13 +294,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               TextFormField(
                 controller: _timeController,
                 decoration: InputDecoration(
-                  labelText: l10n.time,
-                  hintText: l10n.timeHint,
+                  labelText: l10n?.time ?? "",
+                  hintText: l10n?.timeHint ?? "",
                   border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return l10n.pleaseEnterTime;
+                    return l10n?.pleaseEnterTime ?? "";
                   }
                   return null;
                 },
@@ -312,13 +312,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               TextFormField(
                 controller: _locationController,
                 decoration: InputDecoration(
-                  labelText: l10n.location,
-                  hintText: l10n.enterMeetupLocation,
+                  labelText: l10n?.location ?? "",
+                  hintText: l10n?.enterMeetupLocation ?? "",
                   border: const OutlineInputBorder(),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return l10n.pleaseEnterLocation;
+                    return l10n?.pleaseEnterLocation ?? "";
                   }
                   return null;
                 },
@@ -330,13 +330,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               DropdownButtonFormField<int>(
                 value: _selectedMaxParticipants,
                 decoration: InputDecoration(
-                  labelText: l10n.maxParticipants,
+                  labelText: l10n?.maxParticipants ?? "",
                   border: const OutlineInputBorder(),
                 ),
                 items: _participantOptions.map((int number) {
                   return DropdownMenuItem<int>(
                     value: number,
-                    child: Text('$number${l10n.peopleUnit}'),
+                    child: Text('$number${l10n?.peopleUnit ?? ""}'),
                   );
                 }).toList(),
                 onChanged: (int? newValue) {
@@ -369,7 +369,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           strokeWidth: 2,
                         )
                       : Text(
-                          l10n.updateMeetup,
+                          l10n?.updateMeetup ?? "",
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,

@@ -109,15 +109,15 @@ class AppEmptyState extends StatelessWidget {
 
   /// 친구가 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noFriends({required BuildContext context, VoidCallback? onSearchFriends}) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     return AppEmptyState(
       icon: IconStyles.group,
-      title: l10n.findFriends,
-      description: l10n.makeFriendsWithSameInterests,
-      ctaText: l10n.findFriendsAction,
+      title: l10n?.findFriends ?? "",
+      description: l10n?.makeFriendsWithSameInterests ?? "",
+      ctaText: l10n?.findFriendsAction ?? "",
       ctaIcon: IconStyles.search,
       onCtaPressed: onSearchFriends,
-      secondaryCtaText: l10n.viewRecommendedFriends,
+      secondaryCtaText: l10n?.viewRecommendedFriends ?? "",
     );
   }
 
@@ -127,15 +127,15 @@ class AppEmptyState extends StatelessWidget {
     String? searchQuery,
     VoidCallback? onClearSearch,
   }) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     return AppEmptyState(
       icon: Icons.search_off_outlined,
-      title: l10n.noSearchResults,
+      title: l10n?.noSearchResults ?? "",
       description:
           searchQuery != null
-              ? '\'$searchQuery\' ${l10n.tryDifferentKeyword}'
-              : l10n.tryDifferentKeyword,
-      ctaText: l10n.clearSearchQuery,
+              ? '\'$searchQuery\' ${l10n?.tryDifferentKeyword ?? ""}'
+              : l10n?.tryDifferentKeyword ?? "",
+      ctaText: l10n?.clearSearchQuery ?? "",
       ctaIcon: Icons.clear,
       onCtaPressed: onClearSearch,
     );

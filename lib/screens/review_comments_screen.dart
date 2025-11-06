@@ -45,7 +45,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
 
     return GestureDetector(
       onTap: () {
@@ -63,7 +63,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.black87),
           ),
           title: Text(
-            l10n.comments,
+            l10n?.comments ?? "",
             style: const TextStyle(
               color: Colors.black87,
               fontSize: 18,
@@ -79,7 +79,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(
-                      child: Text('${l10n.loadingComments}: ${snapshot.error}'),
+                      child: Text('${l10n?.loadingComments ?? ""}: ${snapshot.error}'),
                     );
                   }
 
@@ -91,9 +91,9 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                         children: [
                           Icon(Icons.mode_comment_outlined, size: 64, color: Colors.grey[400]),
                           const SizedBox(height: 16),
-                          Text(l10n.noCommentsYet, style: TextStyle(fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500)),
+                          Text(l10n?.noCommentsYet ?? "", style: TextStyle(fontSize: 16, color: Colors.grey[600], fontWeight: FontWeight.w500)),
                           const SizedBox(height: 8),
-                          Text(l10n.beFirstToComment, style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                          Text(l10n?.beFirstToComment ?? "", style: TextStyle(fontSize: 14, color: Colors.grey[500])),
                         ],
                       ),
                     );
@@ -214,7 +214,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
                     textInputAction: TextInputAction.newline,
                     keyboardType: TextInputType.multiline,
                     decoration: InputDecoration(
-                      hintText: l10n.writeComment,
+                      hintText: l10n?.writeComment ?? "",
                       hintStyle: TextStyle(
                         color: Colors.grey[500],
                         fontSize: 14,
@@ -282,7 +282,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (user == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)?.loginRequired), backgroundColor: Colors.red),
+            SnackBar(content: Text(AppLocalizations.of(context)?.loginRequired ?? ""), backgroundColor: Colors.red),
           );
         }
         return;
@@ -298,7 +298,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (mounted) {
         if (!ok) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed), backgroundColor: Colors.red),
+            SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed ?? ""), backgroundColor: Colors.red),
           );
         } else {
           _commentController.clear();
@@ -308,7 +308,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed), backgroundColor: Colors.red),
+          SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed ?? ""), backgroundColor: Colors.red),
         );
       }
     } finally {

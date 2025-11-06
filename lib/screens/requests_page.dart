@@ -132,7 +132,7 @@ class _RequestsPageState extends State<RequestsPage>
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)?.cancel),
+                child: Text(AppLocalizations.of(context)?.cancel ?? ""),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -140,7 +140,7 @@ class _RequestsPageState extends State<RequestsPage>
                   backgroundColor: Colors.blue,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(AppLocalizations.of(context)?.confirm),
+                child: Text(AppLocalizations.of(context)?.confirm ?? ""),
               ),
             ],
           ),
@@ -237,7 +237,7 @@ class _RequestsPageState extends State<RequestsPage>
                   return Card(
                     child: ListTile(
                       leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)?.loading),
+                      title: Text(AppLocalizations.of(context)?.loading ?? ""),
                     ),
                   );
                 }
@@ -288,7 +288,7 @@ class _RequestsPageState extends State<RequestsPage>
                   return Card(
                     child: ListTile(
                       leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)?.loading),
+                      title: Text(AppLocalizations.of(context)?.loading ?? ""),
                     ),
                   );
                 }
@@ -538,18 +538,18 @@ class _RequestsPageState extends State<RequestsPage>
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
 
     if (difference.inDays > 7) {
       return '${dateTime.month}/${dateTime.day}';
     } else if (difference.inDays > 0) {
-      return l10n.daysAgoCount(difference.inDays);
+      return l10n?.daysAgoCount ?? ""(difference.inDays);
     } else if (difference.inHours > 0) {
-      return l10n.hoursAgoCount(difference.inHours);
+      return l10n?.hoursAgoCount ?? ""(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return l10n.minutesAgoCount(difference.inMinutes);
+      return l10n?.minutesAgoCount ?? ""(difference.inMinutes);
     } else {
-      return l10n.justNowTime;
+      return l10n?.justNowTime ?? "";
     }
   }
 }

@@ -178,7 +178,7 @@ class _FriendsPageState extends State<FriendsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)?.cancel),
+                child: Text(AppLocalizations.of(context)?.cancel ?? ""),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(context).pop(true),
@@ -186,7 +186,7 @@ class _FriendsPageState extends State<FriendsPage> {
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
                 ),
-                child: Text(AppLocalizations.of(context)?.confirm),
+                child: Text(AppLocalizations.of(context)?.confirm ?? ""),
               ),
             ],
           ),
@@ -230,7 +230,7 @@ class _FriendsPageState extends State<FriendsPage> {
               children: [
                 ListTile(
                   leading: const Icon(Icons.person, color: Colors.blue),
-                  title: Text(AppLocalizations.of(context)?.viewProfile),
+                  title: Text(AppLocalizations.of(context)?.viewProfile ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _navigateToProfile(friend);
@@ -238,7 +238,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.group, color: Colors.green),
-                  title: Text(AppLocalizations.of(context)?.groupSettings),
+                  title: Text(AppLocalizations.of(context)?.groupSettings ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _showGroupSelectionDialog(friend);
@@ -249,7 +249,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     Icons.person_remove,
                     color: Colors.orange,
                   ),
-                  title: Text(AppLocalizations.of(context)?.removeFriendAction),
+                  title: Text(AppLocalizations.of(context)?.removeFriendAction ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _unfriend(friend);
@@ -257,7 +257,7 @@ class _FriendsPageState extends State<FriendsPage> {
                 ),
                 ListTile(
                   leading: const Icon(Icons.block, color: Colors.red),
-                  title: Text(AppLocalizations.of(context)?.blockAction),
+                  title: Text(AppLocalizations.of(context)?.blockAction ?? ""),
                   onTap: () {
                     Navigator.pop(context);
                     _blockUser(friend);
@@ -284,15 +284,15 @@ class _FriendsPageState extends State<FriendsPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.groupSettingsFor(friend.displayNameOrNickname)),
+        title: Text(AppLocalizations.of(context)?.groupSettingsFor(friend.displayNameOrNickname) ?? ""),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 그룹 없음 옵션
               RadioListTile<String?>(
-                title: Text(AppLocalizations.of(context)?.noGroup),
-                subtitle: Text(AppLocalizations.of(context)?.notInAnyGroup),
+                title: Text(AppLocalizations.of(context)?.noGroup ?? ""),
+                subtitle: Text(AppLocalizations.of(context)?.notInAnyGroup ?? ""),
                 value: null,
                 groupValue: currentCategoryId,
                 onChanged: (value) {
@@ -355,7 +355,7 @@ class _FriendsPageState extends State<FriendsPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)?.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
           ),
         ],
       ),
@@ -773,7 +773,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onPressed: () {
               context.read<RelationshipProvider>().clearError();
             },
-            child: Text(AppLocalizations.of(context)?.retryAction),
+            child: Text(AppLocalizations.of(context)?.retryAction ?? ""),
           ),
         ],
       ),

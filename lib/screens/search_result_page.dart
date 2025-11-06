@@ -104,12 +104,11 @@ class _SearchResultPageState extends State<SearchResultPage> {
 
   String _pageTitle(BuildContext context) {
     return widget.boardType == 'meeting' 
-        ? AppLocalizations.of(context)?.activityBoard 
-        : AppLocalizations.of(context)?.infoBoard;
+        ? (AppLocalizations.of(context)?.activityBoard ?? "") : AppLocalizations.of(context)?.infoBoard;
   }
 
   String _searchHint(BuildContext context) {
-    return AppLocalizations.of(context)?.enterSearchQuery;
+    return AppLocalizations.of(context)?.enterSearchQuery ?? "";
   }
 
   @override

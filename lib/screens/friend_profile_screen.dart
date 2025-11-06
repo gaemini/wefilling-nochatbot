@@ -606,7 +606,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.cannotSendDM),
+            content: Text(AppLocalizations.of(context)?.cannotSendDM ?? ""),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 2),
           ),

@@ -351,7 +351,7 @@ class _CompactChip extends StatelessWidget {
       label: '$displayLabel ${AppLocalizations.of(context)?.category}${isSelected ? ", ${AppLocalizations.of(context)?.selected}" : ""}',
       button: true,
       selected: isSelected,
-      onTapHint: '${isSelected ? AppLocalizations.of(context)?.cancel : AppLocalizations.of(context)?.select}',
+      onTapHint: '${isSelected ? (AppLocalizations.of(context)?.cancel ?? "") : AppLocalizations.of(context)?.select}',
       child: Container(
         decoration: BoxDecoration(
           color: backgroundColor,

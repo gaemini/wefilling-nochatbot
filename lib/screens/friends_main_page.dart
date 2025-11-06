@@ -42,7 +42,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.friends),
+        title: Text(AppLocalizations.of(context)?.friends ?? ""),
         elevation: 0,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,

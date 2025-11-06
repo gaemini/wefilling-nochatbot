@@ -36,7 +36,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _sendVerificationCode() async {
     if (_emailController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired;
+        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired ?? "";
       });
       return;
     }
@@ -46,7 +46,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     // hanyang.ac.kr 도메인 검증
     if (!email.endsWith('@hanyang.ac.kr')) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)?.hanyangEmailRequired;
+        _errorMessage = AppLocalizations.of(context)?.hanyangEmailRequired ?? "";
       });
       return;
     }
@@ -70,7 +70,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.verificationCodeSent),
+            content: Text(AppLocalizations.of(context)?.verificationCodeSent ?? ""),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
           ),
@@ -85,7 +85,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       if (mounted) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
+            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed ?? "";
             _isLoading = false;
           });
         } else {
@@ -115,7 +115,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _verifyAndComplete() async {
     if (_verificationCodeController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired;
+        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired ?? "";
       });
       return;
     }
@@ -138,7 +138,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       } on FirebaseFunctionsException catch (e) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
+            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed ?? "";
             _isLoading = false;
           });
           return;
@@ -152,7 +152,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       
       if (!verified && mounted) {
         setState(() {
-          _errorMessage = AppLocalizations.of(context)?.verificationCodeInvalid;
+          _errorMessage = AppLocalizations.of(context)?.verificationCodeInvalid ?? "";
           _isLoading = false;
         });
         return;
@@ -168,8 +168,8 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           context: context,
           barrierDismissible: false,
           builder: (dialogContext) => AlertDialog(
-            title: Text(AppLocalizations.of(context)?.verificationSuccess),
-            content: Text(AppLocalizations.of(context)?.proceedWithGoogleLogin),
+            title: Text(AppLocalizations.of(context)?.verificationSuccess ?? ""),
+            content: Text(AppLocalizations.of(context)?.proceedWithGoogleLogin ?? ""),
             actions: [
               TextButton(
                 onPressed: () async {
@@ -196,7 +196,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       } on FirebaseFunctionsException catch (e) {
                         if (e.code == 'already-exists') {
                           setState(() {
-                            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
+                            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed ?? "";
                           });
                         } else {
                           setState(() {
@@ -236,7 +236,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     }
                   }
                 },
-                child: Text(AppLocalizations.of(context)?.continueWithGoogle),
+                child: Text(AppLocalizations.of(context)?.continueWithGoogle ?? ""),
               ),
             ],
           ),
@@ -267,7 +267,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(AppLocalizations.of(context)?.emailVerificationRequired),
+        title: Text(AppLocalizations.of(context)?.emailVerificationRequired ?? ""),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -339,10 +339,10 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)?.required;
+                    return AppLocalizations.of(context)?.required ?? "";
                   }
                   if (!value.endsWith('@hanyang.ac.kr')) {
-                    return AppLocalizations.of(context)?.hanyangEmailRequired;
+                    return AppLocalizations.of(context)?.hanyangEmailRequired ?? "";
                   }
                   return null;
                 },
@@ -428,10 +428,10 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)?.verificationCodeRequired;
+                      return AppLocalizations.of(context)?.verificationCodeRequired ?? "";
                     }
                     if (value.length != 4) {
-                      return AppLocalizations.of(context)?.verificationCodeLength;
+                      return AppLocalizations.of(context)?.verificationCodeLength ?? "";
                     }
                     return null;
                   },

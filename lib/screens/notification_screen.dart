@@ -98,7 +98,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (meetupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing ?? "")),
       );
       return;
     }
@@ -133,7 +133,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.meetupNotFound)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupNotFound ?? "")),
         );
       }
     } catch (e) {
@@ -157,7 +157,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (postId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing ?? "")),
       );
       return;
     }
@@ -189,7 +189,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.postNotFound)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.postNotFound ?? "")),
         );
       }
     } catch (e) {
@@ -214,7 +214,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (reviewId == null || userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing ?? "")),
       );
       return;
     }
@@ -296,7 +296,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (requestId == null || reviewId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)?.reviewInfoMissing)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.reviewInfoMissing ?? "")),
         );
         return;
       }
@@ -343,29 +343,29 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 제목 반환
   String _getLocalizedTitle(AppNotification notification) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     switch (notification.type) {
       case 'meetup_full':
-        return l10n.meetupIsFull;
+        return l10n?.meetupIsFull ?? "";
       case 'meetup_cancelled':
-        return l10n.meetupCancelled;
+        return l10n?.meetupCancelled ?? "";
       case 'meetup_participant_joined':
-        return l10n.newParticipantJoined; // 새 참여자
+        return l10n?.newParticipantJoined ?? ""; // 새 참여자
       case 'new_comment':
-        return l10n.newCommentAdded;
+        return l10n?.newCommentAdded ?? "";
       case 'new_like':
-        return l10n.newLikeAdded;
+        return l10n?.newLikeAdded ?? "";
       case 'comment_like':
-        return l10n.newLikeAdded; // 댓글 좋아요도 같은 타이틀 사용
+        return l10n?.newLikeAdded ?? ""; // 댓글 좋아요도 같은 타이틀 사용
       case 'review_comment':
-        return l10n.newCommentAdded; // 후기 댓글
+        return l10n?.newCommentAdded ?? ""; // 후기 댓글
       case 'review_like':
-        return l10n.newLikeAdded; // 후기 좋아요
+        return l10n?.newLikeAdded ?? ""; // 후기 좋아요
       case 'friend_request':
-        return l10n.friendRequest;
+        return l10n?.friendRequest ?? "";
       case 'review_approval_request':
-        return l10n.reviewApprovalRequestTitle;
+        return l10n?.reviewApprovalRequestTitle ?? "";
       default:
         return notification.title; // 기본값으로 저장된 제목 사용
     }
@@ -373,7 +373,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
   String _getLocalizedMessage(AppNotification notification) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final data = notification.data;
     
     if (data == null) {
@@ -385,41 +385,41 @@ class _NotificationScreenState extends State<NotificationScreen> {
         case 'meetup_full':
           final meetupTitle = data['meetupTitle'] ?? '';
           final maxParticipants = data['maxParticipants'] ?? 0;
-          return l10n.meetupIsFullMessage(meetupTitle, maxParticipants);
+          return l10n?.meetupIsFullMessage ?? ""(meetupTitle, maxParticipants);
         case 'meetup_cancelled':
           final meetupTitle = data['meetupTitle'] ?? '';
-          return l10n.meetupCancelledMessage(meetupTitle);
+          return l10n?.meetupCancelledMessage ?? ""(meetupTitle);
         case 'meetup_participant_joined':
-          return l10n.newParticipantJoinedMessage(
+          return l10n?.newParticipantJoinedMessage ?? ""(
             data['participantName'] ?? '',
             data['meetupTitle'] ?? '',
           );
         case 'new_comment':
           final commenterName = data['commenterName'] ?? '';
           final postTitle = data['postTitle'] ?? '';
-          return l10n.newCommentMessage(commenterName, postTitle);
+          return l10n?.newCommentMessage ?? ""(commenterName, postTitle);
         case 'new_like':
           final likerName = data['likerName'] ?? '';
           final postTitle = data['postTitle'] ?? '';
-          return l10n.newLikeMessage(likerName, postTitle);
+          return l10n?.newLikeMessage ?? ""(likerName, postTitle);
         case 'comment_like':
           final likerName = data['likerName'] ?? notification.actorName ?? '';
-          return l10n.newCommentLikeMessage(likerName);
+          return l10n?.newCommentLikeMessage ?? ""(likerName);
         case 'friend_request':
           final fromName = data['fromName'] ?? notification.actorName ?? '';
-          return l10n.friendRequestMessage(fromName);
+          return l10n?.friendRequestMessage ?? ""(fromName);
         case 'review_approval_request':
           final author = notification.actorName ?? '';
           final meetupTitle = data['meetupTitle'] ?? '';
-          return l10n.reviewApprovalRequestMessage(author, meetupTitle);
+          return l10n?.reviewApprovalRequestMessage ?? ""(author, meetupTitle);
         case 'review_comment':
           final commenterName = data['commenterName'] ?? notification.actorName ?? '';
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
-          return l10n.newCommentMessage(commenterName, reviewTitle);
+          return l10n?.newCommentMessage ?? ""(commenterName, reviewTitle);
         case 'review_like':
           final likerName = data['likerName'] ?? notification.actorName ?? '';
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
-          return l10n.newLikeMessage(likerName, reviewTitle);
+          return l10n?.newLikeMessage ?? ""(likerName, reviewTitle);
         default:
           return notification.message;
       }
@@ -500,7 +500,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
-          content: Text(AppLocalizations.of(context)?.notificationDeleted),
+          content: Text(AppLocalizations.of(context)?.notificationDeleted ?? ""),
         ));
       },
 
@@ -578,13 +578,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
-      return AppLocalizations.of(context)?.daysAgo(difference.inDays);
+      return AppLocalizations.of(context)?.daysAgo(difference.inDays) ?? "";
     } else if (difference.inHours > 0) {
-      return AppLocalizations.of(context)?.hoursAgo(difference.inHours);
+      return AppLocalizations.of(context)?.hoursAgo(difference.inHours) ?? "";
     } else if (difference.inMinutes > 0) {
-      return AppLocalizations.of(context)?.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)?.minutesAgo(difference.inMinutes) ?? "";
     } else {
-      return AppLocalizations.of(context)?.justNow;
+      return AppLocalizations.of(context)?.justNow ?? "";
     }
   }
 
@@ -592,7 +592,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.notifications),
+        title: Text(AppLocalizations.of(context)?.notifications ?? ""),
         actions: [
           // 모든 알림 읽음 버튼
           IconButton(

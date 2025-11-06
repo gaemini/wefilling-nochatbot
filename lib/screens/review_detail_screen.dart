@@ -197,7 +197,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     final currentUser = _auth.currentUser;
     
     return Scaffold(
@@ -208,7 +208,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData || snapshot.data == null) {
             return Center(
-              child: Text(l10n.reviewNotFound),
+              child: Text(l10n?.reviewNotFound ?? ""),
             );
           }
 
@@ -227,7 +227,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                   icon: const Icon(Icons.arrow_back, color: Colors.black87),
                 ),
                 title: Text(
-                  l10n.reviewDetails,
+                  l10n?.reviewDetails ?? "",
                   style: const TextStyle(
                     color: Colors.black87,
                     fontSize: 18,
@@ -411,7 +411,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   }
 
   Widget _buildActionButtons(ReviewPost review, bool isLiked, User? currentUser) {
-    final l10n = AppLocalizations.of(context)?;
+    final l10n = AppLocalizations.of(context);
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -451,8 +451,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 children: [
                   Text(
                     review.commentCount > 0 
-                        ? l10n.viewAllComments(review.commentCount)
-                        : l10n.writeComment,
+                        ? l10n?.viewAllComments ?? ""(review.commentCount)
+                        : l10n?.writeComment ?? "",
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
@@ -478,7 +478,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
-        l10n.likesCount(review.likeCount),
+        l10n?.likesCount ?? ""(review.likeCount),
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -550,7 +550,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                l10n.meetupParticipants(_participants.length),
+                l10n?.meetupParticipants ?? ""(_participants.length),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -653,7 +653,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.error),
+            content: Text(AppLocalizations.of(context)?.error ?? ""),
             backgroundColor: Colors.red,
           ),
         );

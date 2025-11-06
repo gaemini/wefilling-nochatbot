@@ -39,7 +39,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)?.accountSettings),
+        title: Text(AppLocalizations.of(context)?.accountSettings ?? ""),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -98,7 +98,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                isGoogleLogin ? AppLocalizations.of(context)?.googleAccount : AppLocalizations.of(context)?.emailPassword,
+                                isGoogleLogin ? (AppLocalizations.of(context)?.googleAccount ?? "") : AppLocalizations.of(context)?.emailPassword,
                                 style: const TextStyle(fontSize: 16),
                               ),
                               if (isGoogleLogin) ...[
@@ -150,8 +150,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                         Icons.language,
                         () => _showLanguageDialog(context),
                         subtitle: Localizations.localeOf(context).languageCode == 'ko' 
-                            ? AppLocalizations.of(context)?.korean 
-                            : AppLocalizations.of(context)?.english,
+                            ? (AppLocalizations.of(context)?.korean ?? "") : AppLocalizations.of(context)?.english,
                       ),
 
                       const SizedBox(height: 24),
@@ -312,7 +311,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)?.korean),
+              title: Text(AppLocalizations.of(context)?.korean ?? ""),
               value: 'ko',
               groupValue: currentLocale,
               onChanged: (value) {
@@ -323,7 +322,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
               },
             ),
             RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)?.english),
+              title: Text(AppLocalizations.of(context)?.english ?? ""),
               value: 'en',
               groupValue: currentLocale,
               onChanged: (value) {
@@ -338,7 +337,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: Text(AppLocalizations.of(context)?.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
           ),
         ],
       ),

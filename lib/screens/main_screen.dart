@@ -145,11 +145,11 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return AppLocalizations.of(context)?.enterSearchQuery;
+        return AppLocalizations.of(context)?.enterSearchQuery ?? "";
       case 1:
-        return AppLocalizations.of(context)?.enterSearchQuery;
+        return AppLocalizations.of(context)?.enterSearchQuery ?? "";
       default:
-        return AppLocalizations.of(context)?.search;
+        return AppLocalizations.of(context)?.search ?? "";
     }
   }
 

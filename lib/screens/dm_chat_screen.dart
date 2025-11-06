@@ -89,7 +89,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.error + ': 잘못된 대화방 ID입니다'),
+              content: Text(AppLocalizations.of(context)?.error ?? "오류" + ': 잘못된 대화방 ID입니다'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -159,7 +159,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)?.error + ': 대화방 참여자가 아닙니다'),
+                content: Text(AppLocalizations.of(context)?.error ?? "오류" + ': 대화방 참여자가 아닙니다'),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -182,7 +182,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.error + ': 접근 권한이 없습니다'),
+              content: Text(AppLocalizations.of(context)?.error ?? "오류" + ': 접근 권한이 없습니다'),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -248,9 +248,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Widget build(BuildContext context) {
     if (_currentUser == null) {
       return Scaffold(
-        appBar: AppBar(title: Text(AppLocalizations.of(context)?.dm)),
+        appBar: AppBar(title: Text(AppLocalizations.of(context)?.dm ?? "")),
         body: Center(
-          child: Text(AppLocalizations.of(context)?.loginRequired),
+          child: Text(AppLocalizations.of(context)?.loginRequired ?? ""),
         ),
       );
     }
@@ -280,11 +280,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
         ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
         : (isAnonymous 
-            ? AppLocalizations.of(context)?.anonymousUser 
-            : otherUserName);
+            ? (AppLocalizations.of(context)?.anonymousUser ?? "") : otherUserName);
     final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? AppLocalizations.of(context)?.author
-        : null;
+        ? (AppLocalizations.of(context)?.author ?? "") : null;
 
     String _formatHeaderDate() {
       final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
@@ -369,7 +367,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                 children: [
                   const Icon(Icons.block, size: 20, color: Colors.red),
                   const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context)?.blockThisUser),
+                  Text(AppLocalizations.of(context)?.blockThisUser ?? ""),
                 ],
               ),
             ),
@@ -432,7 +430,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)?.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -835,7 +833,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)?.cannotSendDM),
+                content: Text(AppLocalizations.of(context)?.cannotSendDM ?? ""),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 2),
               ),
@@ -872,7 +870,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.messageSendFailed),
+              content: Text(AppLocalizations.of(context)?.messageSendFailed ?? ""),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -885,7 +883,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)?.error),
+            content: Text(AppLocalizations.of(context)?.error ?? ""),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -903,12 +901,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)?.blockThisUser),
-        content: Text(AppLocalizations.of(context)?.blockConfirm),
+        title: Text(AppLocalizations.of(context)?.blockThisUser ?? ""),
+        content: Text(AppLocalizations.of(context)?.blockConfirm ?? ""),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)?.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel ?? ""),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),

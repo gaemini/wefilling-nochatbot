@@ -161,7 +161,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       // 중복 방지 (이미 목록에 있으면 추가하지 않음)
       final hasHost = participants.any((p) => p.userId == hostId);
       final combined = [if (!hasHost) hostProfile, ...participants];
-      print('✅ 승인된 참여자 ${participants.length}명 로드 완료');
+      print('✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
       
       // 새로고침 시 setState로 UI 업데이트
       if (mounted) {
@@ -173,13 +173,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           if (currentUid != null) {
             _isParticipant = combined.any((p) => p.userId == currentUid);
           }
-          // 모임 데이터의 참여자 수도 실시간으로 업데이트
+          // 모임 데이터의 참여자 수 업데이트 (호스트 제외한 실제 참여자 수)
           _currentMeetup = _currentMeetup.copyWith(
-            currentParticipants: combined.length,
+            currentParticipants: participants.length, // 호스트 제외
           );
         });
-        print('🎨 UI 업데이트 완료: ${_participants.length}명');
-        print('📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants}');
+        print('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
+        print('📊 모임 참여자 수 업데이트: ${participants.length}/${_currentMeetup.maxParticipants} (호스트 제외)');
       }
     } catch (e, stackTrace) {
       print('❌ 참여자 목록 로드 오류: $e');

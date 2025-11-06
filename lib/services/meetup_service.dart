@@ -563,6 +563,7 @@ class MeetupService {
         joinedAt: DateTime.now(),
         status: ParticipantStatus.approved, // 즉시 승인
         message: null,
+        userCountry: userData['nationality'] ?? '', // 국가 정보 추가
       );
 
       await _firestore
@@ -943,6 +944,7 @@ class MeetupService {
         joinedAt: DateTime.now(),
         status: ParticipantStatus.pending,
         message: message,
+        userCountry: userData['nationality'] ?? '', // 국가 정보 추가
       );
 
       await _firestore

@@ -147,6 +147,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return const SizedBox.shrink();
         }
         
+        // 로딩 중이고 데이터가 없으면 스켈레톤 표시
+        final bool isInitialLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
+        
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -180,10 +183,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: _calculateItemCount(snapshot, todayPosts),
+            itemCount: _calculateItemCount(isInitialLoading, snapshot.hasError, todayPosts),
             itemBuilder: (context, index) {
               if (!mounted) return const SizedBox.shrink();
-              return _buildTodayTabItem(context, snapshot, todayPosts, index);
+              return _buildTodayTabItem(context, isInitialLoading, snapshot.hasError, todayPosts, index);
             },
           ),
         );
@@ -191,12 +194,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
 
-  int _calculateItemCount(AsyncSnapshot<List<Post>> snapshot, List<Post> todayPosts) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
+  int _calculateItemCount(bool isInitialLoading, bool hasError, List<Post> todayPosts) {
+    if (isInitialLoading) {
       return 6; // 광고 배너 + 스켈레톤 5개
     }
     
-    if (snapshot.hasError) {
+    if (hasError) {
       return 2; // 광고 배너 + 에러 위젯
     }
     
@@ -207,7 +210,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return todayPosts.length + 1; // 광고 배너 + 게시글들
   }
 
-  Widget _buildTodayTabItem(BuildContext context, AsyncSnapshot<List<Post>> snapshot, List<Post> todayPosts, int index) {
+  Widget _buildTodayTabItem(BuildContext context, bool isInitialLoading, bool hasError, List<Post> todayPosts, int index) {
     // 첫 번째 아이템은 항상 광고 배너
     if (index == 0) {
       return AdBannerWidget(
@@ -217,7 +220,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
 
     // 로딩 중
-    if (snapshot.connectionState == ConnectionState.waiting) {
+    if (isInitialLoading) {
       if (index <= 5) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -231,11 +234,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
 
     // 에러 상태
-    if (snapshot.hasError) {
+    if (hasError) {
       if (index == 1) {
         return Padding(
           padding: const EdgeInsets.all(16),
-          child: _buildErrorWidget(snapshot.error.toString()),
+          child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
         );
       }
       return const SizedBox.shrink();
@@ -283,6 +286,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return const SizedBox.shrink();
         }
         
+        // 로딩 중이고 데이터가 없으면 스켈레톤 표시
+        final bool isInitialLoading = snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData;
+        
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -303,10 +309,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           },
           child: ListView.builder(
             physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: _calculateAllTabItemCount(snapshot, posts),
+            itemCount: _calculateAllTabItemCount(isInitialLoading, snapshot.hasError, posts),
             itemBuilder: (context, index) {
               if (!mounted) return const SizedBox.shrink();
-              return _buildAllTabItem(context, snapshot, posts, index);
+              return _buildAllTabItem(context, isInitialLoading, snapshot.hasError, posts, index);
             },
           ),
         );
@@ -314,12 +320,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
 
-  int _calculateAllTabItemCount(AsyncSnapshot<List<Post>> snapshot, List<Post> posts) {
-    if (snapshot.connectionState == ConnectionState.waiting) {
+  int _calculateAllTabItemCount(bool isInitialLoading, bool hasError, List<Post> posts) {
+    if (isInitialLoading) {
       return 6; // 광고 배너 + 스켈레톤 5개
     }
     
-    if (snapshot.hasError) {
+    if (hasError) {
       return 2; // 광고 배너 + 에러 위젯
     }
     
@@ -339,7 +345,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return totalItems;
   }
 
-  Widget _buildAllTabItem(BuildContext context, AsyncSnapshot<List<Post>> snapshot, List<Post> posts, int index) {
+  Widget _buildAllTabItem(BuildContext context, bool isInitialLoading, bool hasError, List<Post> posts, int index) {
     // 첫 번째 아이템은 항상 광고 배너
     if (index == 0) {
       return AdBannerWidget(
@@ -349,7 +355,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
 
     // 로딩 중
-    if (snapshot.connectionState == ConnectionState.waiting) {
+    if (isInitialLoading) {
       if (index <= 5) {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -363,11 +369,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
 
     // 에러 상태
-    if (snapshot.hasError) {
+    if (hasError) {
       if (index == 1) {
         return Padding(
           padding: const EdgeInsets.all(16),
-          child: _buildErrorWidget(snapshot.error.toString()),
+          child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
         );
       }
       return const SizedBox.shrink();

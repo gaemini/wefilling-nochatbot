@@ -874,11 +874,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       return const SizedBox.shrink();
     }
 
-    // 마감된 모임은 버튼 표시 안함
-    if (meetup.currentParticipants >= meetup.maxParticipants) {
-      return const SizedBox.shrink();
-    }
-
     // 캐시된 상태 확인 (즉시 반영)
     final cachedStatus = _getCachedParticipationStatus(meetup.id);
     
@@ -888,6 +883,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     }
     
     final isParticipating = cachedStatus ?? false;
+
+    // 마감된 모임이지만 이미 참여 중이면 나가기 버튼 표시
+    if (meetup.currentParticipants >= meetup.maxParticipants && !isParticipating) {
+      return const SizedBox.shrink();
+    }
 
     return GestureDetector(
       onTap: () async {

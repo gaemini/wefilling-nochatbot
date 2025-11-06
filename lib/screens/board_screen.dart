@@ -216,9 +216,17 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           ...List.generate(5, (index) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: AppSkeletonList.cards(
-              itemCount: 1,
-              padding: EdgeInsets.zero,
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                ),
+              ),
             ),
           )),
         ],
@@ -378,9 +386,17 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           ...List.generate(5, (index) => Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: AppSkeletonList.cards(
-              itemCount: 1,
-              padding: EdgeInsets.zero,
+            child: Container(
+              height: 120,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                ),
+              ),
             ),
           )),
         ],

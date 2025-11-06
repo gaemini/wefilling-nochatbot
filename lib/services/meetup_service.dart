@@ -1765,4 +1765,60 @@ class MeetupService {
       return false;
     }
   }
+
+  // 모임 이미지 업로드
+  Future<String> uploadMeetupImage(File imageFile, String meetupId) async {
+    try {
+      final storage = FirebaseStorage.instance;
+      final Reference storageRef = storage.ref().child(
+        'meetup_images/$meetupId/${DateTime.now().millisecondsSinceEpoch}',
+      );
+
+      await storageRef.putFile(imageFile);
+      final imageUrl = await storageRef.getDownloadURL();
+      
+      print('✅ 모임 이미지 업로드 완료: $imageUrl');
+      return imageUrl;
+    } catch (e) {
+      print('❌ 모임 이미지 업로드 오류: $e');
+      throw Exception('이미지 업로드에 실패했습니다: $e');
+    }
+  }
+
+  // 실시간 모임 데이터 스트림
+  Stream<Meetup?> getMeetupStream(String meetupId) {
+    return _firestore
+        .collection('meetups')
+        .doc(meetupId)
+        .snapshots()
+        .map((snapshot) {
+      if (snapshot.exists && snapshot.data() != null) {
+        final data = snapshot.data()!;
+        data['id'] = snapshot.id;
+        return Meetup.fromJson(data);
+      }
+      return null;
+    });
+  }
+
+  // 실시간 참여자 목록 스트림
+  Stream<List<MeetupParticipant>> getParticipantsStream(String meetupId) {
+    return _firestore
+        .collection('meetup_participants')
+        .where('meetupId', isEqualTo: meetupId)
+        .where('status', isEqualTo: ParticipantStatus.approved)
+        .snapshots()
+        .map((snapshot) {
+      final participants = snapshot.docs.map((doc) {
+        final data = doc.data();
+        data['id'] = doc.id;
+        return MeetupParticipant.fromJson(data);
+      }).toList();
+      
+      // 클라이언트 측에서 정렬
+      participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+      
+      return participants;
+    });
+  }
 }

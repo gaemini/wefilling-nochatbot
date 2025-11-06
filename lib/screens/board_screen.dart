@@ -43,9 +43,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   @override
   void dispose() {
+    print('🔄 BoardScreen dispose 시작');
     _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    print('✅ BoardScreen dispose 완료');
     super.dispose();
   }
 
@@ -67,7 +69,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
       body: Column(
         children: [
           // 탭 바
@@ -84,9 +86,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             ),
             child: TabBar(
               controller: _tabController,
-              labelColor: Colors.blue[600],
+              labelColor: const Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
               unselectedLabelColor: Colors.grey[600],
-              indicatorColor: Colors.blue[600],
+              indicatorColor: const Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
               labelStyle: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -101,12 +103,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
               ],
             ),
           ),
-          // 광고 배너 (고유 ID 부여로 완전히 독립적으로 작동)
-          AdBannerWidget(
-            key: ValueKey('board_banner'),
-            widgetId: 'board_banner',
-          ),
-          // 게시글 목록
+          // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -145,17 +142,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return AppSkeletonList.cards(
-            itemCount: 5,
-            padding: const EdgeInsets.all(16),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return _buildErrorWidget(snapshot.error.toString());
-        }
-
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -179,44 +165,20 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return postDate.isAtSameMomentAs(today);
         }).toList();
 
-        if (todayPosts.isEmpty) {
-          return AppEmptyState(
-            icon: Icons.calendar_today,
-            title: AppLocalizations.of(context)!.yourStoryMatters,
-            description: AppLocalizations.of(context)!.shareYourMoments,
-            ctaText: AppLocalizations.of(context)!.writeStory,
-            ctaIcon: Icons.edit,
-            onCtaPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CreatePostScreen(
-                    onPostCreated: () {
-                      setState(() {});
-                    },
-                  ),
-                ),
-              );
-            },
-          );
-        }
-
         return RefreshIndicator(
+          color: const Color(0xFF5865F2),
+          backgroundColor: Colors.white,
           onRefresh: () async {
-            setState(() {});
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (mounted) setState(() {});
           },
           child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: todayPosts.length,
+            itemCount: _calculateItemCount(snapshot, todayPosts),
             itemBuilder: (context, index) {
-              final post = todayPosts[index];
-              return OptimizedPostCard(
-                key: ValueKey(post.id),
-                post: post,
-                index: index,
-                onTap: () => _navigateToPostDetail(post),
-                preloadImage: index < 3,
-              );
+              if (!mounted) return const SizedBox.shrink();
+              return _buildTodayTabItem(context, snapshot, todayPosts, index);
             },
           ),
         );
@@ -224,22 +186,94 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
 
+  int _calculateItemCount(AsyncSnapshot<List<Post>> snapshot, List<Post> todayPosts) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return 6; // 광고 배너 + 스켈레톤 5개
+    }
+    
+    if (snapshot.hasError) {
+      return 2; // 광고 배너 + 에러 위젯
+    }
+    
+    if (todayPosts.isEmpty) {
+      return 2; // 광고 배너 + Empty State
+    }
+    
+    return todayPosts.length + 1; // 광고 배너 + 게시글들
+  }
+
+  Widget _buildTodayTabItem(BuildContext context, AsyncSnapshot<List<Post>> snapshot, List<Post> todayPosts, int index) {
+    // 첫 번째 아이템은 항상 광고 배너
+    if (index == 0) {
+      return AdBannerWidget(
+        key: ValueKey('board_banner_today'),
+        widgetId: 'board_banner_today',
+      );
+    }
+
+    // 로딩 중
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      if (index <= 5) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: AppSkeletonList.cards(
+            itemCount: 1,
+            padding: EdgeInsets.zero,
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 에러 상태
+    if (snapshot.hasError) {
+      if (index == 1) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: _buildErrorWidget(snapshot.error.toString()),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 빈 상태
+    if (todayPosts.isEmpty) {
+      if (index == 1) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
+          child: AppEmptyState(
+            icon: Icons.calendar_today,
+            title: AppLocalizations.of(context)?.yourStoryMatters ?? '당신의 이야기가 중요합니다',
+            description: AppLocalizations.of(context)?.shareYourMoments ?? '순간을 공유해보세요',
+            illustration: const SizedBox.shrink(),
+            padding: EdgeInsets.zero,
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 게시글 표시
+    final postIndex = index - 1;
+    if (postIndex < todayPosts.length) {
+      final post = todayPosts[postIndex];
+      return OptimizedPostCard(
+        key: ValueKey(post.id),
+        post: post,
+        index: postIndex,
+        onTap: () => _navigateToPostDetail(post),
+        preloadImage: postIndex < 3,
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
   /// 전체 게시글 탭
   Widget _buildAllPostsTab() {
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return AppSkeletonList.cards(
-            itemCount: 5,
-            padding: const EdgeInsets.all(16),
-          );
-        }
-
-        if (snapshot.hasError) {
-          return _buildErrorWidget(snapshot.error.toString());
-        }
-
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -251,39 +285,149 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           }).toList();
         }
 
-        if (posts.isEmpty) {
-          if (_isSearching) {
-            return AppEmptyState.noSearchResults(
-              context: context,
-              searchQuery: _searchController.text,
-              onClearSearch: _clearSearch,
-            );
-          } else {
-            return AppEmptyState.noPosts(
-              onCreatePost: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CreatePostScreen(
-                      onPostCreated: () {
-                        setState(() {});
-                      },
-                    ),
-                  ),
-                );
-              },
-            );
-          }
-        }
-
         return RefreshIndicator(
+          color: const Color(0xFF5865F2),
+          backgroundColor: Colors.white,
           onRefresh: () async {
-            setState(() {});
+            await Future.delayed(const Duration(milliseconds: 500));
+            if (mounted) setState(() {});
           },
-          child: _buildGroupedPostsList(posts),
+          child: ListView.builder(
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: _calculateAllTabItemCount(snapshot, posts),
+            itemBuilder: (context, index) {
+              if (!mounted) return const SizedBox.shrink();
+              return _buildAllTabItem(context, snapshot, posts, index);
+            },
+          ),
         );
       },
     );
+  }
+
+  int _calculateAllTabItemCount(AsyncSnapshot<List<Post>> snapshot, List<Post> posts) {
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      return 6; // 광고 배너 + 스켈레톤 5개
+    }
+    
+    if (snapshot.hasError) {
+      return 2; // 광고 배너 + 에러 위젯
+    }
+    
+    if (posts.isEmpty) {
+      return 2; // 광고 배너 + Empty State
+    }
+    
+    final groupedPosts = _groupPostsByDate(posts);
+    int totalItems = 1; // 광고 배너
+    
+    for (var group in groupedPosts) {
+      totalItems += 1; // 날짜 헤더
+      final groupPosts = group['posts'] as List<Post>;
+      totalItems += groupPosts.length; // 게시글들
+    }
+    
+    return totalItems;
+  }
+
+  Widget _buildAllTabItem(BuildContext context, AsyncSnapshot<List<Post>> snapshot, List<Post> posts, int index) {
+    // 첫 번째 아이템은 항상 광고 배너
+    if (index == 0) {
+      return AdBannerWidget(
+        key: ValueKey('board_banner_all'),
+        widgetId: 'board_banner_all',
+      );
+    }
+
+    // 로딩 중
+    if (snapshot.connectionState == ConnectionState.waiting) {
+      if (index <= 5) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: AppSkeletonList.cards(
+            itemCount: 1,
+            padding: EdgeInsets.zero,
+          ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 에러 상태
+    if (snapshot.hasError) {
+      if (index == 1) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: _buildErrorWidget(snapshot.error.toString()),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 빈 상태
+    if (posts.isEmpty) {
+      if (index == 1) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
+          child: _isSearching
+              ? AppEmptyState.noSearchResults(
+                  context: context,
+                  searchQuery: _searchController.text,
+                  onClearSearch: _clearSearch,
+                )
+              : AppEmptyState.noPosts(
+                  onCreatePost: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => CreatePostScreen(
+                          onPostCreated: () {
+                            setState(() {});
+                          },
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        );
+      }
+      return const SizedBox.shrink();
+    }
+
+    // 그룹화된 게시글 표시
+    return _buildGroupedPostItem(posts, index - 1);
+  }
+
+  Widget _buildGroupedPostItem(List<Post> posts, int adjustedIndex) {
+    final groupedPosts = _groupPostsByDate(posts);
+    int currentIndex = 0;
+    
+    for (var group in groupedPosts) {
+      final dateLabel = group['dateLabel'] as String;
+      final groupPosts = group['posts'] as List<Post>;
+      
+      // 날짜 헤더
+      if (currentIndex == adjustedIndex) {
+        return _buildDateHeader(dateLabel);
+      }
+      currentIndex++;
+      
+      // 게시글들
+      for (int i = 0; i < groupPosts.length; i++) {
+        if (currentIndex == adjustedIndex) {
+          return OptimizedPostCard(
+            key: ValueKey(groupPosts[i].id),
+            post: groupPosts[i],
+            index: i,
+            onTap: () => _navigateToPostDetail(groupPosts[i]),
+            preloadImage: i < 3,
+          );
+        }
+        currentIndex++;
+      }
+    }
+    
+    return const SizedBox.shrink();
   }
 
   /// 게시글 상세 화면으로 이동
@@ -333,46 +477,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
 
-  /// 날짜별로 그룹화된 게시글 목록 빌드
-  Widget _buildGroupedPostsList(List<Post> posts) {
-    final groupedPosts = _groupPostsByDate(posts);
-    
-    return ListView.builder(
-      itemCount: groupedPosts.length,
-      itemBuilder: (context, groupIndex) {
-        final group = groupedPosts[groupIndex];
-        final dateLabel = group['dateLabel'] as String;
-        final groupPosts = group['posts'] as List<Post>;
-        
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 날짜 헤더
-            _buildDateHeader(dateLabel),
-            
-            // 해당 날짜의 게시글들
-            ...groupPosts.asMap().entries.map((entry) {
-              final index = entry.key;
-              final post = entry.value;
-              final globalIndex = _getGlobalIndex(posts, post);
-              
-              return OptimizedPostCard(
-                key: ValueKey(post.id),
-                post: post,
-                index: globalIndex,
-                onTap: () => _navigateToPostDetail(post),
-                preloadImage: globalIndex < 3, // 상위 3개만 프리로드
-              );
-            }).toList(),
-            
-            // 그룹 간 여백
-            if (groupIndex < groupedPosts.length - 1)
-              const SizedBox(height: 8),
-          ],
-        );
-      },
-    );
-  }
 
   /// 날짜별로 게시글 그룹화
   List<Map<String, dynamic>> _groupPostsByDate(List<Post> posts) {
@@ -419,43 +523,38 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 날짜 헤더 빌드
   Widget _buildDateHeader(String dateLabel) {
+    // '오늘'은 표시하지 않음
+    if (dateLabel == 'today') {
+      return const SizedBox.shrink();
+    }
+    
     String displayLabel;
     
     switch (dateLabel) {
-      case 'today':
-        displayLabel = AppLocalizations.of(context)!.today;
-        break;
       case 'yesterday':
-        displayLabel = AppLocalizations.of(context)!.yesterday;
+        displayLabel = AppLocalizations.of(context)?.yesterday ?? '어제';
         break;
       case 'thisWeek':
-        displayLabel = AppLocalizations.of(context)!.thisWeek;
+        displayLabel = AppLocalizations.of(context)?.thisWeek ?? '이번 주';
         break;
       default: // 'previous'
-        displayLabel = AppLocalizations.of(context)!.previous;
+        displayLabel = AppLocalizations.of(context)?.previous ?? '이전';
     }
     
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.transparent, // 배경색 제거
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.black, width: 1.5), // 진한 검은색 테두리
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 아이콘 제거
-          Text(
-            displayLabel,
-            style: const TextStyle(
-              color: Colors.black, // 진한 검은색 글씨
-              fontSize: 14,
-              fontWeight: FontWeight.w700, // 더 진하게
-            ),
+    // 테두리 없이 폰트로만 구분
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12), // 좌우 패딩 동일하게
+      child: Center( // 가운데 정렬 ✨
+        child: Text(
+          displayLabel,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            color: Color(0xFF18181B), // 진한 검은색 (N-900)
+            fontSize: 20, // 크게
+            fontWeight: FontWeight.w800, // 매우 진하게
+            letterSpacing: -0.5,
           ),
-        ],
+        ),
       ),
     );
   }

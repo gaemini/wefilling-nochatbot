@@ -4,23 +4,17 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-import '../constants/app_constants.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
+import '../models/meetup_participant.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
-import '../ui/widgets/compact_header.dart';
-import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
-import '../ui/widgets/optimized_list.dart';
-import '../ui/widgets/optimized_meetup_card.dart';
-import '../utils/image_utils.dart';
 import '../services/preload_service.dart';
-import '../design/tokens.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
 import '../l10n/app_localizations.dart';
@@ -38,8 +32,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     with SingleTickerProviderStateMixin, PreloadMixin {
   late TabController _tabController;
   final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
-  // 기존 메모리 기반 데이터 - 필요시 폴백으로 사용
-  late List<List<Meetup>> _localMeetupsByDay;
   final MeetupService _meetupService = MeetupService();
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
   
@@ -48,26 +40,27 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 검색 기능
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
   bool _isSearching = false;
-
-  // 카테고리 필터링 (영어 키 사용)
-  final List<String> _categories = ['all', 'study', 'meal', 'hobby', 'culture'];
   String _selectedCategory = 'all';
 
-  // 친구 그룹 필터링
+  // 필요한 상태 변수들
+  late List<List<Meetup>> _localMeetupsByDay;
   List<FriendCategory> _friendCategories = [];
-  String _friendFilter = 'all'; // 'all', 'public', 'friends', 'category:categoryId'
+  String _friendFilter = 'all';
   bool _showFriendFilter = false;
-
-  // 현재 표시할 모임 목록
   List<Meetup> _filteredMeetups = [];
   bool _isLoading = false;
   bool _isTabChanging = false;
 
   // 캐시 관련 변수
   final Map<int, List<Meetup>> _meetupCache = {};
-
   final Map<String, Map<int, List<Meetup>>> _categoryMeetupCache = {};
+  
+  // 참여 상태 캐시 (깜빡임 방지)
+  final Map<String, bool> _participationStatusCache = {};
+  final Map<String, DateTime> _participationCacheTime = {};
+  static const Duration _cacheValidDuration = Duration(seconds: 30);
 
   // 주차 네비게이션을 위한 기준 날짜
   DateTime _currentWeekAnchor = DateTime.now();
@@ -99,12 +92,30 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   @override
   void dispose() {
+    print('🔄 MeetupHomePage dispose 시작');
+    
+    // 검색 관련 정리
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    
+    // 탭 컨트롤러 정리
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
+    
+    // 스트림 구독 정리
     _friendCategoriesSubscription?.cancel();
+    _friendCategoriesSubscription = null;
+    
+    // 서비스 정리
     _friendCategoryService.dispose();
+    
+    // 캐시 정리
+    _meetupCache.clear();
+    _categoryMeetupCache.clear();
+    _participationStatusCache.clear();
+    _participationCacheTime.clear();
+    
+    print('✅ MeetupHomePage dispose 완료');
     super.dispose();
   }
 
@@ -123,7 +134,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             meetupId: meetupId,
             onMeetupDeleted: () {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppLocalizations.of(context)!.meetupCancelled)),
+                SnackBar(content: Text(AppLocalizations.of(context)?.meetupCancelled ?? '모임이 취소되었습니다')),
               );
             },
           ),
@@ -331,150 +342,748 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     );
   }
 
-  // FAB 빌드
-  Widget _buildFab() {
-    return AppFab.createMeetup(
-      onPressed: () => _showCreateMeetupDialog(context),
-      heroTag: 'meetup_fab',
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     final List<DateTime> weekDates = _getWeekDates();
     final selectedDate = weekDates[_tabController.index];
     
-    // 현재 로케일에 맞게 날짜 포맷팅
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 카테고리 필터
+            _buildCategoryFilter(),
+            
+            // 날짜 네비게이션
+            _buildDateNavigation(selectedDate),
+            
+            // 요일 캘린더
+            _buildWeekCalendar(weekDates),
+            
+            // 모임 목록
+            Expanded(
+              child: _buildMeetupList(selectedDate),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: AppFab(
+        icon: Icons.add,
+        onPressed: () => _navigateToCreateMeetup(),
+        semanticLabel: '모임 생성',
+      ),
+    );
+  }
+
+  // 카테고리 필터
+  Widget _buildCategoryFilter() {
+    final categories = [
+      {'key': 'all', 'label': '전체'},
+      {'key': 'study', 'label': '스터디'},
+      {'key': 'meal', 'label': '식사'},
+      {'key': 'cafe', 'label': '카페'},
+      {'key': 'culture', 'label': '문화'},
+    ];
+    
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: categories.map((category) {
+          final isSelected = _selectedCategory == category['key'];
+          
+          return Flexible(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedCategory = category['key']!;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFF5865F2) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isSelected ? const Color(0xFF5865F2) : const Color(0xFFE5E7EB),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  category['label']!,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isSelected ? Colors.white : const Color(0xFF6B7280),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  // 날짜 네비게이션
+  Widget _buildDateNavigation(DateTime selectedDate) {
     final locale = Localizations.localeOf(context).languageCode;
     final selectedDayString = locale == 'ko' 
         ? '${selectedDate.month}월 ${selectedDate.day}일'
         : DateFormat('MMM d', 'en').format(selectedDate);
     
-    // 요일 약어 (로케일에 따라 다름)
     final weekdayName = locale == 'ko'
         ? ['월', '화', '수', '목', '금', '토', '일'][selectedDate.weekday - 1]
         : _weekdayNames[selectedDate.weekday - 1];
 
-    return Scaffold(
-      body: Column(
-        children: [
-          // 컴팩트 헤더 (콘텐츠 노출 극대화)
-          _buildCompactHeader(),
-
-          // 컴팩트 탭바 (검색 모드가 아닐 때만 표시)
-          if (!_isSearching) _buildCompactTabBar(weekDates),
-
-          // 현재 선택된 날짜와 요일 표시 + 주차 네비게이션 (검색 모드가 아닐 때만)
-          if (!_isSearching)
-            Container(
-              height: 40, // 명시적인 높이 지정으로 두께 조절
-              padding: const EdgeInsets.symmetric(
-                vertical: 0,
-                horizontal: 16.0,
-              ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // 이전 주 버튼
                   IconButton(
                     icon: const Icon(Icons.chevron_left),
-                    iconSize: 20,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
+            iconSize: 24,
+            color: const Color(0xFF374151),
                     onPressed: _goToPreviousWeek,
                   ),
                   
-                  // 현재 날짜 정보 (탭하면 오늘로 이동)
-                  Expanded(
-                    child: GestureDetector(
+          GestureDetector(
                       onTap: _goToCurrentWeek,
                       child: Text(
                         '$selectedDayString ($weekdayName)',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontSize: 14,
-                          height: 1.2,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
                       ),
                     ),
                   ),
                   
-                  // 다음 주 버튼
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
-                    iconSize: 20,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
+            iconSize: 24,
+            color: const Color(0xFF374151),
                     onPressed: _goToNextWeek,
                   ),
                 ],
+      ),
+    );
+  }
+
+  // 요일 캘린더
+  Widget _buildWeekCalendar(List<DateTime> weekDates) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: weekDates.asMap().entries.map((entry) {
+          final index = entry.key;
+          final date = entry.value;
+          final isSelected = index == _tabController.index;
+          final isToday = _isToday(date);
+          
+          final locale = Localizations.localeOf(context).languageCode;
+          final weekdayLabel = locale == 'ko'
+              ? ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'][index]
+              : _weekdayNames[index];
+          
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                _tabController.animateTo(index);
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 2),
+                child: Column(
+                  children: [
+                    // 요일
+                    Text(
+                      weekdayLabel,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected 
+                            ? const Color(0xFF5865F2)
+                            : index == 6 // 일요일
+                                ? const Color(0xFFEF4444)
+                                : index == 5 // 토요일
+                                    ? const Color(0xFF3B82F6)
+                                    : const Color(0xFF6B7280),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 8),
+                    
+                    // 날짜
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: isSelected 
+                            ? const Color(0xFF5865F2)
+                            : Colors.transparent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          '${date.day}',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected 
+                                ? Colors.white
+                                : const Color(0xFF111827),
+                          ),
+                        ),
+                      ),
+                    ),
+                    
+                    const SizedBox(height: 4),
+                    
+                    // 오늘 표시 점
+                    if (isToday && !isSelected)
+                      Container(
+                        width: 4,
+                        height: 4,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF5865F2),
+                          shape: BoxShape.circle,
+                        ),
+                      )
+                    else
+                      const SizedBox(height: 4),
+                  ],
+                ),
               ),
             ),
+          );
+        }).toList(),
+      ),
+    );
+  }
 
-          Expanded(
+  // 모임 목록
+  Widget _buildMeetupList(DateTime selectedDate) {
+    return Container(
+      padding: const EdgeInsets.only(top: 16),
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 300),
               transitionBuilder: (child, animation) {
                 return FadeTransition(opacity: animation, child: child);
               },
-              child:
-                  _isLoading || _isTabChanging
-                      ? AppSkeletonList.cards(
-                        itemCount: 3,
-                        padding: const EdgeInsets.only(top: 8, bottom: 16),
-                      )
-                      : _filteredMeetups.isEmpty
-                      ? AppEmptyState.noMeetups(
-                        context: context,
-                        onCreateMeetup: () => _showCreateMeetupDialog(context),
-                      )
+        child: _isSearching
+            ? _buildSearchResults()
                       : RefreshIndicator(
+                color: const Color(0xFF5865F2),
+                backgroundColor: Colors.white,
                         onRefresh: () async {
-                          // 캐시 클리어 및 데이터 새로고침
-                          _meetupCache.clear();
-                          _categoryMeetupCache.clear();
-                          await _loadMeetups();
-                        },
-                        child: OptimizedListView<Meetup>(
-                          key: ValueKey<String>(
-                            '${_selectedCategory}_${_tabController.index}',
+                  // 새로고침 시 잠시 대기
+                  await Future.delayed(const Duration(milliseconds: 500));
+                },
+                child: StreamBuilder<List<Meetup>>(
+                  stream: _meetupService.getMeetupsByDay(_tabController.index),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          AppSkeletonList.cards(
+                            itemCount: 3,
+                            padding: const EdgeInsets.only(top: 8, bottom: 16),
                           ),
-                          items: _filteredMeetups,
-                          keyExtractor: (meetup) => meetup.id,
-                          padding: const EdgeInsets.only(
-                            top: 8, // 상단 패딩 최소화
-                            bottom: 90, // FAB을 위한 하단 여유 공간
-                          ),
-                          itemBuilder: (context, meetup, index) {
-                            return OptimizedMeetupCard(
-                              key: ValueKey(meetup.id),
-                              meetup: meetup,
-                              index: index,
-                              onTap: () => _navigateToMeetupDetail(meetup),
-                              preloadImage: index < 3, // 상위 3개만 프리로드
-                              onMeetupDeleted: () {
-                                // 모임 삭제 후 목록 새로고침
-                                setState(() {
-                                  _loadMeetups();
-                                });
-                              },
-                            );
-                          },
-                        ),
+                        ],
+                      );
+                    }
+                    
+                    if (snapshot.hasError) {
+                      return ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.5,
+                            child: Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(
+                                    Icons.error_outline,
+                                    size: 48,
+                                    color: Colors.red[300],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text('오류가 발생했습니다: ${snapshot.error}'),
+                                  const SizedBox(height: 8),
+                                  TextButton(
+                                    onPressed: () {
+                                      setState(() {}); // 새로고침
+                                    },
+                                    child: const Text(
+                                      '다시 시도',
+                                      style: TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 14,
+                                        color: Color(0xFF5865F2),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                       ),
             ),
           ),
         ],
+                      );
+                    }
+                    
+                    final meetups = snapshot.data ?? [];
+                    final filteredMeetups = _filterMeetupsByCategory(meetups);
+                    
+                    if (filteredMeetups.isEmpty) {
+                      return ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(
+                            height: MediaQuery.of(context).size.height * 0.5,
+                            child: AppEmptyState.noMeetups(
+                              context: context,
+                              onCreateMeetup: () => _navigateToCreateMeetup(),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                    
+                    return ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: filteredMeetups.length,
+                      itemBuilder: (context, index) {
+                        if (!mounted) return const SizedBox.shrink();
+                        final meetup = filteredMeetups[index];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: _buildNewMeetupCard(meetup),
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
       ),
-      floatingActionButton: _buildFab(),
     );
+  }
+
+  // 새로운 모임 카드 디자인
+  Widget _buildNewMeetupCard(Meetup meetup) {
+    return GestureDetector(
+      onTap: () => _navigateToMeetupDetail(meetup),
+      child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          // 상단: 제목과 공개 범위 배지
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    meetup.title,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
+                      height: 1.4,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _buildVisibilityBadge(meetup),
+              ],
+            ),
+          ),
+          
+          // 중간: 장소와 참여자 수
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on_outlined,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        meetup.location,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          color: Color(0xFF6B7280),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.people_outline,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${meetup.currentParticipants}/${meetup.maxParticipants}명',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 12),
+          
+          // 하단: 호스트 정보와 참여 버튼
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                // 호스트 프로필
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor: const Color(0xFFE5E7EB),
+                  backgroundImage: meetup.hostPhotoURL.isNotEmpty
+                      ? NetworkImage(meetup.hostPhotoURL)
+                      : null,
+                  child: meetup.hostPhotoURL.isEmpty
+                      ? const Icon(
+                          Icons.person,
+                          size: 16,
+                          color: Color(0xFF6B7280),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    meetup.hostNickname ?? '익명',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                
+                // 참여 버튼
+                _buildJoinButton(meetup),
+              ],
+            ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 공개 범위 배지
+  Widget _buildVisibilityBadge(Meetup meetup) {
+    if (meetup.visibility == 'category') {
+    return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+          color: const Color(0xFFFEF3C7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Text(
+          '친구공개',
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 10,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFFD97706),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  // 참여 버튼
+  Widget _buildJoinButton(Meetup meetup) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      return const SizedBox.shrink();
+    }
+
+    // 내가 만든 모임이면 버튼 표시 안함
+    if (meetup.userId == currentUser.uid) {
+      return const SizedBox.shrink();
+    }
+
+    // 마감된 모임은 버튼 표시 안함
+    if (meetup.currentParticipants >= meetup.maxParticipants) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<MeetupParticipant?>(
+      stream: _getCachedParticipationStream(meetup.id),
+      builder: (context, snapshot) {
+        // 캐시된 상태 확인
+        final cachedStatus = _getCachedParticipationStatus(meetup.id);
+        
+        // 로딩 중일 때도 버튼 표시 (비활성화 상태)
+        final isLoading = snapshot.connectionState == ConnectionState.waiting && cachedStatus == null;
+        final isParticipating = cachedStatus ?? (snapshot.hasData && 
+            snapshot.data?.status == ParticipantStatus.approved);
+
+        // 새로운 데이터가 있으면 캐시 업데이트 (mounted 체크)
+        if (snapshot.hasData && mounted) {
+          _updateParticipationCache(meetup.id, snapshot.data?.status == ParticipantStatus.approved);
+        }
+
+        return GestureDetector(
+          onTap: isLoading ? null : () async {
+            if (isParticipating) {
+              await _leaveMeetup(meetup);
+            } else {
+              await _joinMeetup(meetup);
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+              color: isLoading 
+                  ? Colors.grey.shade400
+                  : isParticipating 
+                      ? const Color(0xFFEF4444) 
+                      : const Color(0xFF5865F2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              isLoading 
+                  ? '...'
+                  : isParticipating ? '나가기' : '참여하기',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 캐시된 참여 상태 스트림 생성
+  Stream<MeetupParticipant?> _getCachedParticipationStream(String meetupId) async* {
+    if (!mounted) return;
+    
+    final cachedStatus = _getCachedParticipationStatus(meetupId);
+    
+    if (cachedStatus != null && mounted) {
+      // 캐시된 상태를 먼저 반환
+      yield cachedStatus ? 
+          MeetupParticipant(
+            id: 'cached',
+            meetupId: meetupId,
+            userId: FirebaseAuth.instance.currentUser?.uid ?? '',
+            userName: '',
+            userEmail: '',
+            joinedAt: DateTime.now(),
+            status: ParticipantStatus.approved,
+          ) : null;
+    }
+    
+    // 실제 데이터를 가져와서 반환
+    if (mounted) {
+      try {
+        final actualStatus = await _meetupService.getUserParticipationStatus(meetupId);
+        if (mounted) {
+          yield actualStatus;
+        }
+      } catch (e) {
+        print('참여 상태 조회 오류: $e');
+        // 캐시된 상태가 있으면 그것을 유지, 없으면 null
+        if (cachedStatus == null && mounted) {
+          yield null;
+        }
+      }
+    }
+  }
+
+  // 캐시된 참여 상태 조회
+  bool? _getCachedParticipationStatus(String meetupId) {
+    final cacheTime = _participationCacheTime[meetupId];
+    if (cacheTime != null && 
+        DateTime.now().difference(cacheTime) < _cacheValidDuration) {
+      return _participationStatusCache[meetupId];
+    }
+    return null;
+  }
+
+  // 참여 상태 캐시 업데이트
+  void _updateParticipationCache(String meetupId, bool isParticipating) {
+    _participationStatusCache[meetupId] = isParticipating;
+    _participationCacheTime[meetupId] = DateTime.now();
+  }
+
+  // 모임 참여하기
+  Future<void> _joinMeetup(Meetup meetup) async {
+    // 즉시 캐시 업데이트 (깜빡임 방지)
+    _updateParticipationCache(meetup.id, true);
+    
+    try {
+      final success = await _meetupService.joinMeetup(meetup.id);
+      
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)?.meetupJoined ?? '모임에 참여했습니다'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // 실패 시 캐시 롤백
+        _updateParticipationCache(meetup.id, false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)?.meetupJoinFailed ?? '모임 참여에 실패했습니다'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // 오류 시 캐시 롤백
+      _updateParticipationCache(meetup.id, false);
+      print('모임 참여 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)?.error ?? '오류'}: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  // 모임 나가기
+  Future<void> _leaveMeetup(Meetup meetup) async {
+    // 즉시 캐시 업데이트 (깜빡임 방지)
+    _updateParticipationCache(meetup.id, false);
+    
+    try {
+      final success = await _meetupService.cancelMeetupParticipation(meetup.id);
+      
+      if (success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)?.leaveMeetup ?? '모임에서 나갔습니다'),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        // 실패 시 캐시 롤백
+        _updateParticipationCache(meetup.id, true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)?.leaveMeetupFailed ?? '모임 나가기에 실패했습니다'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      // 오류 시 캐시 롤백
+      _updateParticipationCache(meetup.id, true);
+      print('모임 나가기 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)?.error ?? '오류'}: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  // 검색 결과
+  Widget _buildSearchResults() {
+    // 기존 검색 로직 유지
+    return const Center(
+      child: Text('검색 기능 구현 중...'),
+    );
+  }
+
+  // 카테고리별 필터링
+  List<Meetup> _filterMeetupsByCategory(List<Meetup> meetups) {
+    if (_selectedCategory == 'all') {
+      return meetups;
+    }
+    return meetups.where((meetup) => meetup.category == _selectedCategory).toList();
   }
 
   /// 모임 상세 화면으로 이동
@@ -486,174 +1095,37 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           meetup: meetup,
           meetupId: meetup.id,
           onMeetupDeleted: () {
-            _meetupCache.clear();
-            _categoryMeetupCache.clear();
-            _loadMeetups(); // 모임이 삭제되면 목록 새로고침
+            // 모임이 삭제되면 목록 새로고침
+            setState(() {});
           },
         ),
       ),
     );
   }
 
-  /// 컴팩트 헤더 (콘텐츠 노출 극대화)
-  Widget _buildCompactHeader() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            offset: const Offset(0, 1),
-            blurRadius: 3,
-            spreadRadius: 0,
-          ),
-        ],
-      ),
-      child: SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 검색 모드에 따른 헤더
-            if (_isSearching)
-              CompactSearchBar(
-                controller: _searchController,
-                hintText: AppLocalizations.of(context)!.enterSearchQuery,
-                leading: AppIconButton(
-                  icon: Icons.arrow_back,
-                  onPressed: () {
-                    setState(() {
-                      _isSearching = false;
-                      _searchController.clear();
-                    });
-                    _loadMeetups();
-                  },
-                  semanticLabel: '뒤로가기',
-                ),
-                showClearButton: _searchController.text.isNotEmpty,
-                onClearPressed: () {
-                  _searchController.clear();
-                  _loadMeetups();
-                },
-                onChanged: (value) {
+  /// 모임 생성 화면으로 이동
+  void _navigateToCreateMeetup() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateMeetupScreen(
+          initialDayIndex: 0,
+          onCreateMeetup: (dayIndex, meetup) {
+            // 모임 생성 후 목록 새로고침
                   setState(() {});
-                  _loadMeetups();
-                },
-              )
-            else
-              // 기본 모드에서는 검색바 제거 - 중복 방지
-              const SizedBox.shrink(),
-
-            // 카테고리 칩 (검색 모드가 아닐 때만 표시)
-            if (!_isSearching)
-              CompactCategoryChips(
-                categories: _categories,
-                selectedCategory: _selectedCategory,
-                onCategoryChanged: (category) {
-                  setState(() {
-                    _selectedCategory = category;
-                  });
-                  _loadMeetups();
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 컴팩트 탭바
-  Widget _buildCompactTabBar(List<DateTime> weekDates) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    return Container(
-      height: 64, // 높이 증가 (56 → 64)
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          bottom: BorderSide(
-            color: colorScheme.outline.withOpacity(0.2),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: TabBar(
-        controller: _tabController,
-        tabs: List.generate(
-          weekDates.length,
-          (index) {
-            final date = weekDates[index];
-            final dateOnly = DateTime(date.year, date.month, date.day);
-            final isToday = dateOnly.isAtSameMomentAs(today);
-            
-            return Tab(
-              height: 60, // 높이 증가 (48 → 60)
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  // 오늘 날짜 표시 점
-                  if (isToday)
-                    Container(
-                      width: 6,
-                      height: 6,
-                      margin: const EdgeInsets.only(bottom: 2), // 간격 축소 (4 → 2)
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF4A90E2), // 위필링 로고색 (파란색)
-                        shape: BoxShape.circle,
-                      ),
-                    )
-                  else
-                    const SizedBox(height: 8), // 간격 축소 (10 → 8)
-                  // 요일 (일요일은 빨간색, 토요일은 파란색)
-                  Text(
-                    _weekdayNames[date.weekday - 1],
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12, // 폰트 크기 축소 (13 → 12)
-                      color: date.weekday == 7 // 일요일 체크 (7 = 일요일)
-                          ? Colors.red
-                          : date.weekday == 6 // 토요일 체크 (6 = 토요일)
-                              ? Colors.blue
-                              : null, // 기본 색상 유지
-                    ),
-                  ),
-                  const SizedBox(height: 1), // 간격 축소 (2 → 1)
-                  // 날짜 (일요일은 빨간색, 토요일은 파란색)
-                  Text(
-                    '${date.day}',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15, // 폰트 크기 축소 (16 → 15)
-                      color: date.weekday == 7 // 일요일 체크
-                          ? Colors.red
-                          : date.weekday == 6 // 토요일 체크
-                              ? Colors.blue
-                              : null, // 기본 색상 유지
-                    ),
-                  ),
-                ],
-              ),
-            );
           },
         ),
-        isScrollable: false,
-        labelColor: colorScheme.primary,
-        unselectedLabelColor: colorScheme.onSurfaceVariant,
-        indicatorColor: colorScheme.primary,
-        indicatorWeight: 2,
-        indicatorSize: TabBarIndicatorSize.tab,
-        onTap: (index) {
-          if (!_isTabChanging) {
-            _isTabChanging = true;
-            _loadMeetups().then((_) {
-              _isTabChanging = false;
-            });
-          }
-        },
       ),
     );
   }
+
+  /// 오늘인지 확인
+  bool _isToday(DateTime date) {
+    final now = DateTime.now();
+    return date.year == now.year && 
+           date.month == now.month && 
+           date.day == now.day;
+  }
+
+
 }

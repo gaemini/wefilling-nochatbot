@@ -46,7 +46,7 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFEBEBEB), // 앱 전체 배경색과 통일
       appBar: _buildAppBar(),
       body: _buildBody(),
     );
@@ -66,7 +66,7 @@ class _DMListScreenState extends State<DMListScreen> {
     if (_currentUser == null) {
       return _buildEmptyState(
         icon: Icons.login,
-        title: AppLocalizations.of(context)!.loginRequired,
+        title: AppLocalizations.of(context)?.loginRequired ?? '로그인이 필요합니다',
         subtitle: '',
       );
     }
@@ -101,8 +101,8 @@ class _DMListScreenState extends State<DMListScreen> {
         if (conversations.isEmpty) {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
-            title: AppLocalizations.of(context)!.noConversations,
-            subtitle: AppLocalizations.of(context)!.startFirstConversation,
+            title: AppLocalizations.of(context)?.noConversations ?? '대화가 없습니다',
+            subtitle: AppLocalizations.of(context)?.startFirstConversation ?? '첫 대화를 시작해보세요',
           );
         }
         
@@ -154,85 +154,88 @@ class _DMListScreenState extends State<DMListScreen> {
     final activeColor = Colors.blue[700]!;
     final inactiveColor = Colors.grey[500]!;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final tabWidth = constraints.maxWidth / 2;
-        final indicatorWidth = 42.0;
-        final leftForFriends = (tabWidth - indicatorWidth) / 2;
-        final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
+    return Container(
+      color: Colors.white, // 순수 흰색
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final tabWidth = constraints.maxWidth / 2;
+          final indicatorWidth = 42.0;
+          final leftForFriends = (tabWidth - indicatorWidth) / 2;
+          final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
 
-        return Stack(
-          children: [
-            // 하단 라인
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(height: 1, color: Colors.grey[200]),
-            ),
+          return Stack(
+            children: [
+              // 하단 라인
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(height: 1, color: Colors.grey[200]),
+              ),
 
-            // 탭 텍스트 영역
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      if (_filter != DMFilter.friends) setState(() => _filter = DMFilter.friends);
-                    },
-                    child: Container(
-                      height: 44,
-                      alignment: Alignment.center,
-                      child: Text(
-                        AppLocalizations.of(context)!.friends,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: _filter == DMFilter.friends ? activeColor : inactiveColor,
+              // 탭 텍스트 영역
+              Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        if (_filter != DMFilter.friends) setState(() => _filter = DMFilter.friends);
+                      },
+                      child: Container(
+                        height: 44,
+                        alignment: Alignment.center,
+                        child: Text(
+                          AppLocalizations.of(context)!.friends,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _filter == DMFilter.friends ? activeColor : inactiveColor,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                Expanded(
-                  child: InkWell(
-                    onTap: () {
-                      if (_filter != DMFilter.anonymous) setState(() => _filter = DMFilter.anonymous);
-                    },
-                    child: Container(
-                      height: 44,
-                      alignment: Alignment.center,
-                      child: Text(
-                        AppLocalizations.of(context)!.anonymousUser,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: _filter == DMFilter.anonymous ? activeColor : inactiveColor,
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        if (_filter != DMFilter.anonymous) setState(() => _filter = DMFilter.anonymous);
+                      },
+                      child: Container(
+                        height: 44,
+                        alignment: Alignment.center,
+                        child: Text(
+                          AppLocalizations.of(context)!.anonymousUser,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: _filter == DMFilter.anonymous ? activeColor : inactiveColor,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
 
-            // 인디케이터
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOut,
-              left: _filter == DMFilter.friends ? leftForFriends : leftForAnonymous,
-              bottom: 2,
-              child: Container(
-                width: indicatorWidth,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: activeColor,
-                  borderRadius: BorderRadius.circular(3),
+              // 인디케이터
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                left: _filter == DMFilter.friends ? leftForFriends : leftForAnonymous,
+                bottom: 2,
+                child: Container(
+                  width: indicatorWidth,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: activeColor,
+                    borderRadius: BorderRadius.circular(3),
+                  ),
                 ),
               ),
-            ),
-          ],
-        );
-      },
+            ],
+          );
+        },
+      ),
     );
   }
 

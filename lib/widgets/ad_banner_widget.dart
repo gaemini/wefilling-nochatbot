@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
+import '../design/color_system.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -34,20 +35,32 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   }
 
   Future<void> _loadBanners() async {
-    final banners = await _adBannerService.getActiveBanners();
-    if (mounted && banners.isNotEmpty) {
-      setState(() {
-        _banners = banners;
-      });
-      _startAutoScroll();
+    if (!mounted) return;
+    
+    try {
+      final banners = await _adBannerService.getActiveBanners();
+      if (mounted && banners.isNotEmpty) {
+        setState(() {
+          _banners = banners;
+        });
+        _startAutoScroll();
+      }
+    } catch (e) {
+      print('📢 [${widget.widgetId}] 광고 배너 로드 오류: $e');
     }
   }
 
   void _startAutoScroll() {
     _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
     
     if (_banners.length <= 1) {
       print('📢 [${widget.widgetId}] 광고가 1개 이하여서 자동 스크롤 비활성화');
+      return;
+    }
+
+    if (!mounted) {
+      print('📢 [${widget.widgetId}] 위젯이 dispose되어 자동 스크롤 시작 안함');
       return;
     }
 
@@ -55,15 +68,19 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     
     _autoScrollTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (!mounted) {
+        print('📢 [${widget.widgetId}] 위젯이 dispose되어 타이머 취소');
         timer.cancel();
+        _autoScrollTimer = null;
         return;
       }
 
-      setState(() {
-        _currentIndex = (_currentIndex + 1) % _banners.length;
-      });
-      
-      print('📢 [${widget.widgetId}] 인덱스 변경: $_currentIndex/${_banners.length}');
+      if (mounted) {
+        setState(() {
+          _currentIndex = (_currentIndex + 1) % _banners.length;
+        });
+        
+        print('📢 [${widget.widgetId}] 인덱스 변경: $_currentIndex/${_banners.length}');
+      }
     });
   }
 
@@ -71,6 +88,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   void dispose() {
     print('📢 [${widget.widgetId}] AdBannerWidget dispose 호출');
     _autoScrollTimer?.cancel();
+    _autoScrollTimer = null;
     super.dispose();
   }
 
@@ -100,12 +118,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_banners.isEmpty) {
+    if (!mounted || _banners.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return Container(
-      height: 88,
+      height: 140, // 88 → 140으로 증가
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Stack(
         children: [
@@ -170,47 +188,62 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
       },
       child: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.blue.shade50,
-              Colors.blue.shade100,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          color: WefillingColors.surface, // 카드 표면
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: Colors.blue.shade200,
+            color: WefillingColors.border, // 통일된 테두리
             width: 1,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: WefillingColors.shadow,
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(14),
           child: Row(
             children: [
-              // 아이콘
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.blue.withOpacity(0.2),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.campaign_rounded,
-                  color: Colors.blue.shade600,
-                  size: 28,
-                ),
-              ),
+              // 이미지 또는 아이콘
+              banner.imageUrl != null && banner.imageUrl!.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Image.network(
+                        banner.imageUrl!,
+                        width: 100,
+                        height: 100,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) {
+                          // 이미지 로드 실패 시 아이콘 표시
+                          return _buildIconPlaceholder();
+                        },
+                        loadingBuilder: (context, child, loadingProgress) {
+                          if (loadingProgress == null) return child;
+                          return Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade200,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Center(
+                              child: CircularProgressIndicator(
+                                value: loadingProgress.expectedTotalBytes != null
+                                    ? loadingProgress.cumulativeBytesLoaded /
+                                        loadingProgress.expectedTotalBytes!
+                                    : null,
+                                strokeWidth: 2,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    )
+                  : _buildIconPlaceholder(),
 
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
 
               // 텍스트 영역
               Expanded(
@@ -224,63 +257,90 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                         Flexible(
                           child: Text(
                             banner.title,
-                            style: TextStyle(
-                              fontSize: 15,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: Colors.blue.shade900,
+                              color: WefillingColors.textPrimary,
                             ),
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 6,
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.blue.shade600,
+                            color: WefillingColors.primary,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
                             'AD',
                             style: TextStyle(
+                              fontFamily: 'Pretendard',
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
                               color: Colors.white,
+                              letterSpacing: 0.5,
                             ),
                           ),
                         ),
                       ],
                     ),
                     
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     
                     // 설명
                     Text(
                       banner.description,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue.shade700,
-                        height: 1.2,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13,
+                        color: WefillingColors.textTertiary,
+                        height: 1.4,
                       ),
-                      maxLines: 2,
+                      maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),
               ),
 
+              const SizedBox(width: 8),
+
               // 화살표 아이콘
               Icon(
                 Icons.arrow_forward_ios,
-                color: Colors.blue.shade400,
-                size: 16,
+                color: WefillingColors.textHint,
+                size: 18,
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// 이미지가 없을 때 표시할 아이콘 플레이스홀더
+  Widget _buildIconPlaceholder() {
+    return Container(
+      width: 100,
+      height: 100,
+      decoration: BoxDecoration(
+        color: WefillingColors.primary.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: WefillingColors.primary.withOpacity(0.2),
+          width: 2,
+        ),
+      ),
+      child: Icon(
+        Icons.campaign_rounded,
+        color: WefillingColors.primary,
+        size: 48,
       ),
     );
   }

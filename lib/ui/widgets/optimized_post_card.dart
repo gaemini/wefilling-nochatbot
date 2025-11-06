@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/post.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
+import '../../design/color_system.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
 import '../../services/dm_service.dart';
@@ -92,8 +93,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(newSavedStatus 
-                ? AppLocalizations.of(context)!.postSaved 
-                : AppLocalizations.of(context)!.postUnsaved),
+                ? (AppLocalizations.of(context)?.postSaved ?? '게시글이 저장되었습니다')
+                : (AppLocalizations.of(context)?.postUnsaved ?? '게시글 저장이 취소되었습니다')),
             duration: Duration(seconds: 1),
             backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
           ),
@@ -114,53 +115,74 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     }
   }
 
-  /// 공개 범위에 따른 테두리 색상 결정
-  Color _getBorderColor(Post post) {
-    // 전체 공개 (익명 + 일반 모두 동일) → 진한 보라색 테두리
-    if (post.visibility == 'public') {
-      return AppTheme.primary.withOpacity(0.5); // 0.3 → 0.5로 증가
-    }
-    // 카테고리별 공개 (비공개) → 따뜻한 주황색
-    else if (post.visibility == 'category') {
-      return const Color(0xFFFF8A65).withOpacity(0.6);
-    }
-    // 기타 (폴백)
-    else {
-      return AppTheme.primary.withOpacity(0.5);
-    }
-  }
+  // 테두리 색상 메서드 제거 - 색상으로만 구분
 
-  /// 공개 범위 배지 위젯
-  Widget? _buildVisibilityBadge(Post post, ThemeData theme) {
-    String? badgeText;
-    Color? badgeColor;
-    
-    if (post.visibility == 'public' && post.isAnonymous) {
-      badgeText = '익명';
-      badgeColor = const Color(0xFF108AB1);
-    } else if (post.visibility == 'category') {
-      badgeText = '비공개';
-      badgeColor = const Color(0xFFF78C6A);
+  /// 공개 범위 인디케이터 위젯 (크고 명확하게)
+  Widget _buildVisibilityIndicator(Post post) {
+    // 친구 공개 전용 (통일된 크기)
+    if (post.visibility == 'category') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: WefillingColors.friendsAccentBg,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.group_outlined,
+              size: 15, // 통일된 크기
+              color: WefillingColors.friendsAccent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '친구 공개',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12, // 통일된 크기
+                fontWeight: FontWeight.w700,
+                color: WefillingColors.friendsAccent,
+              ),
+            ),
+          ],
+        ),
+      );
     }
     
-    if (badgeText == null || badgeColor == null) return null;
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        badgeText,
-        style: TextStyle(
-          color: badgeColor,
-          fontWeight: FontWeight.w700,
-          fontSize: 9,
-          height: 1.2,
+    // 익명 (전체 공개 + 익명) (통일된 크기)
+    if (post.visibility == 'public' && post.isAnonymous) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: WefillingColors.anonymousBg,
+          borderRadius: BorderRadius.circular(16),
         ),
-      ),
-    );
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.person_outline,
+              size: 15, // 통일된 크기
+              color: WefillingColors.anonymousAccent,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '익명',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12, // 통일된 크기
+                fontWeight: FontWeight.w700, // 통일된 굵기
+                color: WefillingColors.anonymousAccent,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // 전체 공개 (일반): 표시 안 함
+    return const SizedBox.shrink();
   }
 
   @override
@@ -169,56 +191,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final colorScheme = theme.colorScheme;
     final post = widget.post;
 
-    // 게시글 유형별 그림자 색상
-    Color shadowColor;
-    List<BoxShadow> customShadows;
-    
-    if (post.visibility == 'category') {
-      // 비공개: 주황색 글로우
-      shadowColor = const Color(0xFFF78C6A).withOpacity(0.25);
-      customShadows = [
-        BoxShadow(
-          color: shadowColor,
-          offset: const Offset(0, 2),
-          blurRadius: 16,
-          spreadRadius: 0,
-        ),
-        BoxShadow(
-          color: shadowColor.withOpacity(0.1),
-          offset: const Offset(0, 4),
-          blurRadius: 24,
-          spreadRadius: 2,
-        ),
-      ];
-    } else {
-      // 공개 게시글 (익명 + 일반 모두 동일한 그라데이션) - 진한 보라색
-      shadowColor = AppTheme.primary.withOpacity(0.35); // 0.15 → 0.35로 증가
-      customShadows = [
-        BoxShadow(
-          color: shadowColor,
-          offset: const Offset(0, 2),
-          blurRadius: 16,
-          spreadRadius: 0,
-        ),
-        BoxShadow(
-          color: shadowColor.withOpacity(0.5), // 0.08 → 0.5로 증가
-          offset: const Offset(0, 4),
-          blurRadius: 20,
-          spreadRadius: 1,
-        ),
-      ];
-    }
+    // 그림자 로직 제거 - 색상으로만 구분
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        gradient: AppTheme.backgroundGradient,
+        color: post.visibility == 'category'
+            ? WefillingColors.cardFriends // 친구 공개: 따뜻한 피치
+            : WefillingColors.cardPublic,  // 전체 공개: 순수 흰색
         borderRadius: BorderRadius.circular(AppTheme.radiusL),
-        boxShadow: customShadows,
-        border: Border.all(
-          color: _getBorderColor(post),
-          width: post.visibility == 'category' || (post.visibility == 'public' && !post.isAnonymous) ? 1.5 : 0,
-        ),
+        // 그림자 없음
+        // 그라데이션 없음
+        // 테두리 없음
       ),
       child: Material(
         color: Colors.transparent,
@@ -327,13 +311,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       // 국적 표시 (항상)
                       CountryFlagCircle(
                         nationality: post.authorNationality,
-                        size: 20, // 16 → 20으로 증가
+                        size: 20,
                       ),
-                      // 공개 범위 배지
-                      if (_buildVisibilityBadge(post, theme) != null) ...[
-                        const SizedBox(width: 8),
-                        _buildVisibilityBadge(post, theme)!,
-                      ],
                     ],
                   ),
                   const SizedBox(height: 2),
@@ -347,55 +326,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ),
             ),
             
-            // DM 버튼 (본인 게시글 제외, 익명 제외, 삭제 계정 제외)
-            if (_shouldShowDMButton(post))
-              SizedBox(
-                width: 32,
-                height: 32,
-                child: Material(
-                  color: Colors.grey[100],
-                  shape: const CircleBorder(),
-                  child: InkWell(
-                    customBorder: const CircleBorder(),
-                    onTap: () => _openDM(post),
-                    child: Center(
-                      child: _buildDMIcon(),
-                    ),
-                  ),
-                ),
-              ),
-
-            const SizedBox(width: 6),
-
-            // 북마크 버튼 (DM과 평행 정렬, 동일 사이즈)
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: Material(
-                color: Colors.grey[100],
-                shape: const CircleBorder(),
-                child: InkWell(
-                  customBorder: const CircleBorder(),
-                  onTap: _isLoading ? null : _toggleSave,
-                  child: Center(
-                    child: _isLoading
-                        ? SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
-                            ),
-                          )
-                        : Icon(
-                            _isSaved ? IconStyles.bookmarkFilled : IconStyles.bookmark,
-                            size: 18,
-                            color: Colors.black87,
-                          ),
-                  ),
-                ),
-              ),
-            ),
+            // 공개 범위 배지를 오른쪽 상단에 배치
+            _buildVisibilityIndicator(post),
           ],
         ),
         

@@ -461,15 +461,15 @@ class _FriendsPageState extends State<FriendsPage> {
     
     return Container(
       padding: const EdgeInsets.symmetric(
-        horizontal: 6,
-        vertical: 2,
+        horizontal: 10, // 6 -> 10 (67% 증가)
+        vertical: 5, // 2 -> 5 (150% 증가)
       ),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: color.withOpacity(0.15), // 0.1 -> 0.15 (배경 조금 더 진하게)
+        borderRadius: BorderRadius.circular(12), // 8 -> 12
         border: Border.all(
-          color: color.withOpacity(0.3),
-          width: 0.5,
+          color: color.withOpacity(0.4), // 0.3 -> 0.4 (테두리 조금 더 진하게)
+          width: 1, // 0.5 -> 1
         ),
       ),
       child: Row(
@@ -477,16 +477,16 @@ class _FriendsPageState extends State<FriendsPage> {
         children: [
           Icon(
             _parseIcon(friendCategory.iconName),
-            size: 12,
+            size: 16, // 12 -> 16 (33% 증가)
             color: color,
           ),
-          const SizedBox(width: 3),
+          const SizedBox(width: 6), // 3 -> 6 (100% 증가)
           Text(
             friendCategory.name,
             style: TextStyle(
-              fontSize: 10,
+              fontSize: 13, // 10 -> 13 (30% 증가)
               color: color,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w600, // w500 -> w600 (더 진하게)
             ),
           ),
         ],
@@ -517,8 +517,8 @@ class _FriendsPageState extends State<FriendsPage> {
                   builder: (context, provider, child) {
                     // provider의 friends가 변경되면 필터링된 목록도 업데이트
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (_filteredFriends.length != provider.friends.length ||
-                          _searchController.text.trim().isEmpty) {
+                      if (mounted && (_filteredFriends.length != provider.friends.length ||
+                          _searchController.text.trim().isEmpty)) {
                         _filterFriends(_searchController.text);
                       }
                     });
@@ -580,8 +580,7 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 검색바 위젯
   Widget _buildSearchBar() {
     return Container(
-      height: 60, // 원래대로 복구
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 고정 높이 제거
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -618,8 +617,9 @@ class _FriendsPageState extends State<FriendsPage> {
           fillColor: Colors.grey[100],
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
-            vertical: 8,
+            vertical: 12, // 8 -> 12로 증가하여 더 편안한 터치 영역
           ),
+          isDense: true, // 컴팩트한 디자인
         ),
         onChanged: _filterFriends,
         textInputAction: TextInputAction.search,
@@ -638,6 +638,7 @@ class _FriendsPageState extends State<FriendsPage> {
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           elevation: 2,
+          color: Colors.white, // 흰색 배경
           child: InkWell(
             onTap: () => _navigateToProfile(friend),
             onLongPress: () => _showFriendOptions(friend),
@@ -724,43 +725,8 @@ class _FriendsPageState extends State<FriendsPage> {
                     ),
                   ),
 
-                  // 친구 그룹 배지 및 메뉴
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // 친구 상태 배지
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.green[100],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.people, size: 16, color: Colors.green[700]),
-                            const SizedBox(width: 4),
-                            Text(
-                              AppLocalizations.of(context)!.friendStatus,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.green[700],
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      // 그룹 배지 (그룹에 속한 경우에만 표시)
-                      const SizedBox(height: 4),
-                      _buildGroupBadge(friend),
-                    ],
-                  ),
+                  // 그룹 배지만 표시 (친구 상태 배지 제거)
+                  _buildGroupBadge(friend),
                   
                   // 메뉴 버튼 (맨 오른쪽 상단에 배치)
                   IconButton(

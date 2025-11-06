@@ -421,7 +421,7 @@ service firebase.storage {
                     style: TextStyle(
                       fontSize: 17,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF4A90E2), // 브랜드 파란색
+                      color: Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
                       letterSpacing: -0.5,
                     ),
                   ),
@@ -515,29 +515,29 @@ service firebase.storage {
         onItemTapped: _onItemTapped,
         items: [
           BottomNavigationItem(
-            icon: Icons.forum_outlined,
-            selectedIcon: Icons.forum,
-            label: AppLocalizations.of(context)!.board,
+            icon: Icons.article_outlined, // 게시판 아이콘 변경 (DM과 구분)
+            selectedIcon: Icons.article,
+            label: AppLocalizations.of(context)?.board ?? '게시판',
           ),
           BottomNavigationItem(
             icon: Icons.groups_outlined,
             selectedIcon: Icons.groups,
-            label: AppLocalizations.of(context)!.meetup,
+            label: AppLocalizations.of(context)?.meetup ?? '모임',
           ),
           BottomNavigationItem(
             icon: Icons.chat_bubble_outline,
             selectedIcon: Icons.chat_bubble,
-            label: AppLocalizations.of(context)!.dm,
+            label: AppLocalizations.of(context)?.dm ?? 'DM',
           ),
           BottomNavigationItem(
             icon: Icons.person_outline,
             selectedIcon: Icons.person,
-            label: AppLocalizations.of(context)!.myPage,
+            label: AppLocalizations.of(context)?.myPage ?? '마이페이지',
           ),
           BottomNavigationItem(
             icon: Icons.people_outline,
             selectedIcon: Icons.people,
-            label: AppLocalizations.of(context)!.friends,
+            label: AppLocalizations.of(context)?.friends ?? '친구',
           ),
         ],
       ),

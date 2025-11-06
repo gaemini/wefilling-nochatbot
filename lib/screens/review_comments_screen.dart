@@ -45,7 +45,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
 
     return GestureDetector(
       onTap: () {
@@ -282,7 +282,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (user == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired), backgroundColor: Colors.red),
+            SnackBar(content: Text(AppLocalizations.of(context)?.loginRequired), backgroundColor: Colors.red),
           );
         }
         return;
@@ -298,7 +298,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
       if (mounted) {
         if (!ok) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed), backgroundColor: Colors.red),
+            SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed), backgroundColor: Colors.red),
           );
         } else {
           _commentController.clear();
@@ -308,7 +308,7 @@ class _ReviewCommentsScreenState extends State<ReviewCommentsScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed), backgroundColor: Colors.red),
+          SnackBar(content: Text(AppLocalizations.of(context)?.commentSubmitFailed), backgroundColor: Colors.red),
         );
       }
     } finally {

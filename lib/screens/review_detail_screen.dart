@@ -197,7 +197,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final currentUser = _auth.currentUser;
     
     return Scaffold(
@@ -411,7 +411,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   }
 
   Widget _buildActionButtons(ReviewPost review, bool isLiked, User? currentUser) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -653,7 +653,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.error),
+            content: Text(AppLocalizations.of(context)?.error),
             backgroundColor: Colors.red,
           ),
         );

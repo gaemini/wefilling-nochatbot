@@ -145,7 +145,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final currentLang = Localizations.localeOf(context).languageCode;
     
     return Scaffold(

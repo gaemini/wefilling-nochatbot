@@ -37,12 +37,12 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.myMeetups),
+        title: Text(AppLocalizations.of(context)?.myMeetups),
         bottom: TabBar(
           controller: _tabController,
           tabs: [
-            Tab(text: AppLocalizations.of(context)!.hostedMeetups),
-            Tab(text: AppLocalizations.of(context)!.joinedMeetups),
+            Tab(text: AppLocalizations.of(context)?.hostedMeetups),
+            Tab(text: AppLocalizations.of(context)?.joinedMeetups),
           ],
         ),
       ),
@@ -59,7 +59,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (snapshot.hasError) {
                 return ErrorHandlingUtils.buildErrorWidget(
-                  AppLocalizations.of(context)!.meetupLoadError,
+                  AppLocalizations.of(context)?.meetupLoadError,
                   () => setState(() {}),
                 );
               }
@@ -68,7 +68,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (meetups.isEmpty) {
                 return ErrorHandlingUtils.buildEmptyWidget(
-                  AppLocalizations.of(context)!.hostedMeetupsEmpty,
+                  AppLocalizations.of(context)?.hostedMeetupsEmpty,
                 );
               }
 
@@ -86,7 +86,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
 
               if (snapshot.hasError) {
                 return ErrorHandlingUtils.buildErrorWidget(
-                  AppLocalizations.of(context)!.meetupLoadError,
+                  AppLocalizations.of(context)?.meetupLoadError,
                   () => setState(() {}),
                 );
               }
@@ -97,7 +97,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
               // 빈 리스트 체크
               if (meetups.isEmpty) {
                 return ErrorHandlingUtils.buildEmptyWidget(
-                  AppLocalizations.of(context)!.joinedMeetupsEmpty,
+                  AppLocalizations.of(context)?.joinedMeetupsEmpty,
                 );
               }
 
@@ -114,7 +114,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   Widget _buildMeetupList(List<Meetup> meetups) {
     // 빈 리스트 체크 추가
     if (meetups.isEmpty) {
-      return ErrorHandlingUtils.buildEmptyWidget(AppLocalizations.of(context)!.noMeetupsYet);
+      return ErrorHandlingUtils.buildEmptyWidget(AppLocalizations.of(context)?.noMeetupsYet);
     }
 
     // 날짜별로 모임 정렬 (최신순으로 변경)
@@ -268,7 +268,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${meetup.currentParticipants}/${meetup.maxParticipants}${AppLocalizations.of(context)!.peopleUnit}',
+                                  '${meetup.currentParticipants}/${meetup.maxParticipants}${AppLocalizations.of(context)?.peopleUnit}',
                                   style: TextStyle(color: Colors.grey[600]),
                                 ),
                                 const SizedBox(width: 8),
@@ -287,7 +287,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                       ),
                                     ),
                                     child: Text(
-                                      AppLocalizations.of(context)!.fullShort,
+                                      AppLocalizations.of(context)?.fullShort,
                                       style: TextStyle(
                                         color: Colors.red[700],
                                         fontSize: 10,
@@ -308,7 +308,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${AppLocalizations.of(context)!.organizer}: ${meetup.host}',
+                                  '${AppLocalizations.of(context)?.organizer}: ${meetup.host}',
                                   style: TextStyle(color: Colors.grey[600]),
                                 ),
                               ],

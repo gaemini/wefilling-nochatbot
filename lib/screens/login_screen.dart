@@ -87,7 +87,7 @@ class _LoginScreenState extends State<LoginScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  AppLocalizations.of(context)!.signupRequired,
+                  AppLocalizations.of(context)?.signupRequired,
                   style: const TextStyle(
                     fontSize: 16,
                     height: 1.5,
@@ -207,7 +207,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   const SizedBox(height: 16),
                                   Text(
-                                    AppLocalizations.of(context)!.appName,
+                                    AppLocalizations.of(context)?.appName,
                                     style: const TextStyle(
                                       fontSize: 40,
                                       fontWeight: FontWeight.bold,
@@ -217,7 +217,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                   const SizedBox(height: 12),
                                   Text(
-                                    AppLocalizations.of(context)!.appTagline,
+                                    AppLocalizations.of(context)?.appTagline,
                                     style: TextStyle(
                                       fontSize: 18,
                                       color: Colors.grey.shade700,
@@ -252,7 +252,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
                                     Text(
-                                      AppLocalizations.of(context)!.welcomeTitle,
+                                      AppLocalizations.of(context)?.welcomeTitle,
                                       style: TextStyle(
                                         fontSize: 22,
                                         fontWeight: FontWeight.bold,
@@ -261,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      AppLocalizations.of(context)!.googleLoginDescription,
+                                      AppLocalizations.of(context)?.googleLoginDescription,
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontSize: 16,
@@ -374,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             ),
                                             const SizedBox(width: 12),
                                             Text(
-                                              AppLocalizations.of(context)!.googleLogin,
+                                              AppLocalizations.of(context)?.googleLogin,
                                               style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w500,
@@ -405,7 +405,7 @@ class _LoginScreenState extends State<LoginScreen>
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           Text(
-                                            AppLocalizations.of(context)!.noAccountYet,
+                                            AppLocalizations.of(context)?.noAccountYet,
                                             style: TextStyle(
                                               fontSize: 14,
                                               color: Colors.grey.shade700,
@@ -413,7 +413,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           ),
                                           const SizedBox(width: 4),
                                           Text(
-                                            AppLocalizations.of(context)!.signUp,
+                                            AppLocalizations.of(context)?.signUp,
                                             style: TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.bold,
@@ -437,7 +437,7 @@ class _LoginScreenState extends State<LoginScreen>
                                             ),
                                             const SizedBox(height: 12),
                                             Text(
-                                              AppLocalizations.of(context)!.loggingIn,
+                                              AppLocalizations.of(context)?.loggingIn,
                                               style: TextStyle(
                                                 fontSize: 14,
                                                 color: Colors.grey.shade600,
@@ -454,7 +454,7 @@ class _LoginScreenState extends State<LoginScreen>
 
                               // 하단 텍스트
                               Text(
-                                AppLocalizations.of(context)!.loginTermsNotice,
+                                AppLocalizations.of(context)?.loginTermsNotice,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
                                   fontSize: 12,
@@ -648,7 +648,7 @@ class _LoginScreenState extends State<LoginScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    AppLocalizations.of(context)!.signupRequired,
+                    AppLocalizations.of(context)?.signupRequired,
                     style: const TextStyle(
                       fontSize: 16,
                       height: 1.5,
@@ -723,7 +723,7 @@ class _LoginScreenState extends State<LoginScreen>
                     ),
                   ),
                   child: Text(
-                    AppLocalizations.of(context)!.signUp,
+                    AppLocalizations.of(context)?.signUp,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,

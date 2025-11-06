@@ -101,7 +101,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       print('❌ 이미지 선택 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.imagePickFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.imagePickFailed)),
         );
       }
     }
@@ -151,7 +151,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.imageUploadFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.imageUploadFailed)),
         );
       }
       return null;
@@ -168,7 +168,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
     if (_contentController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.pleaseEnterReviewContent)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.pleaseEnterReviewContent)),
       );
       return;
     }
@@ -199,12 +199,12 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
         if (success && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewUpdated)),
+            SnackBar(content: Text(AppLocalizations.of(context)?.reviewUpdated)),
           );
           Navigator.of(context).pop(true);
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewUpdateFailed)),
+            SnackBar(content: Text(AppLocalizations.of(context)?.reviewUpdateFailed)),
           );
         }
       } else {
@@ -219,7 +219,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         if (reviewId == null) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.reviewCreateFailed)),
+              SnackBar(content: Text(AppLocalizations.of(context)?.reviewCreateFailed)),
             );
           }
           setState(() {
@@ -248,14 +248,14 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           if (requestSent) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.reviewCreatedAndRequestsSent(participantIds.length)),
+                content: Text(AppLocalizations.of(context)?.reviewCreatedAndRequestsSent(participantIds.length)),
                 backgroundColor: Colors.green,
               ),
             );
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.reviewCreatedButNotificationFailed),
+                content: Text(AppLocalizations.of(context)?.reviewCreatedButNotificationFailed),
                 backgroundColor: Colors.orange,
               ),
             );
@@ -280,7 +280,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       print('❌ 후기 제출 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.error)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.error)),
         );
       }
     } finally {
@@ -361,7 +361,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditMode ? AppLocalizations.of(context)!.reviewEditTitle : AppLocalizations.of(context)!.reviewWriteTitle),
+        title: Text(isEditMode ? AppLocalizations.of(context)?.reviewEditTitle : AppLocalizations.of(context)?.reviewWriteTitle),
         elevation: 0,
       ),
       body: SingleChildScrollView(
@@ -400,7 +400,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  AppLocalizations.of(context)!.reviewPhoto,
+                  AppLocalizations.of(context)?.reviewPhoto,
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -480,7 +480,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
             // 후기 내용
             Text(
-              AppLocalizations.of(context)!.reviewContent,
+              AppLocalizations.of(context)?.reviewContent,
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
@@ -493,7 +493,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
               maxLines: 8,
               maxLength: 500,
               decoration: InputDecoration(
-                hintText: AppLocalizations.of(context)!.reviewWriteHint,
+                hintText: AppLocalizations.of(context)?.reviewWriteHint,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -526,7 +526,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         ),
                       )
                     : Text(
-                        isEditMode ? AppLocalizations.of(context)!.reviewEditTitle : AppLocalizations.of(context)!.requestReviewAcceptance,
+                        isEditMode ? AppLocalizations.of(context)?.reviewEditTitle : AppLocalizations.of(context)?.requestReviewAcceptance,
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -552,7 +552,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        AppLocalizations.of(context)!.reviewRequestInfo,
+                        AppLocalizations.of(context)?.reviewRequestInfo,
                         style: TextStyle(
                           color: Colors.amber[900],
                           fontSize: 13,

@@ -129,9 +129,9 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
-                ? AppLocalizations.of(context)!.friends
-                : AppLocalizations.of(context)!.anonymousUser,
-            subtitle: AppLocalizations.of(context)!.noConversations,
+                ? AppLocalizations.of(context)?.friends
+                : AppLocalizations.of(context)?.anonymousUser,
+            subtitle: AppLocalizations.of(context)?.noConversations,
           );
         }
 
@@ -185,7 +185,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 44,
                         alignment: Alignment.center,
                         child: Text(
-                          AppLocalizations.of(context)!.friends,
+                          AppLocalizations.of(context)?.friends,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -204,7 +204,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 44,
                         alignment: Alignment.center,
                         child: Text(
-                          AppLocalizations.of(context)!.anonymousUser,
+                          AppLocalizations.of(context)?.anonymousUser,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
@@ -255,7 +255,7 @@ class _DMListScreenState extends State<DMListScreen> {
     final displayName = (dmTitle != null && dmTitle.isNotEmpty)
         ? dmTitle
         : (isAnonymous 
-            ? AppLocalizations.of(context)!.anonymousUser 
+            ? AppLocalizations.of(context)?.anonymousUser 
             : otherUserName);
 
     return Material(
@@ -316,7 +316,7 @@ class _DMListScreenState extends State<DMListScreen> {
                     // 마지막 메시지
                     Text(
                       conversation.lastMessage.isEmpty 
-                          ? AppLocalizations.of(context)!.noMessages 
+                          ? AppLocalizations.of(context)?.noMessages 
                           : conversation.lastMessage,
                       style: TextStyle(
                         fontSize: 14,
@@ -429,7 +429,7 @@ class _DMListScreenState extends State<DMListScreen> {
           const CircularProgressIndicator(),
           const SizedBox(height: 16),
           Text(
-            AppLocalizations.of(context)!.loadingMessages,
+            AppLocalizations.of(context)?.loadingMessages,
             style: TextStyle(
               fontSize: 14,
               color: Colors.grey[600],
@@ -453,7 +453,7 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
           const SizedBox(height: 16),
           Text(
-            AppLocalizations.of(context)!.error,
+            AppLocalizations.of(context)?.error,
             style: const TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,

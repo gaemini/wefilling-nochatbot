@@ -89,7 +89,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error + ': 잘못된 대화방 ID입니다'),
+              content: Text(AppLocalizations.of(context)?.error + ': 잘못된 대화방 ID입니다'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -159,7 +159,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.error + ': 대화방 참여자가 아닙니다'),
+                content: Text(AppLocalizations.of(context)?.error + ': 대화방 참여자가 아닙니다'),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -182,7 +182,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error + ': 접근 권한이 없습니다'),
+              content: Text(AppLocalizations.of(context)?.error + ': 접근 권한이 없습니다'),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -248,9 +248,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Widget build(BuildContext context) {
     if (_currentUser == null) {
       return Scaffold(
-        appBar: AppBar(title: Text(AppLocalizations.of(context)!.dm)),
+        appBar: AppBar(title: Text(AppLocalizations.of(context)?.dm)),
         body: Center(
-          child: Text(AppLocalizations.of(context)!.loginRequired),
+          child: Text(AppLocalizations.of(context)?.loginRequired),
         ),
       );
     }
@@ -280,10 +280,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
         ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
         : (isAnonymous 
-            ? AppLocalizations.of(context)!.anonymousUser 
+            ? AppLocalizations.of(context)?.anonymousUser 
             : otherUserName);
     final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? AppLocalizations.of(context)!.author
+        ? AppLocalizations.of(context)?.author
         : null;
 
     String _formatHeaderDate() {
@@ -369,7 +369,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                 children: [
                   const Icon(Icons.block, size: 20, color: Colors.red),
                   const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context)!.blockThisUser),
+                  Text(AppLocalizations.of(context)?.blockThisUser),
                 ],
               ),
             ),
@@ -409,7 +409,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
       );
     }
   }
@@ -432,7 +432,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)!.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
@@ -511,7 +511,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
             const SizedBox(height: 16),
             Text(
-              AppLocalizations.of(context)!.noMessages,
+              AppLocalizations.of(context)?.noMessages,
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
           ],
@@ -530,7 +530,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                 const CircularProgressIndicator(),
                 const SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)!.loadingMessages,
+                  AppLocalizations.of(context)?.loadingMessages,
                   style: TextStyle(color: Colors.grey[600]),
                 ),
               ],
@@ -574,7 +574,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           
           return Center(
             child: Text(
-              '${AppLocalizations.of(context)!.error}: ${snapshot.error}',
+              '${AppLocalizations.of(context)?.error}: ${snapshot.error}',
               style: const TextStyle(color: Colors.red),
             ),
           );
@@ -590,7 +590,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                 Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
                 const SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)!.noMessages,
+                  AppLocalizations.of(context)?.noMessages,
                   style: TextStyle(fontSize: 16, color: Colors.grey[600]),
                 ),
               ],
@@ -666,7 +666,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                   if (message.isRead) ...[
                     const SizedBox(width: 4),
                     Text(
-                      AppLocalizations.of(context)!.read,
+                      AppLocalizations.of(context)?.read,
                       style: const TextStyle(
                         color: Colors.white70,
                         fontSize: 11,
@@ -755,7 +755,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                   maxLength: 500,
                   textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.typeMessage,
+                    hintText: AppLocalizations.of(context)?.typeMessage,
                     hintStyle: TextStyle(color: Colors.grey[500], fontSize: 15),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     border: InputBorder.none,
@@ -835,7 +835,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.cannotSendDM),
+                content: Text(AppLocalizations.of(context)?.cannotSendDM),
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 2),
               ),
@@ -872,7 +872,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.messageSendFailed),
+              content: Text(AppLocalizations.of(context)?.messageSendFailed),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -885,7 +885,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.error),
+            content: Text(AppLocalizations.of(context)?.error),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -903,17 +903,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.blockThisUser),
-        content: Text(AppLocalizations.of(context)!.blockConfirm),
+        title: Text(AppLocalizations.of(context)?.blockThisUser),
+        content: Text(AppLocalizations.of(context)?.blockConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)!.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text(
-              AppLocalizations.of(context)!.block,
+              AppLocalizations.of(context)?.block,
               style: const TextStyle(color: Colors.red),
             ),
           ),

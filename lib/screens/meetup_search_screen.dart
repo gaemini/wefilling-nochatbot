@@ -263,8 +263,8 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                           const SizedBox(height: 16),
                           Text(
                             _searchQuery.isEmpty 
-                                ? AppLocalizations.of(context)!.enterSearchQuery 
-                                : AppLocalizations.of(context)!.noSearchResults,
+                                ? AppLocalizations.of(context)?.enterSearchQuery 
+                                : AppLocalizations.of(context)?.noSearchResults,
                             style: TextStyle(
                               fontSize: 16,
                               color: Colors.grey[600],

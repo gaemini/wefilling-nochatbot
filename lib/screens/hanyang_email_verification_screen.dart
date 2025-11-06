@@ -36,7 +36,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _sendVerificationCode() async {
     if (_emailController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.verificationCodeRequired;
+        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired;
       });
       return;
     }
@@ -46,7 +46,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     // hanyang.ac.kr 도메인 검증
     if (!email.endsWith('@hanyang.ac.kr')) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.hanyangEmailRequired;
+        _errorMessage = AppLocalizations.of(context)?.hanyangEmailRequired;
       });
       return;
     }
@@ -70,14 +70,14 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.verificationCodeSent),
+            content: Text(AppLocalizations.of(context)?.verificationCodeSent),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
           ),
         );
       } else if (mounted) {
         setState(() {
-          _errorMessage = result['message'] ?? AppLocalizations.of(context)!.error;
+          _errorMessage = result['message'] ?? AppLocalizations.of(context)?.error;
         });
       }
     } on FirebaseFunctionsException catch (e) {
@@ -85,12 +85,12 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       if (mounted) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
+            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
         } else {
           setState(() {
-            _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
+            _errorMessage = '${AppLocalizations.of(context)?.error}: ${e.message ?? e.code}';
             _isLoading = false;
           });
         }
@@ -98,7 +98,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: $e';
+          _errorMessage = '${AppLocalizations.of(context)?.error}: $e';
           _isLoading = false;
         });
       }
@@ -115,7 +115,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _verifyAndComplete() async {
     if (_verificationCodeController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.verificationCodeRequired;
+        _errorMessage = AppLocalizations.of(context)?.verificationCodeRequired;
       });
       return;
     }
@@ -138,13 +138,13 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       } on FirebaseFunctionsException catch (e) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
+            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
           return;
         }
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
+          _errorMessage = '${AppLocalizations.of(context)?.error}: ${e.message ?? e.code}';
           _isLoading = false;
         });
         return;
@@ -152,7 +152,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       
       if (!verified && mounted) {
         setState(() {
-          _errorMessage = AppLocalizations.of(context)!.verificationCodeInvalid;
+          _errorMessage = AppLocalizations.of(context)?.verificationCodeInvalid;
           _isLoading = false;
         });
         return;
@@ -168,8 +168,8 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           context: context,
           barrierDismissible: false,
           builder: (dialogContext) => AlertDialog(
-            title: Text(AppLocalizations.of(context)!.verificationSuccess),
-            content: Text(AppLocalizations.of(context)!.proceedWithGoogleLogin),
+            title: Text(AppLocalizations.of(context)?.verificationSuccess),
+            content: Text(AppLocalizations.of(context)?.proceedWithGoogleLogin),
             actions: [
               TextButton(
                 onPressed: () async {
@@ -196,11 +196,11 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       } on FirebaseFunctionsException catch (e) {
                         if (e.code == 'already-exists') {
                           setState(() {
-                            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
+                            _errorMessage = AppLocalizations.of(context)?.hanyangEmailAlreadyUsed;
                           });
                         } else {
                           setState(() {
-                            _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
+                            _errorMessage = '${AppLocalizations.of(context)?.error}: ${e.message ?? e.code}';
                           });
                         }
                         setState(() { _isLoading = false; });
@@ -236,7 +236,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     }
                   }
                 },
-                child: Text(AppLocalizations.of(context)!.continueWithGoogle),
+                child: Text(AppLocalizations.of(context)?.continueWithGoogle),
               ),
             ],
           ),
@@ -246,7 +246,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: $e';
+          _errorMessage = '${AppLocalizations.of(context)?.error}: $e';
         });
       }
     } finally {
@@ -267,7 +267,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(AppLocalizations.of(context)!.emailVerificationRequired),
+        title: Text(AppLocalizations.of(context)?.emailVerificationRequired),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -298,7 +298,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      AppLocalizations.of(context)!.hanyangEmailOnly,
+                      AppLocalizations.of(context)?.hanyangEmailOnly,
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -308,7 +308,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      AppLocalizations.of(context)!.hanyangEmailDescription,
+                      AppLocalizations.of(context)?.hanyangEmailDescription,
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.blue.shade600,
@@ -328,7 +328,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                 keyboardType: TextInputType.emailAddress,
                 enabled: !_isCodeSent,
                 decoration: InputDecoration(
-                  labelText: AppLocalizations.of(context)!.email,
+                  labelText: AppLocalizations.of(context)?.email,
                   hintText: 'example@hanyang.ac.kr',
                   prefixIcon: const Icon(Icons.email),
                   border: OutlineInputBorder(
@@ -339,10 +339,10 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)!.required;
+                    return AppLocalizations.of(context)?.required;
                   }
                   if (!value.endsWith('@hanyang.ac.kr')) {
-                    return AppLocalizations.of(context)!.hanyangEmailRequired;
+                    return AppLocalizations.of(context)?.hanyangEmailRequired;
                   }
                   return null;
                 },
@@ -371,7 +371,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                           ),
                         )
                       : Text(
-                          AppLocalizations.of(context)!.sendVerificationCode,
+                          AppLocalizations.of(context)?.sendVerificationCode,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
@@ -398,7 +398,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          AppLocalizations.of(context)!.verificationCodeSent,
+                          AppLocalizations.of(context)?.verificationCodeSent,
                           style: TextStyle(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.bold,
@@ -416,7 +416,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   keyboardType: TextInputType.number,
                   maxLength: 4,
                   decoration: InputDecoration(
-                    labelText: AppLocalizations.of(context)!.verificationCode,
+                    labelText: AppLocalizations.of(context)?.verificationCode,
                     hintText: '1234',
                     prefixIcon: const Icon(Icons.security),
                     border: OutlineInputBorder(
@@ -428,10 +428,10 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)!.verificationCodeRequired;
+                      return AppLocalizations.of(context)?.verificationCodeRequired;
                     }
                     if (value.length != 4) {
-                      return AppLocalizations.of(context)!.verificationCodeLength;
+                      return AppLocalizations.of(context)?.verificationCodeLength;
                     }
                     return null;
                   },
@@ -458,7 +458,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                           ),
                         )
                       : Text(
-                          AppLocalizations.of(context)!.verifyCode,
+                          AppLocalizations.of(context)?.verifyCode,
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -477,7 +477,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     });
                   },
                   child: Text(
-                    AppLocalizations.of(context)!.retryAction,
+                    AppLocalizations.of(context)?.retryAction,
                     style: TextStyle(color: Colors.blue.shade700),
                   ),
                 ),

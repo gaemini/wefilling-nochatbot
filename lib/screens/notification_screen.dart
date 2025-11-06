@@ -98,7 +98,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (meetupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
       );
       return;
     }
@@ -133,7 +133,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupNotFound)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupNotFound)),
         );
       }
     } catch (e) {
@@ -144,7 +144,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -157,7 +157,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (postId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
       );
       return;
     }
@@ -189,7 +189,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.postNotFound)),
         );
       }
     } catch (e) {
@@ -200,7 +200,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -214,7 +214,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (reviewId == null || userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.notificationDataMissing)),
       );
       return;
     }
@@ -260,7 +260,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.reviewNotFound}')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.reviewNotFound}')),
         );
       }
     }
@@ -278,7 +278,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -296,7 +296,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (requestId == null || reviewId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reviewInfoMissing)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.reviewInfoMissing)),
         );
         return;
       }
@@ -317,7 +317,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -335,7 +335,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -343,7 +343,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 제목 반환
   String _getLocalizedTitle(AppNotification notification) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     
     switch (notification.type) {
       case 'meetup_full':
@@ -373,7 +373,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
   String _getLocalizedMessage(AppNotification notification) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final data = notification.data;
     
     if (data == null) {
@@ -500,7 +500,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
-          content: Text(AppLocalizations.of(context)!.notificationDeleted),
+          content: Text(AppLocalizations.of(context)?.notificationDeleted),
         ));
       },
 
@@ -578,13 +578,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
-      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+      return AppLocalizations.of(context)?.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+      return AppLocalizations.of(context)?.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)?.minutesAgo(difference.inMinutes);
     } else {
-      return AppLocalizations.of(context)!.justNow;
+      return AppLocalizations.of(context)?.justNow;
     }
   }
 
@@ -592,13 +592,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.notifications),
+        title: Text(AppLocalizations.of(context)?.notifications),
         actions: [
           // 모든 알림 읽음 버튼
           IconButton(
             icon: const Icon(Icons.done_all),
             onPressed: _isLoading ? null : _markAllAsRead,
-            tooltip: AppLocalizations.of(context)!.markAllAsRead,
+            tooltip: AppLocalizations.of(context)?.markAllAsRead,
           ),
         ],
       ),
@@ -612,7 +612,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('${AppLocalizations.of(context)!.notificationLoadError}: ${snapshot.error}'),
+              child: Text('${AppLocalizations.of(context)?.notificationLoadError}: ${snapshot.error}'),
             );
           }
 
@@ -630,7 +630,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    AppLocalizations.of(context)!.noNotifications,
+                    AppLocalizations.of(context)?.noNotifications,
                     style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                   ),
                 ],

@@ -406,7 +406,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   
                   // 모임 설명 섹션
                         Text(
-                          AppLocalizations.of(context)!.meetupDetails,
+                          AppLocalizations.of(context)?.meetupDetails ?? "모임 정보",
                           style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 18,
@@ -431,7 +431,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
+                                    content: Text('${AppLocalizations.of(context)?.error ?? "오류"}: URL을 열 수 없습니다'),
                                   ),
                                 );
                               }
@@ -622,7 +622,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
+                              content: Text('${AppLocalizations.of(context)?.error ?? "오류"}: URL을 열 수 없습니다'),
                             ),
                           );
                         }
@@ -1123,7 +1123,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupInfoRefreshed),
+              content: Text(AppLocalizations.of(context)?.meetupInfoRefreshed ?? "모임 정보가 새로고침되었습니다"),
               backgroundColor: Colors.blue,
               duration: const Duration(seconds: 1),
             ),
@@ -1135,7 +1135,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text('${AppLocalizations.of(context)?.error ?? "오류"}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1186,8 +1186,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     const SizedBox(width: 8),
                     Text(
                       isFull
-                          ? AppLocalizations.of(context)!.completeOrCancelMeetup
-                          : AppLocalizations.of(context)!.cancelMeetup,
+                          ? AppLocalizations.of(context)?.completeOrCancelMeetup
+                          : AppLocalizations.of(context)?.cancelMeetup,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
@@ -1230,7 +1230,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     Icon(Icons.rate_review_outlined, size: 20),
                     const SizedBox(width: 8),
                     Text(
-                      AppLocalizations.of(context)!.writeMeetupReview,
+                      AppLocalizations.of(context)?.writeMeetupReview,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
@@ -1263,7 +1263,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             Icon(Icons.edit_outlined, size: 20),
             const SizedBox(width: 8),
             Text(
-              AppLocalizations.of(context)!.editReview,
+              AppLocalizations.of(context)?.editReview,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 16,
@@ -1297,7 +1297,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             Icon(Icons.check_circle_outline, size: 20),
             const SizedBox(width: 8),
             Text(
-              AppLocalizations.of(context)!.reviewAccept,
+              AppLocalizations.of(context)?.reviewAccept,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 16,
@@ -1340,7 +1340,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   const Icon(Icons.group_add, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    AppLocalizations.of(context)!.joinMeetup,
+                    AppLocalizations.of(context)?.joinMeetup,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -1383,7 +1383,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   const Icon(Icons.exit_to_app, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    AppLocalizations.of(context)!.leaveMeetup,
+                    AppLocalizations.of(context)?.leaveMeetup,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -1600,8 +1600,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 ),
               )
             : Text(isFull
-                ? AppLocalizations.of(context)!.completeOrCancelMeetup
-                : AppLocalizations.of(context)!.cancelMeetup),
+                ? AppLocalizations.of(context)?.completeOrCancelMeetup
+                : AppLocalizations.of(context)?.cancelMeetup),
       );
     }
 
@@ -1624,7 +1624,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   color: Colors.white,
                 ),
               )
-            : Text(AppLocalizations.of(context)!.writeMeetupReview),
+            : Text(AppLocalizations.of(context)?.writeMeetupReview),
       );
     }
 
@@ -1639,7 +1639,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           elevation: 0,
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        child: Text(AppLocalizations.of(context)!.editReview),
+        child: Text(AppLocalizations.of(context)?.editReview),
       ),
     );
   }
@@ -1663,7 +1663,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 color: Colors.white,
               ),
             )
-          : Text(AppLocalizations.of(context)!.viewAndRespondToReview),
+          : Text(AppLocalizations.of(context)?.viewAndRespondToReview),
     );
   }
 
@@ -1671,7 +1671,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   Future<void> _navigateToReviewApproval() async {
     if (_currentMeetup.reviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
       );
       return;
     }
@@ -1748,7 +1748,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             print('❌ 후기 요청 재전송 실패');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed)),
+                SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed)),
               );
             }
             return;
@@ -1757,7 +1757,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           print('❌ reviewId가 없음');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+              SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
             );
           }
           return;
@@ -1778,7 +1778,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       print('❌ 후기 확인 이동 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error ?? "오류"}: $e')),
         );
       }
     } finally {
@@ -1801,9 +1801,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     // 이미 응답한 경우 상태 표시 다이얼로그
     final bool alreadyResponded = currentStatus != 'pending';
     final String statusText = currentStatus == 'accepted' 
-        ? AppLocalizations.of(context)!.reviewAccepted
+        ? AppLocalizations.of(context)?.reviewAccepted
         : currentStatus == 'rejected'
-            ? AppLocalizations.of(context)!.reviewRejected
+            ? AppLocalizations.of(context)?.reviewRejected
             : '';
     final MaterialColor statusColor = currentStatus == 'accepted' 
         ? Colors.green 
@@ -1852,7 +1852,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           Text(
                             alreadyResponded 
                                 ? statusText
-                                : AppLocalizations.of(context)!.reviewApprovalRequestTitle,
+                                : AppLocalizations.of(context)?.reviewApprovalRequestTitle,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 20,
@@ -1899,7 +1899,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  AppLocalizations.of(context)!.reviewAlreadyResponded,
+                                  AppLocalizations.of(context)?.reviewAlreadyResponded,
                                   style: TextStyle(
                                     fontSize: 15,
                                     color: statusColor.shade900,
@@ -1939,7 +1939,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           border: Border.all(color: Colors.grey[200]!),
                         ),
                         child: Text(
-                          content.isEmpty ? AppLocalizations.of(context)!.noContent : content,
+                          content.isEmpty ? AppLocalizations.of(context)?.noContent : content,
                           style: const TextStyle(
                             fontSize: 15,
                             height: 1.6,
@@ -1963,7 +1963,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  AppLocalizations.of(context)!.reviewRequestInfo,
+                                  AppLocalizations.of(context)?.reviewRequestInfo,
                                   style: TextStyle(
                                     fontSize: 13,
                                     color: Colors.blue[900],
@@ -1996,7 +1996,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                                 await _handleReviewResponse(requestId, false);
                               },
                               icon: const Icon(Icons.close),
-                              label: Text(AppLocalizations.of(context)!.reviewReject),
+                              label: Text(AppLocalizations.of(context)?.reviewReject),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.red[600],
                                 side: BorderSide(color: Colors.red[400]!, width: 1.5),
@@ -2015,7 +2015,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                                 await _handleReviewResponse(requestId, true);
                               },
                               icon: const Icon(Icons.check),
-                              label: Text(AppLocalizations.of(context)!.reviewAccept),
+                              label: Text(AppLocalizations.of(context)?.reviewAccept),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.green[600],
                                 foregroundColor: Colors.white,
@@ -2033,7 +2033,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () => Navigator.pop(context),
-                          child: Text(AppLocalizations.of(context)!.close),
+                          child: Text(AppLocalizations.of(context)?.close),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: statusColor,
                             foregroundColor: Colors.white,
@@ -2065,8 +2065,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           SnackBar(
             content: Text(
               accept
-                  ? AppLocalizations.of(context)!.reviewAccepted
-                  : AppLocalizations.of(context)!.reviewRejected,
+                  ? AppLocalizations.of(context)?.reviewAccepted
+                  : AppLocalizations.of(context)?.reviewRejected,
             ),
             backgroundColor: accept ? Colors.green : Colors.orange,
           ),
@@ -2077,7 +2077,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         print('⚠️ 후기 응답 실패 - 이미 응답했거나 권한 없음');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.reviewAlreadyResponded),
+            content: Text(AppLocalizations.of(context)?.reviewAlreadyResponded),
             backgroundColor: Colors.orange,
           ),
         );
@@ -2086,7 +2086,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       print('❌ 후기 응답 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error ?? "오류"}: $e')),
         );
       }
     }
@@ -2136,7 +2136,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               
               // 제목
               Text(
-                AppLocalizations.of(context)!.meetupCompleteTitle,
+                AppLocalizations.of(context)?.meetupCompleteTitle,
                 style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
@@ -2148,7 +2148,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               
               // 설명
               Text(
-                AppLocalizations.of(context)!.meetupCompleteMessage,
+                AppLocalizations.of(context)?.meetupCompleteMessage,
                 style: TextStyle(
                   fontSize: 15,
                   color: Colors.grey[700],
@@ -2185,7 +2185,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           const Icon(Icons.check_circle, size: 22),
                           const SizedBox(width: 8),
                           Text(
-                            AppLocalizations.of(context)!.markAsCompleted,
+                            AppLocalizations.of(context)?.markAsCompleted,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -2220,7 +2220,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           const Icon(Icons.cancel_outlined, size: 22),
                           const SizedBox(width: 8),
                           Text(
-                            AppLocalizations.of(context)!.cancelMeetup,
+                            AppLocalizations.of(context)?.cancelMeetup,
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -2246,7 +2246,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                         ),
                       ),
                       child: Text(
-                        AppLocalizations.of(context)!.close,
+                        AppLocalizations.of(context)?.close,
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w500,
@@ -2278,14 +2278,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupMarkedCompleted)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkedCompleted)),
         );
       } else if (mounted) {
         setState(() {
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupMarkCompleteFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.meetupMarkCompleteFailed)),
         );
       }
     } catch (e) {
@@ -2320,7 +2320,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   Future<void> _navigateToEditReview() async {
     if (_currentMeetup.reviewId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+        SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
       );
       return;
     }
@@ -2330,7 +2330,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (reviewData == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed)),
         );
       }
       return;
@@ -2359,12 +2359,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.deleteReviewTitle),
-        content: Text(AppLocalizations.of(context)!.deleteReviewConfirmMessage),
+        title: Text(AppLocalizations.of(context)?.deleteReviewTitle),
+        content: Text(AppLocalizations.of(context)?.deleteReviewConfirmMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)!.cancel),
+            child: Text(AppLocalizations.of(context)?.cancel),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -2374,7 +2374,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: Text(AppLocalizations.of(context)!.delete),
+            child: Text(AppLocalizations.of(context)?.delete),
           ),
         ],
       ),
@@ -2388,7 +2388,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.reviewDeleteFailed),
+            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed),
             backgroundColor: Colors.red,
           ),
         );
@@ -2418,7 +2418,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.reviewDeleted),
+            content: Text(AppLocalizations.of(context)?.reviewDeleted),
             backgroundColor: Colors.green,
           ),
         );
@@ -2431,7 +2431,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.reviewDeleteFailed),
+            content: Text(AppLocalizations.of(context)?.reviewDeleteFailed),
             backgroundColor: Colors.red,
           ),
         );
@@ -2444,15 +2444,15 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
         
         // 에러 메시지를 더 명확하게 표시
-        String errorMessage = AppLocalizations.of(context)!.error;
+        String errorMessage = AppLocalizations.of(context)?.error ?? "오류";
         if (e.toString().contains('로그인이 필요합니다')) {
-          errorMessage = AppLocalizations.of(context)!.loginRequired;
+          errorMessage = AppLocalizations.of(context)?.loginRequired;
         } else if (e.toString().contains('후기를 찾을 수 없습니다')) {
-          errorMessage = AppLocalizations.of(context)!.reviewNotFound;
+          errorMessage = AppLocalizations.of(context)?.reviewNotFound;
         } else if (e.toString().contains('작성자만')) {
-          errorMessage = AppLocalizations.of(context)!.noPermission;
+          errorMessage = AppLocalizations.of(context)?.noPermission;
         } else {
-          errorMessage = '${AppLocalizations.of(context)!.reviewDeleteFailed}: ${e.toString()}';
+          errorMessage = '${AppLocalizations.of(context)?.reviewDeleteFailed}: ${e.toString()}';
         }
         
         ScaffoldMessenger.of(context).showSnackBar(
@@ -2476,7 +2476,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           children: [
             Icon(Icons.help_outline, color: Colors.orange[600]),
             const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)!.cancelMeetupConfirm),
+            Text(AppLocalizations.of(context)?.cancelMeetupConfirm),
           ],
         ),
         content: Column(
@@ -2484,7 +2484,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              AppLocalizations.of(context)!.cancelMeetupMessage(_currentMeetup.title),
+              AppLocalizations.of(context)?.cancelMeetupMessage(_currentMeetup.title),
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -2508,7 +2508,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                            color: Colors.orange[700]),
                       const SizedBox(width: 4),
                       Text(
-                        AppLocalizations.of(context)!.warningTitle,
+                        AppLocalizations.of(context)?.warningTitle,
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -2519,8 +2519,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning1}\n'
-                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning2}',
+                    '• ${AppLocalizations.of(context)?.cancelMeetupWarning1}\n'
+                    '• ${AppLocalizations.of(context)?.cancelMeetupWarning2}',
                     style: const TextStyle(
                       fontSize: 13,
                       height: 1.4,
@@ -2538,7 +2538,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: Text(
-              AppLocalizations.of(context)!.no,
+              AppLocalizations.of(context)?.no,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -2556,7 +2556,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: Text(
-              AppLocalizations.of(context)!.yesCancel,
+              AppLocalizations.of(context)?.yesCancel,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -2638,7 +2638,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             children: [
                         Text(
                           Localizations.localeOf(context).languageCode == 'ko'
-                              ? AppLocalizations.of(context)!.participantsCountLabel(displayCount)
+                              ? AppLocalizations.of(context)?.participantsCountLabel(displayCount)
                               : 'Participants ($displayCount)',
                     style: const TextStyle(
                 fontFamily: 'Pretendard',
@@ -2688,7 +2688,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     child: Padding(
                       padding: const EdgeInsets.all(20.0),
                       child: Text(
-                        AppLocalizations.of(context)!.noParticipantsYet,
+                        AppLocalizations.of(context)?.noParticipantsYet,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           color: Color(0xFF64748B),

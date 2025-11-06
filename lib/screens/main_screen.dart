@@ -145,11 +145,11 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return AppLocalizations.of(context)!.enterSearchQuery;
+        return AppLocalizations.of(context)?.enterSearchQuery;
       case 1:
-        return AppLocalizations.of(context)!.enterSearchQuery;
+        return AppLocalizations.of(context)?.enterSearchQuery;
       default:
-        return AppLocalizations.of(context)!.search;
+        return AppLocalizations.of(context)?.search;
     }
   }
 
@@ -359,7 +359,7 @@ service firebase.storage {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            AppLocalizations.of(context)!.signupRequired,
+                            AppLocalizations.of(context)?.signupRequired,
                             style: const TextStyle(fontSize: 15, height: 1.4),
                           ),
                           const SizedBox(height: 8),

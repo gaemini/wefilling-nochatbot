@@ -106,7 +106,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.error),
+            content: Text(AppLocalizations.of(context)?.error),
             backgroundColor: AppTheme.accentRed,
           ),
         );
@@ -244,7 +244,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (isAnonymous) {
       authorName = '익명';
     } else if (post.author.isEmpty || post.author == 'Deleted') {
-      authorName = AppLocalizations.of(context)!.deletedAccount;
+      authorName = AppLocalizations.of(context)?.deletedAccount;
     } else {
       authorName = post.author;
     }
@@ -483,11 +483,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return '$year.$month.$day';
       }
     } else if (difference.inHours > 0) {
-      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+      return AppLocalizations.of(context)?.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)?.minutesAgo(difference.inMinutes);
     } else {
-      return AppLocalizations.of(context)!.justNow;
+      return AppLocalizations.of(context)?.justNow;
     }
   }
 
@@ -525,7 +525,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.loginRequired),
+          content: Text(AppLocalizations.of(context)?.loginRequired),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -634,7 +634,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.cannotSendDM),
+            content: Text(AppLocalizations.of(context)?.cannotSendDM),
             duration: const Duration(seconds: 2),
           ),
         );

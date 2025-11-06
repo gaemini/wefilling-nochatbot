@@ -107,7 +107,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.cannotOpenLink),
+              content: Text(AppLocalizations.of(context)?.cannotOpenLink),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -118,7 +118,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.error),
+            content: Text(AppLocalizations.of(context)?.error),
             duration: const Duration(seconds: 2),
           ),
         );
@@ -188,7 +188,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               // 참가자 수
               _buildInfoRow(
                 icon: Icons.people,
-                text: '${currentMeetup.currentParticipants}/${currentMeetup.maxParticipants}${AppLocalizations.of(context)!.peopleUnit}',
+                text: '${currentMeetup.currentParticipants}/${currentMeetup.maxParticipants}${AppLocalizations.of(context)?.peopleUnit}',
                 colorScheme: colorScheme,
               ),
 
@@ -209,8 +209,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                                currentMeetup.visibility == 'category';
     final Color badgeColor = isFriendsOnly ? Colors.orange[600]! : Colors.green[600]!;
     final String visibilityText = isFriendsOnly 
-        ? AppLocalizations.of(context)!.visibilityFriends
-        : AppLocalizations.of(context)!.visibilityPublic;
+        ? AppLocalizations.of(context)?.visibilityFriends
+        : AppLocalizations.of(context)?.visibilityPublic;
     final IconData icon = isFriendsOnly ? Icons.people : Icons.public;
     
     return Container(
@@ -382,7 +382,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
           ),
           child: Text(
-            AppLocalizations.of(context)!.checkReview,
+            AppLocalizations.of(context)?.checkReview,
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -404,7 +404,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
           ),
           child: Text(
-            AppLocalizations.of(context)!.leaveMeetup,
+            AppLocalizations.of(context)?.leaveMeetup,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
@@ -433,7 +433,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         ),
       ),
       child: Text(
-        AppLocalizations.of(context)!.joinMeetup,
+        AppLocalizations.of(context)?.joinMeetup,
         style: const TextStyle(
           fontSize: 14, // 15 → 14 (폰트 크기 줄임)
           fontWeight: FontWeight.w600,
@@ -454,7 +454,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         borderRadius: BorderRadius.circular(16), // 20 → 16 (모서리 덜 둥글게)
       ),
       child: Text(
-        '$current/$max ${AppLocalizations.of(context)!.peopleUnit}',
+        '$current/$max ${AppLocalizations.of(context)?.peopleUnit}',
         style: const TextStyle(
           fontSize: 14, // 15 → 14 (폰트 크기 줄임)
           fontWeight: FontWeight.w600,
@@ -517,7 +517,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
           ),
           child: Text(
-            AppLocalizations.of(context)!.checkReview,
+            AppLocalizations.of(context)?.checkReview,
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -539,7 +539,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
           ),
           child: Text(
-            AppLocalizations.of(context)!.leaveMeetup,
+            AppLocalizations.of(context)?.leaveMeetup,
             style: const TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -562,7 +562,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           border: Border.all(color: Colors.grey[400]!, width: 1),
         ),
         child: Text(
-          AppLocalizations.of(context)!.fullShort,
+          AppLocalizations.of(context)?.fullShort,
           style: TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.w700,
@@ -587,7 +587,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         ),
       ),
       child: Text(
-        AppLocalizations.of(context)!.joinMeetup,
+        AppLocalizations.of(context)?.joinMeetup,
         style: const TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w700,
@@ -605,8 +605,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                                currentMeetup.visibility == 'category';
     final Color badgeColor = isFriendsOnly ? Colors.orange : Colors.green;
     final String visibilityText = isFriendsOnly 
-        ? AppLocalizations.of(context)!.visibilityFriends
-        : AppLocalizations.of(context)!.visibilityPublic;
+        ? AppLocalizations.of(context)?.visibilityFriends
+        : AppLocalizations.of(context)?.visibilityPublic;
     final IconData icon = isFriendsOnly ? Icons.people : Icons.public;
     
     return Container(
@@ -777,7 +777,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                         children: [
                           Icon(Icons.edit_outlined, size: 16),
                           SizedBox(width: 8),
-                          Text(AppLocalizations.of(context)!.editMeetup),
+                          Text(AppLocalizations.of(context)?.editMeetup),
                         ],
                       ),
                     ),
@@ -787,7 +787,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                         children: [
                           Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
                           const SizedBox(width: 8),
-                          Text(AppLocalizations.of(context)!.cancelMeetupButton, style: const TextStyle(color: Colors.red)),
+                          Text(AppLocalizations.of(context)?.cancelMeetupButton, style: const TextStyle(color: Colors.red)),
                         ],
                       ),
                     ),
@@ -800,7 +800,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                         children: [
                           Icon(Icons.report_outlined, size: 16, color: Colors.red[600]),
                           const SizedBox(width: 8),
-                          Text(AppLocalizations.of(context)!.reportAction),
+                          Text(AppLocalizations.of(context)?.reportAction),
                         ],
                       ),
                     ),
@@ -810,7 +810,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                         children: [
                           Icon(Icons.block, size: 16, color: Colors.red[600]),
                           const SizedBox(width: 8),
-                          Text(AppLocalizations.of(context)!.blockAction),
+                          Text(AppLocalizations.of(context)?.blockAction),
                         ],
                       ),
                     ),
@@ -915,7 +915,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           children: [
             Icon(Icons.help_outline, color: Colors.orange[600]),
             const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)!.cancelMeetupConfirm),
+            Text(AppLocalizations.of(context)?.cancelMeetupConfirm),
           ],
         ),
         content: Column(
@@ -980,7 +980,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             ),
             child: Text(
-              AppLocalizations.of(context)!.no,
+              AppLocalizations.of(context)?.no,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w500,
@@ -1063,7 +1063,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           icon: Icons.schedule_outlined,
           text: Localizations.localeOf(context).languageCode == 'ko'
               ? '${currentMeetup.date.year}-${currentMeetup.date.month.toString().padLeft(2, '0')}-${currentMeetup.date.day.toString().padLeft(2, '0')} ${currentMeetup.time}'
-              : '${DateFormat('yyyy-MM-dd', 'en').format(currentMeetup.date)} ${currentMeetup.time.isEmpty ? AppLocalizations.of(context)!.undecided : currentMeetup.time}',
+              : '${DateFormat('yyyy-MM-dd', 'en').format(currentMeetup.date)} ${currentMeetup.time.isEmpty ? AppLocalizations.of(context)?.undecided : currentMeetup.time}',
           colorScheme: colorScheme,
         ),
 
@@ -1129,7 +1129,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             if (max > 0)
               Text(
                 Localizations.localeOf(context).languageCode == 'ko'
-                    ? '$current/$max${AppLocalizations.of(context)!.peopleUnit}'
+                    ? '$current/$max${AppLocalizations.of(context)?.peopleUnit}'
                     : '$current/$max people',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colorScheme.onSurfaceVariant,
@@ -1301,8 +1301,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     final isOpen = current < max;
     final statusColor = isOpen ? Colors.green : Colors.red;
     final statusText = isOpen
-        ? AppLocalizations.of(context)!.openStatus
-        : AppLocalizations.of(context)!.closedStatus;
+        ? AppLocalizations.of(context)?.openStatus
+        : AppLocalizations.of(context)?.closedStatus;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), // padding 증가
@@ -1369,7 +1369,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           child: ElevatedButton.icon(
             onPressed: () => _viewAndRespondToReview(currentMeetup),
             icon: const Icon(Icons.rate_review, size: 18),
-            label: Text(AppLocalizations.of(context)!.viewAndRespondToReview),
+            label: Text(AppLocalizations.of(context)?.viewAndRespondToReview),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green[600],
               foregroundColor: Colors.white,
@@ -1386,7 +1386,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           child: ElevatedButton.icon(
             onPressed: () => _leaveMeetup(currentMeetup),
             icon: const Icon(Icons.exit_to_app, size: 18),
-            label: Text(AppLocalizations.of(context)!.leaveMeetup),
+            label: Text(AppLocalizations.of(context)?.leaveMeetup),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange[600],
               foregroundColor: Colors.white,
@@ -1409,7 +1409,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       child: ElevatedButton.icon(
         onPressed: () => _joinMeetup(currentMeetup),
         icon: const Icon(Icons.group_add, size: 18),
-        label: Text(AppLocalizations.of(context)!.joinMeetup),
+        label: Text(AppLocalizations.of(context)?.joinMeetup),
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
           foregroundColor: Colors.white, // 글씨 색상을 흰색으로 변경
@@ -1442,7 +1442,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (reviewId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+            SnackBar(content: Text(AppLocalizations.of(context)?.reviewNotFound)),
           );
         }
         return;
@@ -1452,7 +1452,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (reviewData == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed)),
+            SnackBar(content: Text(AppLocalizations.of(context)?.reviewLoadFailed)),
           );
         }
         return;
@@ -1515,7 +1515,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       print('후기 확인 이동 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -1539,7 +1539,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoined),
+              content: Text(AppLocalizations.of(context)?.meetupJoined),
               backgroundColor: Colors.green,
             ),
           );
@@ -1548,7 +1548,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoinFailed),
+              content: Text(AppLocalizations.of(context)?.meetupJoinFailed),
               backgroundColor: Colors.red,
             ),
           );
@@ -1559,7 +1559,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text('${AppLocalizations.of(context)?.error}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1585,7 +1585,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetup),
+              content: Text(AppLocalizations.of(context)?.leaveMeetup),
               backgroundColor: Colors.orange,
             ),
           );
@@ -1594,7 +1594,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed),
+              content: Text(AppLocalizations.of(context)?.leaveMeetupFailed),
               backgroundColor: Colors.red,
             ),
           );
@@ -1605,7 +1605,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text('${AppLocalizations.of(context)?.error}: $e'),
             backgroundColor: Colors.red,
           ),
         );

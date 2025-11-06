@@ -67,10 +67,10 @@ class AppEmptyState extends StatelessWidget {
   factory AppEmptyState.noMeetups({required BuildContext context, VoidCallback? onCreateMeetup}) {
     return AppEmptyState(
       icon: IconStyles.groups,
-      title: AppLocalizations.of(context)!.wefillingMeaning,
-      description: AppLocalizations.of(context)!.wefillingExplanation,
+      title: AppLocalizations.of(context)?.wefillingMeaning,
+      description: AppLocalizations.of(context)?.wefillingExplanation,
       // ctaText 및 onCtaPressed 제거하여 "Create Your First Meetup" 버튼 숨김
-      secondaryCtaText: AppLocalizations.of(context)!.searchMeetups,
+      secondaryCtaText: AppLocalizations.of(context)?.searchMeetups,
       // 위필링 로고를 표시
       illustration: Container(
         width: 120,
@@ -109,7 +109,7 @@ class AppEmptyState extends StatelessWidget {
 
   /// 친구가 없을 때 표시하는 빈 상태 (프리셋)
   factory AppEmptyState.noFriends({required BuildContext context, VoidCallback? onSearchFriends}) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     return AppEmptyState(
       icon: IconStyles.group,
       title: l10n.findFriends,
@@ -127,7 +127,7 @@ class AppEmptyState extends StatelessWidget {
     String? searchQuery,
     VoidCallback? onClearSearch,
   }) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     return AppEmptyState(
       icon: Icons.search_off_outlined,
       title: l10n.noSearchResults,

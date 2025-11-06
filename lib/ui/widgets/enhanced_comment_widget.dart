@@ -100,7 +100,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (currentUser == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.loginRequired)),
         );
       }
       return;
@@ -156,7 +156,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       print('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.cannotSendDM)),
         );
       }
     }
@@ -187,7 +187,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return nickname;
       } else {
         // 사용자 문서가 없으면 탈퇴한 계정으로 표시
-        final deletedText = AppLocalizations.of(context)!.deletedAccount;
+        final deletedText = AppLocalizations.of(context)?.deletedAccount;
         if (mounted) {
           setState(() {
             _currentNickname = deletedText;
@@ -208,7 +208,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.loginRequired)),
         );
       }
       return;
@@ -220,14 +220,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed)),
+          SnackBar(content: Text(AppLocalizations.of(context)?.commentLikeFailed)),
         );
       }
     } catch (e) {
       print('댓글 좋아요 토글 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)?.error}: $e')),
         );
       }
     }
@@ -516,7 +516,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       } else {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${link.url}')),
+                            SnackBar(content: Text('${AppLocalizations.of(context)?.error}: ${link.url}')),
                           );
                         }
                       }
@@ -577,7 +577,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                 Icon(Icons.reply, size: 16, color: Colors.grey[600]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  AppLocalizations.of(context)!.reply,
+                                  AppLocalizations.of(context)?.reply,
                                   style: theme.textTheme.bodySmall?.copyWith(
                                     color: Colors.grey[600],
                                   ),
@@ -593,7 +593,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         InkWell(
                           onTap: () => setState(() => _showReplies = !_showReplies),
                           child: Text(
-                            '${AppLocalizations.of(context)!.repliesCount(widget.replies.length)} ${_showReplies ? AppLocalizations.of(context)!.hideReplies : AppLocalizations.of(context)!.showReplies}',
+                            '${AppLocalizations.of(context)?.repliesCount(widget.replies.length)} ${_showReplies ? AppLocalizations.of(context)?.hideReplies : AppLocalizations.of(context)?.showReplies}',
                             style: theme.textTheme.bodySmall?.copyWith(
                               color: theme.colorScheme.primary,
                               fontWeight: FontWeight.w500,

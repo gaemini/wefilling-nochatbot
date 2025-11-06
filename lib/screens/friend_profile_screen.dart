@@ -78,7 +78,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          AppLocalizations.of(context)!.profile,
+          AppLocalizations.of(context)?.profile,
           style: AppTheme.headlineMedium.copyWith(
             color: const Color(0xFF4A90E2), // 위필링 로고색
           ),
@@ -106,7 +106,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       Icon(Icons.grid_on_rounded, size: 20, color: const Color(0xFF4A90E2)), // 위필링 로고색
                       const SizedBox(width: 8),
                       Text(
-                        AppLocalizations.of(context)!.participatedReviews,
+                        AppLocalizations.of(context)?.participatedReviews,
                         style: AppTheme.labelMedium.copyWith(
                           fontWeight: FontWeight.w700,
                           color: const Color(0xFF4A90E2), // 위필링 로고색
@@ -126,7 +126,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   }
 
   Widget _buildProfileHeader() {
-    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
+    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)?.user;
     final email = _userData?['email'] ?? widget.email ?? '';
     final photoURL = _userData?['photoURL'] ?? widget.photoURL;
     final university = _userData?['university'] ?? widget.university;
@@ -295,11 +295,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, widget.userId, icon: Icons.event_available, color: Colors.black),
+                _buildStatItem(AppLocalizations.of(context)?.hostedMeetups, widget.userId, icon: Icons.event_available, color: Colors.black),
                 Container(width: 1, height: 36, color: Colors.black),
-                _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: Colors.black),
+                _buildStatItem(AppLocalizations.of(context)?.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: Colors.black),
                 Container(width: 1, height: 36, color: Colors.black),
-                _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: Colors.black),
+                _buildStatItem(AppLocalizations.of(context)?.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: Colors.black),
               ],
             ),
           ),
@@ -314,7 +314,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               onPressed: _openDM,
               icon: const Icon(Icons.message, size: 20),
               label: Text(
-                AppLocalizations.of(context)!.sendMessage,
+                AppLocalizations.of(context)?.sendMessage,
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
@@ -396,7 +396,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
                 const SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)!.cannotLoadReviews,
+                  AppLocalizations.of(context)?.cannotLoadReviews,
                   style: TextStyle(color: Colors.grey[600]),
                 ),
               ],
@@ -425,7 +425,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  AppLocalizations.of(context)!.noReviewsYet,
+                  AppLocalizations.of(context)?.noReviewsYet,
                   style: AppTheme.bodyMedium.copyWith(
                     color: Colors.grey[600],
                     fontWeight: FontWeight.w500,
@@ -434,7 +434,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
+                  AppLocalizations.of(context)?.joinMeetupAndWriteReview,
                   style: AppTheme.bodySmall.copyWith(
                     color: Colors.grey[500],
                     fontSize: 13,
@@ -606,7 +606,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.cannotSendDM),
+            content: Text(AppLocalizations.of(context)?.cannotSendDM),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 2),
           ),

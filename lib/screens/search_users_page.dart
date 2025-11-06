@@ -77,7 +77,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
 
     if (success) {
       _showSnackBar(l10n.friendRequestSent, Colors.green);
@@ -97,7 +97,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
     
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
 
     if (success) {
       _showSnackBar(l10n.friendRequestCancelled, Colors.orange);
@@ -110,7 +110,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _unfriend(String otherUid) async {
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final confirmed = await _showConfirmDialog(
       l10n.removeFriend,
       l10n.confirmUnfriend,
@@ -134,7 +134,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   // Future<void> _blockUser(String targetUid) async {
   //   if (!mounted) return;
   //   
-  //   final l10n = AppLocalizations.of(context)!;
+  //   final l10n = AppLocalizations.of(context)?;
   //   final confirmed = await _showConfirmDialog(
   //     l10n.blockUser,
   //     l10n.blockUserDescription,
@@ -158,7 +158,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
   Future<void> _unblockUser(String targetUid) async {
     if (!mounted) return;
     
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final confirmed = await _showConfirmDialog(
       l10n.unblockUser,
       l10n.confirmUnblock,
@@ -213,7 +213,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 확인 다이얼로그 표시
   Future<bool> _showConfirmDialog(String title, String message) async {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     final result = await showDialog<bool>(
       context: context,
       builder:
@@ -312,7 +312,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
-          hintText: AppLocalizations.of(context)!.enterSearchQuery,
+          hintText: AppLocalizations.of(context)?.enterSearchQuery,
           prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
@@ -322,8 +322,8 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
                       _searchController.clear();
                       context.read<RelationshipProvider>().clearSearchResults();
                     },
-                    semanticLabel: AppLocalizations.of(context)!.clearSearchQuery,
-                    tooltip: AppLocalizations.of(context)!.close,
+                    semanticLabel: AppLocalizations.of(context)?.clearSearchQuery,
+                    tooltip: AppLocalizations.of(context)?.close,
                   )
                   : null,
           border: OutlineInputBorder(
@@ -375,7 +375,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         Icon(Icons.search, size: 64, color: Colors.grey[400]),
         const SizedBox(height: 16),
         Text(
-          AppLocalizations.of(context)!.searchUsers,
+          AppLocalizations.of(context)?.searchUsers,
           style: TextStyle(
             fontSize: 18,
             color: Colors.grey[600],
@@ -384,7 +384,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          AppLocalizations.of(context)!.searchByNicknameOrName,
+          AppLocalizations.of(context)?.searchByNicknameOrName,
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 14, color: Colors.grey[500]),
         ),
@@ -394,7 +394,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 검색 결과 없음 상태 위젯
   Widget _buildNoResultsState() {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -421,7 +421,7 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 에러 상태 위젯
   Widget _buildErrorState(String errorMessage) {
-    final l10n = AppLocalizations.of(context)!;
+    final l10n = AppLocalizations.of(context)?;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

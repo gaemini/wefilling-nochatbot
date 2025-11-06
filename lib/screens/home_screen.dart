@@ -679,10 +679,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                     ),
                                   ),
                                 ],
-                      ),
-            ),
-          ),
-        ],
+                              ),
+                            ),
+                          ),
+                        ],
                       );
                     }
                     
@@ -719,7 +719,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     );
                   },
                 ),
-                    ),
+                  ),
               ),
             ),
           ),

@@ -1035,7 +1035,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.meetupLeft ?? '모임에서 나갔습니다'),
+              content: Text(AppLocalizations.of(context)?.leaveMeetup ?? '모임에서 나갔습니다'),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 2),
             ),

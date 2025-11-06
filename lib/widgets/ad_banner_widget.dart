@@ -7,7 +7,6 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
-import '../design/color_system.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -188,15 +187,15 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
       },
       child: Container(
         decoration: BoxDecoration(
-          color: WefillingColors.surface, // 카드 표면
+          color: Colors.white, // 카드 표면
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: WefillingColors.border, // 통일된 테두리
+            color: const Color(0xFFE0E0E0), // 통일된 테두리
             width: 1,
           ),
           boxShadow: [
             BoxShadow(
-              color: WefillingColors.shadow,
+              color: Colors.black.withOpacity(0.05),
               blurRadius: 4,
               offset: const Offset(0, 2),
             ),
@@ -261,7 +260,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                               fontFamily: 'Pretendard',
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
-                              color: WefillingColors.textPrimary,
+                              color: Colors.black,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -274,7 +273,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: WefillingColors.primary,
+                            color: const Color(0xFF5865F2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -296,10 +295,10 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                     // 설명
                     Text(
                       banner.description,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 13,
-                        color: WefillingColors.textTertiary,
+                        color: Colors.grey[600],
                         height: 1.4,
                       ),
                       maxLines: 3,
@@ -314,7 +313,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
               // 화살표 아이콘
               Icon(
                 Icons.arrow_forward_ios,
-                color: WefillingColors.textHint,
+                    color: Colors.grey[400],
                 size: 18,
               ),
             ],
@@ -330,16 +329,16 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
       width: 100,
       height: 100,
       decoration: BoxDecoration(
-        color: WefillingColors.primary.withOpacity(0.1),
+        color: const Color(0xFF5865F2).withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: WefillingColors.primary.withOpacity(0.2),
+          color: const Color(0xFF5865F2).withOpacity(0.2),
           width: 2,
         ),
       ),
       child: Icon(
         Icons.campaign_rounded,
-        color: WefillingColors.primary,
+        color: const Color(0xFF5865F2),
         size: 48,
       ),
     );

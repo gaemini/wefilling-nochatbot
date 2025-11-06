@@ -8,7 +8,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../models/post.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
-import '../../design/color_system.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
 import '../../services/dm_service.dart';
@@ -124,7 +123,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: WefillingColors.friendsAccentBg,
+          color: const Color(0xFFFFF3E0), // 친구 배경색
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -133,7 +132,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             Icon(
               Icons.group_outlined,
               size: 15, // 통일된 크기
-              color: WefillingColors.friendsAccent,
+              color: const Color(0xFFFF8A65), // 친구 강조색
             ),
             const SizedBox(width: 6),
             Text(
@@ -142,7 +141,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700,
-                color: WefillingColors.friendsAccent,
+                color: const Color(0xFFFF8A65), // 친구 강조색
               ),
             ),
           ],
@@ -155,7 +154,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: WefillingColors.anonymousBg,
+          color: const Color(0xFFE8EAF6), // 익명 배경색
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -164,7 +163,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             Icon(
               Icons.person_outline,
               size: 15, // 통일된 크기
-              color: WefillingColors.anonymousAccent,
+              color: const Color(0xFF5C6BC0), // 익명 강조색
             ),
             const SizedBox(width: 6),
             Text(
@@ -173,7 +172,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700, // 통일된 굵기
-                color: WefillingColors.anonymousAccent,
+                color: const Color(0xFF5C6BC0), // 익명 강조색
               ),
             ),
           ],
@@ -197,8 +196,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: post.visibility == 'category'
-            ? WefillingColors.cardFriends // 친구 공개: 따뜻한 피치
-            : WefillingColors.cardPublic,  // 전체 공개: 순수 흰색
+            ? const Color(0xFFFFF8F3) // 친구 공개: 따뜻한 피치
+            : Colors.white,  // 전체 공개: 순수 흰색
         borderRadius: BorderRadius.circular(AppTheme.radiusL),
         // 그림자 없음
         // 그라데이션 없음

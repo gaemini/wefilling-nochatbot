@@ -22,7 +22,6 @@ import 'create_meetup_review_screen.dart';
 import 'review_approval_screen.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'image_viewer_screen.dart';
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -749,12 +748,18 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 : GestureDetector(
                     onTap: () {
                       // 이미지 뷰어로 이동
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ImageViewerScreen(
-                            imageUrl: displayImageUrl,
-                            heroTag: 'meetup_image_${_currentMeetup.id}',
+                      showDialog(
+                        context: context,
+                        builder: (context) => Dialog(
+                          backgroundColor: Colors.transparent,
+                          child: GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: InteractiveViewer(
+                              child: Image.network(
+                                displayImageUrl,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
                           ),
                         ),
                       );
@@ -1508,7 +1513,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)?.meetupLeft ?? '모임에서 나갔습니다'),
+              content: Text(AppLocalizations.of(context)?.leaveMeetup ?? '모임에서 나갔습니다'),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 2),
             ),

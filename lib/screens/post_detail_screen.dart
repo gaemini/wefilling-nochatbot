@@ -20,7 +20,6 @@ import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
-import '../design/color_system.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -1022,7 +1021,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       fontFamily: 'Pretendard',
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
-                                      color: WefillingColors.textPrimary,
+                                      color: Colors.black,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1064,7 +1063,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           fontFamily: 'Pretendard',
                           fontSize: 22,
                           fontWeight: FontWeight.w700, // Bold
-                          color: WefillingColors.textPrimary,
+                          color: Colors.black,
                           height: 1.3,
                           letterSpacing: -0.3,
                         ),
@@ -1241,7 +1240,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             fontFamily: 'Pretendard',
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: WefillingColors.textPrimary,
+                            color: Colors.black,
                           ),
                         ),
                       ),
@@ -1258,7 +1257,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           fontFamily: 'Pretendard',
                           fontSize: 16, // 15 → 16 (가독성 개선)
                           height: 1.6,
-                          color: WefillingColors.textPrimary, // 검은색으로 변경 ✨
+                          color: Colors.black, // 검은색으로 변경 ✨
                           fontWeight: FontWeight.w500, // w400 → w500 (조금 더 굵게) ✨
                           letterSpacing: -0.2,
                         ),
@@ -1278,7 +1277,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           fontFamily: 'Pretendard',
                           fontSize: 16, // 15 → 16 (가독성 개선)
                           height: 1.6,
-                          color: WefillingColors.textPrimary, // 검은색으로 변경 ✨
+                          color: Colors.black, // 검은색으로 변경 ✨
                           fontWeight: FontWeight.w500, // w400 → w500 (조금 더 굵게) ✨
                           letterSpacing: -0.2,
                         ),
@@ -1334,7 +1333,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             fontFamily: 'Pretendard',
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: WefillingColors.textPrimary,
+                            color: Colors.black,
                           ),
                         ),
                       ),

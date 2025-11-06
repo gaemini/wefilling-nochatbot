@@ -872,97 +872,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       return const SizedBox.shrink();
     }
 
-    return FutureBuilder<bool>(
-      future: _checkIsMyMeetup(currentUser),
-      builder: (context, snapshot) {
-        final isMyMeetup = snapshot.data ?? false;
-        
-        print('🔍🔍🔍 [MeetupDetailScreen] 권한 체크 상세 정보:');
-        print('   - 현재 사용자 UID: ${currentUser.uid}');
-        print('   - 모임 ID: ${widget.meetup.id}');
-        print('   - 모임 제목: ${widget.meetup.title}');
-        print('   - 모임 userId: ${widget.meetup.userId}');
-        print('   - 모임 hostNickname: ${widget.meetup.hostNickname}');
-        print('   - 모임 host: ${widget.meetup.host}');
-        print('   - isMyMeetup 결과: $isMyMeetup');
-        print('   - 표시될 메뉴: ${isMyMeetup ? "수정/삭제" : "신고/차단"}');
-
-        return _buildHeaderButtonsContent(currentUser, isMyMeetup);
-      },
-    );
+    // 동기적으로 userId 비교 (FutureBuilder 불필요)
+    final isMyMeetup = widget.meetup.userId == currentUser.uid;
+    
+    return _buildHeaderButtonsContent(currentUser, isMyMeetup);
   }
 
-  /// 현재 사용자가 모임 작성자인지 확인
-  Future<bool> _checkIsMyMeetup(User currentUser) async {
-    try {
-      print('🔍 [MeetupDetailScreen._checkIsMyMeetup] 시작');
-      print('   - 현재 사용자 UID: ${currentUser.uid}');
-      print('   - 모임 userId: ${widget.meetup.userId}');
-      print('   - 모임 hostNickname: ${widget.meetup.hostNickname}');
-      
-      // 1. userId가 있으면 userId로 비교 (새로운 데이터)
-      if (widget.meetup.userId != null && widget.meetup.userId!.isNotEmpty) {
-        final result = widget.meetup.userId == currentUser.uid;
-        print('   - userId 비교 결과: $result (${widget.meetup.userId} == ${currentUser.uid})');
-        return result;
-      } 
-      
-      print('   - userId가 없음, hostNickname으로 비교 시도');
-      
-      // 2. userId가 없으면 hostNickname 또는 host로 비교 (기존 데이터 호환성)
-      final hostToCheck = widget.meetup.hostNickname ?? widget.meetup.host;
-      print('   - hostToCheck: $hostToCheck (hostNickname: ${widget.meetup.hostNickname}, host: ${widget.meetup.host})');
-      
-      if (hostToCheck != null && hostToCheck.isNotEmpty) {
-        print('   - Firestore에서 현재 사용자 닉네임 조회 중...');
-        
-        final userDoc = await FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .get();
-        
-        print('   - userDoc.exists: ${userDoc.exists}');
-        
-        if (userDoc.exists) {
-          final userData = userDoc.data();
-          print('   - 전체 userData: $userData');
-          
-          final currentUserNickname = userData?['nickname'] as String?;
-          
-          print('   - 현재 사용자 닉네임: "$currentUserNickname"');
-          print('   - 모임 hostToCheck: "$hostToCheck"');
-          print('   - 닉네임 타입 확인: currentUserNickname.runtimeType = ${currentUserNickname.runtimeType}');
-          print('   - hostToCheck 타입 확인: hostToCheck.runtimeType = ${hostToCheck.runtimeType}');
-          
-          if (currentUserNickname != null && currentUserNickname.isNotEmpty) {
-            // 문자열 비교를 더 엄격하게
-            final trimmedCurrentNickname = currentUserNickname.trim();
-            final trimmedHostToCheck = hostToCheck.trim();
-            
-            print('   - 트림된 현재 사용자 닉네임: "$trimmedCurrentNickname"');
-            print('   - 트림된 모임 hostToCheck: "$trimmedHostToCheck"');
-            
-            final result = trimmedHostToCheck == trimmedCurrentNickname;
-            print('   - 📋 최종 닉네임 비교 결과: $result');
-            print('   - 📋 비교식: "$trimmedHostToCheck" == "$trimmedCurrentNickname"');
-            return result;
-          } else {
-            print('   - 현재 사용자 닉네임이 null이거나 비어있음');
-          }
-        } else {
-          print('   - ❌ 사용자 문서가 존재하지 않음');
-        }
-      } else {
-        print('   - hostNickname과 host 모두 없음');
-      }
-      
-      print('   - 최종 결과: false (내 모임 아님)');
-      return false;
-    } catch (e) {
-      print('❌ 권한 체크 오류: $e');
-      return false;
-    }
-  }
 
   /// 헤더 버튼 콘텐츠 빌드
   Widget _buildHeaderButtonsContent(User currentUser, bool isMyMeetup) {

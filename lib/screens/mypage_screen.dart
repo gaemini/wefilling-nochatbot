@@ -834,16 +834,16 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     
     if (difference.inDays > 0) {
       return difference.inDays == 1 
-        ? '1${l10n?.dayAgo ?? ""}'
-        : l10n?.daysAgoCount ?? ""(difference.inDays);
+        ? '1${l10n!.dayAgo}'
+        : l10n!.daysAgoCount(difference.inDays);
     } else if (difference.inHours > 0) {
       return difference.inHours == 1
-        ? '1${l10n?.hourAgo ?? ""}'
-        : l10n?.hoursAgoCount ?? ""(difference.inHours);
+        ? '1${l10n!.hourAgo}'
+        : l10n!.hoursAgoCount(difference.inHours);
     } else if (difference.inMinutes > 0) {
       return difference.inMinutes == 1
-        ? '1${l10n?.minuteAgo ?? ""}'
-        : l10n?.minutesAgoCount ?? ""(difference.inMinutes);
+        ? '1${l10n!.minuteAgo}'
+        : l10n!.minutesAgoCount(difference.inMinutes);
     } else {
       return l10n?.justNowTime ?? "";
     }

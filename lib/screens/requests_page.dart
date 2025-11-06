@@ -543,11 +543,11 @@ class _RequestsPageState extends State<RequestsPage>
     if (difference.inDays > 7) {
       return '${dateTime.month}/${dateTime.day}';
     } else if (difference.inDays > 0) {
-      return l10n?.daysAgoCount ?? ""(difference.inDays);
+      return l10n!.daysAgoCount(difference.inDays);
     } else if (difference.inHours > 0) {
-      return l10n?.hoursAgoCount ?? ""(difference.inHours);
+      return l10n!.hoursAgoCount(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return l10n?.minutesAgoCount ?? ""(difference.inMinutes);
+      return l10n!.minutesAgoCount(difference.inMinutes);
     } else {
       return l10n?.justNowTime ?? "";
     }

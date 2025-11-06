@@ -451,7 +451,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 children: [
                   Text(
                     review.commentCount > 0 
-                        ? l10n?.viewAllComments ?? ""(review.commentCount)
+                            ? l10n!.viewAllComments(review.commentCount)
                         : l10n?.writeComment ?? "",
                     style: TextStyle(
                       fontSize: 14,
@@ -478,7 +478,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
-        l10n?.likesCount ?? ""(review.likeCount),
+            l10n!.likesCount(review.likeCount),
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -550,7 +550,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                l10n?.meetupParticipants ?? ""(_participants.length),
+                    l10n!.meetupParticipants(_participants.length),
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

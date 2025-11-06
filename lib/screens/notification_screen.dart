@@ -385,41 +385,41 @@ class _NotificationScreenState extends State<NotificationScreen> {
         case 'meetup_full':
           final meetupTitle = data['meetupTitle'] ?? '';
           final maxParticipants = data['maxParticipants'] ?? 0;
-          return l10n?.meetupIsFullMessage ?? ""(meetupTitle, maxParticipants);
+          return l10n!.meetupIsFullMessage(meetupTitle, maxParticipants);
         case 'meetup_cancelled':
           final meetupTitle = data['meetupTitle'] ?? '';
-          return l10n?.meetupCancelledMessage ?? ""(meetupTitle);
+          return l10n!.meetupCancelledMessage(meetupTitle);
         case 'meetup_participant_joined':
-          return l10n?.newParticipantJoinedMessage ?? ""(
+          return l10n!.newParticipantJoinedMessage(
             data['participantName'] ?? '',
             data['meetupTitle'] ?? '',
           );
         case 'new_comment':
           final commenterName = data['commenterName'] ?? '';
           final postTitle = data['postTitle'] ?? '';
-          return l10n?.newCommentMessage ?? ""(commenterName, postTitle);
+          return l10n!.newCommentMessage(commenterName, postTitle);
         case 'new_like':
           final likerName = data['likerName'] ?? '';
           final postTitle = data['postTitle'] ?? '';
-          return l10n?.newLikeMessage ?? ""(likerName, postTitle);
+          return l10n!.newLikeMessage(likerName, postTitle);
         case 'comment_like':
           final likerName = data['likerName'] ?? notification.actorName ?? '';
-          return l10n?.newCommentLikeMessage ?? ""(likerName);
+          return l10n!.newCommentLikeMessage(likerName);
         case 'friend_request':
           final fromName = data['fromName'] ?? notification.actorName ?? '';
-          return l10n?.friendRequestMessage ?? ""(fromName);
+          return l10n!.friendRequestMessage(fromName);
         case 'review_approval_request':
           final author = notification.actorName ?? '';
           final meetupTitle = data['meetupTitle'] ?? '';
-          return l10n?.reviewApprovalRequestMessage ?? ""(author, meetupTitle);
+          return l10n!.reviewApprovalRequestMessage(author, meetupTitle);
         case 'review_comment':
           final commenterName = data['commenterName'] ?? notification.actorName ?? '';
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
-          return l10n?.newCommentMessage ?? ""(commenterName, reviewTitle);
+          return l10n!.newCommentMessage(commenterName, reviewTitle);
         case 'review_like':
           final likerName = data['likerName'] ?? notification.actorName ?? '';
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
-          return l10n?.newLikeMessage ?? ""(likerName, reviewTitle);
+          return l10n!.newLikeMessage(likerName, reviewTitle);
         default:
           return notification.message;
       }

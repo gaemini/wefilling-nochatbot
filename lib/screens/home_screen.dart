@@ -719,6 +719,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                     );
                   },
                 ),
+                    ),
               ),
             ),
           ),

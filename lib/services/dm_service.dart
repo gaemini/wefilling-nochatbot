@@ -480,17 +480,27 @@ class DMService {
       final Map<String, dynamic> conversationData = {
         'participants': [currentUser.uid, otherUserId],
         'participantNames': {
-          currentUser.uid: currentUserData['nickname']?.toString() ?? 
-                          currentUserData['name']?.toString() ?? 
-                          'User',
+          currentUser.uid: isOtherUserAnonymous
+              ? '익명'  // 상대방이 익명이면 나도 익명으로 표시
+              : (currentUserData['nickname']?.toString() ?? 
+                 currentUserData['name']?.toString() ?? 
+                 'User'),
           otherUserId: isOtherUserAnonymous 
               ? '익명' 
               : (otherUserData['nickname']?.toString() ?? 
                  otherUserData['name']?.toString() ?? 
                  'User'),
         },
+        'participantPhotos': {
+          currentUser.uid: isOtherUserAnonymous
+              ? ''  // 상대방이 익명이면 내 사진도 숨김
+              : (currentUserData['photoURL']?.toString() ?? ''),
+          otherUserId: isOtherUserAnonymous 
+              ? '' 
+              : (otherUserData['photoURL']?.toString() ?? ''),
+        },
         'isAnonymous': {
-          currentUser.uid: false,
+          currentUser.uid: isOtherUserAnonymous,  // 상대방이 익명이면 나도 익명
           otherUserId: isOtherUserAnonymous,
         },
         'lastMessage': '',
@@ -837,15 +847,15 @@ class DMService {
         final initData = {
           'participants': [currentUser.uid, otherUserId],
           'participantNames': {
-            currentUser.uid: currentUserDoc.data()?['nickname'] ?? currentUserDoc.data()?['name'] ?? 'Unknown',
+            currentUser.uid: parsed.anonymous ? '익명' : (currentUserDoc.data()?['nickname'] ?? currentUserDoc.data()?['name'] ?? 'Unknown'),
             otherUserId: parsed.anonymous ? '익명' : otherUserNickname,
           },
           'participantPhotos': {
-            currentUser.uid: currentUserDoc.data()?['photoURL'] ?? '',
+            currentUser.uid: parsed.anonymous ? '' : (currentUserDoc.data()?['photoURL'] ?? ''),
             otherUserId: parsed.anonymous ? '' : otherUserPhoto,
           },
           'isAnonymous': {
-            currentUser.uid: false,
+            currentUser.uid: parsed.anonymous,  // 양방향 익명
             otherUserId: parsed.anonymous,
           },
           'lastMessage': '',

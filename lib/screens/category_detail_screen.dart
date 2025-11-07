@@ -72,7 +72,15 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final icon = _parseIcon(widget.category.iconName);
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -93,7 +101,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               child: Text(
                 widget.category.name,
                 style: const TextStyle(
-                  color: Color(0xFF4A90E2), // 위필링 로고색 (파란색)
+                  fontFamily: 'Pretendard',
+                  color: Color(0xFF111827),
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                 ),
@@ -102,30 +111,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             ),
           ],
         ),
-        backgroundColor: Colors.white,
-        foregroundColor: const Color(0xFF4A90E2), // 위필링 로고색 (파란색)
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.grey[200]!,
-                  Colors.grey[100]!,
-                ],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-            ),
-          ),
-        ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF5865F2)))
           : _friends.isEmpty
               ? AppEmptyState(
                   icon: Icons.people_outline,
@@ -137,12 +125,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     // 친구 수 표시
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      color: Colors.grey[100],
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      color: const Color(0xFFF9FAFB),
                       child: Text(
                         AppLocalizations.of(context)!.friendsInGroup(_friends.length),
-                        style: TextStyle(
-                          color: BrandColors.neutral700,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          color: Color(0xFF6B7280),
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
@@ -152,7 +141,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     // 친구 목록
                     Expanded(
                       child: ListView.builder(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         itemCount: _friends.length,
                         itemBuilder: (context, index) {
                           final friend = _friends[index];
@@ -166,90 +155,114 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   }
 
   Widget _buildFriendCard(UserProfile friend, Color categoryColor) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      elevation: 2,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+      ),
       child: InkWell(
         onTap: () => _navigateToProfile(friend),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
               // 프로필 이미지
               Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
+                width: 48,
+                height: 48,
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Colors.grey[300],
+                  color: Color(0xFFE5E7EB),
                 ),
                 child: friend.hasProfileImage
                     ? ClipOval(
                         child: Image.network(
                           friend.photoURL!,
-                          width: 56,
-                          height: 56,
+                          width: 48,
+                          height: 48,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
+                          errorBuilder: (_, __, ___) => const Icon(
                             Icons.person,
-                            size: 28,
-                            color: Colors.grey[600],
+                            size: 24,
+                            color: Color(0xFF6B7280),
                           ),
                         ),
                       )
-                    : Icon(
+                    : const Icon(
                         Icons.person,
-                        size: 28,
-                        color: Colors.grey[600],
+                        size: 24,
+                        color: Color(0xFF6B7280),
                       ),
               ),
 
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
 
               // 사용자 정보
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
                       friend.displayNameOrNickname,
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Pretendard',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     if (friend.nickname != null &&
                         friend.nickname != friend.displayName &&
-                        friend.nickname!.isNotEmpty)
+                        friend.nickname!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
                       Text(
                         friend.displayName,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF6B7280),
                         ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
+                    ],
                     if (friend.nationality != null &&
-                        friend.nationality!.isNotEmpty)
+                        friend.nationality!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.flag,
-                            size: 16,
-                            color: Colors.grey[600],
+                          const Icon(
+                            Icons.flag_outlined,
+                            size: 13,
+                            color: Color(0xFF9CA3AF),
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
-                              Localizations.localeOf(context).languageCode
-                            ) ?? friend.nationality!,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
+                          const SizedBox(width: 3),
+                          Flexible(
+                            child: Text(
+                              CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
+                                Localizations.localeOf(context).languageCode
+                              ) ?? friend.nationality!,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ],
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -257,12 +270,12 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               // 카테고리 배지
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
+                  horizontal: 8,
+                  vertical: 4,
                 ),
                 decoration: BoxDecoration(
                   color: categoryColor.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(
                     color: categoryColor.withOpacity(0.3),
                     width: 1,
@@ -271,7 +284,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 child: Text(
                   widget.category.name,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontFamily: 'Pretendard',
+                    fontSize: 11,
                     color: categoryColor,
                     fontWeight: FontWeight.w600,
                   ),

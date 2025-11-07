@@ -668,6 +668,17 @@ class DMService {
         .limit(50)
         .snapshots()
         .map((snapshot) {
+      print('📋 getMyConversations 호출:');
+      print('  - 현재 사용자: ${currentUser.uid}');
+      print('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        print('  - ID: ${doc.id}');
+        print('    participants: ${data['participants']}');
+        print('    lastMessage: ${data['lastMessage']}');
+      }
+      
       final conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
           .where((conv) {
@@ -694,9 +705,9 @@ class DMService {
           })
           .toList();
 
-      print('📋 대화방 목록 필터링:');
+      print('📋 대화방 목록 필터링 완료:');
       print('  - 전체 대화방: ${snapshot.docs.length}개');
-      print('  - 표시될 대화방: ${conversations.length}개');
+      print('  - 필터링 후: ${conversations.length}개');
 
       // 캐시 업데이트
       for (var conv in conversations) {

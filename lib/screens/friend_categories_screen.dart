@@ -21,6 +21,7 @@ class FriendCategoriesScreen extends StatefulWidget {
 
 class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   final FriendCategoryService _categoryService = FriendCategoryService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   bool _isInitialized = false;
   late VoidCallback _cleanupCallback;
 
@@ -191,14 +192,20 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              color: Color(0xFF6B7280),
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
+          child: FutureBuilder<int>(
+            future: _getActualFriendCount(category.friendIds),
+            builder: (context, snapshot) {
+              final count = snapshot.data ?? category.friendIds.length;
+              return Text(
+                AppLocalizations.of(context)!.friendsInGroup(count),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: Color(0xFF6B7280),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              );
+            },
           ),
         ),
         trailing: PopupMenuButton<String>(
@@ -624,6 +631,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         builder: (context) => CategoryDetailScreen(category: category),
       ),
     );
+  }
+
+  /// 실제 존재하는 친구 수 확인
+  Future<int> _getActualFriendCount(List<String> friendIds) async {
+    int count = 0;
+    for (final friendId in friendIds) {
+      final doc = await _firestore.collection('users').doc(friendId).get();
+      if (doc.exists) {
+        count++;
+      }
+    }
+    return count;
   }
 
   Future<void> _createDefaultCategoriesIfNeeded() async {

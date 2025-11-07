@@ -4,8 +4,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/conversation.dart';
+import '../models/user_profile.dart';
 import '../services/dm_service.dart';
+import '../services/relationship_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
@@ -23,6 +26,7 @@ class DMListScreen extends StatefulWidget {
 
 class _DMListScreenState extends State<DMListScreen> {
   final DMService _dmService = DMService();
+  final RelationshipService _relationshipService = RelationshipService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   Set<String> _hiddenConversationIds = {};
 
@@ -49,6 +53,13 @@ class _DMListScreenState extends State<DMListScreen> {
       backgroundColor: Colors.white,
       appBar: _buildAppBar(),
       body: _buildBody(),
+      floatingActionButton: _filter == DMFilter.friends
+          ? FloatingActionButton(
+              onPressed: _showFriendSelectionSheet,
+              backgroundColor: const Color(0xFF5865F2),
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
     );
   }
 
@@ -107,6 +118,8 @@ class _DMListScreenState extends State<DMListScreen> {
         }
         
         // 필터 적용: 친구 / 익명
+        print('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
+        
         final filtered = conversations.where((c) {
           // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
           final isSelfDM = c.participants.length == 2 && 
@@ -114,7 +127,10 @@ class _DMListScreenState extends State<DMListScreen> {
                            c.participants[1] == _currentUser!.uid;
           
           // 본인 DM은 무조건 숨김
-          if (isSelfDM) return false;
+          if (isSelfDM) {
+            print('  ❌ 제외: ${c.id} (본인 DM)');
+            return false;
+          }
           
           final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
           
@@ -130,8 +146,21 @@ class _DMListScreenState extends State<DMListScreen> {
           // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
           final hasOtherParticipant = c.participants.length >= 2;
           
-          return passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
+          final result = passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
+          
+          if (!result) {
+            print('  ❌ 제외: ${c.id}');
+            print('     - isAnon: $isAnon, isPostDM: $isPostDM');
+            print('     - passesType: $passesType, notHidden: $notHiddenLocal');
+            print('     - notArchived: $notArchivedServer, hasOther: $hasOtherParticipant');
+          } else {
+            print('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
+          }
+          
+          return result;
         }).toList();
+        
+        print('📊 필터링 결과: ${filtered.length}개 대화방 표시');
 
         if (filtered.isEmpty) {
           return _buildEmptyState(
@@ -511,6 +540,274 @@ class _DMListScreenState extends State<DMListScreen> {
         ),
       ),
     );
+  }
+
+  /// 친구 선택 바텀시트 표시
+  void _showFriendSelectionSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.9,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // 핸들 바
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 8),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD1D5DB),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              
+              // 헤더
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                child: Row(
+                  children: [
+                    const Text(
+                      '친구 선택',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              
+              const Divider(height: 1, color: Color(0xFFE5E7EB)),
+              
+              // 친구 목록
+              Expanded(
+                child: StreamBuilder<List<UserProfile>>(
+                  stream: _relationshipService.getFriends(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: Color(0xFF5865F2)),
+                      );
+                    }
+                    
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text(
+                          '친구 목록을 불러올 수 없습니다',
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      );
+                    }
+                    
+                    final friends = snapshot.data ?? [];
+                    
+                    if (friends.isEmpty) {
+                      return Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.people_outline,
+                              size: 64,
+                              color: Color(0xFFD1D5DB),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              '친구가 없습니다',
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                    
+                    return ListView.builder(
+                      controller: scrollController,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: friends.length,
+                      itemBuilder: (context, index) {
+                        final friend = friends[index];
+                        return _buildFriendSelectionCard(friend);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 친구 선택 카드
+  Widget _buildFriendSelectionCard(UserProfile friend) {
+    return InkWell(
+      onTap: () {
+        Navigator.pop(context); // 바텀시트 닫기
+        _startConversationWithFriend(friend);
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        ),
+        child: Row(
+          children: [
+            // 프로필 이미지
+            Container(
+              width: 48,
+              height: 48,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFE5E7EB),
+              ),
+              child: friend.hasProfileImage
+                  ? ClipOval(
+                      child: Image.network(
+                        friend.photoURL!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    )
+                  : const Icon(
+                      Icons.person,
+                      size: 24,
+                      color: Color(0xFF6B7280),
+                    ),
+            ),
+            
+            const SizedBox(width: 12),
+            
+            // 사용자 정보
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    friend.displayNameOrNickname,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (friend.nickname != null && 
+                      friend.nickname != friend.displayName &&
+                      friend.nickname!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      friend.displayName,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF6B7280),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            
+            // 화살표 아이콘
+            const Icon(
+              Icons.chevron_right,
+              color: Color(0xFF9CA3AF),
+              size: 20,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 친구와 대화 시작
+  Future<void> _startConversationWithFriend(UserProfile friend) async {
+    try {
+      print('🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
+      
+      final conversationId = await _dmService.getOrCreateConversation(
+        friend.uid,
+        isOtherUserAnonymous: false,
+      );
+      
+      print('✅ 대화방 ID: $conversationId');
+      
+      if (conversationId != null && mounted) {
+        // 대화방으로 이동
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: friend.uid,
+            ),
+          ),
+        );
+      } else {
+        print('❌ 대화방 ID가 null입니다');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('대화방을 만들 수 없습니다'),
+              backgroundColor: Color(0xFFEF4444),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ 대화 시작 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('대화를 시작할 수 없습니다'),
+            backgroundColor: Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
   }
 }
 

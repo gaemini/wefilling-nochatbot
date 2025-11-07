@@ -313,18 +313,22 @@ class RelationshipProvider with ChangeNotifier {
   /// 친구 목록 로드
   Future<void> loadFriends() async {
     try {
+      _setLoading(true);
       _relationshipService.getFriends().listen((friends) {
         _friends = friends;
+        _setLoading(false);
         notifyListeners();
       });
     } catch (e) {
       _setError('친구 목록 로드 중 오류가 발생했습니다: $e');
+      _setLoading(false);
     }
   }
 
   /// 모든 데이터 초기화
   Future<void> initialize() async {
     try {
+      _setLoading(true);
       await Future.wait([
         loadIncomingRequests(),
         loadOutgoingRequests(),
@@ -332,6 +336,7 @@ class RelationshipProvider with ChangeNotifier {
       ]);
     } catch (e) {
       _setError('데이터 초기화 중 오류가 발생했습니다: $e');
+      _setLoading(false);
     }
   }
 

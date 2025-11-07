@@ -496,91 +496,88 @@ class _FriendsPageState extends State<FriendsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return !_isInitialized
-        ? AppSkeletonList.listItems(
-          itemCount: 5,
-          padding: const EdgeInsets.all(16),
-        )
-        : GestureDetector(
-          onTap: () {
-            // 빈 공간 터치시 키보드 닫기
-            FocusScope.of(context).unfocus();
-          },
-          child: Column(
-            children: [
-              // 검색바
-              _buildSearchBar(),
+    return GestureDetector(
+      onTap: () {
+        // 빈 공간 터치시 키보드 닫기
+        FocusScope.of(context).unfocus();
+      },
+      child: Column(
+        children: [
+          // 검색바
+          _buildSearchBar(),
 
-              // 친구 목록
-              Expanded(
-                child: Consumer<RelationshipProvider>(
-                  builder: (context, provider, child) {
-                    // provider의 friends가 변경되면 필터링된 목록도 업데이트
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted && (_filteredFriends.length != provider.friends.length ||
-                          _searchController.text.trim().isEmpty)) {
-                        _filterFriends(_searchController.text);
-                      }
-                    });
+          // 친구 목록
+          Expanded(
+            child: Consumer<RelationshipProvider>(
+              builder: (context, provider, child) {
+                // provider의 friends가 변경되면 필터링된 목록도 업데이트
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && (_filteredFriends.length != provider.friends.length ||
+                      _searchController.text.trim().isEmpty)) {
+                    _filterFriends(_searchController.text);
+                  }
+                });
 
-                    if (provider.isLoading) {
-                      return AppSkeletonList.listItems(
-                        itemCount: 5,
-                        padding: const EdgeInsets.all(16),
-                      );
-                    }
+                // 로딩 중일 때 스켈레톤 표시
+                if (provider.isLoading && !_isInitialized) {
+                  return AppSkeletonList.listItems(
+                    itemCount: 8,
+                    padding: const EdgeInsets.all(16),
+                  );
+                }
 
-                    if (provider.errorMessage != null) {
-                      return _buildErrorState(provider.errorMessage!);
-                    }
+                if (provider.errorMessage != null) {
+                  return _buildErrorState(provider.errorMessage!);
+                }
 
-                    if (provider.friends.isEmpty) {
-                      return SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 40),
-                          child: AppEmptyState.noFriends(
-                            context: context,
-                            onSearchFriends: () {
-                              // 친구 검색 화면으로 이동하는 로직
-                              // 예: Navigator.push(...);
-                            },
-                          ),
-                        ),
-                      );
-                    }
+                // 로딩이 끝났고 친구 목록이 비어있을 때만 빈 상태 표시
+                if (!provider.isLoading && provider.friends.isEmpty) {
+                  return SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: AppEmptyState.noFriends(
+                        context: context,
+                        onSearchFriends: () {
+                          // 친구 검색 화면으로 이동하는 로직
+                          // 예: Navigator.push(...);
+                        },
+                      ),
+                    ),
+                  );
+                }
 
-                    if (_filteredFriends.isEmpty &&
-                        _searchController.text.trim().isNotEmpty) {
-                      return SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 40),
-                          child: AppEmptyState.noSearchResults(
-                            context: context,
-                            searchQuery: _searchController.text.trim(),
-                            onClearSearch: () {
-                              _searchController.clear();
-                              _filterFriends('');
-                            },
-                          ),
-                        ),
-                      );
-                    }
+                if (_filteredFriends.isEmpty &&
+                    _searchController.text.trim().isNotEmpty) {
+                  return SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: AppEmptyState.noSearchResults(
+                        context: context,
+                        searchQuery: _searchController.text.trim(),
+                        onClearSearch: () {
+                          _searchController.clear();
+                          _filterFriends('');
+                        },
+                      ),
+                    ),
+                  );
+                }
 
-                    return _buildFriendsList();
-                  },
-                ),
-              ),
-            ],
+                return _buildFriendsList();
+              },
+            ),
           ),
-        );
+        ],
+      ),
+    );
   }
 
   /// 검색바 위젯
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), // 고정 높이 제거
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -596,7 +593,7 @@ class _FriendsPageState extends State<FriendsPage> {
         controller: _searchController,
         decoration: InputDecoration(
           hintText: AppLocalizations.of(context)!.searchByFriendName,
-          prefixIcon: const Icon(Icons.search),
+          prefixIcon: const Icon(Icons.search, size: 20),
           suffixIcon:
               _searchController.text.isNotEmpty
                   ? AppIconButton(
@@ -617,9 +614,9 @@ class _FriendsPageState extends State<FriendsPage> {
           fillColor: Colors.grey[100],
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
-            vertical: 12, // 8 -> 12로 증가하여 더 편안한 터치 영역
+            vertical: 10,
           ),
-          isDense: true, // 컴팩트한 디자인
+          isDense: true,
         ),
         onChanged: _filterFriends,
         textInputAction: TextInputAction.search,
@@ -644,7 +641,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onLongPress: () => _showFriendOptions(friend),
             borderRadius: BorderRadius.circular(12),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   // 프로필 이미지

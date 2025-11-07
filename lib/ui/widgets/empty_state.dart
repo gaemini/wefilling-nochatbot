@@ -72,18 +72,20 @@ class AppEmptyState extends StatelessWidget {
       // ctaText 및 onCtaPressed 제거하여 "Create Your First Meetup" 버튼 숨김
       secondaryCtaText: AppLocalizations.of(context)!.searchMeetups,
       // 위필링 로고를 표시
-      illustration: Container(
-        width: 120,
-        height: 120,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Image.asset(
-            'assets/images/wefilling_logo.png',
-            fit: BoxFit.contain,
+      illustration: Center(
+        child: Container(
+          width: 90,
+          height: 90,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Image.asset(
+              'assets/images/wefilling_logo.png',
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       ),

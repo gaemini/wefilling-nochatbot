@@ -80,9 +80,16 @@ dev_dependencies:
 
 
 flutter_icons:
-  android: true
+  android: "launcher_icon"
   ios: true
   image_path: "assets/icons/app_logo.png"
+  # iOS는 여백이 있는 버전 사용 (잘림 방지)
+  image_path_ios: "assets/icons/app_logo_ios.png"
+  # Android는 원본 사용
+  image_path_android: "assets/icons/app_logo.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icons/app_logo.png"
+  remove_alpha_ios: true
 
 
 # For information on the generic Dart part of this file, see the

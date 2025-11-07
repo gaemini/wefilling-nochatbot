@@ -257,6 +257,11 @@ class RelationshipService {
     return _usersRepository.getFriends();
   }
 
+  /// 친구 수 스트림
+  Stream<int> getFriendCount() {
+    return getFriends().map((friends) => friends.length);
+  }
+
   /// 사용자 검색
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
     return await _usersRepository.searchUsers(query, limit: limit);

@@ -24,6 +24,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import 'login_screen.dart';
 import 'review_detail_screen.dart';
+import '../services/relationship_service.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -36,6 +37,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final PostService _postService = PostService();
+  final RelationshipService _relationshipService = RelationshipService();
   late TabController _tabController;
   
   @override
@@ -52,55 +54,54 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    // 화면 크기 가져오기 (다양한 기종 대응)
-    final mediaQuery = MediaQuery.of(context);
-    final screenHeight = mediaQuery.size.height;
-    final statusBarHeight = mediaQuery.padding.top;
-    
     return Scaffold(
       backgroundColor: AppTheme.backgroundPrimary,
       body: SafeArea(
         top: true,
         bottom: true,
-        child: Column(
-          children: [
-            _buildProfileHeader(),
-            Container(
-              color: AppTheme.backgroundSecondary,
-              child: TabBar(
-                controller: _tabController,
-                labelColor: const Color(0xFF646464), // 회색으로 변경
-                unselectedLabelColor: Colors.grey[400],
-                indicatorColor: const Color(0xFF646464), // 회색으로 변경
-                indicatorWeight: 2.5,
-                labelStyle: AppTheme.labelMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
+        child: NestedScrollView(
+          headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+            return <Widget>[
+              SliverToBoxAdapter(
+                child: _buildProfileHeader(),
+              ),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _SliverAppBarDelegate(
+                  TabBar(
+                    controller: _tabController,
+                    labelColor: const Color(0xFF646464),
+                    unselectedLabelColor: Colors.grey[400],
+                    indicatorColor: const Color(0xFF646464),
+                    indicatorWeight: 2.5,
+                    labelStyle: AppTheme.labelMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    tabs: [
+                      Tab(
+                        icon: Icon(Icons.grid_on_rounded, size: 16),
+                        text: AppLocalizations.of(context)!.reviews,
+                        height: 48,
+                      ),
+                      Tab(
+                        icon: Icon(Icons.bookmark_border_rounded, size: 16),
+                        text: AppLocalizations.of(context)!.saved,
+                        height: 48,
+                      ),
+                    ],
+                  ),
                 ),
-                tabs: [
-                  Tab(
-                    icon: Icon(Icons.grid_on_rounded, size: 16),
-                    text: AppLocalizations.of(context)!.reviews,
-                    height: 48,
-                  ),
-                  Tab(
-                    icon: Icon(Icons.bookmark_border_rounded, size: 16),
-                    text: AppLocalizations.of(context)!.saved,
-                    height: 48,
-                  ),
-                ],
               ),
-            ),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildReviewGrid(),
-                  _buildSavedPosts(),
-                ],
-              ),
-            ),
-          ],
+            ];
+          },
+          body: TabBarView(
+            controller: _tabController,
+            children: [
+              _buildReviewGrid(),
+              _buildSavedPosts(),
+            ],
+          ),
         ),
       ),
     );
@@ -111,253 +112,171 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     final user = authProvider.user;
     final userData = authProvider.userData;
     final nationality = userData?['nationality'];
-    
-    // 반응형 패딩 (화면 크기에 따라 조정)
-    final mediaQuery = MediaQuery.of(context);
-    final screenHeight = mediaQuery.size.height;
-    
-    // 작은 화면에서는 패딩을 더 줄임
-    final verticalPadding = screenHeight < 700 ? 8.0 : 12.0;
-    final horizontalPadding = 16.0;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        horizontalPadding,
-        verticalPadding,
-        horizontalPadding,
-        verticalPadding,
-      ),
-      decoration: BoxDecoration(
-        gradient: AppTheme.backgroundGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(DesignTokens.r16),
-          bottomRight: Radius.circular(DesignTokens.r16),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primary.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Stack(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: Column(
         children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          // 프로필 사진(왼쪽) + 이름/국가(중앙) + 설정(오른쪽)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              SizedBox(height: screenHeight < 700 ? 4 : 8),
-              
-              // 프로필 사진(왼쪽) + 이름/국가(오른쪽)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  // 프로필 이미지
-                  Container(
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF646464), // 회색 톤
-                        width: 3,
-                      ),
-                    ),
-                    child: Container(
-                      width: screenHeight < 700 ? 80 : 88,
-                      height: screenHeight < 700 ? 80 : 88,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: AppTheme.backgroundPrimary,
-                      ),
-                      child: user?.photoURL != null
-                          ? ClipOval(
-                              child: Image.network(
-                                user!.photoURL!,
-                                width: screenHeight < 700 ? 80 : 88,
-                                height: screenHeight < 700 ? 80 : 88,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(
-                                  Icons.person,
-                                  size: screenHeight < 700 ? 40 : 44,
-                                  color: const Color(0xFF4A90E2), // 위필링 로고색
-                                ),
-                              ),
-                            )
-                          : Icon(
-                              Icons.person,
-                              size: screenHeight < 700 ? 40 : 44,
-                              color: const Color(0xFF4A90E2), // 위필링 로고색
-                            ),
-                    ),
-                  ),
-                  
-                  const SizedBox(width: 16),
-                  
-                  // 이름과 국가 정보 (오른쪽)
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          userData?['nickname'] ?? AppLocalizations.of(context)!.user,
-                          style: AppTheme.headlineMedium.copyWith(
-                            color: Colors.black,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 22,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 6),
-                        if (nationality != null && nationality.isNotEmpty)
-                          Row(
-                            children: [
-                              CountryFlagCircle(
-                                nationality: nationality,
-                                size: 26,
-                              ),
-                              const SizedBox(width: 8),
-                              Flexible(
-                                child: Text(
-                                  CountryFlagHelper.getCountryInfo(nationality)
-                                      ?.getLocalizedName(Localizations.localeOf(context).languageCode) 
-                                      ?? nationality,
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    color: Colors.black87,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        // 한 줄 소개 (프로필에서만 표시)
-                        if (userData?['bio'] != null && (userData!['bio'] as String).isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            userData!['bio'],
-                            style: AppTheme.bodyMedium.copyWith(
-                              color: Colors.black87,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w400,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                        if (userData?['university'] != null) ...[
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(Icons.school, size: 18, color: Colors.black54),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  userData!['university'],
-                                  style: AppTheme.bodyMedium.copyWith(
-                                    color: Colors.black54,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              
-              SizedBox(height: screenHeight < 700 ? 10 : 14), // 간격 증가
-
-              // 통계 정보 (원래 위치 - 카드 형태)
+              // 프로필 사진
               Container(
+                width: 100,
+                height: 100,
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFF646464), width: 1.5), // 회색 테두리
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  shape: BoxShape.circle,
+                  color: const Color(0xFFE5E7EB),
                 ),
-                padding: EdgeInsets.symmetric(
-                  vertical: screenHeight < 700 ? 10 : 12,
-                  horizontal: 8,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                child: user?.photoURL != null
+                    ? ClipOval(
+                        child: Image.network(
+                          user!.photoURL!,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person,
+                            size: 50,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person,
+                        size: 50,
+                        color: Color(0xFF6B7280),
+                      ),
+              ),
+              
+              const SizedBox(width: 16),
+              
+              // 이름과 국가 정보 (중앙)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, icon: Icons.event_available, color: const Color(0xFF646464)), // 회색 아이콘
-                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)), // 회색 구분선
-                    _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF646464)),
-                    Container(width: 1, height: screenHeight < 700 ? 32 : 36, color: const Color(0xFF646464)),
-                    _buildStatItem(AppLocalizations.of(context)!.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF646464)),
+                    Text(
+                      userData?['nickname'] ?? AppLocalizations.of(context)!.user,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    if (nationality != null && nationality.isNotEmpty)
+                      Row(
+                        children: [
+                          CountryFlagCircle(
+                            nationality: nationality,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              CountryFlagHelper.getCountryInfo(nationality)
+                                  ?.getLocalizedName(Localizations.localeOf(context).languageCode) 
+                                  ?? nationality,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    
+                    // 한 줄 소개 (국기 아래)
+                    if (userData?['bio'] != null && (userData!['bio'] as String).isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        userData!['bio'],
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF111827),
+                          height: 1.4,
+                        ),
+                        textAlign: TextAlign.left,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ],
                 ),
               ),
-
-              SizedBox(height: screenHeight < 700 ? 8 : 12), // 반응형 간격
-
-              // 프로필 편집 버튼
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const ProfileEditScreen(),
-                      ),
-                    ).then((_) {
-                      setState(() {});
-                    });
-                  },
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: const Color(0xFF646464), width: 1.5), // 회색 테두리
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(DesignTokens.r12),
-                    ),
-                    padding: EdgeInsets.symmetric(
-                      vertical: screenHeight < 700 ? 8 : 10, // 반응형 패딩
-                    ),
-                  ),
-                  child: Text(
-                    AppLocalizations.of(context)!.profileEdit,
-                    style: AppTheme.labelMedium.copyWith(
-                      color: Colors.black, // 텍스트는 검은색 유지 (가독성)
-                      fontWeight: FontWeight.bold,
-                      fontSize: screenHeight < 700 ? 13 : 14, // 반응형 텍스트
-                    ),
-                  ),
-                ),
+              
+              // 설정 아이콘 (오른쪽)
+              IconButton(
+                icon: const Icon(Icons.settings, color: Color(0xFF9CA3AF), size: 28),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () {
+                  _showSettingsBottomSheet(context);
+                },
               ),
             ],
           ),
           
-          // 설정 버튼 (오른쪽 상단 절대 위치)
-          Positioned(
-            top: 0,
-            right: 0,
-            child: IconButton(
+          const SizedBox(height: 20),
+          
+          // 통계 정보 (3개 컬럼)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatItem(AppLocalizations.of(context)!.friends, isFriends: true, icon: Icons.people, color: const Color(0xFF5865F2)),
+              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF5865F2)),
+              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF5865F2)),
+            ],
+          ),
+          
+          const SizedBox(height: 20),
+          
+          // 프로필 편집 버튼
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
               onPressed: () {
-                _showSettingsBottomSheet(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const ProfileEditScreen(),
+                  ),
+                ).then((_) {
+                  setState(() {});
+                });
               },
-              icon: Icon(
-                Icons.settings_rounded,
-                color: Colors.black87,
-                size: 22,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFE5E7EB),
+                foregroundColor: const Color(0xFF111827),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              padding: EdgeInsets.zero,
-              constraints: BoxConstraints(),
+              child: const Text(
+                '프로필 편집',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ],
@@ -851,6 +770,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   Widget _buildStatItem(
     String label, {
+    bool isFriends = false,
     bool isJoined = false,
     bool isPosts = false,
     required IconData icon,
@@ -858,32 +778,38 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   }) {
     return Expanded(
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, size: 20, color: color), // 22 → 20
-          const SizedBox(height: 6), // 8 → 6
+          Icon(icon, size: 24, color: color),
+          const SizedBox(height: 8),
           StreamBuilder<int>(
-            stream: isJoined
-                ? _userStatsService.getJoinedMeetupCount()
-                : isPosts
-                    ? _userStatsService.getUserPostCount()
-                    : _userStatsService.getHostedMeetupCount(),
+            stream: isFriends
+                ? _relationshipService.getFriendCount()
+                : isJoined
+                    ? _userStatsService.getJoinedMeetupCount()
+                    : isPosts
+                        ? _userStatsService.getUserPostCount()
+                        : _userStatsService.getHostedMeetupCount(),
             builder: (context, snapshot) {
               return Text(
                 '${snapshot.data ?? 0}',
-                style: AppTheme.headlineMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
-                  fontSize: 22, // 24 → 22
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
                 ),
               );
             },
           ),
-          const SizedBox(height: 3), // 4 → 3
+          const SizedBox(height: 4),
           Text(
             label,
-            style: AppTheme.bodySmall.copyWith(
-              color: Colors.black,
-              fontSize: 10, // 11 → 10
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              color: Color(0xFF6B7280),
             ),
             textAlign: TextAlign.center,
           ),
@@ -1247,5 +1173,35 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         );
       },
     );
+  }
+}
+
+// SliverPersistentHeader를 위한 Delegate 클래스
+class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
+  _SliverAppBarDelegate(this._tabBar);
+
+  final TabBar _tabBar;
+
+  @override
+  double get minExtent => _tabBar.preferredSize.height;
+  
+  @override
+  double get maxExtent => _tabBar.preferredSize.height;
+
+  @override
+  Widget build(
+    BuildContext context, 
+    double shrinkOffset, 
+    bool overlapsContent,
+  ) {
+    return Container(
+      color: AppTheme.backgroundSecondary,
+      child: _tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
+    return false;
   }
 }

@@ -77,17 +77,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          AppLocalizations.of(context)!.profile,
-          style: AppTheme.headlineMedium.copyWith(
-            color: const Color(0xFF4A90E2), // 위필링 로고색
-          ),
-        ),
         backgroundColor: AppTheme.backgroundPrimary,
-        foregroundColor: const Color(0xFF4A90E2), // 위필링 로고색
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -103,13 +96,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center, // 중앙 정렬 추가
                     children: [
-                      Icon(Icons.grid_on_rounded, size: 20, color: const Color(0xFF4A90E2)), // 위필링 로고색
+                      Icon(Icons.grid_on_rounded, size: 20, color: const Color(0xFF5865F2)), // 위필링 포인트 컬러
                       const SizedBox(width: 8),
                       Text(
                         AppLocalizations.of(context)!.participatedReviews,
                         style: AppTheme.labelMedium.copyWith(
                           fontWeight: FontWeight.w700,
-                          color: const Color(0xFF4A90E2), // 위필링 로고색
+                          color: const Color(0xFF5865F2), // 위필링 포인트 컬러
                           fontSize: 16,
                         ),
                       ),
@@ -181,14 +174,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                             errorBuilder: (_, __, ___) => Icon(
                               Icons.person,
                               size: 44,
-                              color: const Color(0xFF4A90E2), // 위필링 로고색
+                              color: const Color(0xFF5865F2), // 위필링 포인트 컬러
                             ),
                           ),
                         )
                       : Icon(
                           Icons.person,
                           size: 44,
-                          color: const Color(0xFF4A90E2), // 위필링 로고색
+                          color: const Color(0xFF5865F2), // 위필링 포인트 컬러
                         ),
                 ),
               ),
@@ -313,15 +306,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             child: ElevatedButton.icon(
               onPressed: _openDM,
               icon: const Icon(Icons.message, size: 20),
-              label: Text(
-                AppLocalizations.of(context)!.sendMessage,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
+              label: Flexible(
+                child: Text(
+                  AppLocalizations.of(context)!.sendMessage,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4A90E2),
+                backgroundColor: const Color(0xFF5865F2), // 위필링 포인트 컬러
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(

@@ -43,10 +43,9 @@ class _FriendsMainPageState extends State<FriendsMainPage>
     return Scaffold(
       backgroundColor: const Color(0xFFEBEBEB), // 게시글 페이지와 동일한 배경색
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.friends ?? ""),
+        toolbarHeight: 0, // 타이틀 영역 높이를 0으로 설정
         elevation: 0,
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         bottom: TabBar(
           controller: _tabController,
           isScrollable: false,

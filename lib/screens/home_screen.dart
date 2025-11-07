@@ -473,21 +473,21 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            iconSize: 20,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    iconSize: 20,
             color: const Color(0xFF374151),
-            padding: EdgeInsets.zero,
+                    padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: _goToPreviousWeek,
-          ),
+                    onPressed: _goToPreviousWeek,
+                  ),
           GestureDetector(
-            onTap: _goToCurrentWeek,
-            child: Text(
-              '$selectedDayString ($weekdayName)',
+                      onTap: _goToCurrentWeek,
+                      child: Text(
+                        '$selectedDayString ($weekdayName)',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 16,
@@ -496,15 +496,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               ),
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            iconSize: 20,
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    iconSize: 20,
             color: const Color(0xFF374151),
-            padding: EdgeInsets.zero,
+                    padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: _goToNextWeek,
-          ),
-        ],
+                    onPressed: _goToNextWeek,
+                  ),
+                ],
       ),
     );
   }
@@ -769,22 +769,37 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 새로운 모임 카드 디자인
   Widget _buildNewMeetupCard(Meetup meetup) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    
+    // 참여 상태 확인
+    final cachedStatus = _getCachedParticipationStatus(meetup.id);
+    final isLoadingStatus = cachedStatus == null && 
+        currentUser != null && 
+        meetup.userId != currentUser.uid;
+    
+    // 캐시가 없으면 백그라운드에서 로드
+    if (isLoadingStatus && !_participationSubscriptions.containsKey(meetup.id)) {
+      _loadParticipationStatus(meetup.id);
+    }
+
     return GestureDetector(
       onTap: () => _navigateToMeetupDetail(meetup),
-      child: Container(
+      child: Stack(
+        children: [
+          Container(
       decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
           ),
         ],
       ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 상단: 제목과 공개 범위 배지
             Padding(
@@ -912,7 +927,44 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               ),
             ),
           ],
-        ),
+            ),
+          ),
+          
+          // 🔑 로딩 오버레이
+          if (isLoadingStatus)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -955,13 +1007,12 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     // 캐시된 상태 확인 (즉시 반영)
     final cachedStatus = _getCachedParticipationStatus(meetup.id);
 
-    // 캐시가 없으면 백그라운드에서 로드
-    if (cachedStatus == null &&
-        !_participationSubscriptions.containsKey(meetup.id)) {
-      _loadParticipationStatus(meetup.id);
+    // 로딩 중일 때는 버튼 숨김 (카드 전체 로딩 표시)
+    if (cachedStatus == null) {
+      return const SizedBox(width: 64, height: 32); // 버튼 공간 유지
     }
 
-    final isParticipating = cachedStatus ?? false;
+    final isParticipating = cachedStatus;
 
     // 마감된 모임이지만 이미 참여 중이면 나가기 버튼 표시
     if (meetup.currentParticipants >= meetup.maxParticipants &&
@@ -978,7 +1029,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         }
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 300),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: isParticipating

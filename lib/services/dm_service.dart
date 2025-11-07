@@ -483,7 +483,7 @@ class DMService {
           currentUser.uid: isOtherUserAnonymous
               ? '익명'  // 상대방이 익명이면 나도 익명으로 표시
               : (currentUserData['nickname']?.toString() ?? 
-                 currentUserData['name']?.toString() ?? 
+                          currentUserData['name']?.toString() ?? 
                  'User'),
           otherUserId: isOtherUserAnonymous 
               ? '익명' 

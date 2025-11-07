@@ -151,12 +151,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     
     // 익명 (전체 공개 + 익명) (통일된 크기)
     if (post.visibility == 'public' && post.isAnonymous) {
-      return Container(
+    return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
+      decoration: BoxDecoration(
           color: const Color(0xFFE8EAF6), // 익명 배경색
           borderRadius: BorderRadius.circular(16),
-        ),
+      ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -168,13 +168,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             const SizedBox(width: 6),
             Text(
               '익명',
-              style: TextStyle(
+        style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700, // 통일된 굵기
                 color: const Color(0xFF5C6BC0), // 익명 강조색
-              ),
-            ),
+        ),
+      ),
           ],
         ),
       );

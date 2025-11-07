@@ -945,20 +945,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   margin: const EdgeInsets.all(14.0),
                   width: 24,
                   height: 24,
-                  child: const CircularProgressIndicator(
-                    strokeWidth: 2,
+                child: const CircularProgressIndicator(
+                  strokeWidth: 2,
                     color: Color(0xFF111827),
-                  ),
-                )
+                ),
+              )
               : IconButton(
-                  icon: Icon(
-                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                icon: Icon(
+                  _isSaved ? Icons.bookmark : Icons.bookmark_border,
                     color: const Color(0xFF111827),
                     size: 26,
-                  ),
-                  tooltip: _isSaved ? '저장 취소' : '게시글 저장',
-                  onPressed: _toggleSave,
                 ),
+                  tooltip: _isSaved ? '저장 취소' : '게시글 저장',
+                onPressed: _toggleSave,
+              ),
           // 게시글 삭제 버튼 (작성자인 경우에만)
           if (_isAuthor)
             _isDeleting
@@ -966,11 +966,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     margin: const EdgeInsets.all(14.0),
                     width: 24,
                     height: 24,
-                    child: const CircularProgressIndicator(
+                  child: const CircularProgressIndicator(
                       color: Color(0xFFEF4444),
-                      strokeWidth: 2,
-                    ),
-                  )
+                    strokeWidth: 2,
+                  ),
+                )
                 : IconButton(
                     icon: const Icon(
                       Icons.delete_outline,
@@ -978,8 +978,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       size: 26,
                     ),
                     tooltip: '게시글 삭제',
-                    onPressed: _deletePost,
-                  ),
+                  onPressed: _deletePost,
+                ),
         ],
       ),
       body: Column(
@@ -1167,12 +1167,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 child: AnimatedOpacity(
                                   opacity: _showPageIndicator ? 1.0 : 0.0,
                                   duration: const Duration(milliseconds: 300),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.55),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
+                                child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.55),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -1205,75 +1205,75 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     ),
                                   ],
                                 ),
-                                  ),
+                                ),
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    
-                    // 액션 버튼들 (이미지 바로 아래)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          // 좋아요 버튼
-                          IconButton(
-                            icon: Icon(
-                              _isLiked ? Icons.favorite : Icons.favorite_border,
-                              color: _isLiked ? Colors.red : Colors.black,
-                              size: 24,
-                            ),
-                            onPressed: _isTogglingLike ? null : _toggleLike,
-                            splashRadius: 20,
-                          ),
-                          
-                          // DM 버튼 (본인 글이 아닌 경우만)
-                          if (FirebaseAuth.instance.currentUser != null &&
-                              _currentPost.userId != FirebaseAuth.instance.currentUser!.uid)
-                            IconButton(
-                              icon: Transform.rotate(
-                                angle: -math.pi / 4, // 45도 기울임
-                                child: const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.black,
-                                  size: 24,
-                                ),
-                              ),
-                              onPressed: _openDMFromDetail,
-                              splashRadius: 20,
                             ),
                         ],
                       ),
                     ),
 
+                    // 액션 버튼들 (이미지 바로 아래)
+                  Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    child: Row(
+                      children: [
+                        // 좋아요 버튼
+                        IconButton(
+                          icon: Icon(
+                            _isLiked ? Icons.favorite : Icons.favorite_border,
+                            color: _isLiked ? Colors.red : Colors.black,
+                            size: 24,
+                          ),
+                          onPressed: _isTogglingLike ? null : _toggleLike,
+                          splashRadius: 20,
+                        ),
+                        
+                        // DM 버튼 (본인 글이 아닌 경우만)
+                        if (FirebaseAuth.instance.currentUser != null &&
+                            _currentPost.userId != FirebaseAuth.instance.currentUser!.uid)
+                          IconButton(
+                            icon: Transform.rotate(
+                              angle: -math.pi / 4, // 45도 기울임
+                              child: const Icon(
+                                Icons.send_rounded,
+                                color: Colors.black,
+                                size: 24,
+                              ),
+                            ),
+                            onPressed: _openDMFromDetail,
+                            splashRadius: 20,
+                          ),
+                      ],
+                    ),
+                  ),
+
                     // 좋아요 수 표시
-                    if (_currentPost.likes > 0)
-                      Padding(
+                  if (_currentPost.likes > 0)
+                    Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: DesignTokens.s16,
                         ),
-                        child: Text(
-                          '좋아요 ${_currentPost.likes}개',
-                          style: const TextStyle(
+                      child: Text(
+                        '좋아요 ${_currentPost.likes}개',
+                        style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
                         ),
                       ),
+                    ),
 
                     // 본문 영역 (이미지가 있을 때)
-                    Padding(
+                  Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: DesignTokens.s16,
                         vertical: DesignTokens.s12,
                       ),
-                      child: Text(
-                        _currentPost.content,
-                        style: const TextStyle(
+                    child: Text(
+                      _currentPost.content,
+                      style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 16, // 15 → 16 (가독성 개선)
                           height: 1.6,
@@ -1351,12 +1351,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           '좋아요 ${_currentPost.likes}개',
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 14,
+                        fontSize: 14,
                             fontWeight: FontWeight.w600,
-                            color: Colors.black,
-                          ),
-                        ),
+                        color: Colors.black,
                       ),
+                    ),
+                  ),
                   ],
 
                   // 댓글 섹션 타이틀 (간격 조정)

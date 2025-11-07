@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
 import '../design/tokens.dart';

@@ -196,86 +196,86 @@ class _DMListScreenState extends State<DMListScreen> {
     return Container(
       color: Colors.white,
       child: LayoutBuilder(
-        builder: (context, constraints) {
-          final tabWidth = constraints.maxWidth / 2;
-          final indicatorWidth = 42.0;
-          final leftForFriends = (tabWidth - indicatorWidth) / 2;
-          final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
+      builder: (context, constraints) {
+        final tabWidth = constraints.maxWidth / 2;
+        final indicatorWidth = 42.0;
+        final leftForFriends = (tabWidth - indicatorWidth) / 2;
+        final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
 
-          return Stack(
-            children: [
-              // 하단 라인
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
+        return Stack(
+          children: [
+            // 하단 라인
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
                 child: Container(height: 1, color: const Color(0xFFE5E7EB)),
-              ),
+            ),
 
-              // 탭 텍스트 영역
-              Row(
-                children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.friends) setState(() => _filter = DMFilter.friends);
-                      },
-                      child: Container(
+            // 탭 텍스트 영역
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_filter != DMFilter.friends) setState(() => _filter = DMFilter.friends);
+                    },
+                    child: Container(
                         height: 48,
-                        alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.friends,
-                          style: TextStyle(
+                      alignment: Alignment.center,
+                      child: Text(
+                        AppLocalizations.of(context)!.friends,
+                        style: TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.friends ? activeColor : inactiveColor,
-                          ),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: _filter == DMFilter.friends ? activeColor : inactiveColor,
                         ),
                       ),
                     ),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () {
-                        if (_filter != DMFilter.anonymous) setState(() => _filter = DMFilter.anonymous);
-                      },
-                      child: Container(
-                        height: 48,
-                        alignment: Alignment.center,
-                        child: Text(
-                          AppLocalizations.of(context)!.anonymousUser,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: _filter == DMFilter.anonymous ? activeColor : inactiveColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              // 인디케이터
-              AnimatedPositioned(
-                duration: const Duration(milliseconds: 220),
-                curve: Curves.easeOut,
-                left: _filter == DMFilter.friends ? leftForFriends : leftForAnonymous,
-                bottom: 0,
-                child: Container(
-                  width: indicatorWidth,
-                  height: 2.5,
-                  decoration: BoxDecoration(
-                    color: activeColor,
-                    borderRadius: BorderRadius.circular(3),
                   ),
                 ),
+                Expanded(
+                  child: InkWell(
+                    onTap: () {
+                      if (_filter != DMFilter.anonymous) setState(() => _filter = DMFilter.anonymous);
+                    },
+                    child: Container(
+                        height: 48,
+                      alignment: Alignment.center,
+                      child: Text(
+                        AppLocalizations.of(context)!.anonymousUser,
+                        style: TextStyle(
+                            fontFamily: 'Pretendard',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: _filter == DMFilter.anonymous ? activeColor : inactiveColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            // 인디케이터
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOut,
+              left: _filter == DMFilter.friends ? leftForFriends : leftForAnonymous,
+                bottom: 0,
+              child: Container(
+                width: indicatorWidth,
+                  height: 2.5,
+                decoration: BoxDecoration(
+                  color: activeColor,
+                  borderRadius: BorderRadius.circular(3),
+                ),
               ),
-            ],
-          );
-        },
+            ),
+          ],
+        );
+      },
       ),
     );
   }
@@ -514,10 +514,10 @@ class _DMListScreenState extends State<DMListScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              error,
+            error,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 14,
+              fontSize: 14,
                 fontWeight: FontWeight.w400,
                 color: Color(0xFF6B7280),
               ),

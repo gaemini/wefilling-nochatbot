@@ -154,17 +154,17 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                 children: [
                   Expanded(
                     child: Text(
-                      currentMeetup.title,
+                currentMeetup.title,
                       style: const TextStyle(
-                        fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w700,
                         color: Colors.black,
                         fontSize: 24, // 28 → 24 (제목 크기 약간 줄임)
                         height: 1.1, // 1.2 → 1.1 (줄간격 줄임)
                         letterSpacing: -0.5,
-                      ),
+                ),
                       maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                overflow: TextOverflow.ellipsis,
+              ),
                   ),
                   const SizedBox(width: 6), // 8 → 6
                   _buildVisibilityBadge(colorScheme),
@@ -180,8 +180,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                 colorScheme: colorScheme,
                 onTap: _isUrl(currentMeetup.location) 
                     ? () => _openLocationUrl(currentMeetup.location)
-                    : null,
-              ),
+                              : null,
+                        ),
 
               const SizedBox(height: 8), // 12 → 8 (간격 줄임)
 
@@ -214,33 +214,33 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
+                    decoration: BoxDecoration(
         color: badgeColor.withOpacity(0.12),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
+                      border: Border.all(
           color: badgeColor.withOpacity(0.3),
-          width: 1,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
             icon,
             size: 12,
             color: badgeColor,
-          ),
+                        ),
           const SizedBox(width: 4),
-          Text(
+                    Text(
             visibilityText,
-            style: TextStyle(
+                      style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
               color: badgeColor,
-            ),
-          ),
-        ],
-      ),
+                      ),
+                    ),
+                      ],
+                    ),
     );
   }
 
@@ -272,15 +272,15 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+              ),
+            ],
     );
 
     if (onTap != null) {
       return GestureDetector(
         onTap: onTap,
         child: widget,
-      );
+    );
     }
     return widget;
   }
@@ -298,7 +298,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         
         // 작성자 정보 + 참여 정보/버튼
         Row(
-          children: [
+      children: [
             // 프로필 사진 (36x36)
             CircleAvatar(
               radius: 18, // 20 → 18 (프로필 사진 크기 줄임)
@@ -309,22 +309,22 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               child: currentMeetup.hostPhotoURL.isEmpty
                   ? Icon(Icons.person, size: 18, color: Colors.grey[600]) // 20 → 18
                   : null,
-            ),
+        ),
             const SizedBox(width: 10), // 12 → 10 (간격 줄임)
             
             // 작성자 이름
-            Expanded(
-              child: Text(
-                currentMeetup.hostNickname ?? currentMeetup.host,
+        Expanded(
+          child: Text(
+            currentMeetup.hostNickname ?? currentMeetup.host,
                 style: const TextStyle(
                   fontSize: 16, // 18 → 16 (폰트 크기 줄임)
-                  fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w600,
                   color: Colors.black,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
             ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
             
             const SizedBox(width: 10), // 12 → 10 (간격 줄임)
             
@@ -376,9 +376,9 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             minimumSize: const Size(100, 40),
-            shape: RoundedRectangleBorder(
+                shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
-            ),
+                ),
           ),
           child: Text(
             AppLocalizations.of(context)!.checkReview,
@@ -407,8 +407,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-            ),
-          ),
+                              ),
+                          ),
         );
       }
     }
@@ -436,8 +436,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         style: const TextStyle(
           fontSize: 14, // 15 → 14 (폰트 크기 줄임)
           fontWeight: FontWeight.w600,
-        ),
-      ),
+                          ),
+                        ),
     );
   }
 
@@ -459,7 +459,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           fontWeight: FontWeight.w600,
           color: Color(0xFF4A5FCC), // 진한 파란색 텍스트
         ),
-      ),
+          ),
     );
   }
 
@@ -604,33 +604,33 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                                currentMeetup.visibility == 'category';
     
     if (isFriendsOnly) {
-      return Container(
+    return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
+      decoration: BoxDecoration(
           color: const Color(0xFFFFF3E0), // 주황색 배경
           borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
             const Icon(
               Icons.group_outlined,
               size: 15, // 통일된 크기
               color: Color(0xFFFF8A65), // 주황색
-            ),
+          ),
             const SizedBox(width: 6),
-            Text(
+          Text(
               AppLocalizations.of(context)!.visibilityFriends ?? "친구 공개",
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700,
                 color: Color(0xFFFF8A65), // 주황색
-              ),
             ),
-          ],
-        ),
-      );
+          ),
+        ],
+      ),
+    );
     }
     
     // 전체 공개는 표시하지 않음 (게시글 카드와 동일)

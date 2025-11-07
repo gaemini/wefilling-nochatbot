@@ -421,7 +421,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
-                            color: Colors.white,
+                          color: Colors.white,
                             strokeWidth: 2.5,
                           ),
                         )
@@ -711,8 +711,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     ),
                   ),
                 ],
-              ),
-            ),
+        ),
+      ),
     );
   }
 }

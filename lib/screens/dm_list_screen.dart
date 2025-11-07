@@ -46,7 +46,7 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB), // 앱 전체 배경색과 통일
+      backgroundColor: Colors.white,
       appBar: _buildAppBar(),
       body: _buildBody(),
     );
@@ -54,10 +54,10 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
-    // 상단 "DM" 제목을 제거하고, 툴바 높이를 0으로 하여 빈 공간도 없앱니다.
-    return const PreferredSize(
-      preferredSize: Size.zero,
-      child: SizedBox.shrink(),
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      toolbarHeight: 0,
     );
   }
 
@@ -150,11 +150,11 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 상단 필터 탭(친구 / 익명) - 밑줄 인디케이터 스타일
   Widget _buildFilterBanners() {
-    final activeColor = Colors.blue[700]!;
-    final inactiveColor = Colors.grey[500]!;
+    const activeColor = Color(0xFF5865F2);
+    const inactiveColor = Color(0xFF9CA3AF);
 
     return Container(
-      color: Colors.white, // 순수 흰색
+      color: Colors.white,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final tabWidth = constraints.maxWidth / 2;
@@ -169,7 +169,7 @@ class _DMListScreenState extends State<DMListScreen> {
                 left: 0,
                 right: 0,
                 bottom: 0,
-                child: Container(height: 1, color: Colors.grey[200]),
+                child: Container(height: 1, color: const Color(0xFFE5E7EB)),
               ),
 
               // 탭 텍스트 영역
@@ -181,11 +181,12 @@ class _DMListScreenState extends State<DMListScreen> {
                         if (_filter != DMFilter.friends) setState(() => _filter = DMFilter.friends);
                       },
                       child: Container(
-                        height: 44,
+                        height: 48,
                         alignment: Alignment.center,
                         child: Text(
                           AppLocalizations.of(context)!.friends,
                           style: TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.friends ? activeColor : inactiveColor,
@@ -200,11 +201,12 @@ class _DMListScreenState extends State<DMListScreen> {
                         if (_filter != DMFilter.anonymous) setState(() => _filter = DMFilter.anonymous);
                       },
                       child: Container(
-                        height: 44,
+                        height: 48,
                         alignment: Alignment.center,
                         child: Text(
                           AppLocalizations.of(context)!.anonymousUser,
                           style: TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.anonymous ? activeColor : inactiveColor,
@@ -221,10 +223,10 @@ class _DMListScreenState extends State<DMListScreen> {
                 duration: const Duration(milliseconds: 220),
                 curve: Curves.easeOut,
                 left: _filter == DMFilter.friends ? leftForFriends : leftForAnonymous,
-                bottom: 2,
+                bottom: 0,
                 child: Container(
                   width: indicatorWidth,
-                  height: 3,
+                  height: 2.5,
                   decoration: BoxDecoration(
                     color: activeColor,
                     borderRadius: BorderRadius.circular(3),
@@ -261,13 +263,13 @@ class _DMListScreenState extends State<DMListScreen> {
       child: InkWell(
         onTap: () => _openConversation(conversation),
         child: Container(
-          height: 80,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
+          height: 76,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: const BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: Colors.grey[200]!,
-                width: 0.5,
+                color: Color(0xFFF3F4F6),
+                width: 1,
               ),
             ),
           ),
@@ -291,9 +293,10 @@ class _DMListScreenState extends State<DMListScreen> {
                           child: Text(
                             displayName,
                             style: const TextStyle(
-                              fontSize: 16,
+                              fontFamily: 'Pretendard',
+                              fontSize: 15,
                               fontWeight: FontWeight.w600,
-                              color: Colors.black87,
+                              color: Color(0xFF111827),
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -301,9 +304,11 @@ class _DMListScreenState extends State<DMListScreen> {
                         ),
                         Text(
                           timeString,
-                          style: TextStyle(
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 12,
-                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF9CA3AF),
                           ),
                         ),
                       ],
@@ -316,8 +321,9 @@ class _DMListScreenState extends State<DMListScreen> {
                       conversation.lastMessage.isEmpty 
                           ? (AppLocalizations.of(context)!.noMessages ?? "") : conversation.lastMessage,
                       style: TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 14,
-                        color: Colors.grey[700],
+                        color: const Color(0xFF6B7280),
                         fontWeight: unreadCount > 0 ? FontWeight.w600 : FontWeight.w400,
                       ),
                       maxLines: 1,
@@ -333,12 +339,13 @@ class _DMListScreenState extends State<DMListScreen> {
                   constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFF5252), // DMColors.unreadBadge
+                    color: const Color(0xFFEF4444),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     unreadCount > 99 ? '99+' : unreadCount.toString(),
                     style: const TextStyle(
+                      fontFamily: 'Pretendard',
                       color: Colors.white,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -356,11 +363,11 @@ class _DMListScreenState extends State<DMListScreen> {
   /// 프로필 이미지 빌드
   Widget _buildProfileImage(String photoUrl, bool isAnonymous) {
     return Container(
-      width: 52,
-      height: 52,
+      width: 48,
+      height: 48,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.grey[200],
+        color: const Color(0xFFE5E7EB),
         image: !isAnonymous && photoUrl.isNotEmpty
             ? DecorationImage(
                 image: NetworkImage(photoUrl),
@@ -370,10 +377,10 @@ class _DMListScreenState extends State<DMListScreen> {
       ),
       child: (!isAnonymous && photoUrl.isNotEmpty)
           ? null
-          : Icon(
+          : const Icon(
               Icons.person,
-              size: 28,
-              color: Colors.grey[400],
+              size: 24,
+              color: Color(0xFF6B7280),
             ),
     );
   }
@@ -391,24 +398,27 @@ class _DMListScreenState extends State<DMListScreen> {
           Icon(
             icon,
             size: 80,
-            color: Colors.grey[300],
+            color: const Color(0xFFD1D5DB),
           ),
           const SizedBox(height: 16),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 18,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[700],
+              color: Color(0xFF6B7280),
             ),
           ),
           if (subtitle.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
               subtitle,
-              style: TextStyle(
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                color: Colors.grey[600],
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF9CA3AF),
               ),
             ),
           ],
@@ -423,13 +433,15 @@ class _DMListScreenState extends State<DMListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(),
+          const CircularProgressIndicator(color: Color(0xFF5865F2)),
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.loadingMessages,
-            style: TextStyle(
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
               fontSize: 14,
-              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF6B7280),
             ),
           ),
         ],
@@ -443,28 +455,34 @@ class _DMListScreenState extends State<DMListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
+          const Icon(
             Icons.error_outline,
             size: 80,
-            color: Colors.red[300],
+            color: Color(0xFFFCA5A5),
           ),
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.error,
             style: const TextStyle(
-              fontSize: 18,
+              fontFamily: 'Pretendard',
+              fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Colors.red,
+              color: Color(0xFFEF4444),
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            error,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              error,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF6B7280),
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

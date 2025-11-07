@@ -260,8 +260,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
       appBar: _buildAppBar(),
       body: Column(
         children: [
-          // 익명 게시글 DM인 경우 게시글로 돌아가기 배너 추가
-          if (_conversation != null && _conversation!.postId != null && _conversation!.postId!.isNotEmpty)
+          // 익명 게시글 DM인 경우에만 게시글로 돌아가기 배너 추가
+          if (_conversation != null && 
+              _conversation!.postId != null && 
+              _conversation!.postId!.isNotEmpty &&
+              _conversation!.isOtherUserAnonymous(_currentUser!.uid))
             _buildPostNavigationBanner(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),

@@ -117,11 +117,19 @@ class _DMListScreenState extends State<DMListScreen> {
           if (isSelfDM) return false;
           
           final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
-          final passesType = _filter == DMFilter.friends ? !isAnon : isAnon;
+          
+          // 친구 탭: 익명이 아니고 게시글 DM도 아닌 경우만 표시
+          // 익명 탭: 익명 대화만 표시 (게시글 DM 포함)
+          final isPostDM = c.dmTitle != null && c.dmTitle!.isNotEmpty;
+          final passesType = _filter == DMFilter.friends 
+              ? (!isAnon && !isPostDM)  // 친구 탭: 일반 친구 대화만
+              : isAnon;  // 익명 탭: 모든 익명 대화 (게시글 DM 포함)
+          
           final notHiddenLocal = !_hiddenConversationIds.contains(c.id);
           final notArchivedServer = !(c.archivedBy.contains(_currentUser!.uid));
           // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
           final hasOtherParticipant = c.participants.length >= 2;
+          
           return passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
         }).toList();
 
@@ -129,8 +137,11 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
-                ? (AppLocalizations.of(context)!.friends ?? "") : AppLocalizations.of(context)!.anonymousUser,
-            subtitle: AppLocalizations.of(context)!.noConversations,
+                ? (AppLocalizations.of(context)!.friends ?? "") 
+                : AppLocalizations.of(context)!.anonymousUser,
+            subtitle: _filter == DMFilter.friends
+                ? AppLocalizations.of(context)!.noConversations
+                : '게시판에 올라온 익명의 작성자와 소통해보세요.',
           );
         }
 
@@ -251,10 +262,10 @@ class _DMListScreenState extends State<DMListScreen> {
       conversation.lastMessageTime,
     );
 
-    // 제목 결정: 익명 글 DM이면 게시글 제목(dmTitle) 우선, 그 외엔 기존 표시
+    // 제목 결정: 익명 글 DM이면 "제목: 게시글 제목" 형식, 그 외엔 기존 표시
     final dmTitle = conversation.dmTitle;
     final displayName = (dmTitle != null && dmTitle.isNotEmpty)
-        ? dmTitle
+        ? '제목: $dmTitle'
         : (isAnonymous 
             ? (AppLocalizations.of(context)!.anonymousUser ?? "") : otherUserName);
 

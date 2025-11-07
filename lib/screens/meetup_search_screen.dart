@@ -543,9 +543,15 @@ class MeetupCard extends StatelessWidget {
                     children: [
                       Icon(Icons.group, size: 16, color: Colors.grey[600]),
                       const SizedBox(width: 4),
-                      Text(
-                        '${meetup.currentParticipants}/${meetup.maxParticipants}명',
-                        style: TextStyle(color: Colors.grey[700]),
+                      FutureBuilder<int>(
+                        future: MeetupService().getRealTimeParticipantCount(meetup.id),
+                        builder: (context, snapshot) {
+                          final participantCount = snapshot.data ?? meetup.currentParticipants;
+                          return Text(
+                            '$participantCount/${meetup.maxParticipants}명',
+                            style: TextStyle(color: Colors.grey[700]),
+                          );
+                        },
                       ),
                       const SizedBox(width: 12),
                       Icon(Icons.person, size: 16, color: Colors.grey[600]),

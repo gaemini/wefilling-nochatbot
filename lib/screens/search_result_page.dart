@@ -361,13 +361,19 @@ class _SearchResultPageState extends State<SearchResultPage> {
                       color: Colors.blue.shade700,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    FutureBuilder<int>(
+                      future: MeetupService().getRealTimeParticipantCount(meetup.id),
+                      builder: (context, snapshot) {
+                        final participantCount = snapshot.data ?? meetup.currentParticipants;
+                        return Text(
+                          '$participantCount/${meetup.maxParticipants}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.blue.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

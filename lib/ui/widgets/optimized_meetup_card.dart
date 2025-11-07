@@ -602,41 +602,39 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     // 'public'만 전체공개로 표시
     final bool isFriendsOnly = currentMeetup.visibility == 'friends' || 
                                currentMeetup.visibility == 'category';
-    final Color badgeColor = isFriendsOnly ? Colors.orange : Colors.green;
-    final String visibilityText = isFriendsOnly 
-        ? (AppLocalizations.of(context)!.visibilityFriends ?? "") : AppLocalizations.of(context)!.visibilityPublic;
-    final IconData icon = isFriendsOnly ? Icons.people : Icons.public;
     
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: badgeColor.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: badgeColor.withOpacity(0.25),
-          width: 0.8,
+    if (isFriendsOnly) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF3E0), // 주황색 배경
+          borderRadius: BorderRadius.circular(16),
         ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 10,
-            color: badgeColor,
-          ),
-          const SizedBox(width: 3),
-          Text(
-            visibilityText,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: badgeColor,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.group_outlined,
+              size: 15, // 통일된 크기
+              color: Color(0xFFFF8A65), // 주황색
             ),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(width: 6),
+            Text(
+              AppLocalizations.of(context)!.visibilityFriends ?? "친구 공개",
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12, // 통일된 크기
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFFF8A65), // 주황색
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    // 전체 공개는 표시하지 않음 (게시글 카드와 동일)
+    return const SizedBox.shrink();
   }
 
   /// 헤더 빌드 (카테고리 뱃지 + 더 많은 옵션)

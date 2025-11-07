@@ -58,7 +58,7 @@ class AppFab extends StatelessWidget {
     bool enabled = true,
   }) {
     return AppFab(
-      icon: IconStyles.edit,
+      icon: IconStyles.article,
       onPressed: onPressed,
       semanticLabel: '새 글 작성하기',
       tooltip: '글쓰기',

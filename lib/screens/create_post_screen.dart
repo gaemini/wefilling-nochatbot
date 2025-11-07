@@ -336,8 +336,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final photoURL = authProvider.user?.photoURL;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.newPostCreation ?? ""),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          AppLocalizations.of(context)!.newPostCreation ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         actions: [
           Container(
             margin: const EdgeInsets.only(right: 8),
@@ -345,30 +361,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               onPressed: (_canSubmit && !_isSubmitting) ? _submitPost : null,
               icon:
                   _isSubmitting
-                      ? SizedBox(
+                      ? const SizedBox(
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color:
-                              _canSubmit
-                                  ? Colors.blue.shade700
-                                  : Colors.grey[400],
+                          color: Color(0xFF5865F2),
                         ),
                       )
                       : Icon(
                         Icons.check_circle,
-                        color:
-                            _canSubmit
-                                ? Colors.blue.shade700
-                                : Colors.grey[400],
+                        color: _canSubmit 
+                            ? const Color(0xFF5865F2)
+                            : const Color(0xFF9CA3AF),
                       ),
               label: Text(
                 _isSubmitting ? (AppLocalizations.of(context)!.loading ?? "") : AppLocalizations.of(context)!.registration,
                 style: TextStyle(
-                  color: _canSubmit ? Colors.blue.shade700 : Colors.grey[400],
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
+                  fontFamily: 'Pretendard',
+                  color: _canSubmit 
+                      ? const Color(0xFF5865F2)
+                      : const Color(0xFF9CA3AF),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
                 ),
               ),
               style: TextButton.styleFrom(
@@ -402,45 +417,47 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
                 child: Row(
                   children: [
                     Container(
-                      width: 36,
-                      height: 36,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.grey[300],
+                        color: const Color(0xFFE5E7EB),
                       ),
                       child: photoURL != null
                           ? ClipOval(
                               child: Image.network(
                                 photoURL,
-                                width: 36,
-                                height: 36,
+                                width: 40,
+                                height: 40,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Icon(
+                                errorBuilder: (_, __, ___) => const Icon(
                                   Icons.person,
-                                  size: 18,
-                                  color: Colors.grey[600],
+                                  size: 20,
+                                  color: Color(0xFF6B7280),
                                 ),
                               ),
                             )
-                          : Icon(
+                          : const Icon(
                               Icons.person,
-                              size: 18,
-                              color: Colors.grey[600],
+                              size: 20,
+                              color: Color(0xFF6B7280),
                             ),
                     ),
                     const SizedBox(width: 12),
                     Text(
                       nickname,
                       style: const TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 16,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
                       ),
                     ),
                     const Spacer(),
@@ -450,15 +467,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         vertical: 6,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.blue.shade50,
+                        color: const Color(0xFFEEF2FF),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         AppLocalizations.of(context)!.author,
-                        style: TextStyle(
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
                           fontSize: 12,
-                          color: Colors.blue.shade700,
-                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF5865F2),
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
@@ -471,18 +489,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 padding: const EdgeInsets.all(16),
                 margin: const EdgeInsets.only(bottom: 16.0),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
+                  color: const Color(0xFFF9FAFB),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       AppLocalizations.of(context)!.visibilityScope,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -491,7 +511,15 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       children: [
                         Expanded(
                           child: RadioListTile<String>(
-                            title: Text(AppLocalizations.of(context)!.publicPost ?? ""),
+                            title: Text(
+                              AppLocalizations.of(context)!.publicPost ?? "",
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
                             value: 'public',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -504,11 +532,20 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
+                            activeColor: const Color(0xFF5865F2),
                           ),
                         ),
                         Expanded(
                           child: RadioListTile<String>(
-                            title: Text(AppLocalizations.of(context)!.categorySpecific ?? ""),
+                            title: Text(
+                              AppLocalizations.of(context)!.categorySpecific ?? "",
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
                             value: 'category',
                             groupValue: _visibility,
                             onChanged: (value) {
@@ -521,6 +558,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
+                            activeColor: const Color(0xFF5865F2),
                           ),
                         ),
                       ],
@@ -531,23 +569,25 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       const SizedBox(height: 8),
                       // 안내 메시지
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: const Color(0xFFEEF2FF),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.blue.shade200),
+                          border: Border.all(color: const Color(0xFFD1D5DB)),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
+                            const Icon(Icons.info_outline, size: 16, color: Color(0xFF5865F2)),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 _isAnonymous
                                     ? (AppLocalizations.of(context)!.postAnonymously ?? "") : AppLocalizations.of(context)!.authorAndCommenterInfo,
-                                style: TextStyle(
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
                                   fontSize: 12,
-                                  color: Colors.blue.shade900,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF374151),
                                 ),
                               ),
                             ),
@@ -557,9 +597,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                       CheckboxListTile(
                         title: Text(
                           AppLocalizations.of(context)!.postAnonymously,
-                          style: TextStyle(
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 14,
-                            fontWeight: FontWeight.bold,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
                           ),
                         ),
                         subtitle: Text(
@@ -567,8 +609,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                               ? '✓ ' + AppLocalizations.of(context)!.postAnonymously
                               : AppLocalizations.of(context)!.idWillBeShown,
                           style: TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 12,
-                            color: _isAnonymous ? Colors.green.shade700 : Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                            color: _isAnonymous 
+                                ? const Color(0xFF10B981) 
+                                : const Color(0xFF6B7280),
                           ),
                         ),
                         value: _isAnonymous,
@@ -579,7 +625,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         },
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        activeColor: Colors.blue.shade700,
+                        activeColor: const Color(0xFF5865F2),
                       ),
                     ],
                     
@@ -591,22 +637,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           const SizedBox(height: 8),
                           // 안내 메시지
                           Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.green.shade50,
+                              color: const Color(0xFFF0FDF4),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.green.shade200),
+                              border: Border.all(color: const Color(0xFFD1D5DB)),
                             ),
                             child: Row(
                               children: [
-                                Icon(Icons.info_outline, size: 16, color: Colors.green.shade700),
+                                const Icon(Icons.info_outline, size: 16, color: Color(0xFF10B981)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     AppLocalizations.of(context)!.selectedGroupOnly,
-                                    style: TextStyle(
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
                                       fontSize: 12,
-                                      color: Colors.green.shade900,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF374151),
                                     ),
                                   ),
                                 ),
@@ -620,6 +668,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             label: Text(
                               _selectedCategoryIds.isEmpty
                                   ? (AppLocalizations.of(context)!.selectCategoryRequired ?? "") : '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             style: ElevatedButton.styleFrom(
                               padding: const EdgeInsets.symmetric(
@@ -627,8 +679,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                 vertical: 8,
                               ),
                               backgroundColor: _selectedCategoryIds.isEmpty 
-                                  ? Colors.orange.shade100 
-                                  : null,
+                                  ? const Color(0xFFFFF3E0)
+                                  : const Color(0xFF5865F2),
+                              foregroundColor: _selectedCategoryIds.isEmpty
+                                  ? const Color(0xFFFF8A65)
+                                  : Colors.white,
                             ),
                           ),
                         ],
@@ -642,18 +697,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 controller: _titleController,
                 decoration: InputDecoration(
                   hintText: AppLocalizations.of(context)!.enterTitle,
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF9CA3AF),
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                   ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(
-                      color: Colors.blue.shade400,
+                    borderSide: const BorderSide(
+                      color: Color(0xFF5865F2),
                       width: 2,
                     ),
                   ),
@@ -665,8 +726,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   filled: true,
                 ),
                 style: const TextStyle(
+                  fontFamily: 'Pretendard',
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
+                  color: Color(0xFF111827),
                 ),
               ),
               const SizedBox(height: 16),
@@ -674,11 +737,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               // 이미지 첨부 버튼
               ElevatedButton.icon(
                 onPressed: _selectImages,
-                icon: const Icon(Icons.image),
-                label: Text(AppLocalizations.of(context)!.imageAttachment ?? ""),
+                icon: const Icon(Icons.image, size: 20),
+                label: Text(
+                  AppLocalizations.of(context)!.imageAttachment ?? "",
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
-                  backgroundColor: Colors.blue.shade700,
+                  backgroundColor: const Color(0xFF5865F2),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -749,10 +818,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color:
-                        _contentFocusNode.hasFocus
-                            ? Colors.blue.shade400
-                            : Colors.grey.shade300,
+                    color: _contentFocusNode.hasFocus
+                        ? const Color(0xFF5865F2)
+                        : const Color(0xFFE5E7EB),
                     width: _contentFocusNode.hasFocus ? 2 : 1,
                   ),
                   color: Colors.white,
@@ -762,6 +830,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   focusNode: _contentFocusNode,
                   decoration: InputDecoration(
                     hintText: AppLocalizations.of(context)!.enterContent,
+                    hintStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF9CA3AF),
+                    ),
                     border: InputBorder.none, // 테두리 없애기 (컨테이너가 이미 테두리를 가짐)
                     contentPadding: const EdgeInsets.all(16),
                     fillColor: Colors.transparent,
@@ -769,7 +843,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ),
                   maxLines: null, // 여러 줄 입력 가능
                   textAlignVertical: TextAlignVertical.top,
-                  style: const TextStyle(fontSize: 16, height: 1.5),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16, 
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF111827),
+                    height: 1.5,
+                  ),
                 ),
               ),
               const SizedBox(height: 16),

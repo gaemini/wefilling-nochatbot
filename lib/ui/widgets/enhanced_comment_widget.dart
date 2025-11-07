@@ -452,63 +452,57 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         ),
                       ),
                       
-                      // 케밥 메뉴 (댓글별 액션)
-                      PopupMenuButton<String>(
-                        icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[700]),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        onSelected: (value) {
-                          switch (value) {
-                            case 'dm':
-                              _openDMToCommentAuthor();
-                              break;
-                            case 'report':
-                              _showReportDialog();
-                              break;
-                            case 'delete':
-                              widget.onDeleteComment?.call(widget.comment.id);
-                              break;
-                          }
-                        },
-                        itemBuilder: (context) {
-                          final items = <PopupMenuEntry<String>>[
-                            PopupMenuItem<String>(
-                              value: 'dm',
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.chat_bubble_outline, size: 18),
-                                  const SizedBox(width: 12),
-                                  Text('Direct message'),
-                                ],
+                      // 케밥 메뉴 (댓글별 액션) - 내가 쓴 댓글일 때만 삭제 버튼 표시
+                      if (isMyComment)
+                        // 내가 쓴 댓글: 삭제 버튼만
+                        IconButton(
+                          icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey[700]),
+                          onPressed: () {
+                            widget.onDeleteComment?.call(widget.comment.id);
+                          },
+                          tooltip: '댓글 삭제',
+                        )
+                      else
+                        // 다른 사람 댓글: DM과 신고 버튼
+                        PopupMenuButton<String>(
+                          icon: Icon(Icons.more_vert, size: 18, color: Colors.grey[700]),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'dm':
+                                _openDMToCommentAuthor();
+                                break;
+                              case 'report':
+                                _showReportDialog();
+                                break;
+                            }
+                          },
+                          itemBuilder: (context) {
+                            return [
+                              PopupMenuItem<String>(
+                                value: 'dm',
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.chat_bubble_outline, size: 18),
+                                    const SizedBox(width: 12),
+                                    Text('Direct message'),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const PopupMenuDivider(),
-                            PopupMenuItem<String>(
-                              value: 'report',
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.report_gmailerrorred_outlined, size: 18),
-                                  const SizedBox(width: 12),
-                                  const Text('신고'),
-                                ],
+                              const PopupMenuDivider(),
+                              PopupMenuItem<String>(
+                                value: 'report',
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.report_gmailerrorred_outlined, size: 18),
+                                    const SizedBox(width: 12),
+                                    const Text('신고'),
+                                  ],
+                                ),
                               ),
-                            ),
-                          ];
-                          if (isMyComment) {
-                            items.add(const PopupMenuDivider());
-                            items.add(PopupMenuItem<String>(
-                              value: 'delete',
-                              child: Row(
-                                children: const [
-                                  Icon(Icons.delete_outline, size: 18),
-                                  SizedBox(width: 12),
-                                  Text('삭제'),
-                                ],
-                              ),
-                            ));
-                          }
-                          return items;
-                        },
-                      ),
+                            ];
+                          },
+                        ),
                     ],
                   ),
                   

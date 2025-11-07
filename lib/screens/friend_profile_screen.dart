@@ -77,14 +77,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        backgroundColor: AppTheme.backgroundPrimary,
+        backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      backgroundColor: AppTheme.backgroundPrimary,
+      backgroundColor: Colors.white,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -92,24 +92,25 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 _buildProfileHeader(),
                 const SizedBox(height: 8),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center, // 중앙 정렬 추가
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.grid_on_rounded, size: 20, color: const Color(0xFF5865F2)), // 위필링 포인트 컬러
+                      const Icon(Icons.grid_on_rounded, size: 20, color: Color(0xFF5865F2)),
                       const SizedBox(width: 8),
                       Text(
                         AppLocalizations.of(context)!.participatedReviews,
-                        style: AppTheme.labelMedium.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF5865F2), // 위필링 포인트 컬러
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF5865F2),
                           fontSize: 16,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const Divider(height: 1),
+                const Divider(height: 1, color: Color(0xFFE5E7EB)),
                 Expanded(
                   child: _buildReviewGrid(),
                 ),
@@ -124,22 +125,12 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     final photoURL = _userData?['photoURL'] ?? widget.photoURL;
     final university = _userData?['university'] ?? widget.university;
     final nationality = _userData?['nationality'];
+    final bio = _userData?['bio'];
 
     return Container(
-      padding: const EdgeInsets.all(20.0),
-      decoration: BoxDecoration(
-        gradient: AppTheme.backgroundGradient,
-        borderRadius: BorderRadius.only(
-          bottomLeft: Radius.circular(DesignTokens.r16),
-          bottomRight: Radius.circular(DesignTokens.r16),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.primary.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      decoration: const BoxDecoration(
+        color: Colors.white,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -153,16 +144,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: Colors.black,
+                    color: const Color(0xFF5865F2),
                     width: 3,
                   ),
                 ),
                 child: Container(
                   width: 88,
                   height: 88,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    color: AppTheme.backgroundPrimary,
+                    color: Color(0xFFE5E7EB),
                   ),
                   child: photoURL != null
                       ? ClipOval(
@@ -171,17 +162,17 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                             width: 88,
                             height: 88,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Icon(
+                            errorBuilder: (_, __, ___) => const Icon(
                               Icons.person,
                               size: 44,
-                              color: const Color(0xFF5865F2), // 위필링 포인트 컬러
+                              color: Color(0xFF6B7280),
                             ),
                           ),
                         )
-                      : Icon(
+                      : const Icon(
                           Icons.person,
                           size: 44,
-                          color: const Color(0xFF5865F2), // 위필링 포인트 컬러
+                          color: Color(0xFF6B7280),
                         ),
                 ),
               ),
@@ -194,32 +185,34 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                   children: [
                     Text(
                       nickname,
-                      style: AppTheme.headlineMedium.copyWith(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 22,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 20,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     if (nationality != null && nationality.isNotEmpty)
                       Row(
                         children: [
                           CountryFlagCircle(
                             nationality: nationality,
-                            size: 26,
+                            size: 20,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Flexible(
                             child: Text(
                               CountryFlagHelper.getCountryInfo(nationality)?.getLocalizedName(
                                 Localizations.localeOf(context).languageCode
                               ) ?? nationality,
-                              style: AppTheme.bodyMedium.copyWith(
-                                color: Colors.black87,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -227,17 +220,20 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           ),
                         ],
                       ),
-                    // 한 줄 소개 (상태메세지)
-                    if (_userData?['bio'] != null && (_userData!['bio'] as String).isNotEmpty) ...[
-                      const SizedBox(height: 6),
+                    // 한 줄 소개 (Bio)
+                    if (bio != null && bio.toString().isNotEmpty) ...[
+                      const SizedBox(height: 8),
                       Text(
-                        _userData!['bio'],
-                        style: AppTheme.bodyMedium.copyWith(
-                          color: Colors.black87,
+                        bio.toString(),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
                           fontSize: 14,
                           fontWeight: FontWeight.w400,
+                          color: Color(0xFF111827),
+                          height: 1.4,
                         ),
-                        maxLines: 1,
+                        textAlign: TextAlign.left,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -270,36 +266,21 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           
           const SizedBox(height: 20),
 
-          // 통계 정보 (카드 형태 - 마이 프로필과 동일 스타일)
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.black, width: 1.5),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _buildStatItem(AppLocalizations.of(context)!.hostedMeetups, widget.userId, icon: Icons.event_available, color: Colors.black),
-                Container(width: 1, height: 36, color: Colors.black),
-                _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: Colors.black),
-                Container(width: 1, height: 36, color: Colors.black),
-                _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: Colors.black),
-              ],
-            ),
+          // 통계 정보 (마이 프로필과 동일)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatItem(AppLocalizations.of(context)!.friends, widget.userId, isFriends: true, icon: Icons.people, color: const Color(0xFF5865F2)),
+              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: const Color(0xFF5865F2)),
+              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: const Color(0xFF5865F2)),
+            ],
           ),
           
           const SizedBox(height: 16),
           
-          // DM 버튼
+          // DM 버튼 (마이 프로필의 "프로필 편집" 버튼과 동일한 스타일)
           SizedBox(
             width: double.infinity,
             height: 48,
@@ -310,6 +291,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 child: Text(
                   AppLocalizations.of(context)!.sendMessage,
                   style: const TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 15,
                     fontWeight: FontWeight.w600,
                   ),
@@ -318,12 +300,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5865F2), // 위필링 포인트 컬러
-                foregroundColor: Colors.white,
+                backgroundColor: const Color(0xFFF3F4F6),
+                foregroundColor: const Color(0xFF111827),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Colors.black, width: 1.5),
                 ),
               ),
             ),
@@ -338,26 +319,30 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     String userId, {
     bool isJoined = false,
     bool isPosts = false,
+    bool isFriends = false,
     required IconData icon,
     required Color color,
   }) {
     return Expanded(
       child: Column(
         children: [
-          Icon(icon, size: 22, color: color),
+          Icon(icon, size: 24, color: color),
           const SizedBox(height: 8),
           StreamBuilder<int>(
-            stream: isJoined
-                ? _userStatsService.getJoinedMeetupCountForUser(userId)
-                : isPosts
-                    ? _userStatsService.getUserPostCountForUser(userId)
-                    : _userStatsService.getHostedMeetupCountForUser(userId),
+            stream: isFriends
+                ? _userStatsService.getFriendCountForUser(userId)
+                : isJoined
+                    ? _userStatsService.getJoinedMeetupCountForUser(userId)
+                    : isPosts
+                        ? _userStatsService.getUserPostCountForUser(userId)
+                        : _userStatsService.getHostedMeetupCountForUser(userId),
             builder: (context, snapshot) {
               return Text(
                 '${snapshot.data ?? 0}',
-                style: AppTheme.headlineMedium.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: color,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF111827),
                   fontSize: 24,
                 ),
               );
@@ -366,9 +351,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           const SizedBox(height: 4),
           Text(
             label,
-            style: AppTheme.bodySmall.copyWith(
-              color: Colors.black87,
-              fontSize: 11,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              color: Color(0xFF6B7280),
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
             ),
             textAlign: TextAlign.center,
           ),

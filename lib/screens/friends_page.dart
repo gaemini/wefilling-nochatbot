@@ -313,7 +313,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Colors.grey,
-                      fontSize: 14,
+                      fontSize: 13,
                     ),
                   ),
                 )
@@ -577,23 +577,21 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 검색바 위젯
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      decoration: const BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            spreadRadius: 1,
-            blurRadius: 3,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
           hintText: AppLocalizations.of(context)!.searchByFriendName,
-          prefixIcon: const Icon(Icons.search, size: 20),
+          hintStyle: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 13,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF9CA3AF),
+          ),
+          prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF6B7280)),
           suffixIcon:
               _searchController.text.isNotEmpty
                   ? AppIconButton(
@@ -607,16 +605,22 @@ class _FriendsPageState extends State<FriendsPage> {
                   )
                   : null,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(25),
+            borderRadius: BorderRadius.circular(20),
             borderSide: BorderSide.none,
           ),
           filled: true,
-          fillColor: Colors.grey[100],
+          fillColor: const Color(0xFFF3F4F6),
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 10,
+            horizontal: 14,
+            vertical: 4,
           ),
           isDense: true,
+        ),
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 14,
+          fontWeight: FontWeight.w400,
+          color: Color(0xFF111827),
         ),
         onChanged: _filterFriends,
         textInputAction: TextInputAction.search,
@@ -627,110 +631,138 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 친구 목록 위젯
   Widget _buildFriendsList() {
     return ListView.builder(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       itemCount: _filteredFriends.length,
       itemBuilder: (context, index) {
         final friend = _filteredFriends[index];
 
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          elevation: 2,
-          color: Colors.white, // 흰색 배경
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+          ),
           child: InkWell(
             onTap: () => _navigateToProfile(friend),
             onLongPress: () => _showFriendOptions(friend),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
                 children: [
                   // 프로필 이미지
                   Container(
-                    width: 48,
-                    height: 48,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: Colors.grey[300],
+                      color: const Color(0xFFE5E7EB),
                     ),
                     child: friend.hasProfileImage
                         ? ClipOval(
                             child: Image.network(
                               friend.photoURL!,
-                              width: 48,
-                              height: 48,
+                              width: 44,
+                              height: 44,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
+                              errorBuilder: (_, __, ___) => const Icon(
                                 Icons.person,
-                                size: 24,
-                                color: Colors.grey[600],
+                                size: 22,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
                           )
-                        : Icon(
+                        : const Icon(
                             Icons.person,
                             size: 24,
-                            color: Colors.grey[600],
+                            color: Color(0xFF6B7280),
                           ),
                   ),
 
-                  const SizedBox(width: 16),
+                  const SizedBox(width: 10),
 
                   // 사용자 정보
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
                           friend.displayNameOrNickname,
                           style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                         if (friend.nickname != null &&
                             friend.nickname != friend.displayName &&
-                            friend.nickname!.isNotEmpty)
+                            friend.nickname!.isNotEmpty) ...[
+                          const SizedBox(height: 1),
                           Text(
                             friend.displayName,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey[600],
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFF6B7280),
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                        ],
                         if (friend.nationality != null &&
-                            friend.nationality!.isNotEmpty)
+                            friend.nationality!.isNotEmpty) ...[
+                          const SizedBox(height: 2),
                           Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                Icons.flag,
-                                size: 16,
-                                color: Colors.grey[600],
+                              const Icon(
+                                Icons.flag_outlined,
+                                size: 12,
+                                color: Color(0xFF9CA3AF),
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
-                                  Localizations.localeOf(context).languageCode
-                                ) ?? friend.nationality!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
+                              const SizedBox(width: 3),
+                              Flexible(
+                                child: Text(
+                                  CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
+                                    Localizations.localeOf(context).languageCode
+                                  ) ?? friend.nationality!,
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w400,
+                                    color: Color(0xFF9CA3AF),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
+                        ],
                       ],
                     ),
                   ),
+
+                  const SizedBox(width: 8),
 
                   // 그룹 배지만 표시 (친구 상태 배지 제거)
                   _buildGroupBadge(friend),
                   
                   // 메뉴 버튼 (맨 오른쪽 상단에 배치)
                   IconButton(
-                    icon: const Icon(Icons.more_vert),
+                    icon: const Icon(Icons.more_vert, color: Color(0xFF6B7280)),
                     iconSize: 20,
-                    padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
                     onPressed: () => _showFriendOptions(friend),
                   ),
                 ],

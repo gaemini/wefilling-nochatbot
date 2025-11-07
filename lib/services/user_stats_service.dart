@@ -331,4 +331,14 @@ class UserStatsService {
         .snapshots()
         .map((snapshot) => snapshot.docs.length);
   }
+
+  // 특정 사용자의 친구 수
+  Stream<int> getFriendCountForUser(String userId) {
+    return _firestore
+        .collection('relationships')
+        .where('userId', isEqualTo: userId)
+        .where('status', isEqualTo: 'accepted')
+        .snapshots()
+        .map((snapshot) => snapshot.docs.length);
+  }
 }

@@ -41,25 +41,31 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB), // 게시글 페이지와 동일한 배경색
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        toolbarHeight: 0, // 타이틀 영역 높이를 0으로 설정
+        toolbarHeight: 0,
         elevation: 0,
         backgroundColor: Colors.white,
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          labelColor: Colors.blue,
-          unselectedLabelColor: Colors.grey,
-          labelPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8), // 상하 패딩 추가
-          indicator: BoxDecoration(
-            color: const Color(0xFFE8F0FE),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          indicatorSize: TabBarIndicatorSize.tab,
-          tabs: [
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(62),
+          child: TabBar(
+            controller: _tabController,
+            isScrollable: false,
+            labelColor: const Color(0xFF5865F2),
+            unselectedLabelColor: const Color(0xFF9CA3AF),
+            labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            indicator: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: Color(0xFF5865F2),
+                  width: 2.5,
+                ),
+              ),
+            ),
+            indicatorSize: TabBarIndicatorSize.tab,
+            tabs: [
             Tab(
-              height: 64, // 탭 높이 증가
+              height: 52,
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
                   final friendsCount = provider.friends.length;
@@ -67,32 +73,44 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.people, size: 24), // 아이콘 크기 증가
-                      const SizedBox(height: 4), // 간격 증가
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              AppLocalizations.of(context)!.friends,
-                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                      const Icon(Icons.people_outline, size: 20),
+                      const SizedBox(height: 2),
+                      Flexible(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                AppLocalizations.of(context)!.friends,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[300],
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              friendsCount > 99 ? '99+' : friendsCount.toString(),
-                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
+                            const SizedBox(width: 2),
+                            if (friendsCount > 0)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 3.5, vertical: 0.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFE5E7EB),
+                                  borderRadius: BorderRadius.circular(7),
+                                ),
+                                child: Text(
+                                  friendsCount > 99 ? '99+' : friendsCount.toString(),
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ],
                   );
@@ -100,16 +118,20 @@ class _FriendsMainPageState extends State<FriendsMainPage>
               ),
             ),
             Tab(
-              height: 64, // 탭 높이 증가
+              height: 52,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.search, size: 24), // 아이콘 크기 증가
-                  const SizedBox(height: 4), // 간격 증가
+                  const Icon(Icons.search_outlined, size: 20),
+                  const SizedBox(height: 2),
                   Text(
                     AppLocalizations.of(context)!.search,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -117,21 +139,26 @@ class _FriendsMainPageState extends State<FriendsMainPage>
               ),
             ),
             Tab(
-              height: 64, // 탭 높이 증가
+              height: 52,
               child: Consumer<RelationshipProvider>(
                 builder: (context, provider, child) {
                   final incomingCount = provider.incomingRequests.length;
                   return Stack(
+                    clipBehavior: Clip.none,
                     children: [
                       Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.mail, size: 24), // 아이콘 크기 증가
-                          const SizedBox(height: 4), // 간격 증가
+                          const Icon(Icons.mail_outline, size: 20),
+                          const SizedBox(height: 2),
                           Text(
                             AppLocalizations.of(context)!.requests,
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -139,24 +166,25 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                       ),
                       if (incomingCount > 0)
                         Positioned(
-                          right: 0,
-                          top: 0,
+                          right: -2,
+                          top: -2,
                           child: Container(
-                            padding: const EdgeInsets.all(2),
+                            padding: const EdgeInsets.symmetric(horizontal: 3.5, vertical: 0.5),
                             decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(10),
+                              color: const Color(0xFFEF4444),
+                              borderRadius: BorderRadius.circular(7),
                             ),
                             constraints: const BoxConstraints(
-                              minWidth: 16,
-                              minHeight: 16,
+                              minWidth: 15,
+                              minHeight: 15,
                             ),
                             child: Text(
                               incomingCount > 99 ? '99+' : incomingCount.toString(),
                               style: const TextStyle(
+                                fontFamily: 'Pretendard',
                                 color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -168,16 +196,20 @@ class _FriendsMainPageState extends State<FriendsMainPage>
               ),
             ),
             Tab(
-              height: 64, // 탭 높이 증가
+              height: 52,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.category, size: 24), // 아이콘 크기 증가
-                  const SizedBox(height: 4), // 간격 증가
+                  const Icon(Icons.category_outlined, size: 20),
+                  const SizedBox(height: 2),
                   Text(
                     AppLocalizations.of(context)!.category,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600), // 폰트 크기 증가
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -185,6 +217,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
               ),
             ),
           ],
+          ),
         ),
       ),
       body: TabBarView(

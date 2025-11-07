@@ -577,6 +577,9 @@ class MeetupService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      // 동기화 검증 (선택적)
+      await _validateParticipantCount(meetupId);
+
       print('✅ 모임 참여 성공: $meetupId');
 
       // 정원이 다 찬 경우 알림 발송
@@ -639,6 +642,9 @@ class MeetupService {
         'currentParticipants': FieldValue.increment(-1),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // 동기화 검증 (선택적)
+      await _validateParticipantCount(meetupId);
 
       print('✅ 모임 참여 취소 성공: $meetupId');
       return true;
@@ -979,6 +985,64 @@ class MeetupService {
     } catch (e) {
       print('참여 상태 확인 오류: $e');
       return null;
+    }
+  }
+
+  /// 실시간 참여자 수 조회 (호스트 포함)
+  Future<int> getRealTimeParticipantCount(String meetupId) async {
+    try {
+      // 승인된 참여자 수 조회
+      final participantsQuery = await _firestore
+          .collection('meetup_participants')
+          .where('meetupId', isEqualTo: meetupId)
+          .where('status', isEqualTo: 'approved')
+          .get();
+
+      // 호스트 포함하여 +1
+      final participantCount = participantsQuery.docs.length + 1;
+      
+      print('🔢 실시간 참여자 수 조회: $meetupId -> $participantCount명 (호스트 포함)');
+      return participantCount;
+    } catch (e) {
+      print('❌ 실시간 참여자 수 조회 오류: $e');
+      // 오류 시 Firestore 필드값 사용
+      try {
+        final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+        if (meetupDoc.exists) {
+          final currentParticipants = meetupDoc.data()?['currentParticipants'] ?? 1;
+          print('📋 Firestore 필드값 사용: $currentParticipants명');
+          return currentParticipants;
+        }
+      } catch (fallbackError) {
+        print('❌ Firestore 필드값 조회도 실패: $fallbackError');
+      }
+      return 1; // 최소 호스트 1명
+    }
+  }
+
+  /// 참여자 수 동기화 검증 및 수정
+  Future<void> _validateParticipantCount(String meetupId) async {
+    try {
+      // 실제 참여자 수 조회
+      final realCount = await getRealTimeParticipantCount(meetupId);
+      
+      // Firestore 필드값 조회
+      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      if (!meetupDoc.exists) return;
+      
+      final storedCount = meetupDoc.data()?['currentParticipants'] ?? 1;
+      
+      // 불일치 시 수정
+      if (realCount != storedCount) {
+        print('⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
+        await _firestore.collection('meetups').doc(meetupId).update({
+          'currentParticipants': realCount,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        print('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
+      }
+    } catch (e) {
+      print('❌ 참여자 수 검증 오류: $e');
     }
   }
 

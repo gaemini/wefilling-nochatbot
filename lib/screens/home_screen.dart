@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
 import '../models/meetup_participant.dart';
@@ -841,16 +842,31 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       ),
                       const SizedBox(width: 4),
                       Expanded(
-                        child: Text(
-                          meetup.location,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            color: Color(0xFF6B7280),
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                        child: _isUrl(meetup.location)
+                            ? GestureDetector(
+                                onTap: () => _openUrl(meetup.location),
+                                child: Text(
+                                  meetup.location,
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 14,
+                                    color: Color(0xFF5865F2),
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              )
+                            : Text(
+                                meetup.location,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 14,
+                                  color: Color(0xFF6B7280),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                       ),
                     ],
                   ),
@@ -863,13 +879,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         color: Color(0xFF6B7280),
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        '${meetup.currentParticipants}/${meetup.maxParticipants}명',
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          color: Color(0xFF6B7280),
-                        ),
+                      FutureBuilder<int>(
+                        future: _meetupService.getRealTimeParticipantCount(meetup.id),
+                        builder: (context, snapshot) {
+                          final participantCount = snapshot.data ?? meetup.currentParticipants;
+                          return Text(
+                            '$participantCount/${meetup.maxParticipants}명',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -973,19 +995,30 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   Widget _buildVisibilityBadge(Meetup meetup) {
     if (meetup.visibility == 'category') {
       return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFFEF3C7),
-          borderRadius: BorderRadius.circular(12),
+          color: const Color(0xFFFFF3E0), // 주황색 배경
+          borderRadius: BorderRadius.circular(16),
         ),
-        child: const Text(
-          '친구공개',
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFFD97706),
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.group_outlined,
+              size: 15, // 통일된 크기
+              color: Color(0xFFFF8A65), // 주황색
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '친구 공개',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12, // 통일된 크기
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFFF8A65), // 주황색
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -1387,5 +1420,51 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         ],
       ),
     );
+  }
+
+  /// URL인지 확인하는 함수
+  bool _isUrl(String text) {
+    final urlPattern = RegExp(
+      r'^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)',
+      caseSensitive: false,
+    );
+    return urlPattern.hasMatch(text);
+  }
+
+  /// URL을 여는 함수
+  Future<void> _openUrl(String urlString) async {
+    try {
+      // URL이 http:// 또는 https://로 시작하지 않으면 추가
+      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        urlString = 'https://$urlString';
+      }
+
+      final uri = Uri.parse(urlString);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
+              backgroundColor: const Color(0xFFEF4444),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
   }
 }

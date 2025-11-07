@@ -378,8 +378,24 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.profileEdit ?? ""),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          AppLocalizations.of(context)!.profileEdit ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         actions: [
           // 저장 버튼
           _isSubmitting
@@ -390,7 +406,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Colors.blue,
+                    color: Color(0xFF5865F2),
                   ),
                 ),
               )
@@ -398,7 +414,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 onPressed: _updateProfile,
                 child: Text(
                   AppLocalizations.of(context)!.save,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16, 
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF5865F2),
+                  ),
                 ),
               ),
         ],
@@ -416,7 +437,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   children: [
                     Text(
                       AppLocalizations.of(context)!.profileImage,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black),
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600, 
+                        fontSize: 16, 
+                        color: Color(0xFF111827),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     GestureDetector(
@@ -429,7 +455,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: const Color(0xFF646464), // 마이프로필과 동일한 회색
+                                color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
                                 width: 3,
                               ),
                               // boxShadow 제거
@@ -441,7 +467,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                       child: Icon(
                                         Icons.person,
                                         size: 40,
-                                        color: const Color(0xFF4A90E2), // 위필링 로고색
+                                        color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
                                       ),
                                     )
                                   : _selectedImage != null
@@ -462,7 +488,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                         child: Icon(
                                                           Icons.person,
                                                           size: 40,
-                                                          color: const Color(0xFF4A90E2), // 위필링 로고색
+                                                          color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
                                                         ),
                                                       );
                                                     },
@@ -472,7 +498,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                     child: Icon(
                                                       Icons.person,
                                                       size: 40,
-                                                      color: const Color(0xFF4A90E2), // 위필링 로고색
+                                                      color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
                                                     ),
                                                   );
                                           },
@@ -500,7 +526,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: AppTheme.accentEmerald,
+                                color: const Color(0xFF5865F2),
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.white,
@@ -520,9 +546,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     const SizedBox(height: 8),
                     Text(
                       AppLocalizations.of(context)!.tapToChangeImage,
-                      style: TextStyle(
-                        color: AppTheme.primary,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        color: Color(0xFF5865F2),
                         fontSize: 14,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -533,18 +561,44 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               // 닉네임 입력
               const Text(
                 'What is your nickname?',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w600, 
+                  fontSize: 16,
+                  color: Color(0xFF111827),
+                ),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nicknameController,
                 decoration: InputDecoration(
                   hintText: '닉네임을 입력하세요',
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w400,
+                    color: Color(0xFF9CA3AF),
+                  ),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
                   ),
                   filled: true,
                   fillColor: Colors.white,
+                ),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF111827),
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -561,19 +615,45 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // 한 줄 소개 입력 (선택)
   const Text(
     'Bio',
-    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+    style: TextStyle(
+      fontFamily: 'Pretendard',
+      fontWeight: FontWeight.w600, 
+      fontSize: 16,
+      color: Color(0xFF111827),
+    ),
   ),
   const SizedBox(height: 8),
   TextFormField(
     maxLength: 60, // 영어/한국어 모두 안전한 길이
     decoration: InputDecoration(
       hintText: '한 줄 소개를 입력하세요 (선택)',
+      hintStyle: const TextStyle(
+        fontFamily: 'Pretendard',
+        fontSize: 16,
+        fontWeight: FontWeight.w400,
+        color: Color(0xFF9CA3AF),
+      ),
       counterText: '', // 카운터 숨김
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
       ),
       filled: true,
       fillColor: Colors.white,
+    ),
+    style: const TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 16,
+      fontWeight: FontWeight.w500,
+      color: Color(0xFF111827),
     ),
     onChanged: (value) {
       _bio = value.trim();
@@ -584,13 +664,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               // 국적 선택
               const Text(
                 'Where are you from?',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w600, 
+                  fontSize: 16,
+                  color: Color(0xFF111827),
+                ),
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 decoration: InputDecoration(
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
                   ),
                   filled: true,
                   fillColor: Colors.white,
@@ -603,7 +697,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     value: country.korean, // 내부적으로는 한글 이름 저장
                     child: Text(
                       country.getLocalizedName(currentLanguage), // 현재 언어에 맞게 표시
-                      style: const TextStyle(fontSize: 14),
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF111827),
+                      ),
                       overflow: TextOverflow.ellipsis,
                     ),
                   );
@@ -625,11 +724,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   onPressed: _isSubmitting ? null : _updateProfile,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: Colors.blue,
-                    disabledBackgroundColor: Colors.blue.withValues(alpha: 128),
+                    backgroundColor: const Color(0xFF5865F2),
+                    disabledBackgroundColor: const Color(0xFF9CA3AF),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
+                    elevation: 0,
                   ),
                   child:
                       _isSubmitting
@@ -644,8 +744,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                           : Text(
                             AppLocalizations.of(context)!.update,
                             style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
                               color: Colors.white,
                             ),
                           ),

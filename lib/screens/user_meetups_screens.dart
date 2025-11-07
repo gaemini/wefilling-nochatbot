@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/meetup.dart';
 import '../l10n/app_localizations.dart';
 import '../services/user_stats_service.dart';
@@ -36,10 +37,35 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.myMeetups ?? ""),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          AppLocalizations.of(context)!.myMeetups ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: false,
         bottom: TabBar(
           controller: _tabController,
+          labelColor: const Color(0xFF111827),
+          unselectedLabelColor: const Color(0xFF9CA3AF),
+          indicatorColor: const Color(0xFF5865F2),
+          indicatorWeight: 2.5,
+          labelStyle: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
           tabs: [
             Tab(text: AppLocalizations.of(context)!.hostedMeetups),
             Tab(text: AppLocalizations.of(context)!.joinedMeetups),
@@ -132,30 +158,36 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
           languageCode: Localizations.localeOf(context).languageCode,
         );
         Color statusColor;
+        Color statusBgColor;
 
         // 상태에 따른 색상 설정
         switch (statusText) {
           case '예정':
           case 'Scheduled':
-            statusColor = Colors.green;
+            statusColor = const Color(0xFF10B981);
+            statusBgColor = const Color(0xFFD1FAE5);
             break;
           case '진행중':
           case 'Ongoing':
-            statusColor = Colors.blue;
+            statusColor = const Color(0xFF3B82F6);
+            statusBgColor = const Color(0xFFDBEAFE);
             break;
           case '종료':
           case 'Closed':
-            statusColor = Colors.grey;
+            statusColor = const Color(0xFF6B7280);
+            statusBgColor = const Color(0xFFF3F4F6);
             break;
           default:
-            statusColor = Colors.black;
+            statusColor = const Color(0xFF111827);
+            statusBgColor = const Color(0xFFF3F4F6);
         }
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 2,
-          shape: RoundedRectangleBorder(
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
             borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
           ),
           child: InkWell(
             onTap: () {
@@ -184,9 +216,9 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                     children: [
                       // 왼쪽 날짜와 시간
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
-                          color: Colors.blue.withAlpha(26),
+                          color: const Color(0xFFF3F4F6),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Column(
@@ -195,31 +227,40 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                             Text(
                               formattedDate,
                               style: const TextStyle(
-                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
                               ),
                             ),
                             const SizedBox(height: 4),
                             Text(
                               meetup.time,
-                              style: TextStyle(color: Colors.grey[600]),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
+                              ),
                             ),
-                            const SizedBox(height: 4),
-                            // 모임 상태 표시 추가
+                            const SizedBox(height: 6),
+                            // 모임 상태 표시
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
-                                vertical: 2,
+                                vertical: 3,
                               ),
                               decoration: BoxDecoration(
-                                color: statusColor.withAlpha(51),
-                                borderRadius: BorderRadius.circular(10),
+                                color: statusBgColor,
+                                borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 statusText,
                                 style: TextStyle(
+                                  fontFamily: 'Pretendard',
                                   color: statusColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11,
                                 ),
                               ),
                             ),
@@ -237,61 +278,91 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                             Text(
                               meetup.title,
                               style: const TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
                               ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 8),
                             Row(
                               children: [
-                                Icon(
-                                  Icons.location_on,
+                                const Icon(
+                                  Icons.location_on_outlined,
                                   size: 16,
-                                  color: Colors.grey[600],
+                                  color: Color(0xFF6B7280),
                                 ),
                                 const SizedBox(width: 4),
                                 Expanded(
-                                  child: Text(
-                                    meetup.location,
-                                    style: TextStyle(color: Colors.grey[600]),
-                                  ),
+                                  child: _isUrl(meetup.location)
+                                      ? GestureDetector(
+                                          onTap: () => _openUrl(meetup.location),
+                                          child: Text(
+                                            meetup.location,
+                                            style: const TextStyle(
+                                              fontFamily: 'Pretendard',
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w400,
+                                              color: Color(0xFF5865F2),
+                                              decoration: TextDecoration.underline,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        )
+                                      : Text(
+                                          meetup.location,
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w400,
+                                            color: Color(0xFF6B7280),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                Icon(
-                                  Icons.person,
+                                const Icon(
+                                  Icons.people_outline,
                                   size: 16,
-                                  color: Colors.grey[600],
+                                  color: Color(0xFF6B7280),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${meetup.currentParticipants}/${meetup.maxParticipants}${AppLocalizations.of(context)!.peopleUnit}',
-                                  style: TextStyle(color: Colors.grey[600]),
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF6B7280),
+                                  ),
                                 ),
                                 const SizedBox(width: 8),
                                 // 모임 가득 참 표시
                                 if (meetup.isFull())
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
+                                      horizontal: 8,
+                                      vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.red.withAlpha(26),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: Colors.red.withAlpha(77),
-                                      ),
+                                      color: const Color(0xFFFEE2E2),
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Text(
                                       AppLocalizations.of(context)!.fullShort,
-                                      style: TextStyle(
-                                        color: Colors.red[700],
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        color: Color(0xFFEF4444),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
@@ -301,15 +372,20 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                             // 호스트 표시
                             Row(
                               children: [
-                                Icon(
-                                  Icons.face,
+                                const Icon(
+                                  Icons.person_outline,
                                   size: 16,
-                                  color: Colors.grey[600],
+                                  color: Color(0xFF6B7280),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
                                   '${AppLocalizations.of(context)!.organizer}: ${meetup.host}',
-                                  style: TextStyle(color: Colors.grey[600]),
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w400,
+                                    color: Color(0xFF6B7280),
+                                  ),
                                 ),
                               ],
                             ),
@@ -325,5 +401,51 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
         );
       },
     );
+  }
+
+  /// URL인지 확인하는 함수
+  bool _isUrl(String text) {
+    final urlPattern = RegExp(
+      r'^(https?:\/\/)?(www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_\+.~#?&//=]*)',
+      caseSensitive: false,
+    );
+    return urlPattern.hasMatch(text);
+  }
+
+  /// URL을 여는 함수
+  Future<void> _openUrl(String urlString) async {
+    try {
+      // URL이 http:// 또는 https://로 시작하지 않으면 추가
+      if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
+        urlString = 'https://$urlString';
+      }
+
+      final uri = Uri.parse(urlString);
+      
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
+              backgroundColor: const Color(0xFFEF4444),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            backgroundColor: const Color(0xFFEF4444),
+          ),
+        );
+      }
+    }
   }
 }

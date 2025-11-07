@@ -991,15 +991,22 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     
     showModalBottomSheet(
       context: context,
-      shape: RoundedRectangleBorder(
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(
-          top: Radius.circular(DesignTokens.r16),
+          top: Radius.circular(20),
         ),
       ),
       builder: (BuildContext context) {
         return SafeArea(
           child: Container(
-            padding: EdgeInsets.all(DesignTokens.s16),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
+                top: Radius.circular(20),
+              ),
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -1007,11 +1014,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey[300],
+                    color: const Color(0xFFD1D5DB),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                SizedBox(height: DesignTokens.s16),
+                const SizedBox(height: 20),
                 _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
@@ -1048,13 +1055,17 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 );
               }),
-                Divider(color: Colors.grey[300]),
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  height: 1,
+                  color: const Color(0xFFE5E7EB),
+                ),
                 _buildMenuItem(context, AppLocalizations.of(context)!.logout, Icons.logout_rounded, () async {
                   Navigator.pop(context);
                   // 로그아웃 확인 다이얼로그 표시
                   _showLogoutConfirmDialog(context, authProvider);
-                }, color: BrandColors.error),
-                SizedBox(height: DesignTokens.s12),
+                }, color: const Color(0xFFEF4444)),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -1070,31 +1081,34 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     VoidCallback onTap, {
     Color? color,
   }) {
+    final isLogout = color != null;
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(DesignTokens.r12),
+      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
         child: Row(
           children: [
             Icon(
               icon,
-              color: color ?? AppTheme.primary,
+              color: color ?? const Color(0xFF111827),
               size: 24,
             ),
             const SizedBox(width: 16),
             Text(
               title,
-              style: AppTheme.bodyMedium.copyWith(
-                color: color ?? AppTheme.primary,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
                 fontWeight: FontWeight.w500,
+                color: color ?? const Color(0xFF111827),
               ),
             ),
             const Spacer(),
             Icon(
               Icons.chevron_right_rounded,
-              color: Colors.grey[400],
-              size: 20,
+              color: const Color(0xFF9CA3AF),
+              size: 24,
             ),
           ],
         ),

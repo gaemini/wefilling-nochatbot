@@ -123,7 +123,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF3E0), // 친구 배경색
+          color: const Color(0xFFFFF3E0), // 주황색 배경
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
@@ -132,7 +132,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             Icon(
               Icons.group_outlined,
               size: 15, // 통일된 크기
-              color: const Color(0xFFFF8A65), // 친구 강조색
+              color: const Color(0xFFFF8A65), // 주황색
             ),
             const SizedBox(width: 6),
             Text(
@@ -141,7 +141,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700,
-                color: const Color(0xFFFF8A65), // 친구 강조색
+                color: const Color(0xFFFF8A65), // 주황색
               ),
             ),
           ],
@@ -195,9 +195,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: post.visibility == 'category'
-            ? const Color(0xFFFFF8F3) // 친구 공개: 따뜻한 피치
-            : Colors.white,  // 전체 공개: 순수 흰색
+        color: Colors.white, // 모든 게시글 흰색 배경
         borderRadius: BorderRadius.circular(AppTheme.radiusL),
         // 그림자 없음
         // 그라데이션 없음

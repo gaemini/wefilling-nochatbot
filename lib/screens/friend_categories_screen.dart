@@ -57,34 +57,22 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
         title: Text(
           AppLocalizations.of(context)!.friendCategoriesManagement,
           style: const TextStyle(
-            color: Colors.black,
+            fontFamily: 'Pretendard',
+            color: Color(0xFF111827),
             fontWeight: FontWeight.w600,
             fontSize: 18,
-          ),
-        ),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Colors.grey[200]!,
-                  Colors.grey[100]!,
-                ],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-            ),
           ),
         ),
       ),
@@ -143,7 +131,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           }
 
           return ListView.builder(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(vertical: 8),
             itemCount: categories.length,
             itemBuilder: (context, index) {
               final category = categories[index];
@@ -167,16 +155,20 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     final icon = _parseIcon(category.iconName);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: ComponentStyles.cardDecoration,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+      ),
       child: ListTile(
-        contentPadding: const EdgeInsets.all(16),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         leading: Container(
-          width: 48,
-          height: 48,
+          width: 44,
+          height: 44,
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: color.withOpacity(0.3),
               width: 1,
@@ -185,31 +177,35 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           child: Icon(
             icon,
             color: color,
-            size: 24,
+            size: 22,
           ),
         ),
         title: Text(
           category.name,
           style: const TextStyle(
+            fontFamily: 'Pretendard',
             fontWeight: FontWeight.w600,
-            fontSize: 16,
+            fontSize: 15,
+            color: Color(0xFF111827),
           ),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 8),
+          padding: const EdgeInsets.only(top: 4),
           child: Text(
             AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
-            style: TextStyle(
-              color: BrandColors.neutral500,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              color: Color(0xFF6B7280),
               fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
           ),
         ),
         trailing: PopupMenuButton<String>(
-          icon: Icon(
-            IconStyles.more,
-            color: BrandColors.neutral500,
+          icon: const Icon(
+            Icons.more_vert,
+            color: Color(0xFF6B7280),
+            size: 20,
           ),
           onSelected: (value) {
             switch (value) {
@@ -226,9 +222,17 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               value: 'edit',
               child: Row(
                 children: [
-                  Icon(IconStyles.edit, size: 20),
+                  const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF6B7280)),
                   const SizedBox(width: 12),
-                  Text(AppLocalizations.of(context)!.editAction ?? ""),
+                  Text(
+                    AppLocalizations.of(context)!.editAction ?? "",
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -236,9 +240,17 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               value: 'delete',
               child: Row(
                 children: [
-                  Icon(Icons.delete_outline, size: 20, color: BrandColors.error),
+                  const Icon(Icons.delete_outline, size: 20, color: Color(0xFFEF4444)),
                   const SizedBox(width: 12),
-                  Text(AppLocalizations.of(context)!.delete, style: TextStyle(color: BrandColors.error)),
+                  Text(
+                    AppLocalizations.of(context)!.delete, 
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -272,7 +284,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text(isEdit ? (AppLocalizations.of(context)!.editCategory ?? "") : AppLocalizations.of(context)!.newCategory),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(
+            isEdit ? (AppLocalizations.of(context)!.editCategory ?? "") : AppLocalizations.of(context)!.newCategory,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -282,6 +303,36 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   decoration: InputDecoration(
                     labelText: AppLocalizations.of(context)!.categoryName,
                     hintText: AppLocalizations.of(context)!.categoryNameHint,
+                    labelStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF6B7280),
+                    ),
+                    hintStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
+                    ),
+                  ),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -302,10 +353,25 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+              child: Text(
+                AppLocalizations.of(context)!.cancel ?? "",
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
             ),
             ElevatedButton(
-              style: ComponentStyles.primaryButton,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5865F2),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
               onPressed: () async {
                 final name = nameController.text.trim();
                 if (name.isEmpty) {
@@ -349,7 +415,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   );
                 }
               },
-              child: Text(isEdit ? (AppLocalizations.of(context)!.editAction ?? "") : AppLocalizations.of(context)!.create),
+              child: Text(
+                isEdit ? (AppLocalizations.of(context)!.editAction ?? "") : AppLocalizations.of(context)!.create,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ],
         ),
@@ -366,8 +439,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(AppLocalizations.of(context)!.colorSelection, style: TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(height: 8),
+        Text(
+          AppLocalizations.of(context)!.colorSelection, 
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -382,8 +463,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   color: _parseColor(color),
                   shape: BoxShape.circle,
                   border: isSelected
-                      ? Border.all(color: BrandColors.primary, width: 3)
-                      : Border.all(color: Colors.grey.shade300, width: 1),
+                      ? Border.all(color: const Color(0xFF5865F2), width: 3)
+                      : Border.all(color: const Color(0xFFE5E7EB), width: 1),
                 ),
                 child: isSelected
                     ? const Icon(Icons.check, color: Colors.white, size: 20)
@@ -411,8 +492,16 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(AppLocalizations.of(context)!.iconSelection, style: TextStyle(fontWeight: FontWeight.w500)),
-        const SizedBox(height: 8),
+        Text(
+          AppLocalizations.of(context)!.iconSelection, 
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -427,16 +516,22 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: isSelected ? BrandColors.primary.withOpacity(0.1) : Colors.grey.shade100,
+                  color: isSelected 
+                      ? const Color(0xFF5865F2).withOpacity(0.1) 
+                      : const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isSelected ? BrandColors.primary : Colors.grey.shade300,
+                    color: isSelected 
+                        ? const Color(0xFF5865F2) 
+                        : const Color(0xFFE5E7EB),
                     width: isSelected ? 2 : 1,
                   ),
                 ),
                 child: Icon(
                   icon,
-                  color: isSelected ? BrandColors.primary : BrandColors.neutral600,
+                  color: isSelected 
+                      ? const Color(0xFF5865F2) 
+                      : const Color(0xFF6B7280),
                   size: 24,
                 ),
               ),
@@ -453,19 +548,46 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.deleteCategory ?? ""),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          AppLocalizations.of(context)!.deleteCategory ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         content: Text(
           AppLocalizations.of(context)!.deleteCategoryConfirm(category.name),
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            color: Color(0xFF6B7280),
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+            child: Text(
+              AppLocalizations.of(context)!.cancel ?? "",
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B7280),
+              ),
+            ),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: BrandColors.error,
+              backgroundColor: const Color(0xFFEF4444),
               foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
             onPressed: () async {
               final success = await _categoryService.deleteCategory(category.id);
@@ -481,7 +603,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 );
               }
             },
-            child: Text(AppLocalizations.of(context)!.delete ?? ""),
+            child: Text(
+              AppLocalizations.of(context)!.delete ?? "",
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),

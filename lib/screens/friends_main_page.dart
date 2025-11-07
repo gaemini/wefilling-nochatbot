@@ -41,6 +41,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFFEBEBEB), // 게시글 페이지와 동일한 배경색
       appBar: AppBar(
         title: Text(AppLocalizations.of(context)!.friends ?? ""),
         elevation: 0,

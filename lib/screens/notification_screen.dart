@@ -79,6 +79,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'friend_request':
         await _navigateToFriendRequests();
         break;
+      case 'dm_received':
+        await _navigateToDM(notification);
+        break;
       case 'ad_updates':
         await _navigateToAdShowcase();
         break;
@@ -323,6 +326,35 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
   }
 
+  // DM 채팅 화면으로 이동
+  Future<void> _navigateToDM(AppNotification notification) async {
+    try {
+      final conversationId = notification.data?['conversationId'];
+      
+      if (conversationId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing ?? "")),
+        );
+        return;
+      }
+
+      // DM 목록 화면으로 이동 (MainScreen의 DM 탭)
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const MainScreen(initialTabIndex: 3), // DM 탭 인덱스
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        );
+      }
+    }
+  }
+
   // 광고 쇼케이스 화면으로 이동
   Future<void> _navigateToAdShowcase() async {
     try {
@@ -438,61 +470,65 @@ class _NotificationScreenState extends State<NotificationScreen> {
     switch (notification.type) {
       case 'meetup_full':
         iconData = Icons.group;
-        iconColor = Colors.green;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'meetup_cancelled':
         iconData = Icons.event_busy;
-        iconColor = Colors.orange;
+        iconColor = const Color(0xFFEF4444);
         break;
       case 'meetup_participant_joined':
         iconData = Icons.person_add;
-        iconColor = Colors.blue;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'new_comment':
-        iconData = Icons.chat_bubble_outline;
-        iconColor = Colors.blue;
+        iconData = Icons.chat_bubble;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'new_like':
       case 'comment_like':
         iconData = Icons.favorite;
-        iconColor = Colors.pink;
+        iconColor = const Color(0xFFEF4444);
         break;
       case 'post_private':
         iconData = Icons.lock;
-        iconColor = Colors.purple;
+        iconColor = const Color(0xFF6B7280);
         break;
       case 'friend_request':
         iconData = Icons.person_add;
-        iconColor = Colors.teal;
+        iconColor = const Color(0xFF5865F2);
+        break;
+      case 'dm_received':
+        iconData = Icons.send;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'ad_updates':
         iconData = Icons.campaign;
-        iconColor = Colors.amber;
+        iconColor = const Color(0xFFF59E0B);
         break;
       case 'review_approval_request':
         iconData = Icons.rate_review;
-        iconColor = Colors.deepPurple;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'review_comment':
-        iconData = Icons.chat_bubble_outline;
-        iconColor = Colors.blue;
+        iconData = Icons.chat_bubble;
+        iconColor = const Color(0xFF5865F2);
         break;
       case 'review_like':
         iconData = Icons.favorite;
-        iconColor = Colors.pink;
+        iconColor = const Color(0xFFEF4444);
         break;
       default:
         iconData = Icons.notifications;
-        iconColor = Colors.blueGrey;
+        iconColor = const Color(0xFF6B7280);
     }
 
     return Dismissible(
       key: Key(notification.id),
       background: Container(
-        color: Colors.red,
+        color: const Color(0xFFEF4444),
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20.0),
-        child: const Icon(Icons.delete, color: Colors.white),
+        child: const Icon(Icons.delete, color: Colors.white, size: 24),
       ),
       direction: DismissDirection.endToStart,
       onDismissed: (direction) {
@@ -503,11 +539,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
           content: Text(AppLocalizations.of(context)!.notificationDeleted ?? ""),
         ));
       },
-
-      child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5F5F5),
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: InkWell(
           onTap: () => _handleNotificationTap(notification),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
@@ -515,12 +555,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
               children: [
                 // 알림 아이콘
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: iconColor.withValues(alpha: 26),
+                    color: iconColor,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(iconData, color: iconColor, size: 24),
+                  child: Icon(iconData, color: Colors.white, size: 24),
                 ),
                 const SizedBox(width: 12),
 
@@ -531,38 +572,37 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     children: [
                       Text(
                         _getLocalizedTitle(notification),
-                        style: TextStyle(
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
                           fontSize: 16,
-                          fontWeight:
-                              notification.isRead
-                                  ? FontWeight.normal
-                                  : FontWeight.bold,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF111827),
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _getLocalizedMessage(notification),
-                        style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF6B7280),
+                          height: 1.4,
+                        ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 6),
                       Text(
                         _formatNotificationTime(notification.createdAt),
-                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF9CA3AF),
+                        ),
                       ),
                     ],
                   ),
                 ),
-
-                // 읽지 않은 알림 표시
-                if (!notification.isRead)
-                  Container(
-                    width: 12,
-                    height: 12,
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -591,14 +631,34 @@ class _NotificationScreenState extends State<NotificationScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.notifications ?? ""),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          '알림',
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: true,
         actions: [
           // 모든 알림 읽음 버튼
           IconButton(
-            icon: const Icon(Icons.done_all),
+            icon: const Icon(
+              Icons.done_all,
+              color: Color(0xFF111827),
+              size: 24,
+            ),
             onPressed: _isLoading ? null : _markAllAsRead,
-            tooltip: AppLocalizations.of(context)!.markAllAsRead,
+            tooltip: '모두 읽음',
           ),
         ],
       ),
@@ -626,12 +686,17 @@ class _NotificationScreenState extends State<NotificationScreen> {
                   Icon(
                     Icons.notifications_off_outlined,
                     size: 64,
-                    color: Colors.grey[400],
+                    color: const Color(0xFFD1D5DB),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     AppLocalizations.of(context)!.noNotifications,
-                    style: TextStyle(fontSize: 18, color: Colors.grey[600]),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF6B7280),
+                    ),
                   ),
                 ],
               ),

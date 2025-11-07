@@ -747,17 +747,46 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             ? _buildDefaultImage(displayImageUrl, imageHeight)
                 : GestureDetector(
                     onTap: () {
-                      // 이미지 뷰어로 이동
-                      showDialog(
-                        context: context,
-                        builder: (context) => Dialog(
-                          backgroundColor: Colors.transparent,
-                          child: GestureDetector(
-                            onTap: () => Navigator.pop(context),
-                            child: InteractiveViewer(
-                              child: Image.network(
-                                displayImageUrl,
-                                fit: BoxFit.contain,
+                      // 이미지 뷰어로 이동 (전체 화면)
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (context) => Scaffold(
+                            backgroundColor: Colors.black,
+                            body: SafeArea(
+                              child: Stack(
+                                children: [
+                                  // 전체 화면 이미지
+                                  Center(
+                                    child: InteractiveViewer(
+                                      minScale: 0.5,
+                                      maxScale: 4.0,
+                                      child: Image.network(
+                                        displayImageUrl,
+                                        fit: BoxFit.contain,
+                                        width: double.infinity,
+                                      ),
+                                    ),
+                                  ),
+                                  // 닫기 버튼
+                                  Positioned(
+                                    top: 16,
+                                    right: 16,
+                                    child: Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.black.withOpacity(0.5),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: IconButton(
+                                        icon: const Icon(
+                                          Icons.close,
+                                          color: Colors.white,
+                                          size: 28,
+                                        ),
+                                        onPressed: () => Navigator.pop(context),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ),

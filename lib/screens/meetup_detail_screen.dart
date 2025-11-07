@@ -173,13 +173,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           if (currentUid != null) {
             _isParticipant = combined.any((p) => p.userId == currentUid);
           }
-          // 모임 데이터의 참여자 수 업데이트 (호스트 제외한 실제 참여자 수)
+          // 모임 데이터의 참여자 수 업데이트 (호스트 포함)
           _currentMeetup = _currentMeetup.copyWith(
-            currentParticipants: participants.length, // 호스트 제외
+            currentParticipants: combined.length, // 호스트 포함
           );
         });
         print('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
-        print('📊 모임 참여자 수 업데이트: ${participants.length}/${_currentMeetup.maxParticipants} (호스트 제외)');
+        print('📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
       }
     } catch (e, stackTrace) {
       print('❌ 참여자 목록 로드 오류: $e');

@@ -51,9 +51,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   bool _showFriendFilter = false;
   List<Meetup> _filteredMeetups = [];
   bool _isLoading = false;
-  bool _isTabChanging = false;
   bool _isRefreshing = false; // 수동 새로고침 상태
-  int _refreshKey = 0; // Stream 재구독을 위한 키
 
   // 캐시 관련 변수
   final Map<int, List<Meetup>> _meetupCache = {};
@@ -200,15 +198,14 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 탭 변경 감지
   void _onTabChanged() {
-    if (_tabController.indexIsChanging ||
-        _tabController.index != _tabController.previousIndex) {
-      // 탭이 변경됐을 때 해당 요일의 모임만 불러오기
-      if (!_isTabChanging) {
-        _isTabChanging = true;
-        _loadMeetups().then((_) {
-          _isTabChanging = false;
-        });
-      }
+    if (!_tabController.indexIsChanging) {
+      // StreamBuilder가 자동으로 새 데이터를 로드하므로 별도 처리 불필요
+      // 참여 상태 캐시만 클리어하여 새 탭의 모임들에 대해 재로드
+      setState(() {
+        _participationStatusCache.clear();
+        _participationCacheTime.clear();
+        _participationSubscriptions.clear();
+      });
     }
   }
 
@@ -631,18 +628,18 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       color: const Color(0xFF5865F2),
                       backgroundColor: Colors.white,
                       onRefresh: () async {
-                        // Stream 재구독을 통한 최신 데이터 로드
+                        // 새로고침 시 캐시 클리어
                         if (mounted) {
                           setState(() {
                             _isRefreshing = true;
-                            _refreshKey++; // 키 변경으로 StreamBuilder 재생성
-                            _participationStatusCache.clear(); // 참여 상태 캐시 클리어
+                            _participationStatusCache.clear();
                             _participationCacheTime.clear();
+                            _participationSubscriptions.clear();
                           });
                         }
 
-                        // 최소 시각적 피드백 시간
-                        await Future.delayed(const Duration(milliseconds: 800));
+                        // 시각적 피드백
+                        await Future.delayed(const Duration(milliseconds: 500));
 
                         if (mounted) {
                           setState(() {
@@ -651,12 +648,12 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         }
                       },
                       child: StreamBuilder<List<Meetup>>(
-                        key: ValueKey('meetup_stream_$_refreshKey'), // 키로 재생성
-                        stream: _meetupService
-                            .getMeetupsByDay(_tabController.index),
+                        stream: _meetupService.getMeetupsByDay(_tabController.index),
                         builder: (context, snapshot) {
+                          // 🔑 핵심: 초기 로딩만 스켈레톤 표시, 새로고침 시에는 이전 데이터 유지
                           if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
+                                  ConnectionState.waiting &&
+                              !snapshot.hasData) {
                             return ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               padding: const EdgeInsets.symmetric(

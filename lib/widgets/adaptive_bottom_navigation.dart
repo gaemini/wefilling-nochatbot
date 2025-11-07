@@ -46,7 +46,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
         return Container(
           height: navHeight + bottomPadding,
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surface,
+            color: Colors.white,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.08),

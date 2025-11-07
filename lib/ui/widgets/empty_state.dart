@@ -76,12 +76,8 @@ class AppEmptyState extends StatelessWidget {
         width: 120,
         height: 120,
         decoration: BoxDecoration(
-          color: BrandColors.primary.withOpacity(0.1),
+          color: Colors.white,
           shape: BoxShape.circle,
-          border: Border.all(
-            color: BrandColors.primary.withOpacity(0.2),
-            width: 2,
-          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(20),

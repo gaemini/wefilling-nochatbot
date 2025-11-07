@@ -157,12 +157,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildTodayLoadingView();
         }
-        
+
         // 조기 반환: 에러
         if (snapshot.hasError) {
           return _buildTodayErrorView();
         }
-        
+
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -274,27 +274,27 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
               description: _safeL10n((l10n) => l10n.shareYourMoments, '순간을 공유해보세요'),
               illustration: const SizedBox.shrink(),
               padding: EdgeInsets.zero,
-            ),
-          ),
+                  ),
+                ),
         ],
       ),
-    );
-  }
-  
+          );
+        }
+
   // 게시글 목록 뷰 (AdBanner + 게시글들)
   Widget _buildTodayPostsView(List<Post> todayPosts) {
-    return RefreshIndicator(
+        return RefreshIndicator(
       color: const Color(0xFF5865F2),
       backgroundColor: Colors.white,
-      onRefresh: () async {
+          onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
         if (mounted) setState(() {});
-      },
-      child: ListView.builder(
+          },
+          child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: todayPosts.length + 1, // AdBanner + 게시글들
-        itemBuilder: (context, index) {
+            itemBuilder: (context, index) {
           // 첫 번째는 AdBanner
           if (index == 0) {
             return AdBannerWidget(
@@ -306,15 +306,15 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           // 게시글 표시
           final postIndex = index - 1;
           final post = todayPosts[postIndex];
-          return OptimizedPostCard(
-            key: ValueKey(post.id),
-            post: post,
+              return OptimizedPostCard(
+                key: ValueKey(post.id),
+                post: post,
             index: postIndex,
-            onTap: () => _navigateToPostDetail(post),
+                onTap: () => _navigateToPostDetail(post),
             preloadImage: postIndex < 3,
-          );
-        },
-      ),
+              );
+            },
+          ),
     );
   }
 
@@ -328,12 +328,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildAllLoadingView();
         }
-        
+
         // 조기 반환: 에러
         if (snapshot.hasError) {
           return _buildAllErrorView();
         }
-        
+
         List<Post> posts = snapshot.data ?? [];
 
         // 검색 필터링
@@ -429,41 +429,41 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
             child: _isSearching
                 ? AppEmptyState.noSearchResults(
-                    context: context,
-                    searchQuery: _searchController.text,
-                    onClearSearch: _clearSearch,
+              context: context,
+              searchQuery: _searchController.text,
+              onClearSearch: _clearSearch,
                   )
                 : AppEmptyState.noPosts(
-                    onCreatePost: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CreatePostScreen(
-                            onPostCreated: () {
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                      );
-                    },
+              onCreatePost: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CreatePostScreen(
+                      onPostCreated: () {
+                        setState(() {});
+                      },
+                    ),
+                  ),
+                );
+              },
                   ),
           ),
         ],
       ),
-    );
-  }
+            );
+          }
   
   // 전체 탭 - 게시글 목록 뷰
   Widget _buildAllPostsView(List<Post> posts) {
     final groupedPosts = _groupPostsByDate(posts);
-    
-    return RefreshIndicator(
+
+        return RefreshIndicator(
       color: const Color(0xFF5865F2),
       backgroundColor: Colors.white,
-      onRefresh: () async {
+          onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
         if (mounted) setState(() {});
-      },
+          },
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         itemCount: _calculateAllItemCount(groupedPosts),
@@ -512,8 +512,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             index: i,
             onTap: () => _navigateToPostDetail(groupPosts[i]),
             preloadImage: i < 3,
-          );
-        }
+    );
+  }
         currentIndex++;
       }
     }
@@ -638,15 +638,15 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 12), // 좌우 패딩 동일하게
       child: Center( // 가운데 정렬 ✨
         child: Text(
-          displayLabel,
-          style: const TextStyle(
+            displayLabel,
+            style: const TextStyle(
             fontFamily: 'Pretendard',
             color: Color(0xFF18181B), // 진한 검은색 (N-900)
             fontSize: 20, // 크게
             fontWeight: FontWeight.w800, // 매우 진하게
             letterSpacing: -0.5,
+            ),
           ),
-        ),
       ),
     );
   }

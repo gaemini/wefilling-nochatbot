@@ -21,7 +21,7 @@ import '../l10n/app_localizations.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
-
+  
   const MeetupHomePage({super.key, this.initialMeetupId});
 
   @override
@@ -34,7 +34,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
   final MeetupService _meetupService = MeetupService();
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
-
+  
   // 친구 카테고리 스트림 구독
   StreamSubscription<List<FriendCategory>>? _friendCategoriesSubscription;
 
@@ -85,7 +85,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _goToCurrentWeek();
       _loadFriendCategories();
-
+      
       // 알림에서 전달받은 모임이 있으면 다이얼로그 표시
       if (widget.initialMeetupId != null) {
         _showMeetupFromNotification(widget.initialMeetupId!);
@@ -133,7 +133,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     try {
       print('🔔 알림에서 모임 로드: $meetupId');
       final meetup = await _meetupService.getMeetupById(meetupId);
-
+      
       if (meetup != null && mounted) {
         print('✅ 모임 로드 성공, 다이얼로그 표시');
         showDialog(
@@ -227,7 +227,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     try {
       List<Meetup> allMeetups = [];
-
+      
       // 검색 모드일 때
       if (_isSearching && _searchController.text.isNotEmpty) {
         final searchQuery = _searchController.text.toLowerCase();
@@ -260,7 +260,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             categoryIds: null, // null = 모든 친구 관계 기반 필터링
           );
         }
-
+        
         // 모든 경우에 날짜 필터링 적용 (검색 모드가 아닐 때)
         final selectedDate = _getWeekDates()[_tabController.index];
         final startOfDay =
@@ -268,7 +268,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         final endOfDay = startOfDay
             .add(const Duration(days: 1))
             .subtract(const Duration(microseconds: 1));
-
+        
         allMeetups = allMeetups.where((meetup) {
           return meetup.date.isAfter(
                   startOfDay.subtract(const Duration(microseconds: 1))) &&
@@ -371,9 +371,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   Widget build(BuildContext context) {
     final List<DateTime> weekDates = _getWeekDates();
     final selectedDate = weekDates[_tabController.index];
-
+    
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF5F5F5), // 밝은 회색 배경으로 카드 구분
       body: SafeArea(
         child: Column(
           children: [
@@ -413,6 +413,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     return Container(
       height: 40,
+      margin: const EdgeInsets.only(top: 12), // 상단 여백 추가
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -462,23 +463,25 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 날짜 네비게이션
   Widget _buildDateNavigation(DateTime selectedDate) {
     final locale = Localizations.localeOf(context).languageCode;
-    final selectedDayString = locale == 'ko'
+    final selectedDayString = locale == 'ko' 
         ? '${selectedDate.month}월 ${selectedDate.day}일'
         : DateFormat('MMM d', 'en').format(selectedDate);
-
+    
     final weekdayName = locale == 'ko'
         ? ['월', '화', '수', '목', '금', '토', '일'][selectedDate.weekday - 1]
         : _weekdayNames[selectedDate.weekday - 1];
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left),
-            iconSize: 24,
+            iconSize: 20,
             color: const Color(0xFF374151),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: _goToPreviousWeek,
           ),
           GestureDetector(
@@ -487,7 +490,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               '$selectedDayString ($weekdayName)',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 18,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF111827),
               ),
@@ -495,8 +498,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           ),
           IconButton(
             icon: const Icon(Icons.chevron_right),
-            iconSize: 24,
+            iconSize: 20,
             color: const Color(0xFF374151),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: _goToNextWeek,
           ),
         ],
@@ -614,7 +619,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         ),
 
         // 모임 목록
-        Expanded(
+          Expanded(
           child: Container(
             padding: const EdgeInsets.only(top: 16),
             child: AnimatedSwitcher(
@@ -624,13 +629,13 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               },
               child: _isSearching
                   ? _buildSearchResults()
-                  : RefreshIndicator(
+                      : RefreshIndicator(
                       color: const Color(0xFF5865F2),
                       backgroundColor: Colors.white,
-                      onRefresh: () async {
+                        onRefresh: () async {
                         // 새로고침 시 캐시 클리어
                         if (mounted) {
-                          setState(() {
+                                setState(() {
                             _isRefreshing = true;
                             _participationStatusCache.clear();
                             _participationCacheTime.clear();
@@ -656,8 +661,12 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               !snapshot.hasData) {
                             return ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
+                              padding: const EdgeInsets.only(
+                                left: 16,
+                                right: 16,
+                                top: 8,
+                                bottom: 80, // FAB를 위한 하단 여백
+                              ),
                               children: List.generate(
                                   3,
                                   (index) => Padding(
@@ -702,10 +711,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                           ),
                                         ),
                                       ],
-                                    ),
-                                  ),
-                                ),
-                              ],
+                      ),
+            ),
+          ),
+        ],
                             );
                           }
 
@@ -717,6 +726,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                             return ListView(
                               physics: const AlwaysScrollableScrollPhysics(),
                               children: [
+                                SizedBox(height: 60), // 상단 여백 추가
                                 SizedBox(
                                   height:
                                       MediaQuery.of(context).size.height * 0.5,
@@ -732,7 +742,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
                           return ListView.builder(
                             physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            padding: const EdgeInsets.only(
+                              left: 16,
+                              right: 16,
+                              bottom: 80, // FAB를 위한 하단 여백
+                            ),
                             itemCount: filteredMeetups.length,
                             itemBuilder: (context, index) {
                               if (!mounted) return const SizedBox.shrink();
@@ -743,9 +757,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               );
                             },
                           );
-                        },
-                      ),
-                    ),
+          },
+        ),
+      ),
             ),
           ),
         ),
@@ -758,17 +772,17 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     return GestureDetector(
       onTap: () => _navigateToMeetupDetail(meetup),
       child: Container(
-        decoration: BoxDecoration(
+      decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
               blurRadius: 10,
               offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+          ),
+        ],
+      ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1000,7 +1014,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             participant?.status == ParticipantStatus.approved;
         _updateParticipationCache(meetupId, isParticipating);
         // 상태가 변경되었으면 UI 업데이트
-        setState(() {});
+                  setState(() {});
       }
     }).catchError((e) {
       print('참여 상태 로드 오류: $e');
@@ -1027,7 +1041,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   Future<void> _joinMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
     if (mounted) {
-      setState(() {
+                  setState(() {
         _updateParticipationCache(meetup.id, true);
       });
     }
@@ -1253,8 +1267,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           // 장소와 참여자 정보
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
+              child: Column(
+                children: [
                 Row(
                   children: [
                     AppSkeleton(
@@ -1284,9 +1298,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       width: 60,
                       height: 14,
                       borderRadius: BorderRadius.circular(4),
-                    ),
-                  ],
-                ),
+                  ),
+                ],
+              ),
               ],
             ),
           ),

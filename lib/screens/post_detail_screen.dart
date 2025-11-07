@@ -922,44 +922,64 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       resizeToAvoidBottomInset: true,
       backgroundColor: Colors.white, // 상세 화면은 흰색 배경 유지
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.post ?? '게시글'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          '게시글',
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: true,
         actions: [
           // 게시글 저장 버튼
           _isTogglingSave
               ? Container(
-                margin: const EdgeInsets.all(10.0),
-                width: 20,
-                height: 20,
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                ),
-              )
+                  margin: const EdgeInsets.all(14.0),
+                  width: 24,
+                  height: 24,
+                  child: const CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Color(0xFF111827),
+                  ),
+                )
               : IconButton(
-                icon: Icon(
-                  _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                  color: Colors.black87, // 검은색으로 통일
+                  icon: Icon(
+                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    color: const Color(0xFF111827),
+                    size: 26,
+                  ),
+                  tooltip: _isSaved ? '저장 취소' : '게시글 저장',
+                  onPressed: _toggleSave,
                 ),
-                tooltip: _isSaved ? (AppLocalizations.of(context)!.unsave ?? '저장 취소') : (AppLocalizations.of(context)!.savePost ?? '게시글 저장'),
-                onPressed: _toggleSave,
-              ),
           // 게시글 삭제 버튼 (작성자인 경우에만)
           if (_isAuthor)
             _isDeleting
                 ? Container(
-                  margin: const EdgeInsets.all(10.0),
-                  width: 20,
-                  height: 20,
-                  child: const CircularProgressIndicator(
-                    color: Colors.red,
-                    strokeWidth: 2,
-                  ),
-                )
+                    margin: const EdgeInsets.all(14.0),
+                    width: 24,
+                    height: 24,
+                    child: const CircularProgressIndicator(
+                      color: Color(0xFFEF4444),
+                      strokeWidth: 2,
+                    ),
+                  )
                 : IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  color: Colors.red,
-                  tooltip: AppLocalizations.of(context)!.deletePost ?? '게시글 삭제',
-                  onPressed: _deletePost,
-                ),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: Color(0xFFEF4444),
+                      size: 26,
+                    ),
+                    tooltip: '게시글 삭제',
+                    onPressed: _deletePost,
+                  ),
         ],
       ),
       body: Column(

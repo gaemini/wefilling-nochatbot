@@ -381,8 +381,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                           (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
                                       return Text(
                                         displayName,
-                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                        style: const TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: 14,
                                           fontWeight: FontWeight.w600,
+                                          color: Color(0xFF111827),
                                         ),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -412,18 +415,22 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                         final displayName = widget.getDisplayName!(replyTargetComment);
                                         return Text(
                                           displayName,
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: theme.colorScheme.primary,
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 12,
                                             fontWeight: FontWeight.w500,
+                                            color: Color(0xFF5865F2),
                                           ),
                                         );
                                       } else {
                                         // 일반 게시글인 경우: 실제 닉네임 표시
                                         return Text(
                                           widget.comment.replyToUserNickname!,
-                                          style: theme.textTheme.bodySmall?.copyWith(
-                                            color: theme.colorScheme.primary,
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 12,
                                             fontWeight: FontWeight.w500,
+                                            color: Color(0xFF5865F2),
                                           ),
                                         );
                                       }
@@ -434,8 +441,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             ),
                             Text(
                               widget.comment.getFormattedTime(context),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[600],
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
                           ],
@@ -522,10 +532,20 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       }
                     },
                     text: widget.comment.content,
-                    style: theme.textTheme.bodyMedium,
-                    linkStyle: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.primary,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF111827),
+                      height: 1.5,
+                    ),
+                    linkStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF5865F2),
                       decoration: TextDecoration.underline,
+                      height: 1.5,
                     ),
                   ),
                   
@@ -546,14 +566,17 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               Icon(
                                 isLiked ? Icons.favorite : Icons.favorite_border,
                                 size: 16,
-                                color: isLiked ? Colors.red : Colors.grey[600],
+                                color: isLiked ? Colors.red : const Color(0xFF6B7280),
                               ),
                               if (widget.comment.likeCount > 0) ...[
                                 const SizedBox(width: 4),
                                 Text(
                                   '${widget.comment.likeCount}',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey[600],
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF6B7280),
                                   ),
                                 ),
                               ],
@@ -574,12 +597,15 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.reply, size: 16, color: Colors.grey[600]),
+                                const Icon(Icons.reply, size: 16, color: Color(0xFF6B7280)),
                                 const SizedBox(width: 4),
                                 Text(
                                   AppLocalizations.of(context)!.reply,
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: Colors.grey[600],
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF6B7280),
                                   ),
                                 ),
                               ],
@@ -594,9 +620,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                           onTap: () => setState(() => _showReplies = !_showReplies),
                           child: Text(
                             '${AppLocalizations.of(context)!.repliesCount(widget.replies.length)} ${_showReplies ? (AppLocalizations.of(context)!.hideReplies ?? "") : AppLocalizations.of(context)!.showReplies}',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.primary,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 13,
                               fontWeight: FontWeight.w500,
+                              color: Color(0xFF5865F2),
                             ),
                           ),
                         ),

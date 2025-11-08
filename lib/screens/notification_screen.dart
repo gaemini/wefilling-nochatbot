@@ -2,6 +2,7 @@
 // 알림 목록 화면
 // 알림 표시 및 읽음 처리
 
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';
@@ -561,7 +562,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
                     color: iconColor,
                     shape: BoxShape.circle,
                   ),
-                  child: Icon(iconData, color: Colors.white, size: 24),
+                  alignment: Alignment.center,
+                  child: notification.type == 'dm_received'
+                      ? Transform.rotate(
+                          angle: -math.pi / 4, // 45도 시계방향 회전
+                          child: Icon(iconData, color: Colors.white, size: 24),
+                        )
+                      : Icon(iconData, color: Colors.white, size: 24),
                 ),
                 const SizedBox(width: 12),
 

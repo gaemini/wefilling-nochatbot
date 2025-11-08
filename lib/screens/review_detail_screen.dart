@@ -208,7 +208,14 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         builder: (context, snapshot) {
           if (!snapshot.hasData || snapshot.data == null) {
             return Center(
-              child: Text(l10n?.reviewNotFound ?? ""),
+              child: Text(
+                l10n?.reviewNotFound ?? "",
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  color: BrandColors.textSecondary,
+                ),
+              ),
             );
           }
 
@@ -224,12 +231,13 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 backgroundColor: Colors.white,
                 leading: IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back, color: Colors.black87),
+                  icon: Icon(Icons.arrow_back, color: BrandColors.textPrimary),
                 ),
                 title: Text(
                   l10n?.reviewDetails ?? "",
-                  style: const TextStyle(
-                    color: Colors.black87,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    color: BrandColors.textPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
                   ),
@@ -260,7 +268,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     _buildTimestamp(review),
                     
                     const SizedBox(height: 16),
-                    Divider(height: 1, color: Colors.grey[300]),
+                    Divider(height: 1, color: BrandColors.neutral200),
                     
                     // 참여자 섹션
                     if (_participants.isNotEmpty)
@@ -291,9 +299,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             backgroundImage: review.authorProfileImage.isNotEmpty
                 ? NetworkImage(review.authorProfileImage)
                 : null,
-            backgroundColor: Colors.grey[300],
+            backgroundColor: BrandColors.neutral100,
             child: review.authorProfileImage.isEmpty
-                ? Icon(Icons.person, color: Colors.grey[600], size: 20)
+                ? Icon(Icons.person, color: BrandColors.textSecondary, size: 20)
                 : null,
           ),
           const SizedBox(width: 12),
@@ -302,10 +310,11 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           Expanded(
             child: Text(
               review.authorName,
-              style: const TextStyle(
+              style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Colors.black87,
+                color: BrandColors.textPrimary,
               ),
             ),
           ),
@@ -319,11 +328,11 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       return Container(
         width: double.infinity,
         height: 400,
-        color: Colors.grey[200],
+        color: BrandColors.neutral100,
         child: Center(
           child: Icon(
             Icons.image_not_supported_rounded,
-            color: Colors.grey[400],
+            color: BrandColors.textTertiary,
             size: 64,
           ),
         ),
@@ -369,11 +378,11 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) {
                     return Container(
-                      color: Colors.grey[200],
+                      color: BrandColors.neutral100,
                       child: Center(
                         child: Icon(
                           Icons.broken_image_rounded,
-                          color: Colors.grey[400],
+                          color: BrandColors.textTertiary,
                           size: 64,
                         ),
                       ),
@@ -393,12 +402,13 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
+                color: Colors.black.withOpacity(0.7),
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Text(
                 '${_currentImageIndex + 1}/${review.imageUrls.length}',
                 style: const TextStyle(
+                  fontFamily: 'Pretendard',
                   color: Colors.white,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
@@ -425,7 +435,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               child: Icon(
                 isLiked ? Icons.favorite : Icons.favorite_border,
                 key: ValueKey(isLiked),
-                color: isLiked ? Colors.red : Colors.black87,
+                color: isLiked ? Colors.red : BrandColors.textPrimary,
                 size: 28,
               ),
             ),
@@ -435,9 +445,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           // 댓글 버튼
           GestureDetector(
             onTap: () => _navigateToComments(review),
-            child: const Icon(
+            child: Icon(
               Icons.mode_comment_outlined,
-              color: Colors.black87,
+              color: BrandColors.textPrimary,
               size: 26,
             ),
           ),
@@ -454,13 +464,14 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                             ? l10n!.viewAllComments(review.commentCount)
                         : l10n?.writeComment ?? "",
                     style: TextStyle(
+                      fontFamily: 'Pretendard',
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Colors.grey[700],
+                      color: BrandColors.textSecondary,
                     ),
                   ),
                   const SizedBox(width: 4),
-                  Icon(Icons.chevron_right, color: Colors.grey[500], size: 18),
+                  Icon(Icons.chevron_right, color: BrandColors.textTertiary, size: 18),
                 ],
               ),
             ),
@@ -479,10 +490,11 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Text(
             l10n!.likesCount(review.likeCount),
-        style: const TextStyle(
+        style: TextStyle(
+          fontFamily: 'Pretendard',
           fontSize: 14,
           fontWeight: FontWeight.w600,
-          color: Colors.black87,
+          color: BrandColors.textPrimary,
         ),
       ),
     );
@@ -500,9 +512,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           // 후기 내용 (작성자 이름 제거 - 헤더에 이미 표시됨)
           Text(
             review.content,
-            style: const TextStyle(
+            style: TextStyle(
+              fontFamily: 'Pretendard',
               fontSize: 14,
-              color: Colors.black87,
+              color: BrandColors.textPrimary,
               height: 1.5,
             ),
           ),
@@ -523,8 +536,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       child: Text(
         dateFormat.format(review.createdAt),
         style: TextStyle(
+          fontFamily: 'Pretendard',
           fontSize: 12,
-          color: Colors.grey[600],
+          color: BrandColors.textSecondary,
         ),
       ),
     );
@@ -546,15 +560,16 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               Icon(
                 Icons.groups_rounded,
                 size: 18,
-                color: Colors.grey[700],
+                color: BrandColors.textSecondary,
               ),
               const SizedBox(width: 6),
               Text(
                     l10n!.meetupParticipants(_participants.length),
                 style: TextStyle(
+                  fontFamily: 'Pretendard',
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey[800],
+                  color: BrandColors.textPrimary,
                 ),
               ),
             ],
@@ -581,10 +596,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                                   participant['photoURL'].toString().isNotEmpty
                               ? NetworkImage(participant['photoURL'])
                               : null,
-                          backgroundColor: Colors.grey[200],
+                          backgroundColor: BrandColors.neutral100,
                           child: participant['photoURL'] == null || 
                                   participant['photoURL'].toString().isEmpty
-                              ? Icon(Icons.person, color: Colors.grey[600], size: 28)
+                              ? Icon(Icons.person, color: BrandColors.textSecondary, size: 28)
                               : null,
                         ),
                         
@@ -596,7 +611,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(4),
                               decoration: BoxDecoration(
-                                color: Colors.blue,
+                                color: BrandColors.primary,
                                 shape: BoxShape.circle,
                                 border: Border.all(color: Colors.white, width: 2),
                               ),
@@ -615,9 +630,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                       width: 60,
                       child: Text(
                         participant['nickname'] ?? '익명',
-                        style: const TextStyle(
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
                           fontSize: 12,
-                          color: Colors.black87,
+                          color: BrandColors.textPrimary,
                         ),
                         textAlign: TextAlign.center,
                         maxLines: 1,

@@ -217,24 +217,27 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
   }
 
-  /// 메시지 스트림 초기화 (가시성 필터링 적용)
-  Future<void> _initializeMessagesStream() async {
+  /// 메시지 스트림 초기화
+  /// - 기본: 전체 대화 표시(일반 진입)
+  /// - 예외: 사용자가 실제로 '채팅방 나가기'를 한 기록이 있으면, 그 시점 이후만 표시
+  Future<void> _initializeMessagesStream({String? conversationId}) async {
     try {
-      // 사용자의 메시지 가시성 시작 시간 계산
-      final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(widget.conversationId);
-      
+      final targetConversationId = conversationId ?? widget.conversationId;
       print('📱 메시지 스트림 초기화:');
-      print('  - 가시성 시작 시간: $visibilityStartTime');
-      
-      // 가시성 시간을 적용한 메시지 스트림 생성
+      print('  - 대상 conversationId: $targetConversationId');
+
+      // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
+      final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(targetConversationId);
+      print('  - 가시성 시작 시간(leave 기록 기반): $visibilityStartTime');
+
       _messagesStream = _dmService.getMessages(
-        widget.conversationId,
-        visibilityStartTime: visibilityStartTime,
+        targetConversationId,
+        visibilityStartTime: visibilityStartTime, // null이면 전체 표시
       );
     } catch (e) {
       print('메시지 스트림 초기화 실패: $e');
-      // 오류 시 기본 스트림 사용
-      _messagesStream = _dmService.getMessages(widget.conversationId);
+      final targetConversationId = conversationId ?? widget.conversationId;
+      _messagesStream = _dmService.getMessages(targetConversationId);
     }
   }
 
@@ -807,9 +810,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
     _messageController.clear();
 
     try {
+      // 실제로 메시지를 보낼 conversationId를 결정
+      String actualConversationId = widget.conversationId;
+      
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (!_conversationExists) {
         print('📝 첫 메시지 전송 - 대화방 생성 시도');
+        print('📝 기존 conversationId: ${widget.conversationId}');
         
         // conversationId에서 익명 여부와 postId 추출
         final isAnonymousConv = widget.conversationId.startsWith('anon_');
@@ -847,18 +854,42 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
         
         print('✅ 대화방 생성 성공: $newConversationId');
+        print('📝 생성된 conversationId와 기존 ID 비교:');
+        print('   - 생성된 ID: $newConversationId');
+        print('   - 기존 ID: ${widget.conversationId}');
+        print('   - 일치 여부: ${newConversationId == widget.conversationId}');
+        
+        // ✅ 수정: 새로 생성된 conversationId를 사용
+        actualConversationId = newConversationId;
         _conversationExists = true;
       }
       
-      final success = await _dmService.sendMessage(widget.conversationId, text);
+      print('📤 메시지 전송 시도: conversationId=$actualConversationId');
+      final success = await _dmService.sendMessage(actualConversationId, text);
+      print('📤 메시지 전송 결과: success=$success');
       
       if (success) {
+        print('✅ 메시지 전송 성공 - 후속 처리 시작');
+        
         // 첫 메시지 전송 시 대화방이 없었다면 생성 되었으므로 스트림을 초기화
         if (_messagesStream == null) {
-          await _initializeMessagesStream();
-          if (mounted) setState(() {});
+          print('📱 메시지 스트림이 null - 초기화 시작 (actualConversationId 사용)');
+          print('⚠️  첫 메시지 전송이므로 가시성 필터 없이 스트림 초기화');
+          
+          // 첫 메시지 전송 직후에는 가시성 필터를 적용하지 않음
+          // (방금 보낸 메시지가 필터링되는 것을 방지)
+          _messagesStream = _dmService.getMessages(
+            actualConversationId,
+            visibilityStartTime: null,  // 가시성 필터 없이 모든 메시지 표시
+          );
+          
+          if (mounted) {
+            setState(() {});
+            print('✅ setState 호출 완료 - UI 업데이트 예정');
+          }
         }
         if (_conversation == null) {
+          print('📖 대화방 정보 로드 시작');
           await _loadConversation();
         }
         // 메시지 목록 맨 아래로 스크롤

@@ -131,7 +131,7 @@ class _DMListScreenState extends State<DMListScreen> {
             print('  ❌ 제외: ${c.id} (본인 DM)');
             return false;
           }
-          
+
           final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
           
           // 친구 탭: 익명이 아니고 게시글 DM도 아닌 경우만 표시

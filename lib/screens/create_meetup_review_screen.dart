@@ -189,11 +189,10 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
       // 후기 생성 또는 수정
       if (widget.existingReviewId != null) {
-        // 수정 모드 - MeetupService의 updateMeetupReview가 imageUrls를 지원해야 함
-        // 현재는 단일 imageUrl만 지원하므로 첫 번째 이미지만 전달
+        // 수정 모드 - 모든 이미지 URL 전달
         final success = await _meetupService.updateMeetupReview(
           reviewId: widget.existingReviewId!,
-          imageUrl: imageUrls.first,
+          imageUrls: imageUrls,
           content: _contentController.text.trim(),
         );
 
@@ -208,11 +207,10 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           );
         }
       } else {
-        // 생성 모드 - MeetupService의 createMeetupReview가 imageUrls를 지원해야 함
-        // 현재는 단일 imageUrl만 지원하므로 첫 번째 이미지만 전달
+        // 생성 모드 - 모든 이미지 URL 전달
         final reviewId = await _meetupService.createMeetupReview(
           meetupId: widget.meetup.id,
-          imageUrl: imageUrls.first,
+          imageUrls: imageUrls,
           content: _contentController.text.trim(),
         );
 

@@ -2,17 +2,20 @@
 // 완전 반응형 하단 네비게이션 바
 
 import 'package:flutter/material.dart';
+import 'notification_badge.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
   final IconData icon;
   final IconData selectedIcon;
   final String label;
+  final int? badgeCount; // 배지 카운트 추가
 
   const BottomNavigationItem({
     required this.icon,
     required this.selectedIcon,
     required this.label,
+    this.badgeCount,
   });
 }
 
@@ -156,11 +159,25 @@ class AdaptiveBottomNavigation extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected ? item.selectedIcon : item.icon,
-              size: iconSize,
-              color: isSelected ? selectedColor : unselectedColor,
-              weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+            // 아이콘을 고정 크기 컨테이너로 감싸서 정렬 유지
+            SizedBox(
+              height: iconSize,
+              width: iconSize,
+              child: Center(
+                child: NotificationBadge(
+                  count: item.badgeCount ?? 0,
+                  size: 13, // 더 작은 크기
+                  fontSize: 8,
+                  top: -5, // 더 위로 이동
+                  right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
+                  child: Icon(
+                    isSelected ? item.selectedIcon : item.icon,
+                    size: iconSize,
+                    color: isSelected ? selectedColor : unselectedColor,
+                    weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: 3),
             Flexible(

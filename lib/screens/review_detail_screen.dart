@@ -1,6 +1,7 @@
 // lib/screens/review_detail_screen.dart
 // 후기 상세 화면 - 좋아요, 댓글 기능 포함
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/review_post.dart';
 import '../design/tokens.dart';
@@ -33,17 +34,48 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   List<Map<String, dynamic>> _participants = [];
   int _currentImageIndex = 0; // 현재 이미지 인덱스
   final PageController _pageController = PageController();
+  
+  // 이미지 페이지 인디케이터 표시 상태
+  bool _showPageIndicator = false;
+  Timer? _indicatorTimer;
 
   @override
   void initState() {
     super.initState();
     _loadParticipants();
+    
+    // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
+    if (widget.review.imageUrls.length > 1) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showPageIndicatorTemporarily();
+      });
+    }
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _indicatorTimer?.cancel(); // Timer 정리
     super.dispose();
+  }
+  
+  // 페이지 인디케이터를 표시하고 1초 후 자동으로 숨김
+  void _showPageIndicatorTemporarily() {
+    setState(() {
+      _showPageIndicator = true;
+    });
+    
+    // 기존 타이머가 있으면 취소
+    _indicatorTimer?.cancel();
+    
+    // 1초 후 숨김
+    _indicatorTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          _showPageIndicator = false;
+        });
+      }
+    });
   }
 
   Future<void> _loadParticipants() async {
@@ -351,11 +383,37 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               setState(() {
                 _currentImageIndex = index;
               });
+              // 페이지 변경 시 인디케이터 표시
+              _showPageIndicatorTemporarily();
             },
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () {
-                  // 이미지 전체 화면으로 보기
+                  // 터치 시 인디케이터 표시
+                  if (review.imageUrls.length > 1) {
+                    _showPageIndicatorTemporarily();
+                  } else {
+                    // 이미지가 1장일 때는 전체 화면으로 보기
+                    showDialog(
+                      context: context,
+                      builder: (context) => Dialog(
+                        insetPadding: const EdgeInsets.all(8),
+                        child: InteractiveViewer(
+                          panEnabled: true,
+                          boundaryMargin: const EdgeInsets.all(20),
+                          minScale: 0.5,
+                          maxScale: 3.0,
+                          child: Image.network(
+                            review.imageUrls[index],
+                            fit: BoxFit.contain,
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                },
+                onLongPress: () {
+                  // 롱프레스 시 전체 화면으로 보기
                   showDialog(
                     context: context,
                     builder: (context) => Dialog(
@@ -394,24 +452,28 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
           ),
         ),
         
-        // 이미지 인디케이터 (2장 이상일 때만 표시)
-        if (review.imageUrls.length > 1)
+        // 이미지 인디케이터 (2장 이상이고 표시 상태일 때만 표시)
+        if (review.imageUrls.length > 1 && _showPageIndicator)
           Positioned(
             bottom: 16,
             right: 16,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Text(
-                '${_currentImageIndex + 1}/${review.imageUrls.length}',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+            child: AnimatedOpacity(
+              opacity: _showPageIndicator ? 1.0 : 0.0,
+              duration: const Duration(milliseconds: 200),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  '${_currentImageIndex + 1}/${review.imageUrls.length}',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),

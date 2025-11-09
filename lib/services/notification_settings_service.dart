@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // 알림 설정 키 상수
 class NotificationSettingKeys {
   static const String allNotifications = 'all_notifications';
+  static const String dmReceived = 'dm_received'; // 💬 DM 수신 알림 추가
   static const String meetupFull = 'meetup_full';
   static const String meetupCancelled = 'meetup_cancelled';
   static const String newComment = 'new_comment';
@@ -24,6 +25,7 @@ class NotificationSettingsService {
   // 기본 알림 설정 값
   final Map<String, bool> _defaultSettings = {
     NotificationSettingKeys.allNotifications: true,
+    NotificationSettingKeys.dmReceived: true, // 💬 DM 알림 기본값 활성화
     NotificationSettingKeys.meetupFull: true,
     NotificationSettingKeys.meetupCancelled: true,
     NotificationSettingKeys.newComment: true,

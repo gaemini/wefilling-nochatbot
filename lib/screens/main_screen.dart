@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import '../constants/app_constants.dart';
 import '../services/notification_service.dart';
+import '../services/dm_service.dart';
 import '../widgets/notification_badge.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../design/tokens.dart';
@@ -43,6 +44,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   late int _selectedIndex; // 초기값은 initState에서 설정
   final NotificationService _notificationService = NotificationService();
+  final DMService _dmService = DMService();
   final TextEditingController _searchController = TextEditingController();
   bool _isSearching = false;
   late VoidCallback _cleanupCallback;
@@ -510,36 +512,53 @@ service firebase.storage {
       body: _screens[_selectedIndex],
 
       // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
-      bottomNavigationBar: AdaptiveBottomNavigation(
-        selectedIndex: _selectedIndex,
-        onItemTapped: _onItemTapped,
-        items: [
-          BottomNavigationItem(
-            icon: Icons.article_outlined, // 게시판 아이콘 변경 (DM과 구분)
-            selectedIcon: Icons.article,
-            label: AppLocalizations.of(context)!.board ?? '게시판',
-          ),
-          BottomNavigationItem(
-            icon: Icons.groups_outlined,
-            selectedIcon: Icons.groups,
-            label: AppLocalizations.of(context)!.meetup ?? '모임',
-          ),
-          BottomNavigationItem(
-            icon: Icons.chat_bubble_outline,
-            selectedIcon: Icons.chat_bubble,
-            label: AppLocalizations.of(context)!.dm ?? 'DM',
-          ),
-          BottomNavigationItem(
-            icon: Icons.person_outline,
-            selectedIcon: Icons.person,
-            label: AppLocalizations.of(context)!.myPage ?? '마이페이지',
-          ),
-          BottomNavigationItem(
-            icon: Icons.people_outline,
-            selectedIcon: Icons.people,
-            label: AppLocalizations.of(context)!.friends ?? '친구',
-          ),
-        ],
+      bottomNavigationBar: StreamBuilder<int>(
+        stream: _dmService.getTotalUnreadCount(),
+        builder: (context, snapshot) {
+          print('📊 StreamBuilder 상태:');
+          print('  - hasData: ${snapshot.hasData}');
+          print('  - hasError: ${snapshot.hasError}');
+          print('  - data: ${snapshot.data}');
+          if (snapshot.hasError) {
+            print('  - error: ${snapshot.error}');
+          }
+          
+          final unreadDMCount = snapshot.data ?? 0;
+          print('  - unreadDMCount: $unreadDMCount');
+          
+          return AdaptiveBottomNavigation(
+            selectedIndex: _selectedIndex,
+            onItemTapped: _onItemTapped,
+            items: [
+              BottomNavigationItem(
+                icon: Icons.article_outlined, // 게시판 아이콘 변경 (DM과 구분)
+                selectedIcon: Icons.article,
+                label: AppLocalizations.of(context)!.board ?? '게시판',
+              ),
+              BottomNavigationItem(
+                icon: Icons.groups_outlined,
+                selectedIcon: Icons.groups,
+                label: AppLocalizations.of(context)!.meetup ?? '모임',
+              ),
+              BottomNavigationItem(
+                icon: Icons.chat_bubble_outline,
+                selectedIcon: Icons.chat_bubble,
+                label: AppLocalizations.of(context)!.dm ?? 'DM',
+                badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
+              ),
+              BottomNavigationItem(
+                icon: Icons.person_outline,
+                selectedIcon: Icons.person,
+                label: AppLocalizations.of(context)!.myPage ?? '마이페이지',
+              ),
+              BottomNavigationItem(
+                icon: Icons.people_outline,
+                selectedIcon: Icons.people,
+                label: AppLocalizations.of(context)!.friends ?? '친구',
+              ),
+            ],
+          );
+        },
       ),
     );
   }

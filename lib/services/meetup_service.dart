@@ -1284,7 +1284,7 @@ class MeetupService {
   /// 모임 후기 생성
   Future<String?> createMeetupReview({
     required String meetupId,
-    required String imageUrl,
+    required List<String> imageUrls, // 여러 이미지 지원
     required String content,
   }) async {
     try {
@@ -1335,7 +1335,8 @@ class MeetupService {
         'meetupTitle': meetup.title,
         'authorId': user.uid,
         'authorName': authorName,
-        'imageUrl': imageUrl,
+        'imageUrls': imageUrls, // 여러 이미지 URL 저장
+        'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
         'content': content,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': null,
@@ -1360,12 +1361,13 @@ class MeetupService {
         reviewData: {
           'meetupId': meetupId,
           'meetupTitle': meetup.title,
-          'imageUrl': imageUrl,
+          'imageUrls': imageUrls,
+          'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
           'content': content,
         },
       );
 
-      print('✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId');
+      print('✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId (이미지 ${imageUrls.length}장)');
       return reviewId;
     } catch (e) {
       print('❌ 모임 후기 생성 오류: $e');
@@ -1392,11 +1394,11 @@ class MeetupService {
   /// 모임 후기 수정
   Future<bool> updateMeetupReview({
     required String reviewId,
-    required String imageUrl,
+    required List<String> imageUrls, // 여러 이미지 지원
     required String content,
   }) async {
     try {
-      print('✏️ 후기 수정 시작: reviewId=$reviewId');
+      print('✏️ 후기 수정 시작: reviewId=$reviewId (이미지 ${imageUrls.length}장)');
       
       final user = _auth.currentUser;
       if (user == null) {
@@ -1425,7 +1427,8 @@ class MeetupService {
       // 1. meetup_reviews 문서 업데이트
       print('✏️ 1단계: meetup_reviews 문서 업데이트...');
       await _firestore.collection('meetup_reviews').doc(reviewId).update({
-        'imageUrl': imageUrl,
+        'imageUrls': imageUrls,
+        'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
         'content': content,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -1453,7 +1456,8 @@ class MeetupService {
                 .collection('posts')
                 .doc(reviewId)
                 .update({
-              'imageUrl': imageUrl,
+              'imageUrls': imageUrls,
+              'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
               'content': content,
               'updatedAt': FieldValue.serverTimestamp(),
             });

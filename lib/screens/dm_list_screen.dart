@@ -285,7 +285,6 @@ class _DMListScreenState extends State<DMListScreen> {
     final otherUserName = conversation.getOtherUserName(_currentUser!.uid);
     final otherUserPhoto = conversation.getOtherUserPhoto(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
-    final unreadCount = conversation.getMyUnreadCount(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
       context,
       conversation.lastMessageTime,
@@ -298,6 +297,40 @@ class _DMListScreenState extends State<DMListScreen> {
         : (isAnonymous 
             ? (AppLocalizations.of(context)!.anonymousUser ?? "") : otherUserName);
 
+    // 🔥 핵심 변경: 실시간 배지 업데이트 (StreamBuilder)
+    // 카카오톡처럼 읽음 처리 즉시 배지 사라짐
+    return StreamBuilder<int>(
+      stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
+      initialData: 0, // 초기값 0
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+        
+        // 디버그 로그
+        if (unreadCount > 0) {
+          print('🔴 실시간 배지 표시: ${conversation.id} - $unreadCount개');
+        }
+
+        return _buildConversationCardContent(
+          conversation: conversation,
+          displayName: displayName,
+          otherUserPhoto: otherUserPhoto,
+          isAnonymous: isAnonymous,
+          timeString: timeString,
+          unreadCount: unreadCount,
+        );
+      },
+    );
+  }
+
+  /// 대화방 카드 콘텐츠 빌드 (FutureBuilder 내부용)
+  Widget _buildConversationCardContent({
+    required Conversation conversation,
+    required String displayName,
+    required String otherUserPhoto,
+    required bool isAnonymous,
+    required String timeString,
+    required int unreadCount,
+  }) {
     return Material(
       color: Colors.white,
       child: InkWell(
@@ -342,15 +375,6 @@ class _DMListScreenState extends State<DMListScreen> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        Text(
-                          timeString,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w400,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                        ),
                       ],
                     ),
                     
@@ -373,26 +397,46 @@ class _DMListScreenState extends State<DMListScreen> {
                 ),
               ),
               
-              // 읽지 않은 메시지 배지
-              if (unreadCount > 0)
-                Container(
-                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    unreadCount > 99 ? '99+' : unreadCount.toString(),
+              // 오른쪽 영역 (날짜 + 배지)
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // 날짜 (상단)
+                  Text(
+                    timeString,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF9CA3AF),
                     ),
-                    textAlign: TextAlign.center,
                   ),
-                ),
+                  
+                  const SizedBox(height: 4),
+                  
+                  // 읽지 않은 메시지 배지 (하단)
+                  if (unreadCount > 0)
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        unreadCount > 99 ? '99+' : unreadCount.toString(),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
         ),

@@ -3,6 +3,7 @@
 // Firestore conversations 컬렉션에 대응
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:math' as math;
 
 class Conversation {
   final String id;
@@ -160,6 +161,8 @@ class Conversation {
   }
 
   /// 내 읽지 않은 메시지 수 가져오기
+  /// Firestore unreadCount 필드 기본값만 반환 (단순화)
+  /// 실제 정확한 값은 DMService.getActualUnreadCount()로 조회
   int getMyUnreadCount(String currentUserId) {
     return unreadCount[currentUserId] ?? 0;
   }

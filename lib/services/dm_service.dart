@@ -8,16 +8,20 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'notification_service.dart';
+import 'fcm_direct_service.dart';
+import '../utils/dm_feature_flags.dart';
 
 class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static bool _rulesTestDone = false;
   final NotificationService _notificationService = NotificationService();
+  final FCMDirectService _fcmDirectService = FCMDirectService();
 
   // 캐시 관리
   final Map<String, Conversation> _conversationCache = {};
   final Map<String, List<DMMessage>> _messageCache = {};
+  // 배지 카운트는 Stream으로 실시간 관리되므로 캐싱 불필요
 
   /// conversationId 생성 (사전순 정렬) - 공개 메서드
   String generateConversationId(String otherUserId, {bool isOtherUserAnonymous = false, String? postId}) {
@@ -652,7 +656,7 @@ class DMService {
         .where('participants', arrayContains: currentUser.uid)
         .orderBy('lastMessageTime', descending: true)
         .limit(50)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
       print('📋 getMyConversations 호출:');
       print('  - 현재 사용자: ${currentUser.uid}');
@@ -672,15 +676,43 @@ class DMService {
             final userLeftTime = conv.userLeftAt[currentUser.uid];
             final lastMessageTime = conv.lastMessageTime;
             
+            bool show;
             // 나간 적이 없으면 표시
-            if (userLeftTime == null) return true;
-            
+            if (userLeftTime == null) {
+              show = true;
+            }
             // 나간 이후 새 활동(메시지)이 있으면 표시
             // isAfter 대신 compareTo로 >= 비교
-            if (lastMessageTime.compareTo(userLeftTime) >= 0) return true;
-            
+            else if (lastMessageTime.compareTo(userLeftTime) >= 0) {
+              show = true;
+            }
             // 나갔고 새 활동 없음 → 숨김
-            return false;
+            else {
+              show = false;
+            }
+            
+            // ⭐ 추가: 익명 대화방에서 모든 상대방이 나간 경우만 숨김 (getTotalUnreadCount와 일치)
+            if (show && conv.id.startsWith('anon_') && conv.userLeftAt.isNotEmpty) {
+              final otherParticipants = conv.participants.where((id) => id != currentUser.uid).toList();
+              bool allOthersLeft = otherParticipants.isNotEmpty && 
+                  otherParticipants.every((otherId) => conv.userLeftAt[otherId] != null);
+              
+              if (allOthersLeft) {
+                show = false;
+                print('  - [${conv.id}] 숨김: 익명 대화방에서 모든 상대방이 나감');
+              }
+            }
+            
+            // 문제 대화방 필터링 결과 로그
+            if (conv.id.contains('ewm0tYZ2jS0xc8uJ5ssy')) {
+              print('⚠️ [문제 대화방 목록 표시 여부]');
+              print('  - ID: ${conv.id}');
+              print('  - 표시됨: $show');
+              print('  - userLeftAt: ${conv.userLeftAt[currentUser.uid]}');
+              print('  - lastMessageTime: ${conv.lastMessageTime}');
+            }
+            
+            return show;
           })
           .toList();
 
@@ -733,7 +765,7 @@ class DMService {
     
     return messageQuery
         .limit(limit)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
       print('📨 스냅샷 수신: ${snapshot.docs.length}개 문서');
       
@@ -971,11 +1003,41 @@ class DMService {
 
       final convData = convDocAfter.data()!;
       final participants = List<String>.from(convData['participants']);
-      final otherUserId = participants.firstWhere((id) => id != currentUser.uid);
       final unreadCount = Map<String, int>.from(convData['unreadCount']);
+      final userLeftAt = convData['userLeftAt'] as Map<String, dynamic>?;
 
-      // 상대방의 읽지 않은 메시지 수 증가
-      unreadCount[otherUserId] = (unreadCount[otherUserId] ?? 0) + 1;
+      // 모든 상대방의 읽지 않은 메시지 수 증가 (나간 사용자 제외)
+      print('🔍 unreadCount 업데이트 시작 - 업데이트 전: $unreadCount');
+      for (final participantId in participants) {
+        if (participantId != currentUser.uid) {
+          // 상대방이 나간 경우 unreadCount 증가하지 않음 (최적화)
+          final hasLeft = userLeftAt != null && userLeftAt[participantId] != null;
+          if (!hasLeft) {
+            final currentCount = unreadCount[participantId] ?? 0;
+            unreadCount[participantId] = currentCount + 1;
+            print('  - [$participantId] unreadCount 증가: $currentCount → ${unreadCount[participantId]}');
+          } else {
+            print('  - [$participantId] 나간 사용자이므로 unreadCount 증가 안 함');
+          }
+        }
+      }
+      
+      // 강제 확인: unreadCount가 실제로 증가했는지 검증
+      final hasAnyUnread = unreadCount.values.any((count) => count > 0);
+      print('🔍 unreadCount 검증 완료:');
+      print('  - hasAnyUnread: $hasAnyUnread');
+      print('  - 최종 unreadCount 맵: $unreadCount');
+      
+      // 메시지 방향 상세 분석
+      print('📊 메시지 전송 방향 분석:');
+      print('  - 보내는 사람 (나): ${currentUser.uid}');
+      print('  - 받는 사람들: ${participants.where((id) => id != currentUser.uid).toList()}');
+      print('  - 내 배지 (변경 안 됨): ${unreadCount[currentUser.uid] ?? 0}');
+      for (final participantId in participants) {
+        if (participantId != currentUser.uid) {
+          print('  - ${participantId}의 배지 (증가함): ${unreadCount[participantId]}');
+        }
+      }
 
       // 메시지 전송 시 대화방 업데이트
       final updateData = {
@@ -987,10 +1049,24 @@ class DMService {
       };
       
       print('🔄 대화방 업데이트 데이터: $updateData');
+      print('  - 각 사용자별 unreadCount:');
+      unreadCount.forEach((userId, count) {
+        print('    • $userId: $count개 (읽지 않음)');
+      });
       
       try {
         await convRef.update(updateData);
         print('✅ 대화방 업데이트 성공');
+        
+        // 업데이트 확인: 즉시 재조회하여 변경사항 반영 확인
+        print('🔍 업데이트 확인 중...');
+        await Future.delayed(const Duration(milliseconds: 100));
+        final verifyDoc = await convRef.get();
+        if (verifyDoc.exists) {
+          final verifyData = verifyDoc.data()!;
+          final verifyUnread = Map<String, int>.from(verifyData['unreadCount'] ?? {});
+          print('  ✓ Firestore 확인 - unreadCount: $verifyUnread');
+        }
       } catch (e) {
         print('❌ 대화방 업데이트 실패: $e');
         if (e is FirebaseException) {
@@ -1000,7 +1076,7 @@ class DMService {
         rethrow;
       }
 
-      // 알림 전송
+      // 모든 상대방에게 알림 전송
       print('🔔 알림 전송 시작...');
       final isAnonymous = Map<String, bool>.from(convData['isAnonymous']);
       final participantNames = Map<String, String>.from(convData['participantNames']);
@@ -1009,20 +1085,53 @@ class DMService {
           ? '익명' 
           : participantNames[currentUser.uid];
 
-      try {
-        await _notificationService.createNotification(
-          userId: otherUserId,
-          title: '$senderName님의 메시지',
-          message: text.length > 50 ? '${text.substring(0, 50)}...' : text,
-          type: 'dm_received',
-          actorId: currentUser.uid,
-          actorName: senderName,
-          data: {'conversationId': conversationId},
-        );
-        print('✅ 알림 전송 성공');
-      } catch (e) {
-        print('⚠️ 알림 전송 실패 (무시): $e');
-        // 알림 실패는 메시지 전송에 영향을 주지 않음
+      // 모든 상대방에게 알림 전송
+      for (final participantId in participants) {
+        if (participantId != currentUser.uid) {
+          try {
+            final success = await _notificationService.createNotification(
+              userId: participantId,
+              title: '$senderName님의 메시지',
+              message: text.length > 50 ? '${text.substring(0, 50)}...' : text,
+              type: 'dm_received', // NotificationSettingKeys.dmReceived 참조
+              actorId: currentUser.uid,
+              actorName: senderName,
+              data: {'conversationId': conversationId},
+            );
+            if (success) {
+              print('✅ 알림 전송 성공: $participantId');
+            } else {
+              print('⚠️ 알림이 비활성화되었습니다: $participantId');
+            }
+
+            // 추가: FCM 직접 전송 (플래그로 제어, 기존 기능에 영향 없음)
+            if (DMFeatureFlags.enableDirectFCM) {
+              try {
+                final fcmSuccess = await _fcmDirectService.sendDirectFCM(
+                  targetUserId: participantId,
+                  title: '$senderName님의 메시지',
+                  message: text.length > 50 ? '${text.substring(0, 50)}...' : text,
+                  data: {
+                    'conversationId': conversationId,
+                    'senderId': currentUser.uid,
+                    'senderName': senderName,
+                  },
+                );
+                if (fcmSuccess) {
+                  print('✅ FCM 직접 전송 성공: $participantId');
+                } else {
+                  print('⚠️ FCM 직접 전송 실패 (무시): $participantId');
+                }
+              } catch (e) {
+                print('⚠️ FCM 직접 전송 오류 (무시): userId=$participantId, error=$e');
+                // FCM 직접 전송 실패는 메시지 전송에 영향을 주지 않음
+              }
+            }
+          } catch (e) {
+            print('⚠️ 알림 전송 실패 (무시): userId=$participantId, error=$e');
+            // 알림 실패는 메시지 전송에 영향을 주지 않음
+          }
+        }
       }
 
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -1123,20 +1232,33 @@ class DMService {
   /// 메시지 읽음 처리
   Future<void> markAsRead(String conversationId) async {
     try {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('📖 markAsRead 시작');
+      print('  - conversationId: $conversationId');
+      
       final currentUser = _auth.currentUser;
-      if (currentUser == null) return;
+      if (currentUser == null) {
+        print('❌ 현재 사용자 없음');
+        return;
+      }
+      print('  - currentUser.uid: ${currentUser.uid}');
 
       // 대화방 정보 가져오기
       final convDoc = await _firestore.collection('conversations').doc(conversationId).get();
-      if (!convDoc.exists) return;
+      if (!convDoc.exists) {
+        print('❌ 대화방 존재하지 않음');
+        return;
+      }
+      print('✓ 대화방 존재 확인');
 
       final convData = convDoc.data()!;
-      final unreadCount = Map<String, int>.from(convData['unreadCount']);
+      final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
+      print('  - 현재 unreadCount: $unreadCount');
+      print('  - 내 읽지 않은 메시지 수 (Firestore 필드): ${unreadCount[currentUser.uid] ?? 0}');
 
-      // 이미 읽은 상태면 skip
-      if (unreadCount[currentUser.uid] == 0) return;
-
+      // 🔥 핵심 수정: unreadCount 필드 무시, 항상 실제 메시지 확인
       // 읽지 않은 메시지 가져오기
+      print('🔍 실제 읽지 않은 메시지 조회 중...');
       final unreadMessages = await _firestore
           .collection('conversations')
           .doc(conversationId)
@@ -1144,6 +1266,16 @@ class DMService {
           .where('senderId', isNotEqualTo: currentUser.uid)
           .where('isRead', isEqualTo: false)
           .get();
+      
+      print('  - 실제 읽지 않은 메시지: ${unreadMessages.docs.length}개');
+
+      // 실제 메시지가 없으면 skip (정확한 확인)
+      if (unreadMessages.docs.isEmpty) {
+        print('✓ 실제로 읽지 않은 메시지 없음 - skip');
+        return;
+      }
+      
+      print('🔄 읽음 처리 실행: ${unreadMessages.docs.length}개 메시지');
 
       // 배치로 읽음 처리
       final batch = _firestore.batch();
@@ -1155,6 +1287,7 @@ class DMService {
           'readAt': Timestamp.fromDate(now),
         });
       }
+      print('✓ ${unreadMessages.docs.length}개 메시지 읽음 처리 준비');
 
       // 대화방의 unreadCount 업데이트
       unreadCount[currentUser.uid] = 0;
@@ -1162,11 +1295,21 @@ class DMService {
         'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       });
+      print('✓ unreadCount를 0으로 업데이트 준비: $unreadCount');
 
       await batch.commit();
       print('✅ 메시지 읽음 처리 완료');
+      
+      // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
+      _conversationCache.remove(conversationId);
+      _messageCache.remove(conversationId);
+      
+      print('✓ 캐시 클리어 완료 - 스트림 리스너 업데이트 예정');
+      
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
-      print('메시지 읽음 처리 오류: $e');
+      print('❌ 메시지 읽음 처리 오류: $e');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -1174,28 +1317,198 @@ class DMService {
   Stream<int> getTotalUnreadCount() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
+      print('❌ getTotalUnreadCount: 로그인 사용자 없음');
       return Stream.value(0);
     }
 
-    return _firestore
+    // 기본 스트림 생성
+    Stream<QuerySnapshot> baseStream = _firestore
         .collection('conversations')
         .where('participants', arrayContains: currentUser.uid)
-        .snapshots()
-        .map((snapshot) {
-      int totalUnread = 0;
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
-        totalUnread += unreadCount[currentUser.uid] ?? 0;
+        .snapshots(includeMetadataChanges: true);
+
+    // 추가: 주기적 새로고침 (플래그로 제어, 기존 기능에 영향 없음)
+    // 현재는 Stream 병합 메서드 호환성 문제로 비활성화
+    // TODO: rxdart 패키지 추가 후 활성화 예정
+    if (DMFeatureFlags.enablePeriodicSync && false) {
+      if (DMFeatureFlags.enableDebugLogs) {
+        print('🔄 배지 주기적 동기화 활성화됨 (30초마다)');
       }
-      return totalUnread;
-    });
+      // 주기적 새로고침 로직은 추후 구현
+    }
+
+    return baseStream.asyncMap((snapshot) async {
+      try {
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        print('🔢 getTotalUnreadCount 업데이트 - 시작');
+        print('  - 전체 대화방: ${snapshot.docs.length}개');
+        print('  - 메타데이터 변경: ${snapshot.metadata.hasPendingWrites}');
+        print('  - 현재 사용자: ${currentUser.uid}');
+        
+        int totalUnread = 0;
+        int processedConv = 0;
+        int skippedConv = 0;
+        
+        for (var doc in snapshot.docs) {
+          try {
+            final data = doc.data() as Map<String, dynamic>;
+            final convId = doc.id;
+            final archivedBy = List<String>.from(data['archivedBy'] ?? []);
+            
+            // 보관된 대화방은 제외
+            if (archivedBy.contains(currentUser.uid)) {
+              print('  - [$convId] 건너뜀: 보관된 대화방');
+              skippedConv++;
+              continue;
+            }
+            
+            // 내가 나간 대화방만 필터링 (unreadCount는 상대방 나간 여부와 무관)
+            final userLeftAt = data['userLeftAt'];
+            final lastMessageTime = data['lastMessageTime'];
+            
+            // 내가 나간 대화방 + 새 메시지 없음인 경우만 건너뜀
+            if (userLeftAt != null && lastMessageTime != null) {
+              if (userLeftAt[currentUser.uid] != null) {
+                final userLeftTime = (userLeftAt[currentUser.uid] as Timestamp).toDate();
+                final lastMsgTime = (lastMessageTime as Timestamp).toDate();
+                
+                // 나간 이후 새 메시지가 없으면 카운트하지 않음
+                if (lastMsgTime.compareTo(userLeftTime) < 0) {
+                  print('  - [$convId] 건너뜀: 나간 대화방 (새 메시지 없음)');
+                  skippedConv++;
+                  continue;
+                }
+              }
+            }
+            
+            final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
+            final myUnread = unreadCount[currentUser.uid] ?? 0;
+            
+            print('  ✓ [$convId] 처리 완료 - 읽지 않음: ${myUnread}개');
+            
+            totalUnread += myUnread;
+            processedConv++;
+          } catch (e) {
+            print('⚠️ 대화방 [${doc.id}] 처리 중 오류 (건너뜀): $e');
+            skippedConv++;
+            continue;
+          }
+        }
+        
+        print('  📊 처리 완료:');
+        print('    - 처리됨: $processedConv개');
+        print('    - 건너뜀: $skippedConv개');
+        print('  - 총 읽지 않은 메시지: $totalUnread개');
+        
+        // 상세 배지 계산 로그 추가 (실제 처리된 대화방만)
+        print('🔢 배지 계산 상세 결과 (실제 포함된 대화방만):');
+        if (totalUnread > 0) {
+          for (var doc in snapshot.docs) {
+            try {
+              final data = doc.data() as Map<String, dynamic>;
+              final convId = doc.id;
+              final archivedBy = List<String>.from(data['archivedBy'] ?? []);
+              
+              // 보관된 대화방은 제외
+              if (archivedBy.contains(currentUser.uid)) {
+                continue;
+              }
+              
+              // 내가 나간 대화방 체크
+              final userLeftAt = data['userLeftAt'];
+              final lastMessageTime = data['lastMessageTime'];
+              
+              if (userLeftAt != null && lastMessageTime != null) {
+                if (userLeftAt[currentUser.uid] != null) {
+                  final userLeftTime = (userLeftAt[currentUser.uid] as Timestamp).toDate();
+                  final lastMsgTime = (lastMessageTime as Timestamp).toDate();
+                  
+                  if (lastMsgTime.compareTo(userLeftTime) < 0) {
+                    continue; // 나간 이후 새 메시지 없음
+                  }
+                }
+              }
+              
+              final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
+              final myUnread = unreadCount[currentUser.uid] ?? 0;
+              if (myUnread > 0) {
+                print('  ✅ $convId: $myUnread개 (실제 배지에 포함됨)');
+              }
+            } catch (e) {
+              // 오류는 무시하고 계속 진행
+            }
+          }
+        } else {
+          print('  (배지에 포함된 대화방 없음)');
+        }
+        print('🔢 최종 배지 숫자: $totalUnread');
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        return totalUnread;
+      } catch (e) {
+        print('❌ getTotalUnreadCount 오류: $e');
+        print('  - 스택 트레이스: ${e.toString()}');
+        return 0;
+      }
+    }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
 
   /// 캐시 클리어
   void clearCache() {
     _conversationCache.clear();
     _messageCache.clear();
+  }
+
+  /// 대화방의 실제 읽지 않은 메시지 수 계산 (정확한 값) - 일회성 조회
+  /// 상대방이 나에게 보낸 메시지 중 내가 읽지 않은 것만 카운트
+  /// 기존 DM 기능에 영향 없음 (읽기 전용)
+  Future<int> getActualUnreadCount(String conversationId, String currentUserId) async {
+    try {
+      if (DMFeatureFlags.enableDebugLogs) {
+        print('🔍 실제 메시지 카운트 시작: $conversationId');
+      }
+      
+      final messagesSnapshot = await _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .where('senderId', isNotEqualTo: currentUserId)  // 상대방이 보낸 메시지
+          .where('isRead', isEqualTo: false)               // 읽지 않은 메시지
+          .get();
+      
+      final count = messagesSnapshot.docs.length;
+      
+      if (DMFeatureFlags.enableDebugLogs) {
+        print('✅ 실제 메시지 카운트 완료: $count개');
+      }
+      
+      return count;
+    } catch (e) {
+      print('❌ 실제 메시지 카운트 조회 실패: $e');
+      return 0;
+    }
+  }
+
+  /// 대화방의 실제 읽지 않은 메시지 수 스트림 (실시간 업데이트)
+  /// 상대방이 나에게 보낸 메시지 중 내가 읽지 않은 것만 카운트
+  /// 기존 DM 기능에 영향 없음 (읽기 전용)
+  Stream<int> getActualUnreadCountStream(String conversationId, String currentUserId) {
+    return _firestore
+        .collection('conversations')
+        .doc(conversationId)
+        .collection('messages')
+        .where('senderId', isNotEqualTo: currentUserId)  // 상대방이 보낸 메시지
+        .where('isRead', isEqualTo: false)               // 읽지 않은 메시지
+        .snapshots()
+        .map((snapshot) {
+          final count = snapshot.docs.length;
+          
+          if (DMFeatureFlags.enableDebugLogs) {
+            print('🔄 배지 스트림 업데이트: $conversationId - $count개');
+          }
+          
+          return count;
+        })
+        .distinct(); // 중복 값 제거로 불필요한 리빌드 방지
   }
 }
 

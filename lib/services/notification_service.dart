@@ -216,8 +216,9 @@ class NotificationService {
         .collection('notifications')
         .where('userId', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
-        .snapshots()
+        .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
+          print('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
           return snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               .toList();
@@ -235,8 +236,12 @@ class NotificationService {
         .collection('notifications')
         .where('userId', isEqualTo: user.uid)
         .where('isRead', isEqualTo: false)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.length);
+        .snapshots(includeMetadataChanges: true)
+        .map((snapshot) {
+          print('📬 읽지 않은 알림 수 업데이트: ${snapshot.docs.length}개');
+          return snapshot.docs.length;
+        })
+        .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
 
   // 알림 읽음 상태로 변경

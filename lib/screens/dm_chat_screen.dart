@@ -11,7 +11,6 @@ import '../services/dm_service.dart';
 import '../services/post_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/dm_feature_flags.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'post_detail_screen.dart';
@@ -40,7 +39,7 @@ class DMChatScreen extends StatefulWidget {
   State<DMChatScreen> createState() => _DMChatScreenState();
 }
 
-class _DMChatScreenState extends State<DMChatScreen> with WidgetsBindingObserver {
+class _DMChatScreenState extends State<DMChatScreen> {
   final DMService _dmService = DMService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   final _messageController = TextEditingController();
@@ -57,15 +56,6 @@ class _DMChatScreenState extends State<DMChatScreen> with WidgetsBindingObserver
   @override
   void initState() {
     super.initState();
-    
-    // 추가: 라이프사이클 관찰자 등록 (플래그로 제어, 기존 기능에 영향 없음)
-    if (DMFeatureFlags.enableLifecycleRead) {
-      WidgetsBinding.instance.addObserver(this);
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('🔄 라이프사이클 관찰자 등록됨 - 앱 포커스 변경 시 읽음 처리');
-      }
-    }
-    
     _initConversationState();
   }
   Future<void> _initConversationState() async {
@@ -206,14 +196,6 @@ class _DMChatScreenState extends State<DMChatScreen> with WidgetsBindingObserver
 
   @override
   void dispose() {
-    // 추가: 라이프사이클 관찰자 해제 (플래그로 제어, 기존 기능에 영향 없음)
-    if (DMFeatureFlags.enableLifecycleRead) {
-      WidgetsBinding.instance.removeObserver(this);
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('🔄 라이프사이클 관찰자 해제됨');
-      }
-    }
-    
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -276,26 +258,6 @@ class _DMChatScreenState extends State<DMChatScreen> with WidgetsBindingObserver
       }
     } catch (e) {
       print('⚠️ 읽음 처리 중 오류: $e');
-    }
-  }
-
-  /// 추가: 앱 라이프사이클 변경 감지 (플래그로 제어, 기존 기능에 영향 없음)
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    
-    if (!DMFeatureFlags.enableLifecycleRead) return;
-    
-    if (DMFeatureFlags.enableDebugLogs) {
-      print('🔄 앱 라이프사이클 변경: $state');
-    }
-    
-    // 앱이 포어그라운드로 돌아올 때 읽음 처리
-    if (state == AppLifecycleState.resumed && mounted) {
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('🔄 앱 포어그라운드 복귀 - 읽음 처리 실행');
-      }
-      _markAsRead();
     }
   }
 

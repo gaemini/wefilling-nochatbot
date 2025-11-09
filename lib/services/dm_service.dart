@@ -8,7 +8,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'notification_service.dart';
-import 'fcm_direct_service.dart';
 import '../utils/dm_feature_flags.dart';
 
 class DMService {
@@ -16,7 +15,6 @@ class DMService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static bool _rulesTestDone = false;
   final NotificationService _notificationService = NotificationService();
-  final FCMDirectService _fcmDirectService = FCMDirectService();
 
   // 캐시 관리
   final Map<String, Conversation> _conversationCache = {};
@@ -1103,30 +1101,6 @@ class DMService {
             } else {
               print('⚠️ 알림이 비활성화되었습니다: $participantId');
             }
-
-            // 추가: FCM 직접 전송 (플래그로 제어, 기존 기능에 영향 없음)
-            if (DMFeatureFlags.enableDirectFCM) {
-              try {
-                final fcmSuccess = await _fcmDirectService.sendDirectFCM(
-                  targetUserId: participantId,
-                  title: '$senderName님의 메시지',
-                  message: text.length > 50 ? '${text.substring(0, 50)}...' : text,
-                  data: {
-                    'conversationId': conversationId,
-                    'senderId': currentUser.uid,
-                    'senderName': senderName,
-                  },
-                );
-                if (fcmSuccess) {
-                  print('✅ FCM 직접 전송 성공: $participantId');
-                } else {
-                  print('⚠️ FCM 직접 전송 실패 (무시): $participantId');
-                }
-              } catch (e) {
-                print('⚠️ FCM 직접 전송 오류 (무시): userId=$participantId, error=$e');
-                // FCM 직접 전송 실패는 메시지 전송에 영향을 주지 않음
-              }
-            }
           } catch (e) {
             print('⚠️ 알림 전송 실패 (무시): userId=$participantId, error=$e');
             // 알림 실패는 메시지 전송에 영향을 주지 않음
@@ -1327,16 +1301,6 @@ class DMService {
         .where('participants', arrayContains: currentUser.uid)
         .snapshots(includeMetadataChanges: true);
 
-    // 추가: 주기적 새로고침 (플래그로 제어, 기존 기능에 영향 없음)
-    // 현재는 Stream 병합 메서드 호환성 문제로 비활성화
-    // TODO: rxdart 패키지 추가 후 활성화 예정
-    if (DMFeatureFlags.enablePeriodicSync && false) {
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('🔄 배지 주기적 동기화 활성화됨 (30초마다)');
-      }
-      // 주기적 새로고침 로직은 추후 구현
-    }
-
     return baseStream.asyncMap((snapshot) async {
       try {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -1456,36 +1420,6 @@ class DMService {
   void clearCache() {
     _conversationCache.clear();
     _messageCache.clear();
-  }
-
-  /// 대화방의 실제 읽지 않은 메시지 수 계산 (정확한 값) - 일회성 조회
-  /// 상대방이 나에게 보낸 메시지 중 내가 읽지 않은 것만 카운트
-  /// 기존 DM 기능에 영향 없음 (읽기 전용)
-  Future<int> getActualUnreadCount(String conversationId, String currentUserId) async {
-    try {
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('🔍 실제 메시지 카운트 시작: $conversationId');
-      }
-      
-      final messagesSnapshot = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .collection('messages')
-          .where('senderId', isNotEqualTo: currentUserId)  // 상대방이 보낸 메시지
-          .where('isRead', isEqualTo: false)               // 읽지 않은 메시지
-          .get();
-      
-      final count = messagesSnapshot.docs.length;
-      
-      if (DMFeatureFlags.enableDebugLogs) {
-        print('✅ 실제 메시지 카운트 완료: $count개');
-      }
-      
-      return count;
-    } catch (e) {
-      print('❌ 실제 메시지 카운트 조회 실패: $e');
-      return 0;
-    }
   }
 
   /// 대화방의 실제 읽지 않은 메시지 수 스트림 (실시간 업데이트)

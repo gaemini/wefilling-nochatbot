@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'dart:math' as math;
 import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
 import '../services/notification_service.dart';
 import '../services/dm_service.dart';
 import '../widgets/notification_badge.dart';
@@ -300,7 +301,7 @@ service firebase.storage {
               children: [
                 Icon(Icons.warning_amber_rounded, color: Colors.amber),
                 SizedBox(width: 10),
-                Text('이미지 표시 문제 감지'),
+                Text(AppLocalizations.of(context)!.imageDisplayIssueDetected),
               ],
             ),
             content: Text(
@@ -311,7 +312,7 @@ service firebase.storage {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text('나중에'),
+                child: Text(AppLocalizations.of(context)!.later),
               ),
               ElevatedButton(
                 onPressed: () {
@@ -326,7 +327,7 @@ service firebase.storage {
                     ),
                   );
                 },
-                child: Text('문제 해결하기'),
+                child: Text(AppLocalizations.of(context)!.troubleshoot),
               ),
             ],
           ),
@@ -375,7 +376,7 @@ service firebase.storage {
                     const SizedBox(width: 12),
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('확인'),
+                      child: Text(AppLocalizations.of(context)!.confirm),
                     ),
                   ],
                 ),

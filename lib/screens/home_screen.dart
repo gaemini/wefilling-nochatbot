@@ -405,11 +405,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 카테고리 필터
   Widget _buildCategoryFilter() {
     final categories = [
-      {'key': 'all', 'label': '전체'},
-      {'key': 'study', 'label': '스터디'},
-      {'key': 'meal', 'label': '식사'},
-      {'key': 'cafe', 'label': '카페'},
-      {'key': 'culture', 'label': '문화'},
+      {'key': 'all', 'label': AppLocalizations.of(context)!.all},
+      {'key': 'study', 'label': AppLocalizations.of(context)!.study},
+      {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
+      {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
+      {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
     ];
 
     return Container(
@@ -884,7 +884,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         builder: (context, snapshot) {
                           final participantCount = snapshot.data ?? meetup.currentParticipants;
                           return Text(
-                            '$participantCount/${meetup.maxParticipants}명',
+                            AppLocalizations.of(context)!.participantCount('$participantCount', '${meetup.maxParticipants}'),
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 14,
@@ -1009,9 +1009,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               color: Color(0xFFFF8A65), // 주황색
             ),
             const SizedBox(width: 6),
-            const Text(
-              '친구 공개',
-              style: TextStyle(
+            Text(
+              AppLocalizations.of(context)!.friendsOnlyBadge,
+              style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
                 fontWeight: FontWeight.w700,

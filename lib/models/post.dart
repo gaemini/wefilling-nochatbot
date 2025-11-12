@@ -72,11 +72,11 @@ class Post {
       return DateFormat('yyyy.MM.dd').format(createdAt);
     } else if (difference.inDays > 0) {
       // 복수형 처리를 위해 지역화 함수 호출 (숫자를 인자로 전달)
-      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
-    } else if (difference.inHours > 0) {
-      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-    } else if (difference.inMinutes > 0) {
-      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+        return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+      } else if (difference.inHours > 0) {
+        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+      } else if (difference.inMinutes > 0) {
+        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }

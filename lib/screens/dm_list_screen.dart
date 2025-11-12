@@ -166,11 +166,11 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildEmptyState(
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
-                ? (AppLocalizations.of(context)!.friends ?? "") 
-                : AppLocalizations.of(context)!.anonymousUser,
+                    ? AppLocalizations.of(context)!.friends
+                : 'Anonymous',
             subtitle: _filter == DMFilter.friends
                 ? AppLocalizations.of(context)!.noConversations
-                : '게시판에 올라온 익명의 작성자와 소통해보세요.',
+                : AppLocalizations.of(context)!.anonymousDescription,
           );
         }
 
@@ -244,7 +244,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 48,
                       alignment: Alignment.center,
                       child: Text(
-                        AppLocalizations.of(context)!.anonymousUser,
+                        'Anonymous',
                         style: TextStyle(
                             fontFamily: 'Pretendard',
                           fontSize: 16,
@@ -295,7 +295,7 @@ class _DMListScreenState extends State<DMListScreen> {
     final displayName = (dmTitle != null && dmTitle.isNotEmpty)
         ? '제목: $dmTitle'
         : (isAnonymous 
-            ? (AppLocalizations.of(context)!.anonymousUser ?? "") : otherUserName);
+            ? 'Anonymous' : otherUserName);
 
     // 🔥 핵심 변경: 실시간 배지 업데이트 (StreamBuilder)
     // 카카오톡처럼 읽음 처리 즉시 배지 사라짐
@@ -619,9 +619,9 @@ class _DMListScreenState extends State<DMListScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 child: Row(
                   children: [
-                    const Text(
-                      '친구 선택',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.friendSelection,
+                      style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 18,
                         fontWeight: FontWeight.w600,

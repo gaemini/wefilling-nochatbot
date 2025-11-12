@@ -9,44 +9,56 @@ import '../services/feature_flag_service.dart';
 
 class ProfileActionButtons extends StatelessWidget {
   final bool isOwnProfile;
-  final bool isFollowing;
   final VoidCallback? onEditProfile;
-  final VoidCallback? onFollow;
-  final VoidCallback? onUnfollow;
+  final VoidCallback? onRelationshipAction;
   final VoidCallback? onMessage;
   final VoidCallback? onShare;
   final VoidCallback? onMoreActions;
+  final String? relationshipActionLabel;
+  final IconData? relationshipActionIcon;
+  final bool isRelationshipActionPrimary;
+  final bool isRelationshipActionEnabled;
+  final bool isRelationshipActionLoading;
+  final bool canMessage;
+  final bool isMessageLoading;
+  final bool isShareLoading;
 
   const ProfileActionButtons({
     Key? key,
     required this.isOwnProfile,
-    this.isFollowing = false,
     this.onEditProfile,
-    this.onFollow,
-    this.onUnfollow,
+    this.onRelationshipAction,
     this.onMessage,
     this.onShare,
     this.onMoreActions,
+    this.relationshipActionLabel,
+    this.relationshipActionIcon,
+    this.isRelationshipActionPrimary = true,
+    this.isRelationshipActionEnabled = true,
+    this.isRelationshipActionLoading = false,
+    this.canMessage = true,
+    this.isMessageLoading = false,
+    this.isShareLoading = false,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // Feature Flag 체크
-    if (!FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
+    if (!FeatureFlagService()
+        .isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
       return const SizedBox.shrink();
     }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: isOwnProfile ? _buildOwnProfileButtons(context) : _buildOtherProfileButtons(context),
+      child: isOwnProfile
+          ? _buildOwnProfileButtons(context)
+          : _buildOtherProfileButtons(context),
     );
   }
 
-  /// 본인 프로필 버튼들
   Widget _buildOwnProfileButtons(BuildContext context) {
     return Row(
       children: [
-        // 프로필 편집 버튼
         Expanded(
           flex: 3,
           child: _buildActionButton(
@@ -57,23 +69,18 @@ class ProfileActionButtons extends StatelessWidget {
             isPrimary: false,
           ),
         ),
-        
         const SizedBox(width: 8),
-        
-        // 공유 버튼
         Expanded(
           flex: 1,
           child: _buildIconButton(
             context,
             icon: Icons.share_outlined,
-            onTap: onShare,
+            onTap: isShareLoading ? null : onShare,
             semanticLabel: '프로필 공유',
+            isLoading: isShareLoading,
           ),
         ),
-        
         const SizedBox(width: 8),
-        
-        // 더보기 버튼
         Expanded(
           flex: 1,
           child: _buildIconButton(
@@ -87,52 +94,51 @@ class ProfileActionButtons extends StatelessWidget {
     );
   }
 
-  /// 다른 사용자 프로필 버튼들
   Widget _buildOtherProfileButtons(BuildContext context) {
+    final label = relationshipActionLabel ?? '팔로우';
+    final icon = relationshipActionIcon ?? Icons.person_add_outlined;
+    final isPrimary = isRelationshipActionPrimary;
+    final isRelationshipEnabled =
+        isRelationshipActionEnabled && !isRelationshipActionLoading;
+    final canSendMessage = canMessage && !isMessageLoading;
+
     return Row(
       children: [
-        // 팔로우/언팔로우 버튼
         Expanded(
           flex: 2,
           child: _buildActionButton(
             context,
-            label: isFollowing ? '팔로잉' : '팔로우',
-            icon: isFollowing ? Icons.person_remove_outlined : Icons.person_add_outlined,
-            onTap: isFollowing ? onUnfollow : onFollow,
-            isPrimary: !isFollowing,
+            label: label,
+            icon: icon,
+            onTap: isRelationshipEnabled ? onRelationshipAction : null,
+            isPrimary: isPrimary,
+            isLoading: isRelationshipActionLoading,
           ),
         ),
-        
         const SizedBox(width: 8),
-        
-        // 메시지 버튼
         Expanded(
           flex: 2,
           child: _buildActionButton(
             context,
             label: '메시지',
             icon: Icons.message_outlined,
-            onTap: onMessage,
+            onTap: canSendMessage ? onMessage : null,
             isPrimary: false,
+            isLoading: isMessageLoading,
           ),
         ),
-        
         const SizedBox(width: 8),
-        
-        // 공유 버튼
         Expanded(
           flex: 1,
           child: _buildIconButton(
             context,
             icon: Icons.share_outlined,
-            onTap: onShare,
+            onTap: isShareLoading ? null : onShare,
             semanticLabel: '프로필 공유',
+            isLoading: isShareLoading,
           ),
         ),
-        
         const SizedBox(width: 8),
-        
-        // 더보기 버튼
         Expanded(
           flex: 1,
           child: _buildIconButton(
@@ -146,19 +152,19 @@ class ProfileActionButtons extends StatelessWidget {
     );
   }
 
-  /// 액션 버튼 (텍스트 + 아이콘)
   Widget _buildActionButton(
     BuildContext context, {
     required String label,
     required IconData icon,
     required VoidCallback? onTap,
     required bool isPrimary,
+    bool isLoading = false,
   }) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
     return SizedBox(
-      height: 48, // 최소 48dp 터치 타깃
+      height: 48,
       child: isPrimary
           ? ElevatedButton.icon(
               onPressed: () {
@@ -172,13 +178,25 @@ class ProfileActionButtons extends StatelessWidget {
                 ),
                 elevation: 0,
               ),
-              icon: Icon(icon, size: 18),
-              label: Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              icon: isLoading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            colorScheme.onPrimary),
+                      ),
+                    )
+                  : Icon(icon, size: 18),
+              label: isLoading
+                  ? const SizedBox(width: 8)
+                  : Text(
+                      label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
             )
           : OutlinedButton.icon(
               onPressed: () {
@@ -194,29 +212,40 @@ class ProfileActionButtons extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              icon: Icon(icon, size: 18),
-              label: Text(
-                label,
-                style: theme.textTheme.labelMedium?.copyWith(
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              icon: isLoading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            colorScheme.onSurface),
+                      ),
+                    )
+                  : Icon(icon, size: 18),
+              label: isLoading
+                  ? const SizedBox(width: 8)
+                  : Text(
+                      label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
             ),
     );
   }
 
-  /// 아이콘 버튼 (아이콘만)
   Widget _buildIconButton(
     BuildContext context, {
     required IconData icon,
     required VoidCallback? onTap,
     required String semanticLabel,
+    bool isLoading = false,
   }) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
 
     return SizedBox(
-      height: 48, // 최소 48dp 터치 타깃
+      height: 48,
       width: 48,
       child: OutlinedButton(
         onPressed: () {
@@ -236,19 +265,27 @@ class ProfileActionButtons extends StatelessWidget {
         child: Semantics(
           label: semanticLabel,
           button: true,
-          child: Icon(
-            icon,
-            size: 20,
-          ),
+          child: isLoading
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(colorScheme.onSurface),
+                  ),
+                )
+              : Icon(
+                  icon,
+                  size: 20,
+                ),
         ),
       ),
     );
   }
 
-  /// 버튼 탭 처리 (햅틱 피드백 포함)
   void _handleButtonTap(VoidCallback? onTap) {
     if (onTap != null) {
-      // 햅틱 피드백
       HapticFeedback.lightImpact();
       onTap();
     }
@@ -290,9 +327,9 @@ class ProfileMoreActionsSheet extends StatelessWidget {
               borderRadius: BorderRadius.circular(2),
             ),
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 액션 리스트
           ..._buildActionItems(context),
         ],
@@ -329,7 +366,7 @@ class ProfileMoreActionsSheet extends StatelessWidget {
         onTap: onBlock,
         isDestructive: true,
       ));
-      
+
       items.add(_buildActionItem(
         context,
         icon: Icons.report_outlined,

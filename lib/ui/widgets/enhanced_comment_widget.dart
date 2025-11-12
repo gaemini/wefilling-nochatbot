@@ -64,22 +64,22 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
-            children: const [
-              Icon(Icons.report_gmailerrorred_outlined, color: Colors.red, size: 22),
-              SizedBox(width: 8),
-              Text('신고'),
+            children: [
+              const Icon(Icons.report_gmailerrorred_outlined, color: Colors.red, size: 22),
+              const SizedBox(width: 8),
+              Text(AppLocalizations.of(context)!.report),
             ],
           ),
-          content: const Text('해당 댓글을 신고하시겠습니까?'),
+          content: Text(AppLocalizations.of(context)!.reportConfirm),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              child: const Text('취소'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-              child: const Text('신고'),
+              child: Text(AppLocalizations.of(context)!.report),
             ),
           ],
         );
@@ -89,7 +89,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (confirmed == true && mounted) {
       // 실제 신고 로직 연동 전까지 안내만 표시
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('신고가 접수되었습니다')),
+        SnackBar(content: Text(AppLocalizations.of(context)!.reportSubmitted)),
       );
     }
   }
@@ -124,7 +124,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('댓글 작성자 정보가 올바르지 않습니다'),
+              content: Text(AppLocalizations.of(context)!.reportError),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -374,7 +374,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                 Flexible(
                                   child: FutureBuilder<String>(
                                     future: widget.isAnonymousPost
-                                        ? Future.value(widget.getDisplayName?.call(widget.comment) ?? '익명')
+                                        ? Future.value(widget.getDisplayName?.call(widget.comment) ?? AppLocalizations.of(context)!.anonymous)
                                         : _getCurrentNickname(widget.comment.userId),
                                     builder: (context, snapshot) {
                                       final displayName = snapshot.data ?? 
@@ -485,7 +485,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                   children: [
                                     const Icon(Icons.chat_bubble_outline, size: 18),
                                     const SizedBox(width: 12),
-                                    Text('Direct message'),
+                                    Text(AppLocalizations.of(context)!.directMessage),
                                   ],
                                 ),
                               ),
@@ -496,7 +496,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                                   children: [
                                     const Icon(Icons.report_gmailerrorred_outlined, size: 18),
                                     const SizedBox(width: 12),
-                                    const Text('신고'),
+                                    Text(AppLocalizations.of(context)!.report),
                                   ],
                                 ),
                               ),

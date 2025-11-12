@@ -136,7 +136,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             ),
             const SizedBox(width: 6),
             Text(
-              '친구 공개',
+              AppLocalizations.of(context)!.friendsOnly,
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
@@ -167,7 +167,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             ),
             const SizedBox(width: 6),
             Text(
-              '익명',
+              AppLocalizations.of(context)!.anonymous,
         style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12, // 통일된 크기
@@ -240,7 +240,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     // 작성자 이름이 비어있거나 "Deleted"인 경우 탈퇴한 계정으로 표시
     String authorName;
     if (isAnonymous) {
-      authorName = '익명';
+      authorName = AppLocalizations.of(context)!.anonymous;
     } else if (post.author.isEmpty || post.author == 'Deleted') {
       authorName = AppLocalizations.of(context)!.deletedAccount ?? "";
     } else {
@@ -481,9 +481,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return '$year.$month.$day';
       }
     } else if (difference.inHours > 0) {
-      return AppLocalizations.of(context)!.hoursAgo(difference.inHours) ?? "";
-    } else if (difference.inMinutes > 0) {
-      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes) ?? "";
+        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+      } else if (difference.inMinutes > 0) {
+        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow ?? "";
     }

@@ -51,7 +51,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get loginError => '로그인 중 오류가 발생했습니다';
 
   @override
-  String get loginRequired => '로그인이 필요한 기능입니다';
+  String get loginRequired => '로그인이 필요합니다';
 
   @override
   String get emailSent => '이메일을 보냈습니다. 메일함을 확인해주세요.';
@@ -66,7 +66,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendResetEmailConfirm => '비밀번호 재설정 이메일을 보내시겠습니까?';
 
   @override
-  String get board => '게시판';
+  String get board => '게시글';
 
   @override
   String get meetup => '모임';
@@ -108,7 +108,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get termsOfService => '서비스 이용약관';
 
   @override
-  String get deleteAccount => '회원 탈퇴';
+  String get deleteAccount => '계정 삭제';
 
   @override
   String get deleteAccountConfirm => '정말로 탈퇴하시겠습니까? 모든 데이터가 삭제됩니다.';
@@ -183,7 +183,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get registration => '등록';
 
   @override
-  String get back => '뒤로';
+  String get back => '이전';
 
   @override
   String get next => '다음';
@@ -312,7 +312,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get comment => '댓글';
 
   @override
-  String get comments => '댓글';
+  String get comments => 'Comments';
 
   @override
   String get writeComment => '댓글을 입력하세요...';
@@ -336,7 +336,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get report => '신고';
 
   @override
-  String get reportSubmitted => '신고가 접수되었습니다.';
+  String get reportSubmitted => '신고가 접수되었습니다';
 
   @override
   String get reportAction => '신고하기';
@@ -351,7 +351,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get visibilityScope => '공개 범위';
 
   @override
-  String get publicPost => '전체 공개';
+  String get publicPost => '전구 공개';
 
   @override
   String get categorySpecific => '카테고리별';
@@ -855,24 +855,42 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String daysAgo(int count) {
-    return '$count일 전';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count일 전',
+      one: '$count일 전',
+    );
+    return '$_temp0';
   }
 
   @override
   String hoursAgo(int count) {
-    return '$count시간 전';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count시간 전',
+      one: '$count시간 전',
+    );
+    return '$_temp0';
   }
 
   @override
   String minutesAgo(int count) {
-    return '$count분 전';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count분 전',
+      one: '$count분 전',
+    );
+    return '$_temp0';
   }
 
   @override
-  String get justNow => '방금';
+  String get justNow => '방금 전';
 
   @override
-  String get markAllAsRead => '모든 알림 읽음';
+  String get markAllAsRead => '모두 읽음';
 
   @override
   String get notificationLoadError => '알림을 불러오는 중 오류가 발생했습니다';
@@ -911,7 +929,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commentSubmitFailed => '댓글 등록에 실패했습니다.';
 
   @override
-  String get enterComment => '댓글을 입력하세요...';
+  String get enterComment => 'Enter comment...';
 
   @override
   String get unsave => '저장 취소';
@@ -962,7 +980,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get nationality => '국적';
 
   @override
-  String get meetupDetails => '모임 설명';
+  String get meetupDetails => '모임 상세';
 
   @override
   String get cancelMeetupButton => '모임 취소';
@@ -1853,7 +1871,14 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String likesCount(int count) {
-    return '좋아요 $count개';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '좋아요 $count개',
+      one: '좋아요 1개',
+      zero: '좋아요 0개',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -1865,7 +1890,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noCommentsYet => '첫 댓글을 남겨보세요';
 
   @override
-  String get beFirstToComment => '가장 먼저 댓글을 작성해보세요';
+  String get beFirstToComment => 'Be the first to comment!';
 
   @override
   String get commentFeatureComingSoon => '댓글 기능은 곧 제공될 예정입니다';
@@ -1908,7 +1933,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dm => 'DM';
 
   @override
-  String get directMessage => '다이렉트 메시지';
+  String get directMessage => '쪽지 보내기';
 
   @override
   String get newMessage => '새 메시지';
@@ -1917,7 +1942,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendMessage => '메시지 보내기';
 
   @override
-  String get typeMessage => '메시지를 입력하세요';
+  String get typeMessage => 'Type a message';
 
   @override
   String get noConversations => '대화 내역이 없습니다';
@@ -1932,7 +1957,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get blockedUser => '차단된 사용자입니다';
 
   @override
-  String get anonymousUser => '익명';
+  String anonymousUser(String number) {
+    return '익명$number';
+  }
 
   @override
   String get anonymousMessage => '익명의 메시지';
@@ -1972,7 +1999,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noMessages => '아직 메시지가 없습니다';
 
   @override
-  String get blockThisUser => '이 사용자 차단하기';
+  String get blockThisUser => 'Block this user';
 
   @override
   String get blockConfirm => '정말로 차단하시겠습니까?';
@@ -1981,5 +2008,193 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dmNotAvailable => '메시지 기능을 사용할 수 없습니다';
 
   @override
-  String get friendsOnly => '친구에게만 메시지를 보낼 수 있습니다';
+  String get friendsOnly => '친구 공개';
+
+  @override
+  String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.';
+
+  @override
+  String get none => '없음';
+
+  @override
+  String get deleteReasonNoLongerUse => '더 이상 사용하지 않아요';
+
+  @override
+  String get deleteReasonMissingFeatures => '원하는 기능이 없어요';
+
+  @override
+  String get deleteReasonPrivacyConcerns => '개인정보 보호가 걱정돼요';
+
+  @override
+  String get deleteReasonSwitchingService => '다른 서비스를 사용할 거예요';
+
+  @override
+  String get deleteReasonNewAccount => '계정을 새로 만들고 싶어요';
+
+  @override
+  String get deleteReasonOther => '기타';
+
+  @override
+  String get selectDeleteReason => '탈퇴 사유 선택';
+
+  @override
+  String get otherReasonOptional => '기타 사유 (선택)';
+
+  @override
+  String get deleteDataNotice => '삭제될 데이터 안내';
+
+  @override
+  String get postDeleteTip => '💡 게시글을 삭제하고 싶다면? 탈퇴하기 전에 \"내 게시글 관리\"에서 삭제하세요!';
+
+  @override
+  String get finalWarning => '최종 경고';
+
+  @override
+  String get reallyDeleteAccount => '정말로 계정을 삭제하시겠습니까?';
+
+  @override
+  String get actionCannotBeUndone => '이 작업은 되돌릴 수 없습니다';
+
+  @override
+  String get accountRecoveryImpossible => '❌ 계정 복구 불가능';
+
+  @override
+  String get dataPermanentlyDeleted => '❌ 데이터 영구 삭제';
+
+  @override
+  String get reRegistrationRequired => '❌ 재가입 필요';
+
+  @override
+  String get postsAnonymized => '✅ 게시글 익명 처리';
+
+  @override
+  String get deleteReasonLabel => '탈퇴 사유';
+
+  @override
+  String get postsAnonymizedAutomatic => '게시글: 익명 처리 (자동)';
+
+  @override
+  String get deletionFailed => '삭제 실패';
+
+  @override
+  String get accountDeletionIrreversible => '⚠️ 계정 삭제 시 복구가 불가능합니다';
+
+  @override
+  String get immediatelyDeleted => '즉시 삭제';
+
+  @override
+  String get anonymized => '익명 처리';
+
+  @override
+  String get identityVerification => '본인 확인';
+
+  @override
+  String get reLoginForVerification => '본인 확인을 위해 Google 계정으로 다시 로그인합니다.';
+
+  @override
+  String get deleteButtonGoogleLogin =>
+      '\"계정 삭제\" 버튼을 누르면 Google 로그인 창이 표시됩니다.';
+
+  @override
+  String get accountDeletedImmediatelyAfterAuth => '⚠️ 재인증 후 계정이 즉시 삭제됩니다';
+
+  @override
+  String get reallyDelete => '정말 삭제하시겠습니까?';
+
+  @override
+  String get deleteConfirmationMessage =>
+      '이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 게시글은 \"탈퇴한 사용자\"로 표시됩니다.';
+
+  @override
+  String get accountDeleted => '계정이 삭제되었습니다';
+
+  @override
+  String get personalInfo => '개인정보 (이메일, 이름, 프로필 사진, 전화번호, 생년월일, 학교 정보, 자기소개)';
+
+  @override
+  String get friendRelationships => '친구 관계 (모든 친구 목록, 친구 요청)';
+
+  @override
+  String get meetups => '모임 (주최한 모임 삭제, 참여 중인 모임에서 자동 탈퇴)';
+
+  @override
+  String get uploadedFiles => '업로드한 파일 (프로필 사진, 게시글 이미지, 모든 업로드 파일)';
+
+  @override
+  String get postsAndComments => '게시글 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)';
+
+  @override
+  String get imageDisplayIssueDetected => '이미지 표시 문제 감지';
+
+  @override
+  String get optional => '(선택)';
+
+  @override
+  String get publicMeeting => '전구 공개';
+
+  @override
+  String participantCount(String current, String total) {
+    return '$current/$total명';
+  }
+
+  @override
+  String get leaveChatRoom => '채팅방 나가기';
+
+  @override
+  String get bioPlaceholder => '한 줄 소개를 입력하세요 (선택)';
+
+  @override
+  String userMessage(Object user) {
+    return '$user님의 메시지';
+  }
+
+  @override
+  String get imageSelectionError => '이미지 선택 중 오류가 발생했습니다';
+
+  @override
+  String get meetupUpdatedSuccess => '모임이 성공적으로 수정되었습니다.';
+
+  @override
+  String get meetupUpdateError => '모임 수정 중 오류가 발생했습니다';
+
+  @override
+  String get meetupImage => '모임 이미지';
+
+  @override
+  String get nicknameQuestion => '닉네임이 무엇인가요?';
+
+  @override
+  String get notification => '알림';
+
+  @override
+  String messageFrom(Object user) {
+    return '$user님의 메시지';
+  }
+
+  @override
+  String get reportComment => '댓글 신고';
+
+  @override
+  String get reportConfirm => '해당 댓글을 신고하시겠습니까?';
+
+  @override
+  String get reportError => '댓글 작성자 정보가 올바르지 않습니다';
+
+  @override
+  String get cafe => '카페';
+
+  @override
+  String get friendsOnlyBadge => '친구 공개';
+
+  @override
+  String get ukraine => '우크라이나';
+
+  @override
+  String get editMeetupButton => '모임 수정하기';
+
+  @override
+  String get anonymousDescription => '게시판에 올라온 익명의 작성자와 소통해보세요.';
+
+  @override
+  String get friendSelection => '친구 선택';
 }

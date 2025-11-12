@@ -54,7 +54,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _titleController.text = widget.meetup.title;
     _descriptionController.text = widget.meetup.description;
     _locationController.text = widget.meetup.location;
-    _timeController.text = widget.meetup.time;
+    
+    // 시간 필드 다국어 처리
+    String timeText = widget.meetup.time;
+    if (timeText == '미정') {
+      timeText = AppLocalizations.of(context)!.undecided;
+    }
+    _timeController.text = timeText;
     _selectedMaxParticipants = widget.meetup.maxParticipants;
     _selectedDate = widget.meetup.date;
     _existingImageUrl = widget.meetup.thumbnailImageUrl;
@@ -97,7 +103,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('이미지 선택 중 오류가 발생했습니다: $e'),
+            content: Text('${AppLocalizations.of(context)!.imageSelectionError}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -143,18 +149,17 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   }
 
   String _getCategoryDisplayText(String categoryKey) {
-    final currentLang = Localizations.localeOf(context).languageCode;
     switch (categoryKey) {
       case 'study':
-        return currentLang == 'ko' ? '스터디' : 'Study';
+        return AppLocalizations.of(context)!.study;
       case 'meal':
-        return currentLang == 'ko' ? '식사' : 'Meal';
+        return AppLocalizations.of(context)!.meal;
       case 'cafe':
-        return currentLang == 'ko' ? '카페' : 'Cafe';
+        return AppLocalizations.of(context)!.cafe;
       case 'culture':
-        return currentLang == 'ko' ? '문화' : 'Culture';
+        return AppLocalizations.of(context)!.culture;
       case 'etc':
-        return currentLang == 'ko' ? '기타' : 'Other';
+        return AppLocalizations.of(context)!.other;
       default:
         return categoryKey;
     }
@@ -199,11 +204,17 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       String? imageUrl = await _uploadImage();
 
       // Firebase에서 모임 업데이트
+      // 시간 필드 다국어 처리 (저장 시)
+      String timeToSave = _timeController.text.trim();
+      if (timeToSave == AppLocalizations.of(context)!.undecided) {
+        timeToSave = '미정';
+      }
+      
       final updateData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
         'location': _locationController.text.trim(),
-        'time': _timeController.text.trim(),
+        'time': timeToSave,
         'maxParticipants': _selectedMaxParticipants,
         'date': Timestamp.fromDate(_selectedDate),
         'category': _selectedCategory,
@@ -222,8 +233,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('모임이 성공적으로 수정되었습니다.'),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.meetupUpdatedSuccess),
             backgroundColor: Colors.green,
           ),
         );
@@ -233,7 +244,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('모임 수정 중 오류가 발생했습니다: $e'),
+            content: Text('${AppLocalizations.of(context)!.meetupUpdateError}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -261,7 +272,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          l10n?.editMeetup ?? '모임 수정',
+          AppLocalizations.of(context)!.editMeetup,
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
@@ -283,7 +294,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     ),
                   )
                 : Text(
-                    '저장',
+                    AppLocalizations.of(context)!.save,
                     style: TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -302,7 +313,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 모임 제목
-              _buildLabel('모임 제목'),
+              _buildLabel(AppLocalizations.of(context)!.meetupTitle),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _titleController,
@@ -321,14 +332,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 24),
               
               // 썸네일 이미지
-              _buildLabel('썸네일 이미지 (선택)'),
+              _buildLabel('${AppLocalizations.of(context)!.thumbnailImage} (${AppLocalizations.of(context)!.optional})'),
               const SizedBox(height: 8),
               _buildImagePicker(),
               
               const SizedBox(height: 24),
               
               // 모임 설명
-              _buildLabel('모임 설명'),
+              _buildLabel(AppLocalizations.of(context)!.meetupDescription),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _descriptionController,
@@ -345,7 +356,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 24),
               
               // 카테고리
-              _buildLabel('카테고리'),
+              _buildLabel(AppLocalizations.of(context)!.category),
               const SizedBox(height: 8),
               _buildDropdownField(
                 value: _selectedCategory,
@@ -363,21 +374,21 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 24),
               
               // 날짜
-              _buildLabel('날짜'),
+              _buildLabel(AppLocalizations.of(context)!.date),
               const SizedBox(height: 8),
               _buildDateField(),
               
               const SizedBox(height: 24),
               
               // 시간
-              _buildLabel('시간'),
+              _buildLabel(AppLocalizations.of(context)!.time),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _timeController,
                 hintText: '12:00',
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '시간을 입력해주세요';
+                    return AppLocalizations.of(context)!.pleaseEnterTime;
                   }
                   return null;
                 },
@@ -386,14 +397,14 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 24),
               
               // 장소
-              _buildLabel('장소'),
+              _buildLabel(AppLocalizations.of(context)!.location),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _locationController,
                 hintText: widget.meetup.location,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '장소를 입력해주세요';
+                    return AppLocalizations.of(context)!.pleaseEnterLocation;
                   }
                   return null;
                 },
@@ -425,8 +436,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                             strokeWidth: 2.5,
                           ),
                         )
-                      : const Text(
-                          '모임 수정하기',
+                      : Text(
+                          AppLocalizations.of(context)!.editMeetupButton,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 16,

@@ -53,7 +53,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loginError => 'An error occurred during login';
 
   @override
-  String get loginRequired => 'Login required for this feature';
+  String get loginRequired => 'Login is required';
 
   @override
   String get emailSent => 'Email sent. Please check your inbox.';
@@ -339,7 +339,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get report => 'Report';
 
   @override
-  String get reportSubmitted => 'Report submitted.';
+  String get reportSubmitted => 'Report has been submitted';
 
   @override
   String get reportAction => 'Report';
@@ -747,7 +747,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get description => 'Description';
 
   @override
-  String get korean => '한국어';
+  String get korean => 'Korean';
 
   @override
   String get english => 'English';
@@ -771,7 +771,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get enterMeetupLocation => 'Enter meetup location';
 
   @override
-  String get pleaseEnterLocation => 'Please enter a location';
+  String get pleaseEnterLocation => 'Please enter location';
 
   @override
   String get timeSelection => 'Time Selection';
@@ -868,17 +868,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String daysAgo(int count) {
-    return '${count}d ago';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '${count}d ago',
+      one: '${count}d ago',
+    );
+    return '$_temp0';
   }
 
   @override
   String hoursAgo(int count) {
-    return '${count}h ago';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '${count}h ago',
+      one: '${count}h ago',
+    );
+    return '$_temp0';
   }
 
   @override
   String minutesAgo(int count) {
-    return '${count}m ago';
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '${count}m ago',
+      one: '${count}m ago',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -985,7 +1003,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cancelMeetupFailed => 'Failed to cancel meetup. Please try again.';
 
   @override
-  String get peopleUnit => ' people';
+  String get peopleUnit => 'people';
 
   @override
   String get openStatus => 'Open';
@@ -1665,7 +1683,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get imagePickFailed => 'Unable to select image';
 
   @override
-  String get imageUploadFailed => 'Failed to upload image';
+  String get imageUploadFailed => 'Image upload failed';
 
   @override
   String get pleaseSelectPhoto => 'Please select a photo';
@@ -1885,7 +1903,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pleaseEnterDescription => 'Please enter a description';
 
   @override
-  String get pleaseEnterTime => 'Please enter a time';
+  String get pleaseEnterTime => 'Please enter time';
 
   @override
   String get timeHint => 'e.g., 14:00 or 14:00~16:00';
@@ -1901,10 +1919,11 @@ class AppLocalizationsEn extends AppLocalizations {
     String _temp0 = intl.Intl.pluralLogic(
       count,
       locale: localeName,
-      other: 'likes',
-      one: 'like',
+      other: '$count likes',
+      one: '1 like',
+      zero: '0 likes',
     );
-    return '$count $_temp0';
+    return '$_temp0';
   }
 
   @override
@@ -1922,7 +1941,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noCommentsYet => 'Be the first to comment';
 
   @override
-  String get beFirstToComment => 'Be the first to leave a comment';
+  String get beFirstToComment => 'Be the first to comment!';
 
   @override
   String get commentFeatureComingSoon => 'Comment feature coming soon';
@@ -1965,7 +1984,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dm => 'DM';
 
   @override
-  String get directMessage => 'Direct Message';
+  String get directMessage => 'Direct message';
 
   @override
   String get newMessage => 'New Message';
@@ -1989,7 +2008,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get blockedUser => 'This user is blocked';
 
   @override
-  String get anonymousUser => 'Anonymous';
+  String anonymousUser(String number) {
+    return 'Anonymous$number';
+  }
 
   @override
   String get anonymousMessage => 'Anonymous Message';
@@ -2038,5 +2059,204 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dmNotAvailable => 'Messaging is not available';
 
   @override
-  String get friendsOnly => 'You can only message friends';
+  String get friendsOnly => 'Friends Only';
+
+  @override
+  String get signUpFirstMessage =>
+      'Please click the \"Sign Up\" button below\nto complete Hanyang email verification first.';
+
+  @override
+  String get none => 'None';
+
+  @override
+  String get deleteReasonNoLongerUse => 'I no longer use this service';
+
+  @override
+  String get deleteReasonMissingFeatures => 'Missing desired features';
+
+  @override
+  String get deleteReasonPrivacyConcerns => 'Privacy concerns';
+
+  @override
+  String get deleteReasonSwitchingService => 'Switching to another service';
+
+  @override
+  String get deleteReasonNewAccount => 'Want to create a new account';
+
+  @override
+  String get deleteReasonOther => 'Other';
+
+  @override
+  String get selectDeleteReason => 'Select Reason';
+
+  @override
+  String get otherReasonOptional => 'Other reason (optional)';
+
+  @override
+  String get deleteDataNotice => 'Data Deletion Notice';
+
+  @override
+  String get postDeleteTip =>
+      '💡 Want to delete posts? Remove them from \"My Posts\" before deleting your account!';
+
+  @override
+  String get finalWarning => 'Final Warning';
+
+  @override
+  String get reallyDeleteAccount => 'Really delete your account?';
+
+  @override
+  String get actionCannotBeUndone => 'This action cannot be undone';
+
+  @override
+  String get accountRecoveryImpossible => '❌ Account recovery impossible';
+
+  @override
+  String get dataPermanentlyDeleted => '❌ Data permanently deleted';
+
+  @override
+  String get reRegistrationRequired => '❌ Re-registration required';
+
+  @override
+  String get postsAnonymized => '✅ Posts anonymized';
+
+  @override
+  String get deleteReasonLabel => 'Reason';
+
+  @override
+  String get postsAnonymizedAutomatic => 'Posts: Anonymized (automatic)';
+
+  @override
+  String get deletionFailed => 'Deletion failed';
+
+  @override
+  String get accountDeletionIrreversible =>
+      '⚠️ Account deletion is irreversible';
+
+  @override
+  String get immediatelyDeleted => 'Immediately Deleted';
+
+  @override
+  String get anonymized => 'Anonymized';
+
+  @override
+  String get identityVerification => 'Identity Verification';
+
+  @override
+  String get reLoginForVerification =>
+      'Please log in again with your Google account for identity verification.';
+
+  @override
+  String get deleteButtonGoogleLogin =>
+      'Clicking the \"Delete Account\" button will display the Google login window.';
+
+  @override
+  String get accountDeletedImmediatelyAfterAuth =>
+      '⚠️ Account will be deleted immediately after re-authentication';
+
+  @override
+  String get reallyDelete => 'Really delete?';
+
+  @override
+  String get deleteConfirmationMessage =>
+      'This action cannot be undone and all data will be permanently deleted. Posts will be displayed as \"Deleted User\".';
+
+  @override
+  String get accountDeleted => 'Account has been deleted';
+
+  @override
+  String get personalInfo =>
+      'Personal info (email, name, profile photo, phone, birthdate, school, bio)';
+
+  @override
+  String get friendRelationships =>
+      'Friend relationships (all friends, friend requests)';
+
+  @override
+  String get meetups =>
+      'Meetups (hosted meetups deleted, removed from joined meetups)';
+
+  @override
+  String get uploadedFiles =>
+      'Uploaded files (profile photo, post images, all uploads)';
+
+  @override
+  String get postsAndComments =>
+      'Posts & Comments (shown as \"deleted user\", preserving conversation context)';
+
+  @override
+  String get imageDisplayIssueDetected => 'Image display issue detected';
+
+  @override
+  String get optional => '(Optional)';
+
+  @override
+  String get publicMeeting => 'Public Meeting';
+
+  @override
+  String participantCount(String current, String total) {
+    return '$current/$total people';
+  }
+
+  @override
+  String get leaveChatRoom => 'Leave Chat Room';
+
+  @override
+  String get bioPlaceholder => 'Enter a brief introduction (optional)';
+
+  @override
+  String userMessage(Object user) {
+    return 'Message from $user';
+  }
+
+  @override
+  String get imageSelectionError => 'An error occurred while selecting image';
+
+  @override
+  String get meetupUpdatedSuccess => 'Meetup has been successfully updated.';
+
+  @override
+  String get meetupUpdateError => 'An error occurred while updating meetup';
+
+  @override
+  String get meetupImage => 'Meetup Image';
+
+  @override
+  String get nicknameQuestion => 'What is your nickname?';
+
+  @override
+  String get notification => 'Notification';
+
+  @override
+  String messageFrom(Object user) {
+    return 'Message from $user';
+  }
+
+  @override
+  String get reportComment => 'Report Comment';
+
+  @override
+  String get reportConfirm => 'Do you want to report this comment?';
+
+  @override
+  String get reportError => 'Comment author information is invalid';
+
+  @override
+  String get cafe => 'Cafe';
+
+  @override
+  String get friendsOnlyBadge => 'Friends Only';
+
+  @override
+  String get ukraine => 'Ukraine';
+
+  @override
+  String get editMeetupButton => 'Edit Meetup';
+
+  @override
+  String get anonymousDescription =>
+      'Connect with anonymous authors from the board.';
+
+  @override
+  String get friendSelection => 'Friend Selection';
 }

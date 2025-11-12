@@ -699,7 +699,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _anonymousUserMap[comment.userId] = _anonymousUserMap.length + 1;
     }
     
-    return '익명${_anonymousUserMap[comment.userId]}';
+    return AppLocalizations.of(context)!.anonymousUser('${_anonymousUserMap[comment.userId]}');
   }
 
   // 이미지 로딩 재시도 로직
@@ -928,9 +928,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          '게시글',
-          style: TextStyle(
+        title: Text(
+          AppLocalizations.of(context)!.board,
+          style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -1036,7 +1036,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               Row(
                                 children: [
                                   Text(
-                                    _currentPost.isAnonymous ? '익명' : _currentPost.author,
+                                    _currentPost.isAnonymous ? AppLocalizations.of(context)!.anonymous : _currentPost.author,
                                     style: const TextStyle(
                                       fontFamily: 'Pretendard',
                                       fontSize: 14,
@@ -1255,7 +1255,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           horizontal: DesignTokens.s16,
                         ),
                       child: Text(
-                        '좋아요 ${_currentPost.likes}개',
+                        AppLocalizations.of(context)!.likesCount(_currentPost.likes),
                         style: const TextStyle(
                             fontFamily: 'Pretendard',
                           fontSize: 14,
@@ -1348,7 +1348,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           horizontal: DesignTokens.s16,
                         ),
                         child: Text(
-                          '좋아요 ${_currentPost.likes}개',
+                          AppLocalizations.of(context)!.likesCount(_currentPost.likes),
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                         fontSize: 14,

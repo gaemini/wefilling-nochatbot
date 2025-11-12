@@ -114,7 +114,7 @@ class _LoginScreenState extends State<LoginScreen>
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
+                          AppLocalizations.of(context)!.signUpFirstMessage,
                           style: TextStyle(
                             fontSize: 14,
                             color: Colors.orange.shade900,
@@ -599,7 +599,7 @@ class _LoginScreenState extends State<LoginScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             RadioListTile<String>(
-              title: const Text('한국어'),
+              title: Text(AppLocalizations.of(context)!.korean),
               value: 'ko',
               groupValue: currentLocale,
               onChanged: (value) {
@@ -731,7 +731,7 @@ class _LoginScreenState extends State<LoginScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
+                              AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.orange.shade900,
@@ -799,7 +799,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('로그인 중 오류가 발생했습니다: $e'),
+            content: Text('${AppLocalizations.of(context)!.loginError}: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -907,7 +907,7 @@ class _LoginScreenState extends State<LoginScreen>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
+                              AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.orange.shade900,
@@ -1014,7 +1014,7 @@ class _LoginScreenState extends State<LoginScreen>
               actions: [
                 TextButton(
                   onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('확인', style: TextStyle(fontSize: 16)),
+                  child: Text(AppLocalizations.of(context)!.confirm, style: TextStyle(fontSize: 16)),
                 ),
               ],
             ),

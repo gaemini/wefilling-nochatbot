@@ -14,6 +14,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 if [ -f "$PROJECT_FILE" ]; then
     if grep -q "com.apple.developer.applesignin" "$PROJECT_FILE"; then
         echo "✅ Sign in with Apple Capability가 추가되어 있습니다"
+    elif grep -q "com.apple.SignIn" "$PROJECT_FILE"; then
+        echo "✅ Sign in with Apple Capability가 추가되어 있습니다"
     else
         echo "❌ Sign in with Apple Capability가 없습니다"
         echo ""
@@ -109,7 +111,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 ISSUES=0
 
-if ! grep -q "com.apple.developer.applesignin" "$PROJECT_FILE" 2>/dev/null; then
+if ! grep -q "com.apple.developer.applesignin" "$PROJECT_FILE" 2>/dev/null && ! grep -q "com.apple.SignIn" "$PROJECT_FILE" 2>/dev/null; then
     echo "🔴 Xcode Capability 미추가 (가장 중요!)"
     ((ISSUES++))
 fi

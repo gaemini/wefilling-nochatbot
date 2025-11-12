@@ -205,7 +205,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           });
           
           if (profileImageUrl == null) {
-            throw Exception('이미지 업로드에 실패했습니다.');
+            throw Exception(AppLocalizations.of(context)!.imageUploadFailed ?? '이미지 업로드에 실패했습니다.');
           }
           
           // 프로필 업데이트 수행 (닉네임, 국적, photoURL 모두 포함)
@@ -298,7 +298,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final user = authProvider.user;
       
       if (user == null) {
-        throw Exception('로그인이 필요합니다.');
+        throw Exception(AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
       }
 
       // 현재 프로필 정보 가져오기
@@ -559,9 +559,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               const SizedBox(height: 32),
 
               // 닉네임 입력
-              const Text(
-                'What is your nickname?',
-                style: TextStyle(
+              Text(
+                AppLocalizations.of(context)!.nicknameQuestion ?? 'What is your nickname?',
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontWeight: FontWeight.w600, 
                   fontSize: 16,
@@ -626,7 +626,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   TextFormField(
     maxLength: 60, // 영어/한국어 모두 안전한 길이
     decoration: InputDecoration(
-      hintText: '한 줄 소개를 입력하세요 (선택)',
+      hintText: AppLocalizations.of(context)!.bioPlaceholder,
       hintStyle: const TextStyle(
         fontFamily: 'Pretendard',
         fontSize: 16,

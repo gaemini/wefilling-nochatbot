@@ -300,7 +300,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
         ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
         : (isAnonymous 
-            ? (AppLocalizations.of(context)!.anonymousUser ?? "") : otherUserName);
+            ? 'Anonymous' : otherUserName);
     final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
         ? (AppLocalizations.of(context)!.author ?? "") : null;
 
@@ -395,10 +395,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
             PopupMenuItem(
               value: 'delete',
               child: Row(
-                children: const [
-                  Icon(Icons.delete_outline, size: 20),
-                  SizedBox(width: 8),
-                  Text('채팅방 나가기'),
+                children: [
+                  const Icon(Icons.delete_outline, size: 20),
+                  const SizedBox(width: 8),
+                  Text(AppLocalizations.of(context)!.leaveChatRoom),
                 ],
               ),
             ),
@@ -439,7 +439,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       builder: (context) => AlertDialog(
         title: Text(
           Localizations.localeOf(context).languageCode == 'ko'
-              ? '채팅방 나가기'
+              ? AppLocalizations.of(context)!.leaveChatRoom
               : 'Leave chat',
         ),
         content: Text(

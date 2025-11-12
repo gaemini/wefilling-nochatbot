@@ -85,6 +85,29 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     return defaultCountries[userName] ?? '한국'; // 기본값은 한국
   }
 
+  /// 국가명을 현재 언어로 변환
+  String _getLocalizedCountryName(String countryName) {
+    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    
+    if (!isEnglish) return countryName; // 한국어면 그대로 반환
+    
+    // 영어 변환 매핑
+    final countryMap = {
+      '한국': 'South Korea',
+      '미국': 'United States',
+      '일본': 'Japan',
+      '중국': 'China',
+      '우크라이나': AppLocalizations.of(context)!.ukraine,
+      '독일': 'Germany',
+      '프랑스': 'France',
+      '영국': 'United Kingdom',
+      '캐나다': 'Canada',
+      '호주': 'Australia',
+    };
+    
+    return countryMap[countryName] ?? countryName;
+  }
+
   Future<void> _loadParticipants() async {
     try {
       print('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
@@ -251,7 +274,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           _isLoading = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.cancelMeetupFailed ?? '모임 취소에 실패했습니다')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.cancelMeetupFailed)),
         );
       }
     } catch (e) {
@@ -362,7 +385,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                   Text(
-                        '주최자',
+                        AppLocalizations.of(context)!.host,
                     style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 14,
@@ -406,7 +429,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   
                   // 모임 설명 섹션
                         Text(
-                          AppLocalizations.of(context)!.meetupDetails ?? "모임 정보",
+                          AppLocalizations.of(context)!.meetupDetails,
                           style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 18,
@@ -717,7 +740,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       children: [
         // 이미지 섹션 제목
         Text(
-          '모임 이미지',
+          AppLocalizations.of(context)!.meetupImage ?? '모임 이미지',
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
@@ -2576,8 +2599,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 Row(
             children: [
                         Text(
-                          Localizations.localeOf(context).languageCode == 'ko'
-                              ? (AppLocalizations.of(context)!.participantsCountLabel(displayCount) ?? "") : 'Participants ($displayCount)',
+                          '${AppLocalizations.of(context)!.participants} ($displayCount)',
                     style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 18,
@@ -2597,8 +2619,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 const SizedBox(width: 4),
                 Text(
                   isLoading && _participants.isEmpty
-                    ? '${_currentMeetup.currentParticipants}/${_currentMeetup.maxParticipants}명'
-                    : '$displayCount/${_currentMeetup.maxParticipants}명',
+                    ? '${_currentMeetup.currentParticipants}/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}'
+                    : '$displayCount/${_currentMeetup.maxParticipants} ${AppLocalizations.of(context)!.peopleUnit}',
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 16,
@@ -2719,7 +2741,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   // 참여자 국가 정보 (오른쪽 정렬, 국가명 + 국기 순서)
                   if (participant.userCountry != null && participant.userCountry!.isNotEmpty) ...[
                             Text(
-                      participant.userCountry!,
+                      _getLocalizedCountryName(participant.userCountry!),
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,

@@ -5,6 +5,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../models/relationship_status.dart';
 import '../models/user_profile.dart';
 import '../services/feature_flag_service.dart';
 
@@ -13,8 +14,15 @@ class ProfileHeader extends StatelessWidget {
   final Map<String, int> stats;
   final bool isOwnProfile;
   final VoidCallback? onEditProfile;
-  final VoidCallback? onFollow;
+  final VoidCallback? onRelationshipAction;
   final VoidCallback? onMessage;
+  final String? relationshipActionLabel;
+  final IconData? relationshipActionIcon;
+  final bool isRelationshipActionPrimary;
+  final bool isRelationshipActionEnabled;
+  final bool isRelationshipActionLoading;
+  final bool canMessage;
+  final bool isMessageLoading;
 
   const ProfileHeader({
     Key? key,
@@ -22,14 +30,22 @@ class ProfileHeader extends StatelessWidget {
     required this.stats,
     required this.isOwnProfile,
     this.onEditProfile,
-    this.onFollow,
+    this.onRelationshipAction,
     this.onMessage,
+    this.relationshipActionLabel,
+    this.relationshipActionIcon,
+    this.isRelationshipActionPrimary = true,
+    this.isRelationshipActionEnabled = true,
+    this.isRelationshipActionLoading = false,
+    this.canMessage = true,
+    this.isMessageLoading = false,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     // Feature Flag 체크
-    if (!FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
+    if (!FeatureFlagService()
+        .isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
       return Container(
         padding: const EdgeInsets.all(16),
         child: const Text(
@@ -66,9 +82,10 @@ class ProfileHeader extends StatelessWidget {
                         color: colorScheme.onSurface,
                       ),
                     ),
-                    
+
                     // 서브텍스트 (14sp muted)
-                    if (profile.nationality != null && profile.nationality!.isNotEmpty) ...[
+                    if (profile.nationality != null &&
+                        profile.nationality!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         profile.nationality!,
@@ -78,9 +95,9 @@ class ProfileHeader extends StatelessWidget {
                         ),
                       ),
                     ],
-                    
+
                     const SizedBox(height: 12),
-                    
+
                     // 통계 (3칸 레이아웃)
                     _buildStats(context),
                   ],
@@ -88,9 +105,9 @@ class ProfileHeader extends StatelessWidget {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 액션 버튼
           _buildActionButtons(context),
         ],
@@ -165,9 +182,9 @@ class ProfileHeader extends StatelessWidget {
                   color: colorScheme.onSurface,
                 ),
               ),
-              
+
               const SizedBox(height: 2),
-              
+
               // 라벨 (12sp muted)
               Text(
                 item['label'] as String,
@@ -215,45 +232,95 @@ class ProfileHeader extends StatelessWidget {
         ),
       );
     } else {
-      // 다른 사용자 프로필: 팔로우 및 메시지 버튼
+      // 다른 사용자 프로필: 관계 액션 및 메시지 버튼
+      final label = relationshipActionLabel ?? '팔로우';
+      final icon = relationshipActionIcon ?? Icons.person_add_outlined;
+      final isPrimary = isRelationshipActionPrimary;
+      final isEnabled =
+          isRelationshipActionEnabled && !isRelationshipActionLoading;
+      final canSendMessage = canMessage && !isMessageLoading;
+
       return Row(
         children: [
-          // 팔로우 버튼
+          // 관계 액션 버튼
           Expanded(
             flex: 2,
             child: SizedBox(
               height: 36,
-              child: ElevatedButton(
-                onPressed: onFollow,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: colorScheme.primary,
-                  foregroundColor: colorScheme.onPrimary,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  elevation: 0,
-                  minimumSize: const Size(0, 36),
-                ),
-                child: Text(
-                  '팔로우',
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
+              child: isPrimary
+                  ? ElevatedButton.icon(
+                      onPressed: isEnabled ? onRelationshipAction : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: colorScheme.primary,
+                        foregroundColor: colorScheme.onPrimary,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        elevation: 0,
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: isRelationshipActionLoading
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    colorScheme.onPrimary),
+                              ),
+                            )
+                          : Icon(icon, size: 16),
+                      label: Text(
+                        label,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: colorScheme.onPrimary,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    )
+                  : OutlinedButton.icon(
+                      onPressed: isEnabled ? onRelationshipAction : null,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: colorScheme.onSurface,
+                        side: BorderSide(
+                          color: colorScheme.outline,
+                          width: 1,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        minimumSize: const Size(0, 36),
+                      ),
+                      icon: isRelationshipActionLoading
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    colorScheme.onSurface),
+                              ),
+                            )
+                          : Icon(icon, size: 16),
+                      label: Text(
+                        label,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
             ),
           ),
-          
+
           const SizedBox(width: 8),
-          
+
           // 메시지 버튼
           Expanded(
             flex: 1,
             child: SizedBox(
               height: 36,
               child: OutlinedButton(
-                onPressed: onMessage,
+                onPressed: canSendMessage ? onMessage : null,
                 style: OutlinedButton.styleFrom(
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18),
@@ -264,11 +331,23 @@ class ProfileHeader extends StatelessWidget {
                   ),
                   minimumSize: const Size(0, 36),
                 ),
-                child: Icon(
-                  Icons.message_outlined,
-                  size: 16,
-                  color: colorScheme.onSurface,
-                ),
+                child: isMessageLoading
+                    ? SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                              colorScheme.onSurface),
+                        ),
+                      )
+                    : Icon(
+                        Icons.message_outlined,
+                        size: 16,
+                        color: canSendMessage
+                            ? colorScheme.onSurface
+                            : colorScheme.onSurface.withOpacity(0.4),
+                      ),
               ),
             ),
           ),

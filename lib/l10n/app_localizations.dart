@@ -185,7 +185,7 @@ abstract class AppLocalizations {
   /// No description provided for @loginRequired.
   ///
   /// In ko, this message translates to:
-  /// **'로그인이 필요한 기능입니다'**
+  /// **'로그인이 필요합니다'**
   String get loginRequired;
 
   /// No description provided for @emailSent.
@@ -215,7 +215,7 @@ abstract class AppLocalizations {
   /// No description provided for @board.
   ///
   /// In ko, this message translates to:
-  /// **'게시판'**
+  /// **'게시글'**
   String get board;
 
   /// No description provided for @meetup.
@@ -299,7 +299,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteAccount.
   ///
   /// In ko, this message translates to:
-  /// **'회원 탈퇴'**
+  /// **'계정 삭제'**
   String get deleteAccount;
 
   /// No description provided for @deleteAccountConfirm.
@@ -449,7 +449,7 @@ abstract class AppLocalizations {
   /// No description provided for @back.
   ///
   /// In ko, this message translates to:
-  /// **'뒤로'**
+  /// **'이전'**
   String get back;
 
   /// No description provided for @next.
@@ -707,7 +707,7 @@ abstract class AppLocalizations {
   /// No description provided for @comments.
   ///
   /// In ko, this message translates to:
-  /// **'댓글'**
+  /// **'Comments'**
   String get comments;
 
   /// No description provided for @writeComment.
@@ -755,7 +755,7 @@ abstract class AppLocalizations {
   /// No description provided for @reportSubmitted.
   ///
   /// In ko, this message translates to:
-  /// **'신고가 접수되었습니다.'**
+  /// **'신고가 접수되었습니다'**
   String get reportSubmitted;
 
   /// No description provided for @reportAction.
@@ -785,7 +785,7 @@ abstract class AppLocalizations {
   /// No description provided for @publicPost.
   ///
   /// In ko, this message translates to:
-  /// **'전체 공개'**
+  /// **'전구 공개'**
   String get publicPost;
 
   /// No description provided for @categorySpecific.
@@ -1781,31 +1781,31 @@ abstract class AppLocalizations {
   /// No description provided for @daysAgo.
   ///
   /// In ko, this message translates to:
-  /// **'{count}일 전'**
+  /// **'{count, plural, =1{{count}일 전} other{{count}일 전}}'**
   String daysAgo(int count);
 
   /// No description provided for @hoursAgo.
   ///
   /// In ko, this message translates to:
-  /// **'{count}시간 전'**
+  /// **'{count, plural, =1{{count}시간 전} other{{count}시간 전}}'**
   String hoursAgo(int count);
 
   /// No description provided for @minutesAgo.
   ///
   /// In ko, this message translates to:
-  /// **'{count}분 전'**
+  /// **'{count, plural, =1{{count}분 전} other{{count}분 전}}'**
   String minutesAgo(int count);
 
   /// No description provided for @justNow.
   ///
   /// In ko, this message translates to:
-  /// **'방금'**
+  /// **'방금 전'**
   String get justNow;
 
   /// No description provided for @markAllAsRead.
   ///
   /// In ko, this message translates to:
-  /// **'모든 알림 읽음'**
+  /// **'모두 읽음'**
   String get markAllAsRead;
 
   /// No description provided for @notificationLoadError.
@@ -1883,7 +1883,7 @@ abstract class AppLocalizations {
   /// No description provided for @enterComment.
   ///
   /// In ko, this message translates to:
-  /// **'댓글을 입력하세요...'**
+  /// **'Enter comment...'**
   String get enterComment;
 
   /// No description provided for @unsave.
@@ -1985,7 +1985,7 @@ abstract class AppLocalizations {
   /// No description provided for @meetupDetails.
   ///
   /// In ko, this message translates to:
-  /// **'모임 설명'**
+  /// **'모임 상세'**
   String get meetupDetails;
 
   /// No description provided for @cancelMeetupButton.
@@ -3635,7 +3635,7 @@ abstract class AppLocalizations {
   /// No description provided for @likesCount.
   ///
   /// In ko, this message translates to:
-  /// **'좋아요 {count}개'**
+  /// **'{count, plural, =0{좋아요 0개} =1{좋아요 1개} other{좋아요 {count}개}}'**
   String likesCount(int count);
 
   /// No description provided for @viewAllComments.
@@ -3653,7 +3653,7 @@ abstract class AppLocalizations {
   /// No description provided for @beFirstToComment.
   ///
   /// In ko, this message translates to:
-  /// **'가장 먼저 댓글을 작성해보세요'**
+  /// **'Be the first to comment!'**
   String get beFirstToComment;
 
   /// No description provided for @commentFeatureComingSoon.
@@ -3731,7 +3731,7 @@ abstract class AppLocalizations {
   /// No description provided for @directMessage.
   ///
   /// In ko, this message translates to:
-  /// **'다이렉트 메시지'**
+  /// **'쪽지 보내기'**
   String get directMessage;
 
   /// No description provided for @newMessage.
@@ -3749,7 +3749,7 @@ abstract class AppLocalizations {
   /// No description provided for @typeMessage.
   ///
   /// In ko, this message translates to:
-  /// **'메시지를 입력하세요'**
+  /// **'Type a message'**
   String get typeMessage;
 
   /// No description provided for @noConversations.
@@ -3779,8 +3779,8 @@ abstract class AppLocalizations {
   /// No description provided for @anonymousUser.
   ///
   /// In ko, this message translates to:
-  /// **'익명'**
-  String get anonymousUser;
+  /// **'익명{number}'**
+  String anonymousUser(String number);
 
   /// No description provided for @anonymousMessage.
   ///
@@ -3851,7 +3851,7 @@ abstract class AppLocalizations {
   /// No description provided for @blockThisUser.
   ///
   /// In ko, this message translates to:
-  /// **'이 사용자 차단하기'**
+  /// **'Block this user'**
   String get blockThisUser;
 
   /// No description provided for @blockConfirm.
@@ -3869,8 +3869,368 @@ abstract class AppLocalizations {
   /// No description provided for @friendsOnly.
   ///
   /// In ko, this message translates to:
-  /// **'친구에게만 메시지를 보낼 수 있습니다'**
+  /// **'친구 공개'**
   String get friendsOnly;
+
+  /// No description provided for @signUpFirstMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.'**
+  String get signUpFirstMessage;
+
+  /// No description provided for @none.
+  ///
+  /// In ko, this message translates to:
+  /// **'없음'**
+  String get none;
+
+  /// No description provided for @deleteReasonNoLongerUse.
+  ///
+  /// In ko, this message translates to:
+  /// **'더 이상 사용하지 않아요'**
+  String get deleteReasonNoLongerUse;
+
+  /// No description provided for @deleteReasonMissingFeatures.
+  ///
+  /// In ko, this message translates to:
+  /// **'원하는 기능이 없어요'**
+  String get deleteReasonMissingFeatures;
+
+  /// No description provided for @deleteReasonPrivacyConcerns.
+  ///
+  /// In ko, this message translates to:
+  /// **'개인정보 보호가 걱정돼요'**
+  String get deleteReasonPrivacyConcerns;
+
+  /// No description provided for @deleteReasonSwitchingService.
+  ///
+  /// In ko, this message translates to:
+  /// **'다른 서비스를 사용할 거예요'**
+  String get deleteReasonSwitchingService;
+
+  /// No description provided for @deleteReasonNewAccount.
+  ///
+  /// In ko, this message translates to:
+  /// **'계정을 새로 만들고 싶어요'**
+  String get deleteReasonNewAccount;
+
+  /// No description provided for @deleteReasonOther.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타'**
+  String get deleteReasonOther;
+
+  /// No description provided for @selectDeleteReason.
+  ///
+  /// In ko, this message translates to:
+  /// **'탈퇴 사유 선택'**
+  String get selectDeleteReason;
+
+  /// No description provided for @otherReasonOptional.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타 사유 (선택)'**
+  String get otherReasonOptional;
+
+  /// No description provided for @deleteDataNotice.
+  ///
+  /// In ko, this message translates to:
+  /// **'삭제될 데이터 안내'**
+  String get deleteDataNotice;
+
+  /// No description provided for @postDeleteTip.
+  ///
+  /// In ko, this message translates to:
+  /// **'💡 게시글을 삭제하고 싶다면? 탈퇴하기 전에 \"내 게시글 관리\"에서 삭제하세요!'**
+  String get postDeleteTip;
+
+  /// No description provided for @finalWarning.
+  ///
+  /// In ko, this message translates to:
+  /// **'최종 경고'**
+  String get finalWarning;
+
+  /// No description provided for @reallyDeleteAccount.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말로 계정을 삭제하시겠습니까?'**
+  String get reallyDeleteAccount;
+
+  /// No description provided for @actionCannotBeUndone.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 작업은 되돌릴 수 없습니다'**
+  String get actionCannotBeUndone;
+
+  /// No description provided for @accountRecoveryImpossible.
+  ///
+  /// In ko, this message translates to:
+  /// **'❌ 계정 복구 불가능'**
+  String get accountRecoveryImpossible;
+
+  /// No description provided for @dataPermanentlyDeleted.
+  ///
+  /// In ko, this message translates to:
+  /// **'❌ 데이터 영구 삭제'**
+  String get dataPermanentlyDeleted;
+
+  /// No description provided for @reRegistrationRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'❌ 재가입 필요'**
+  String get reRegistrationRequired;
+
+  /// No description provided for @postsAnonymized.
+  ///
+  /// In ko, this message translates to:
+  /// **'✅ 게시글 익명 처리'**
+  String get postsAnonymized;
+
+  /// No description provided for @deleteReasonLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'탈퇴 사유'**
+  String get deleteReasonLabel;
+
+  /// No description provided for @postsAnonymizedAutomatic.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글: 익명 처리 (자동)'**
+  String get postsAnonymizedAutomatic;
+
+  /// No description provided for @deletionFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'삭제 실패'**
+  String get deletionFailed;
+
+  /// No description provided for @accountDeletionIrreversible.
+  ///
+  /// In ko, this message translates to:
+  /// **'⚠️ 계정 삭제 시 복구가 불가능합니다'**
+  String get accountDeletionIrreversible;
+
+  /// No description provided for @immediatelyDeleted.
+  ///
+  /// In ko, this message translates to:
+  /// **'즉시 삭제'**
+  String get immediatelyDeleted;
+
+  /// No description provided for @anonymized.
+  ///
+  /// In ko, this message translates to:
+  /// **'익명 처리'**
+  String get anonymized;
+
+  /// No description provided for @identityVerification.
+  ///
+  /// In ko, this message translates to:
+  /// **'본인 확인'**
+  String get identityVerification;
+
+  /// No description provided for @reLoginForVerification.
+  ///
+  /// In ko, this message translates to:
+  /// **'본인 확인을 위해 Google 계정으로 다시 로그인합니다.'**
+  String get reLoginForVerification;
+
+  /// No description provided for @deleteButtonGoogleLogin.
+  ///
+  /// In ko, this message translates to:
+  /// **'\"계정 삭제\" 버튼을 누르면 Google 로그인 창이 표시됩니다.'**
+  String get deleteButtonGoogleLogin;
+
+  /// No description provided for @accountDeletedImmediatelyAfterAuth.
+  ///
+  /// In ko, this message translates to:
+  /// **'⚠️ 재인증 후 계정이 즉시 삭제됩니다'**
+  String get accountDeletedImmediatelyAfterAuth;
+
+  /// No description provided for @reallyDelete.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말 삭제하시겠습니까?'**
+  String get reallyDelete;
+
+  /// No description provided for @deleteConfirmationMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 게시글은 \"탈퇴한 사용자\"로 표시됩니다.'**
+  String get deleteConfirmationMessage;
+
+  /// No description provided for @accountDeleted.
+  ///
+  /// In ko, this message translates to:
+  /// **'계정이 삭제되었습니다'**
+  String get accountDeleted;
+
+  /// No description provided for @personalInfo.
+  ///
+  /// In ko, this message translates to:
+  /// **'개인정보 (이메일, 이름, 프로필 사진, 전화번호, 생년월일, 학교 정보, 자기소개)'**
+  String get personalInfo;
+
+  /// No description provided for @friendRelationships.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 관계 (모든 친구 목록, 친구 요청)'**
+  String get friendRelationships;
+
+  /// No description provided for @meetups.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 (주최한 모임 삭제, 참여 중인 모임에서 자동 탈퇴)'**
+  String get meetups;
+
+  /// No description provided for @uploadedFiles.
+  ///
+  /// In ko, this message translates to:
+  /// **'업로드한 파일 (프로필 사진, 게시글 이미지, 모든 업로드 파일)'**
+  String get uploadedFiles;
+
+  /// No description provided for @postsAndComments.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)'**
+  String get postsAndComments;
+
+  /// No description provided for @imageDisplayIssueDetected.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 표시 문제 감지'**
+  String get imageDisplayIssueDetected;
+
+  /// No description provided for @optional.
+  ///
+  /// In ko, this message translates to:
+  /// **'(선택)'**
+  String get optional;
+
+  /// No description provided for @publicMeeting.
+  ///
+  /// In ko, this message translates to:
+  /// **'전구 공개'**
+  String get publicMeeting;
+
+  /// No description provided for @participantCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{current}/{total}명'**
+  String participantCount(String current, String total);
+
+  /// No description provided for @leaveChatRoom.
+  ///
+  /// In ko, this message translates to:
+  /// **'채팅방 나가기'**
+  String get leaveChatRoom;
+
+  /// No description provided for @bioPlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'한 줄 소개를 입력하세요 (선택)'**
+  String get bioPlaceholder;
+
+  /// No description provided for @userMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{user}님의 메시지'**
+  String userMessage(Object user);
+
+  /// No description provided for @imageSelectionError.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 선택 중 오류가 발생했습니다'**
+  String get imageSelectionError;
+
+  /// No description provided for @meetupUpdatedSuccess.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임이 성공적으로 수정되었습니다.'**
+  String get meetupUpdatedSuccess;
+
+  /// No description provided for @meetupUpdateError.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 수정 중 오류가 발생했습니다'**
+  String get meetupUpdateError;
+
+  /// No description provided for @meetupImage.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 이미지'**
+  String get meetupImage;
+
+  /// No description provided for @nicknameQuestion.
+  ///
+  /// In ko, this message translates to:
+  /// **'닉네임이 무엇인가요?'**
+  String get nicknameQuestion;
+
+  /// No description provided for @notification.
+  ///
+  /// In ko, this message translates to:
+  /// **'알림'**
+  String get notification;
+
+  /// No description provided for @messageFrom.
+  ///
+  /// In ko, this message translates to:
+  /// **'{user}님의 메시지'**
+  String messageFrom(Object user);
+
+  /// No description provided for @reportComment.
+  ///
+  /// In ko, this message translates to:
+  /// **'댓글 신고'**
+  String get reportComment;
+
+  /// No description provided for @reportConfirm.
+  ///
+  /// In ko, this message translates to:
+  /// **'해당 댓글을 신고하시겠습니까?'**
+  String get reportConfirm;
+
+  /// No description provided for @reportError.
+  ///
+  /// In ko, this message translates to:
+  /// **'댓글 작성자 정보가 올바르지 않습니다'**
+  String get reportError;
+
+  /// No description provided for @cafe.
+  ///
+  /// In ko, this message translates to:
+  /// **'카페'**
+  String get cafe;
+
+  /// No description provided for @friendsOnlyBadge.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 공개'**
+  String get friendsOnlyBadge;
+
+  /// No description provided for @ukraine.
+  ///
+  /// In ko, this message translates to:
+  /// **'우크라이나'**
+  String get ukraine;
+
+  /// No description provided for @editMeetupButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 수정하기'**
+  String get editMeetupButton;
+
+  /// No description provided for @anonymousDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시판에 올라온 익명의 작성자와 소통해보세요.'**
+  String get anonymousDescription;
+
+  /// No description provided for @friendSelection.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 선택'**
+  String get friendSelection;
 }
 
 class _AppLocalizationsDelegate

@@ -3,6 +3,9 @@
 //프로바이더 설정
 // 앱 테마 및 라우팅 설정
 
+import 'dart:async';
+import 'dart:ui';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +15,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
@@ -33,7 +37,7 @@ import 'services/navigation_service.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   debugDefaultTargetPlatformOverride = TargetPlatform.android;
-  
+
   // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -44,19 +48,20 @@ void main() async {
       systemNavigationBarDividerColor: Colors.transparent,
     ),
   );
-  
+
   // Edge-to-edge 모드 활성화
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  
+
   // 화면 회전 제한 (세로 방향만 허용)
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
-  
+
   // Firebase 중복 초기화 방지
   try {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+    await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform);
     if (kDebugMode) {
       debugPrint('🔥 Firebase 초기화 완료');
     }
@@ -73,6 +78,29 @@ void main() async {
     }
   }
 
+  // Crashlytics 설정
+  try {
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(!kDebugMode);
+
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    if (kDebugMode) {
+      debugPrint('🐞 Crashlytics 초기화 완료 (debug mode: $kDebugMode)');
+    }
+  } catch (e) {
+    if (kDebugMode) {
+      debugPrint('⚠️ Crashlytics 초기화 실패: $e');
+    }
+  }
+
+  // Firebase Performance 모니터링은 제거됨
+
   // FCM 백그라운드 메시지 핸들러 등록
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
@@ -82,7 +110,8 @@ void main() async {
     if (kDebugMode) {
       debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
       debugPrint('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
-      debugPrint('🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
+      debugPrint(
+          '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
     }
 
     // Firebase Auth 상태 변화 로깅
@@ -129,19 +158,19 @@ void main() async {
         debugPrint('🗃️ Firestore 설정 시작');
       }
       final firestore = FirebaseFirestore.instance;
-      
+
       // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
-      
+
       // Firestore 설정 조정
       firestore.settings = const Settings(
         persistenceEnabled: true,
         cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
       );
-      
+
       if (kDebugMode) {
         debugPrint('✅ Firestore 설정 완료');
       }
-      
+
       // 광고 배너 초기화
       try {
         if (kDebugMode) {
@@ -200,23 +229,32 @@ void main() async {
     }
   }
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
-        ChangeNotifierProvider(create: (_) => RelationshipProvider()),
-      ],
-      child: const MeetupApp(),
-    ),
+  // Firebase Performance trace 종료 코드 제거됨
+
+  runZonedGuarded(
+    () {
+      runApp(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
+            ChangeNotifierProvider(create: (_) => RelationshipProvider()),
+          ],
+          child: const MeetupApp(),
+        ),
+      );
+    },
+    (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    },
   );
 }
 
 class MeetupApp extends StatefulWidget {
   const MeetupApp({super.key});
-  
+
   @override
   State<MeetupApp> createState() => _MeetupAppState();
-  
+
   // 어디서든 접근 가능하도록 static 메서드 제공
   static _MeetupAppState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MeetupAppState>();
@@ -281,7 +319,8 @@ class _MeetupAppState extends State<MeetupApp> {
           behavior: HitTestBehavior.translucent,
           onTap: () {
             final currentFocus = FocusScope.of(context);
-            if (!currentFocus.hasPrimaryFocus && currentFocus.focusedChild != null) {
+            if (!currentFocus.hasPrimaryFocus &&
+                currentFocus.focusedChild != null) {
               FocusManager.instance.primaryFocus?.unfocus();
             }
           },
@@ -310,7 +349,7 @@ class _MeetupAppState extends State<MeetupApp> {
             if (!authProvider.hasNickname) {
               return const NicknameSetupScreen();
             }
-            
+
             // 닉네임 있으면 메인 화면
             return const MainScreen();
           }

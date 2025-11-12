@@ -1490,6 +1490,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get continueWithGoogle => 'Google 계정으로 계속하기';
 
   @override
+  String get appleLogin => 'Apple로 로그인';
+
+  @override
+  String get continueWithApple => 'Apple로 계속하기';
+
+  @override
+  String get chooseLoginMethod => '로그인 방법 선택';
+
+  @override
   String get hanyangEmailAlreadyUsed => '이미 사용된 한양메일입니다. 다른 메일을 사용해주세요.';
 
   @override

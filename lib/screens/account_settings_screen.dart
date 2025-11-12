@@ -364,12 +364,12 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       context: context,
       builder:
           (context) => AlertDialog(
-            title: const Text('비밀번호 재설정'),
-            content: const Text('비밀번호 재설정 이메일을 보내시겠습니까?'),
+            title: Text(AppLocalizations.of(context)!.resetPassword),
+            content: Text(AppLocalizations.of(context)!.sendResetEmailConfirm),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context),
-                child: const Text('취소'),
+                child: Text(AppLocalizations.of(context)!.cancel),
               ),
               TextButton(
                 onPressed: () async {
@@ -382,20 +382,20 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     );
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: const Text('비밀번호 재설정 이메일을 보냈습니다.')),
+                        SnackBar(content: Text(AppLocalizations.of(context)!.resetEmailSent)),
                       );
                     }
                   } catch (e) {
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('오류가 발생했습니다: ${e.toString()}')),
+                        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${e.toString()}')),
                       );
                     }
                   } finally {
                     setState(() => _isLoading = false);
                   }
                 },
-                child: const Text('확인'),
+                child: Text(AppLocalizations.of(context)!.confirm),
               ),
             ],
           ),
@@ -410,7 +410,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       await _auth.currentUser?.sendEmailVerification();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('인증 이메일을 보냈습니다. 메일함을 확인해주세요.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.verificationEmailSent)),
         );
       }
     } catch (e) {

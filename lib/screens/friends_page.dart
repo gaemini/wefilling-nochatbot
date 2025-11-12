@@ -496,19 +496,21 @@ class _FriendsPageState extends State<FriendsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        // 빈 공간 터치시 키보드 닫기
-        FocusScope.of(context).unfocus();
-      },
-      child: Column(
-        children: [
-          // 검색바
-          _buildSearchBar(),
+    return Container(
+      color: const Color(0xFFEBEBEB), // 게시판과 동일한 배경색
+      child: GestureDetector(
+        onTap: () {
+          // 빈 공간 터치시 키보드 닫기
+          FocusScope.of(context).unfocus();
+        },
+        child: Column(
+          children: [
+            // 검색바
+            _buildSearchBar(),
 
-          // 친구 목록
-          Expanded(
-            child: Consumer<RelationshipProvider>(
+            // 친구 목록
+            Expanded(
+              child: Consumer<RelationshipProvider>(
               builder: (context, provider, child) {
                 // provider의 friends가 변경되면 필터링된 목록도 업데이트
                 WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -569,7 +571,8 @@ class _FriendsPageState extends State<FriendsPage> {
               },
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -577,21 +580,24 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 검색바 위젯
   Widget _buildSearchBar() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      decoration: const BoxDecoration(
+      height: 60, // 검색 탭과 동일한 높이
+      padding: const EdgeInsets.all(12), // 검색 탭과 동일한 패딩
+      decoration: BoxDecoration(
         color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: TextField(
         controller: _searchController,
         decoration: InputDecoration(
           hintText: AppLocalizations.of(context)!.searchByFriendName,
-          hintStyle: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-            color: Color(0xFF9CA3AF),
-          ),
-          prefixIcon: const Icon(Icons.search, size: 18, color: Color(0xFF6B7280)),
+          prefixIcon: const Icon(Icons.search),
           suffixIcon:
               _searchController.text.isNotEmpty
                   ? AppIconButton(
@@ -605,22 +611,15 @@ class _FriendsPageState extends State<FriendsPage> {
                   )
                   : null,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(25), // 검색 탭과 동일
             borderSide: BorderSide.none,
           ),
           filled: true,
-          fillColor: const Color(0xFFF3F4F6),
+          fillColor: Colors.grey[100], // 검색 탭과 동일
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 4,
+            horizontal: 16, // 검색 탭과 동일
+            vertical: 8, // 검색 탭과 동일
           ),
-          isDense: true,
-        ),
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          color: Color(0xFF111827),
         ),
         onChanged: _filterFriends,
         textInputAction: TextInputAction.search,
@@ -631,7 +630,7 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 친구 목록 위젯
   Widget _buildFriendsList() {
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
       itemCount: _filteredFriends.length,
       itemBuilder: (context, index) {
         final friend = _filteredFriends[index];
@@ -648,7 +647,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onLongPress: () => _showFriendOptions(friend),
             borderRadius: BorderRadius.circular(10),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
               child: Row(
                 children: [
                   // 프로필 이미지

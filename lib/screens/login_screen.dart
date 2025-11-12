@@ -271,6 +271,58 @@ class _LoginScreenState extends State<LoginScreen>
                                     ),
                                     const SizedBox(height: 24),
 
+                                    // Apple 로그인 버튼
+                                    MaterialButton(
+                                      onPressed:
+                                          authProvider.isLoading
+                                              ? null
+                                              : () => _handleAppleLogin(
+                                                context,
+                                                authProvider,
+                                              ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                      color: Colors.white,
+                                      elevation: 2,
+                                      highlightElevation: 4,
+                                      disabledColor: Colors.grey.shade200,
+                                      padding: EdgeInsets.zero,
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                          horizontal: 16,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(30),
+                                          border: Border.all(color: Colors.grey.shade300),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(
+                                              Icons.apple,
+                                              size: 24,
+                                              color: Colors.black,
+                                            ),
+                                            const SizedBox(width: 12),
+                                            const Text(
+                                              'Apple로 로그인',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.black87,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 16),
+
                                     // Google 로그인 버튼
                                     MaterialButton(
                                       onPressed:
@@ -614,125 +666,132 @@ class _LoginScreenState extends State<LoginScreen>
       } 
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
-        print("로그인 실패 -> 회원가입 필요 메시지 표시");
+        print("로그인 실패 -> 회원가입 필요 여부 확인");
         
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          showDialog(
-            context: context,
-            barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
-            builder: (dialogContext) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: Row(
-                children: [
-                  Icon(
-                    Icons.info_outline,
-                    color: Colors.orange.shade700,
-                    size: 28,
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    '회원가입 필요',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+          
+          // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
+          if (authProvider.consumeSignupRequiredFlag()) {
+            print("회원가입 필요 메시지 표시");
+            showDialog(
+              context: context,
+              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
+              builder: (dialogContext) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.orange.shade700,
+                      size: 28,
                     ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    AppLocalizations.of(context)!.signupRequired,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      height: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: Colors.orange.shade200,
-                        width: 1,
+                    const SizedBox(width: 12),
+                    const Text(
+                      '회원가입 필요',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.arrow_forward,
-                          color: Colors.orange.shade700,
-                          size: 20,
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context)!.signupRequired,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.shade200,
+                          width: 1,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.orange.shade900,
-                              height: 1.4,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.arrow_forward,
+                            color: Colors.orange.shade700,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.orange.shade900,
+                                height: 1.4,
+                              ),
                             ),
                           ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: Text(
+                      '닫기',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HanyangEmailVerificationScreen(),
                         ),
-                      ],
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.signUp,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
                 ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                  },
-                  child: Text(
-                    '닫기',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop();
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const HanyangEmailVerificationScreen(),
-                      ),
-                    );
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue.shade700,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(
-                    AppLocalizations.of(context)!.signUp,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
+            );
+          } else {
+            print("로그인 취소 또는 기타 실패 - 조용히 처리");
+          }
         });
       }
     } catch (e) {
@@ -743,6 +802,255 @@ class _LoginScreenState extends State<LoginScreen>
             content: Text('로그인 중 오류가 발생했습니다: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  // Apple 로그인 처리 함수
+  Future<void> _handleAppleLogin(
+    BuildContext context,
+    AuthProvider authProvider,
+  ) async {
+    try {
+      // Apple 로그인 처리
+      final success = await authProvider.signInWithApple();
+
+      if (!mounted) return;
+
+      // 로그인 성공한 경우
+      if (success && authProvider.isLoggedIn) {
+        print("로그인 성공: ${authProvider.user?.email}");
+
+        // 닉네임 설정 여부 확인
+        if (!authProvider.hasNickname) {
+          print("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
+          );
+          return;
+        }
+
+        // 닉네임 있으면 메인 화면
+        print("로그인 성공 -> 메인 화면으로 이동");
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainScreen()),
+        );
+      } 
+      // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
+      else if (!success) {
+        print("로그인 실패 -> 회원가입 필요 여부 확인");
+        
+        // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          
+          // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
+          if (authProvider.consumeSignupRequiredFlag()) {
+            print("회원가입 필요 메시지 표시");
+            showDialog(
+              context: context,
+              barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
+              builder: (dialogContext) => AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: Colors.orange.shade700,
+                      size: 28,
+                    ),
+                    const SizedBox(width: 12),
+                    const Text(
+                      '회원가입 필요',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context)!.signupRequired,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: Colors.orange.shade200,
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.arrow_forward,
+                            color: Colors.orange.shade700,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '아래 "회원가입하기" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.orange.shade900,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                    },
+                    child: Text(
+                      '닫기',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.of(dialogContext).pop();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const HanyangEmailVerificationScreen(),
+                        ),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.signUp,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          } else {
+            print("로그인 취소 또는 기타 실패 - 조용히 처리");
+          }
+        });
+      }
+    } catch (e) {
+      print("Apple 로그인 오류: $e");
+      
+      // 사용자 친화적 에러 메시지 생성
+      String errorMessage = '로그인 중 오류가 발생했습니다';
+      String errorDetail = '';
+      
+      final errorString = e.toString();
+      
+      if (errorString.contains('operation-not-allowed')) {
+        // Firebase Console에서 Apple Sign In 미활성화 상태
+        // 사용자에게 명확한 안내 표시
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(Icons.warning_amber, color: Colors.orange.shade700, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Firebase 설정 필요',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20),
+                    ),
+                  ),
+                ],
+              ),
+              content: const Text(
+                'Firebase Console에서 Apple Sign In을 활성화해야 합니다.\n\n'
+                '설정 방법:\n'
+                '1. Firebase Console 접속\n'
+                '2. Authentication > Sign-in method\n'
+                '3. Apple 제공업체 활성화\n'
+                '4. 저장 후 앱 재시작\n\n'
+                '※ 이 설정은 개발자만 할 수 있습니다.',
+                style: TextStyle(height: 1.5, fontSize: 15),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('확인', style: TextStyle(fontSize: 16)),
+                ),
+              ],
+            ),
+          );
+        }
+        return; // 여기서 종료 (SnackBar 표시 안 함)
+      } else if (errorString.contains('unknown')) {
+        errorMessage = 'Apple Sign In 설정 확인이 필요합니다';
+        errorDetail = '\n\n시뮬레이터 사용 시:\n'
+            '• 설정 앱에서 Apple ID 로그인 필요\n'
+            '• 또는 실제 iPhone에서 테스트 권장\n\n'
+            'Xcode 설정 확인:\n'
+            '• Sign in with Apple Capability 추가 필요';
+      } else if (errorString.contains('canceled') || errorString.contains('cancelled')) {
+        errorMessage = 'Apple 로그인이 취소되었습니다';
+        errorDetail = '';
+      } else if (errorString.contains('network') || errorString.contains('Network')) {
+        errorMessage = '네트워크 연결을 확인해주세요';
+        errorDetail = '\n인터넷 연결 상태를 확인하고 다시 시도해주세요.';
+      } else {
+        errorMessage = 'Apple 로그인에 실패했습니다';
+        errorDetail = '\n\n다시 시도하거나 Google 로그인을 이용해주세요.';
+      }
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage + errorDetail),
+            backgroundColor: Colors.red.shade700,
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: '확인',
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
           ),
         );
       }

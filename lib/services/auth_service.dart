@@ -55,6 +55,18 @@ class AuthService {
     }
   }
 
+  // Apple 로그인
+  Future<UserCredential?> signInWithApple() async {
+    try {
+      final appleProvider = AppleAuthProvider();
+      final userCredential = await _auth.signInWithProvider(appleProvider);
+      return userCredential;
+    } catch (e) {
+      print('Apple 로그인 오류: $e');
+      return null;
+    }
+  }
+
   // 로그아웃
   Future<void> signOut() async {
     await _googleSignIn.signOut();

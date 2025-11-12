@@ -160,7 +160,7 @@ class FriendCategoryService {
       if (user == null) return false;
 
       // 기존에 다른 카테고리에 있다면 제거
-      await _removeFriendFromAllCategories(friendId);
+      await removeFriendFromAllCategories(friendId);
 
       // 새 카테고리에 추가
       await _firestore
@@ -270,17 +270,44 @@ class FriendCategoryService {
     }
   }
 
-  // 친구를 모든 카테고리에서 제거 (내부 사용)
-  Future<void> _removeFriendFromAllCategories(String friendId) async {
+  // 친구를 모든 카테고리에서 제거
+  Future<void> removeFriendFromAllCategories(String friendId) async {
+    print('   ┌─────────────────────────────────');
+    print('   │ removeFriendFromAllCategories 시작');
+    print('   │ friendId: $friendId');
+    
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      print('   │ ❌ 로그인된 사용자 없음');
+      print('   └─────────────────────────────────');
+      return;
+    }
+    print('   │ 현재 사용자: ${user.uid}');
 
+    // 해당 친구를 포함하는 카테고리 찾기
     final snapshot = await _firestore
         .collection('friend_categories')
         .where('userId', isEqualTo: user.uid)
         .where('friendIds', arrayContains: friendId)
         .get();
 
+    print('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
+    
+    if (snapshot.docs.isEmpty) {
+      print('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
+      print('   └─────────────────────────────────');
+      return;
+    }
+
+    // 각 카테고리 정보 출력
+    for (var doc in snapshot.docs) {
+      final data = doc.data();
+      print('   │ 카테고리: ${data['name']}');
+      print('   │   - ID: ${doc.id}');
+      print('   │   - 현재 친구 수: ${(data['friendIds'] as List).length}');
+    }
+
+    // 배치로 한 번에 업데이트
     final batch = _firestore.batch();
     for (final doc in snapshot.docs) {
       batch.update(doc.reference, {
@@ -289,9 +316,11 @@ class FriendCategoryService {
       });
     }
 
-    if (snapshot.docs.isNotEmpty) {
-      await batch.commit();
-    }
+    print('   │ Firestore 배치 업데이트 실행 중...');
+    await batch.commit();
+    print('   │ ✅ Firestore 배치 커밋 완료');
+    print('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
+    print('   └─────────────────────────────────');
   }
 
   // 카테고리 삭제 시 친구들을 기본 카테고리로 이동

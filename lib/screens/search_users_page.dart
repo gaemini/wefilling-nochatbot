@@ -242,13 +242,15 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        // 빈 공간 터치시 키보드 닫기
-        FocusScope.of(context).unfocus();
-      },
-      child: Column(
-        children: [
+    return Container(
+      color: const Color(0xFFEBEBEB), // 게시판과 동일한 회색 배경
+      child: GestureDetector(
+        onTap: () {
+          // 빈 공간 터치시 키보드 닫기
+          FocusScope.of(context).unfocus();
+        },
+        child: Column(
+          children: [
           // 검색바
           _buildSearchBar(),
 
@@ -288,7 +290,8 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
               },
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

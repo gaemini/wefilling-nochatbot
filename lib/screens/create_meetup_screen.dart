@@ -995,9 +995,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               _thumbnailImage = File(image.path);
                             });
                             ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('이미지가 선택되었습니다'),
-                                duration: Duration(seconds: 1),
+                              SnackBar(
+                                content: Text(AppLocalizations.of(context)!.imageSelected),
+                                duration: const Duration(seconds: 1),
                               ),
                             );
                           }
@@ -1090,8 +1090,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   // 공개 범위 유효성 검사
                                   if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('특정 그룹 공개를 선택했다면 최소 하나의 그룹을 선택해주세요.'),
+                                      SnackBar(
+                                        content: Text(AppLocalizations.of(context)!.noGroupSelectedWarning),
                                         backgroundColor: Colors.orange,
                                       ),
                                     );
@@ -1182,7 +1182,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         context,
                                       ).showSnackBar(
                                         SnackBar(
-                                          content: Text('오류가 발생했습니다: $e'),
+                                          content: Text('${AppLocalizations.of(context)!.error}: $e'),
                                         ),
                                       );
                                     }

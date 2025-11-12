@@ -151,10 +151,12 @@ class _RequestsPageState extends State<RequestsPage>
 
   @override
   Widget build(BuildContext context) {
-    return !_isInitialized
-        ? const Center(child: CircularProgressIndicator())
-        : Column(
-            children: [
+    return Container(
+      color: const Color(0xFFEBEBEB), // 게시판과 동일한 회색 배경
+      child: !_isInitialized
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
               // 헤더 영역 (높이 통일 - 검색창과 동일)
               Container(
                 height: 60, // 검색 탭과 동일한 높이
@@ -175,7 +177,7 @@ class _RequestsPageState extends State<RequestsPage>
                   labelColor: Colors.blue,
                   unselectedLabelColor: Colors.grey,
                   indicatorColor: Colors.blue,
-                  indicatorWeight: 2.5,
+                  indicatorWeight: 2.0,
                   dividerColor: Colors.transparent, // TabBar 하단 구분선 제거
                   labelStyle: const TextStyle(
                     fontSize: 14,
@@ -201,8 +203,9 @@ class _RequestsPageState extends State<RequestsPage>
                   ],
                 ),
               ),
-            ],
-          );
+              ],
+            ),
+    );
   }
 
   /// 받은 요청 탭
@@ -310,31 +313,40 @@ class _RequestsPageState extends State<RequestsPage>
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 6),
       elevation: 2,
+      color: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
         child: Row(
           children: [
             // 프로필 이미지
-            CircleAvatar(
-              radius: 24,
-              backgroundColor: Colors.grey[300],
-              backgroundImage:
-                  user.hasProfileImage ? NetworkImage(user.photoURL!) : null,
-              child:
-                  !user.hasProfileImage
-                      ? Text(
-                        user.displayNameOrNickname.isNotEmpty
-                            ? user.displayNameOrNickname[0].toUpperCase()
-                            : '?',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.grey[300],
+              ),
+              child: user.hasProfileImage
+                  ? ClipOval(
+                      child: Image.network(
+                        user.photoURL!,
+                        width: 48,
+                        height: 48,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Colors.grey[600],
                         ),
-                      )
-                      : null,
+                      ),
+                    )
+                  : Icon(
+                      Icons.person,
+                      size: 24,
+                      color: Colors.grey[600],
+                    ),
             ),
 
             const SizedBox(width: 16),
@@ -347,47 +359,72 @@ class _RequestsPageState extends State<RequestsPage>
                   Text(
                     user.displayNameOrNickname,
                     style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
                     ),
                   ),
-                  if (user.nickname != null &&
-                      user.nickname != user.displayName &&
-                      user.nickname!.isNotEmpty)
-                    Text(
-                      user.displayName,
-                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-                    ),
                   const SizedBox(height: 4),
                   Text(
                     _getTimeAgo(request.createdAt),
-                    style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      color: Color(0xFF9CA3AF),
+                    ),
                   ),
                 ],
               ),
             ),
 
-            // 액션 버튼들
-            Column(
+            // 액션 버튼들 (가로 배치)
+            Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
+                // 수락 버튼
                 ElevatedButton(
                   onPressed: () => _acceptRequest(request.fromUid),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFF5865F2), // 위필링 포인트 컬러
                     foregroundColor: Colors.white,
-                    minimumSize: const Size(60, 32),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    minimumSize: const Size(60, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    elevation: 0,
                   ),
-                  child: Text(AppLocalizations.of(context)!.accept, style: const TextStyle(fontSize: 12)),
+                  child: Text(
+                    AppLocalizations.of(context)!.accept,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(width: 8),
+                // 거절 버튼
                 OutlinedButton(
                   onPressed: () => _rejectRequest(request.fromUid),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red,
-                    side: const BorderSide(color: Colors.red),
-                    minimumSize: const Size(60, 32),
+                    foregroundColor: const Color(0xFF6B7280), // 부드러운 회색
+                    side: const BorderSide(color: Color(0xFF9CA3AF)), // 연한 회색 테두리
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    minimumSize: const Size(60, 36),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
-                  child: Text(AppLocalizations.of(context)!.reject, style: const TextStyle(fontSize: 12)),
+                  child: Text(
+                    AppLocalizations.of(context)!.reject,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -400,10 +437,11 @@ class _RequestsPageState extends State<RequestsPage>
   /// 보낸 요청 타일
   Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 6),
       elevation: 2,
+      color: Colors.white,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
         child: Row(
           children: [
             // 프로필 이미지

@@ -275,6 +275,162 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // Apple 로그인
+  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
+  Future<bool> signInWithApple({bool skipEmailVerifiedCheck = false}) async {
+    try {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🍎 Apple Sign In 시작');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+      // 플랫폼 체크
+      if (!Platform.isIOS && !Platform.isMacOS) {
+        print('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
+        print('   현재 플랫폼: ${Platform.operatingSystem}');
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+      
+      _isLoading = true;
+      notifyListeners();
+
+      // Apple Sign-In 직접 호출 (Google과 일관성 유지)
+      print('🍎 AppleAuthProvider 생성 중...');
+      final appleProvider = AppleAuthProvider();
+      appleProvider.addScope('email');
+      appleProvider.addScope('name');
+      print('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
+      
+      print('🍎 Firebase Auth signInWithProvider 호출 중...');
+      final userCredential = await _auth.signInWithProvider(appleProvider);
+      
+      print('🍎 Apple Sign In 성공!');
+      print('   User ID: ${userCredential.user?.uid}');
+      print('   Email: ${userCredential.user?.email ?? "비공개"}');
+      print('   Display Name: ${userCredential.user?.displayName ?? "없음"}');
+
+      // 사용자 정보 업데이트
+      _user = userCredential.user;
+
+      // 사용자 정보 Firebase 확인 (자동 생성 없이)
+      if (_user != null) {
+        // Firestore에서 사용자 문서 존재 여부 확인
+        final docSnapshot = await _firestore
+            .collection('users')
+            .doc(_user!.uid)
+            .get();
+
+        if (!docSnapshot.exists) {
+          // 신규 사용자 - 회원가입 필요
+          if (skipEmailVerifiedCheck) {
+            // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
+            print('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+            _isLoading = false;
+            notifyListeners();
+            return true; // 로그인 허용 (completeEmailVerification 실행 예정)
+          }
+          
+          print('❌ 신규 사용자: 회원가입이 필요합니다.');
+          
+          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
+          _signupRequired = true;
+          
+          // Firebase 로그아웃
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          
+          return false; // 로그인 거부
+        }
+
+        // 기존 사용자 - 한양메일 인증 확인
+        final userData = docSnapshot.data();
+        final emailVerified = userData?['emailVerified'] == true;
+
+        if (!emailVerified && !skipEmailVerifiedCheck) {
+          // 한양메일 인증 미완료
+          print('❌ 한양메일 인증이 완료되지 않았습니다.');
+          
+          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
+          _signupRequired = true;
+          
+          // Firebase 로그아웃
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          
+          return false; // 로그인 거부
+        }
+
+        // 기존 사용자 정보 업데이트 (lastLogin, displayName 동기화)
+        await _updateExistingUserDocument();
+        await _loadUserData();
+        
+        // FCM 초기화 (알림 기능)
+        try {
+          await FCMService().initialize(_user!.uid);
+          print('✅ FCM 초기화 완료');
+        } catch (e) {
+          print('⚠️ FCM 초기화 실패 (계속 진행): $e');
+          // FCM 실패해도 로그인은 계속 진행
+        }
+      }
+
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      return _user != null;
+    } on FirebaseAuthException catch (e) {
+      // Firebase Auth 관련 예외 처리 (구체적)
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🍎 Apple Sign In 실패 (FirebaseAuthException)');
+      print('   에러 코드: ${e.code}');
+      print('   에러 메시지: ${e.message}');
+      print('   상세 정보: ${e.toString()}');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+      if (e.code == 'unknown') {
+        print('💡 해결 방법:');
+        print('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
+        print('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
+        print('   3. 실제 iOS 기기에서 테스트 권장');
+      }
+      
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on Exception catch (e) {
+      // 기타 예외 처리
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🍎 Apple Sign In 실패 (Exception)');
+      final errorMessage = e.toString();
+      if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
+        print('   사용자가 Apple 로그인을 취소했습니다');
+      } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
+                 errorMessage.contains('connection') || errorMessage.contains('Connection')) {
+        print('   네트워크 연결 오류');
+      } else {
+        print('   에러: $e');
+      }
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🍎 Apple Sign In 실패 (알 수 없는 에러)');
+      print('   에러 타입: ${e.runtimeType}');
+      print('   에러 내용: $e');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // 기존 사용자 문서 업데이트 (lastLogin, displayName 동기화)
   Future<void> _updateExistingUserDocument() async {
     if (_user == null) return;

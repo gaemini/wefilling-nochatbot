@@ -120,7 +120,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('프로필을 불러올 수 없습니다: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)!.cannotLoadProfile}: $e')),
         );
       }
     }
@@ -152,7 +152,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
     // Feature Flag 재확인
     if (!FeatureFlagService().isFeatureEnabled(FeatureFlagService.FEATURE_PROFILE_GRID)) {
       return Scaffold(
-        appBar: AppBar(title: const Text('프로필')),
+        appBar: AppBar(title: Text(AppLocalizations.of(context)!.profile)),
         body: const Center(
           child: Text(
             '프로필 그리드 기능이 비활성화되어 있습니다.',
@@ -164,16 +164,16 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
 
     if (_isLoading) {
       return Scaffold(
-        appBar: AppBar(title: const Text('프로필')),
+        appBar: AppBar(title: Text(AppLocalizations.of(context)!.profile)),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_userProfile == null) {
       return Scaffold(
-        appBar: AppBar(title: const Text('프로필')),
+        appBar: AppBar(title: Text(AppLocalizations.of(context)!.profile)),
         body: const Center(
-          child: Text('프로필을 불러올 수 없습니다.'),
+          child: Text(AppLocalizations.of(context)!.cannotLoadProfile),
         ),
       );
     }
@@ -274,7 +274,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
     });
     
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('팔로우했습니다.')),
+      SnackBar(content: Text(AppLocalizations.of(context)!.success)),
     );
   }
 
@@ -286,7 +286,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
     });
     
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('팔로우를 취소했습니다.')),
+      SnackBar(content: Text(AppLocalizations.of(context)!.success)),
     );
   }
 
@@ -294,7 +294,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
   void _handleMessage() {
     // TODO: 메시지 화면으로 이동
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('메시지 기능은 준비 중입니다.')),
+      SnackBar(content: Text(AppLocalizations.of(context)!.messageFeatureComingSoon)),
     );
   }
 
@@ -302,7 +302,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
   void _handleShare() {
     // TODO: 프로필 공유 로직 구현
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('프로필 링크를 복사했습니다.')),
+      SnackBar(content: Text(AppLocalizations.of(context)!.success)),
     );
   }
 
@@ -313,17 +313,17 @@ class _ProfileGridScreenState extends State<ProfileGridScreen> with TickerProvid
       isOwnProfile: _isOwnProfile,
       onBlock: () {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('사용자를 차단했습니다.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.userBlocked)),
         );
       },
       onReport: () {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('신고가 접수되었습니다.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.reportSubmitted)),
         );
       },
       onCopyLink: () {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('프로필 링크를 복사했습니다.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.success)),
         );
       },
       onSettings: () {

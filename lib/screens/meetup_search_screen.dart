@@ -71,7 +71,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                 });
                 ScaffoldMessenger.of(
                   context,
-                ).showSnackBar(SnackBar(content: Text('검색 중 오류가 발생했습니다: $e')));
+                ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
               }
             },
           );
@@ -102,7 +102,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
-        title: const Text('모임 검색'),
+        title: Text(AppLocalizations.of(context)!.searchMeetups),
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
         elevation: 0,
@@ -232,7 +232,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                                       strokeWidth: 2,
                                     ),
                                   )
-                                  : const Text('검색하기'),
+                                  : Text(AppLocalizations.of(context)!.searching),
                         ),
                       ),
                     ],

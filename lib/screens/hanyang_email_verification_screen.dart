@@ -158,7 +158,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         return;
       }
 
-      // 인증 성공 시 Google 로그인 유도 다이얼로그 표시
+      // 인증 성공 시 로그인 방법 선택 다이얼로그 표시
       if (verified && mounted) {
         setState(() {
           _isLoading = false;
@@ -169,17 +169,77 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           barrierDismissible: false,
           builder: (dialogContext) => AlertDialog(
             title: Text(AppLocalizations.of(context)!.verificationSuccess ?? ""),
-            content: Text(AppLocalizations.of(context)!.proceedWithGoogleLogin ?? ""),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('로그인 방법을 선택해주세요'),
+                const SizedBox(height: 16),
+              ],
+            ),
             actions: [
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(dialogContext); // 다이얼로그 닫기
-                  
-                  // Google 로그인 실행 (한양메일 인증 완료 후이므로 emailVerified 체크 우회)
+              // Apple로 계속하기 버튼
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _continueWithApple();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 45),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.apple, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Apple로 계속하기'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Google로 계속하기 버튼
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _continueWithGoogle();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black87,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  minimumSize: const Size(double.infinity, 45),
+                ),
+                child: Text(AppLocalizations.of(context)!.continueWithGoogle ?? ""),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = '${AppLocalizations.of(context)!.error}: $e';
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  // Google로 계속하기
+  Future<void> _continueWithGoogle() async {
                   try {
                     setState(() {
                       _isLoading = true;
                     });
+      
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
                     
                     // skipEmailVerifiedCheck=true로 설정하여 회원가입 진행
                     final loginSuccess = await authProvider.signInWithGoogle(
@@ -235,23 +295,67 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       });
                     }
                   }
-                },
-                child: Text(AppLocalizations.of(context)!.continueWithGoogle ?? ""),
-              ),
-            ],
-          ),
-        );
+  }
+
+  // Apple로 계속하기
+  Future<void> _continueWithApple() async {
+    try {
+      setState(() {
+        _isLoading = true;
+      });
+      
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      
+      // skipEmailVerifiedCheck=true로 설정하여 회원가입 진행
+      final loginSuccess = await authProvider.signInWithApple(
+        skipEmailVerifiedCheck: true,
+      );
+      
+      if (mounted && loginSuccess) {
+        // Apple 로그인 성공 후 최종 확정(Callables)
+        bool completed = false;
+        try {
+          completed = await authProvider.completeEmailVerification(
+            _emailController.text.trim(),
+          );
+        } on FirebaseFunctionsException catch (e) {
+          if (e.code == 'already-exists') {
+            setState(() {
+              _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? "";
+            });
+          } else {
+            setState(() {
+              _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
+            });
+          }
+          setState(() { _isLoading = false; });
         return;
+      }
+
+        if (completed) {
+          // 닉네임 설정 화면으로 이동
+      if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
+            );
+          }
+        } else if (mounted) {
+          setState(() {
+            _errorMessage = '회원가입 처리 중 오류가 발생했습니다.';
+            _isLoading = false;
+          });
+        }
+      } else if (mounted) {
+        setState(() {
+          _errorMessage = 'Apple 로그인에 실패했습니다.';
+          _isLoading = false;
+        });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: $e';
-        });
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
+          _errorMessage = 'Apple 로그인 실패: $e';
           _isLoading = false;
         });
       }

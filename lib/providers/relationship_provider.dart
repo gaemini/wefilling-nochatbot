@@ -7,6 +7,7 @@ import '../models/user_profile.dart';
 import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../services/relationship_service.dart';
+import '../services/friend_category_service.dart';
 
 class RelationshipProvider with ChangeNotifier {
   final RelationshipService _relationshipService = RelationshipService();
@@ -203,25 +204,59 @@ class RelationshipProvider with ChangeNotifier {
   /// 친구 삭제
   Future<bool> unfriend(String otherUid) async {
     try {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🗑️ 친구 삭제 시작');
+      print('   대상 UID: $otherUid');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
       _setLoading(true);
       clearError();
 
       final success = await _relationshipService.unfriend(otherUid);
+      print('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
+      
       if (success) {
         // 관계 상태 업데이트
         await updateRelationshipStatus(otherUid);
+        print('   관계 상태 업데이트: ✅ 완료');
+        
+        // 모든 친구 카테고리에서 제거 (기존 기능에 영향 없도록 try-catch)
+        try {
+          print('   카테고리에서 제거 시작...');
+          final categoryService = FriendCategoryService();
+          await categoryService.removeFriendFromAllCategories(otherUid);
+          print('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
+        } catch (categoryError) {
+          print('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
+          // 카테고리 제거 실패해도 친구 삭제는 성공으로 처리
+        }
+        
         // 친구 목록에서 제거
         _friends.removeWhere((friend) => friend.uid == otherUid);
+        print('   _friends 목록에서 제거: ✅ 완료');
+        
         // 검색 결과에 해당 사용자 다시 추가
         final userProfile = await _relationshipService.getUserProfile(otherUid);
         if (userProfile != null &&
             !_searchResults.any((u) => u.uid == otherUid)) {
           _searchResults.add(userProfile);
         }
+        print('   검색 결과 업데이트: ✅ 완료');
+        
         notifyListeners();
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        print('🎉 친구 삭제 완료!');
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      } else {
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        print('❌ 친구 삭제 실패');
+        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
       return success;
     } catch (e) {
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('❌ 친구 삭제 중 예외 발생: $e');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _setError('친구 삭제 중 오류가 발생했습니다: $e');
       return false;
     } finally {

@@ -141,7 +141,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('본인에게는 메시지를 보낼 수 없습니다'),
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -157,7 +157,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('이 게시글 작성자에게는 메시지를 보낼 수 없습니다'),
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -172,7 +172,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('탈퇴한 사용자에게는 메시지를 보낼 수 없습니다'),
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -258,7 +258,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!isLoggedIn) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('로그인이 필요한 기능입니다'),
+          content: Text(AppLocalizations.of(context)!.loginRequired),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 2),
         ),
@@ -897,7 +897,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     print('🔄 수동 재시도: $imageUrl');
                   },
                   icon: Icon(Icons.refresh, size: 16),
-                  label: Text('다시 시도', style: TextStyle(fontSize: 12)),
+                  label: Text(AppLocalizations.of(context)!.retryAction, style: const TextStyle(fontSize: 12)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     foregroundColor: Colors.white,

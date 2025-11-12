@@ -2948,6 +2948,24 @@ abstract class AppLocalizations {
   /// **'Google 계정으로 계속하기'**
   String get continueWithGoogle;
 
+  /// No description provided for @appleLogin.
+  ///
+  /// In ko, this message translates to:
+  /// **'Apple로 로그인'**
+  String get appleLogin;
+
+  /// No description provided for @continueWithApple.
+  ///
+  /// In ko, this message translates to:
+  /// **'Apple로 계속하기'**
+  String get continueWithApple;
+
+  /// No description provided for @chooseLoginMethod.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인 방법 선택'**
+  String get chooseLoginMethod;
+
   /// No description provided for @hanyangEmailAlreadyUsed.
   ///
   /// In ko, this message translates to:

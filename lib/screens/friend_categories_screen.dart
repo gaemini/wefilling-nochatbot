@@ -60,25 +60,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.friendCategoriesManagement,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            color: Color(0xFF111827),
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-      ),
-      body: StreamBuilder<List<FriendCategory>>(
+      body: SafeArea(
+        child: StreamBuilder<List<FriendCategory>>(
         stream: _categoryService.getCategoriesStream(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -141,6 +124,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             },
           );
         },
+        ),
       ),
       floatingActionButton: AppFab(
         icon: IconStyles.add,
@@ -164,10 +148,10 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         leading: Container(
-          width: 44,
-          height: 44,
+          width: 46,
+          height: 46,
           decoration: BoxDecoration(
             color: color.withOpacity(0.1),
             borderRadius: BorderRadius.circular(10),
@@ -186,13 +170,13 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           category.name,
           style: const TextStyle(
             fontFamily: 'Pretendard',
-            fontWeight: FontWeight.w600,
-            fontSize: 15,
+            fontWeight: FontWeight.w700, // 더 두껍게 (600 → 700)
+            fontSize: 16, // 크기 증가 (15 → 16)
             color: Color(0xFF111827),
           ),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
+          padding: const EdgeInsets.only(top: 6), // 간격 증가 (4 → 6)
           child: FutureBuilder<int>(
             future: _getActualFriendCount(category.friendIds),
             builder: (context, snapshot) {
@@ -201,9 +185,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 AppLocalizations.of(context)!.friendsInGroup(count),
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
-                  color: Color(0xFF6B7280),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B7280), // 적당한 회색 (grey-500)
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500, // 중간 굵기 (600 → 500)
                 ),
               );
             },

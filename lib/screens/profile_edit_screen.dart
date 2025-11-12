@@ -84,7 +84,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('이미지 선택 중 오류가 발생했습니다.'),
+          content: Text(AppLocalizations.of(context)!.imageSelectError),
           backgroundColor: AppTheme.accentRed,
         ),
       );
@@ -110,7 +110,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('사진 촬영 중 오류가 발생했습니다.'),
+          content: Text(AppLocalizations.of(context)!.photoError),
           backgroundColor: AppTheme.accentRed,
         ),
       );
@@ -131,7 +131,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             children: [
               ListTile(
                 leading: Icon(Icons.photo_library, color: AppTheme.primary),
-                title: Text('갤러리에서 선택'),
+                title: Text(AppLocalizations.of(context)!.selectFromGallery),
                 onTap: () {
                   Navigator.pop(context);
                   _selectImage();
@@ -139,7 +139,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
               ListTile(
                 leading: Icon(Icons.camera_alt, color: AppTheme.primary),
-                title: Text('카메라로 촬영'),
+                title: Text(AppLocalizations.of(context)!.takePhoto),
                 onTap: () {
                   Navigator.pop(context);
                   _takePhoto();
@@ -147,7 +147,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               ),
               ListTile(
                 leading: Icon(Icons.account_circle, color: AppTheme.primary),
-                title: Text('기본 이미지 사용'),
+                title: Text(AppLocalizations.of(context)!.useDefaultImage),
                 onTap: () {
                   Navigator.pop(context);
                   setState(() {
@@ -232,7 +232,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('프로필이 업데이트되었습니다'),
+              content: Text(AppLocalizations.of(context)!.updating),
               backgroundColor: AppTheme.accentEmerald,
             ),
           );
@@ -240,7 +240,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('프로필 업데이트에 실패했습니다'),
+              content: Text(AppLocalizations.of(context)!.error),
               backgroundColor: AppTheme.accentRed,
             ),
           );
@@ -267,21 +267,21 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('모든 게시글 업데이트'),
+        title: Text(AppLocalizations.of(context)!.updateAllPosts),
         content: Text(
           '현재 프로필 정보(이름, 사진)를 모든 과거 게시글과 모임에 반영합니다.\n\n이 작업은 시간이 걸릴 수 있습니다.',
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: Text('취소'),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
             ),
-            child: Text('업데이트', style: TextStyle(color: Colors.white)),
+            child: Text(AppLocalizations.of(context)!.update, style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -338,7 +338,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         if (postsSuccess) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('✅ 모든 게시글에 프로필이 반영되었습니다!'),
+              content: Text(AppLocalizations.of(context)!.applyProfileToAllPosts),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
             ),
@@ -346,7 +346,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('❌ 업데이트에 실패했습니다. 콘솔 로그를 확인해주세요.'),
+              content: Text(AppLocalizations.of(context)!.error),
               backgroundColor: Colors.red,
               duration: Duration(seconds: 3),
             ),
@@ -360,7 +360,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 4),
           ),

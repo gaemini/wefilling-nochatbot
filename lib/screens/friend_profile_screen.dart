@@ -141,12 +141,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             children: [
               // 프로필 이미지 (88px)
               Container(
-                decoration: BoxDecoration(
+                decoration: const BoxDecoration(
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: const Color(0xFF5865F2),
-                    width: 3,
-                  ),
                 ),
                 child: Container(
                   width: 88,

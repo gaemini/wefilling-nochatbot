@@ -1521,6 +1521,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueWithGoogle => 'Continue with Google';
 
   @override
+  String get appleLogin => 'Sign in with Apple';
+
+  @override
+  String get continueWithApple => 'Continue with Apple';
+
+  @override
+  String get chooseLoginMethod => 'Choose Login Method';
+
+  @override
   String get hanyangEmailAlreadyUsed =>
       'This Hanyang email is already in use. Please use another email.';
 

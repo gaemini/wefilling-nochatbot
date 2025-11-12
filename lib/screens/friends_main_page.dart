@@ -41,7 +41,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFEBEBEB),
       appBar: AppBar(
         toolbarHeight: 0,
         elevation: 0,

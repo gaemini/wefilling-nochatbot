@@ -27,13 +27,14 @@ class UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.only(bottom: 6),
       elevation: 2,
+      color: Colors.white,
       child: InkWell(
         onTap: onTilePressed,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
           child: Row(
             children: [
               // 프로필 이미지
@@ -115,30 +116,20 @@ class UserTile extends StatelessWidget {
         if (user.nationality != null && user.nationality!.isNotEmpty)
           Row(
             children: [
-              Icon(Icons.flag, size: 16, color: Colors.grey[600]),
+              Icon(Icons.flag, size: 16, color: Colors.grey[700]),
               const SizedBox(width: 4),
               Text(
                 CountryFlagHelper.getCountryInfo(user.nationality!)?.getLocalizedName(
                   Localizations.localeOf(context).languageCode
                 ) ?? user.nationality!,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: const Color(0xFF4B5563), // 더 진한 회색 (grey-600)
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
-
-        const SizedBox(height: 4),
-
-        // 친구 수
-        Row(
-          children: [
-            Icon(Icons.people, size: 16, color: Colors.grey[600]),
-            const SizedBox(width: 4),
-            Text(
-              AppLocalizations.of(context)!.friendsCount(user.friendsCount),
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            ),
-          ],
-        ),
       ],
     );
   }
@@ -183,7 +174,11 @@ class UserTile extends StatelessWidget {
       ),
       child: Text(
         relationshipStatus.actionButtonText,
-        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

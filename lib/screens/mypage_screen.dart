@@ -269,9 +269,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
                 padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              child: const Text(
-                '프로필 편집',
-                style: TextStyle(
+              child: Text(
+                AppLocalizations.of(context)!.profileEdit,
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 15,
                   fontWeight: FontWeight.w600,

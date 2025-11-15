@@ -492,7 +492,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meetupFull => '모임이 가득 찼습니다';
 
   @override
-  String get meetupClosed => '종료된 모임입니다';
+  String get meetupClosed => '모집 마감됨';
 
   @override
   String get hostedMeetups => '주최한 모임';
@@ -535,9 +535,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get reviews => '후기';
-
-  @override
-  String get checkReview => '후기 확인';
 
   @override
   String get saved => '저장된';
@@ -1725,7 +1722,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get deleteReview => '후기 삭제';
 
   @override
-  String get completeOrCancelMeetup => '모임 완료 / 취소';
+  String get completeOrCancelMeetup => '모임 확정/취소';
 
   @override
   String get meetupCompleteTitle => '모임 완료';
@@ -2011,6 +2008,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendsOnly => '친구 공개';
 
   @override
+  String get topic => '제목';
+
+  @override
+  String get conversationStartedFromPost => '이 대화는 게시글에서 시작되었습니다';
+
+  @override
+  String get viewPost => '게시글 보기';
+
+  @override
+  String get postLoadError => '게시글을 불러오는 중 오류가 발생했습니다';
+
+  @override
   String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.';
 
   @override
@@ -2197,4 +2206,46 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get friendSelection => '친구 선택';
+
+  @override
+  String get checkReview => '후기글 확인하기';
+
+  @override
+  String get reviewChecked => '리뷰 확인 완료';
+
+  @override
+  String get reviewConfirmed => '후기 확인됨';
+
+  @override
+  String get checkMeetupReview => '후기 확인';
+
+  @override
+  String get reviewAcceptance => '후기 수락';
+
+  @override
+  String get acceptReview => '후기 수락하기';
+
+  @override
+  String get confirmReview => '확인 완료';
+
+  @override
+  String get addPhoto => '사진 추가';
+
+  @override
+  String get closeMeetup => '모집 마감';
+
+  @override
+  String get closeMeetupConfirm => '모집을 마감하시겠습니까?';
+
+  @override
+  String get closeMeetupSuccess => '모집이 마감되었습니다';
+
+  @override
+  String get closeMeetupFailed => '모집 마감에 실패했습니다';
+
+  @override
+  String get completeMeetup => '모임 확정';
+
+  @override
+  String get meetupConfirmed => '모임 확정';
 }

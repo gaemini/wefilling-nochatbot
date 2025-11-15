@@ -118,9 +118,13 @@ class _DMListScreenState extends State<DMListScreen> {
         }
         
         // 필터 적용: 친구 / 익명
-        print('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
-        
         final filtered = conversations.where((c) {
+          // 현재 사용자가 participants에 포함되어 있는지 확인
+          if (!c.participants.contains(_currentUser!.uid)) {
+            print('❌ [DM필터] 제외: ${c.id} (현재 사용자가 participants에 없음!)');
+            return false;
+          }
+          
           // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
           final isSelfDM = c.participants.length == 2 && 
                            c.participants[0] == _currentUser!.uid && 
@@ -132,35 +136,24 @@ class _DMListScreenState extends State<DMListScreen> {
             return false;
           }
 
-          final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
+          // 익명 여부 확인: conversationId가 'anon_'으로 시작하거나 isAnonymous 필드 확인
+          final isAnonById = c.id.startsWith('anon_');
+          final isAnonByField = c.isOtherUserAnonymous(_currentUser!.uid);
+          final isAnon = isAnonById || isAnonByField;
           
-          // 친구 탭: 익명이 아니고 게시글 DM도 아닌 경우만 표시
+          // 친구 탭: 익명이 아닌 대화만 표시 (일반 친구 대화)
           // 익명 탭: 익명 대화만 표시 (게시글 DM 포함)
-          final isPostDM = c.dmTitle != null && c.dmTitle!.isNotEmpty;
           final passesType = _filter == DMFilter.friends 
-              ? (!isAnon && !isPostDM)  // 친구 탭: 일반 친구 대화만
-              : isAnon;  // 익명 탭: 모든 익명 대화 (게시글 DM 포함)
+              ? !isAnon  // 친구 탭: 익명이 아닌 대화
+              : isAnon;  // 익명 탭: 익명 대화
           
           final notHiddenLocal = !_hiddenConversationIds.contains(c.id);
           final notArchivedServer = !(c.archivedBy.contains(_currentUser!.uid));
           // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
           final hasOtherParticipant = c.participants.length >= 2;
           
-          final result = passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
-          
-          if (!result) {
-            print('  ❌ 제외: ${c.id}');
-            print('     - isAnon: $isAnon, isPostDM: $isPostDM');
-            print('     - passesType: $passesType, notHidden: $notHiddenLocal');
-            print('     - notArchived: $notArchivedServer, hasOther: $hasOtherParticipant');
-          } else {
-            print('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
-          }
-          
-          return result;
+          return passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
         }).toList();
-        
-        print('📊 필터링 결과: ${filtered.length}개 대화방 표시');
 
         if (filtered.isEmpty) {
           return _buildEmptyState(
@@ -282,33 +275,81 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 대화방 카드 빌드
   Widget _buildConversationCard(Conversation conversation) {
-    final otherUserName = conversation.getOtherUserName(_currentUser!.uid);
-    final otherUserPhoto = conversation.getOtherUserPhoto(_currentUser!.uid);
+    final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
       context,
       conversation.lastMessageTime,
     );
 
-    // 제목 결정: 익명 글 DM이면 "제목: 게시글 제목" 형식, 그 외엔 기존 표시
+    // 제목 결정: 익명 글 DM이면 "제목/Topic: 게시글 제목" 형식
     final dmTitle = conversation.dmTitle;
-    final displayName = (dmTitle != null && dmTitle.isNotEmpty)
-        ? '제목: $dmTitle'
-        : (isAnonymous 
-            ? 'Anonymous' : otherUserName);
+    final hasCustomTitle = dmTitle != null && dmTitle.isNotEmpty;
 
-    // 🔥 핵심 변경: 실시간 배지 업데이트 (StreamBuilder)
-    // 카카오톡처럼 읽음 처리 즉시 배지 사라짐
+    // 익명이 아닌 경우 실시간 프로필 조회
+    if (!isAnonymous && !hasCustomTitle) {
+      return FutureBuilder<DocumentSnapshot>(
+        future: FirebaseFirestore.instance.collection('users').doc(otherUserId).get(),
+        builder: (context, userSnapshot) {
+          // 로딩 중이거나 오류가 있어도 기본 정보로 표시
+          String displayName;
+          String photoUrl;
+          
+          if (userSnapshot.connectionState == ConnectionState.waiting) {
+            // 로딩 중: 대화방에 저장된 이름 사용
+            displayName = conversation.getOtherUserName(_currentUser!.uid);
+            photoUrl = conversation.getOtherUserPhoto(_currentUser!.uid);
+          } else if (userSnapshot.hasData && userSnapshot.data!.exists) {
+            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+            // 닉네임 우선, 없으면 displayName 사용
+            displayName = userData?['nickname'] ?? userData?['displayName'] ?? 'Unknown';
+            photoUrl = userData?['photoURL'] ?? '';
+          } else {
+            // 프로필 조회 실패 시 대화방에 저장된 이름 사용
+            displayName = conversation.getOtherUserName(_currentUser!.uid);
+            photoUrl = conversation.getOtherUserPhoto(_currentUser!.uid);
+          }
+
+          // 배지는 카드 콘텐츠 내부에서 StreamBuilder로 처리
+          return _buildConversationCardWithBadge(
+            conversation: conversation,
+            displayName: displayName,
+            otherUserPhoto: photoUrl,
+            isAnonymous: isAnonymous,
+            timeString: timeString,
+          );
+        },
+      );
+    } else {
+      // 익명이거나 커스텀 타이틀이 있는 경우
+      final displayName = hasCustomTitle
+          ? '${AppLocalizations.of(context)!.topic}: $dmTitle'
+          : 'Anonymous';
+      final photoUrl = conversation.getOtherUserPhoto(_currentUser!.uid);
+
+      return _buildConversationCardWithBadge(
+        conversation: conversation,
+        displayName: displayName,
+        otherUserPhoto: photoUrl,
+        isAnonymous: isAnonymous,
+        timeString: timeString,
+      );
+    }
+  }
+
+  /// 배지와 함께 대화방 카드 빌드 (StreamBuilder 사용)
+  Widget _buildConversationCardWithBadge({
+    required Conversation conversation,
+    required String displayName,
+    required String otherUserPhoto,
+    required bool isAnonymous,
+    required String timeString,
+  }) {
     return StreamBuilder<int>(
       stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
-      initialData: 0, // 초기값 0
+      initialData: 0,
       builder: (context, snapshot) {
         final unreadCount = snapshot.data ?? 0;
-        
-        // 디버그 로그
-        if (unreadCount > 0) {
-          print('🔴 실시간 배지 표시: ${conversation.id} - $unreadCount개');
-        }
 
         return _buildConversationCardContent(
           conversation: conversation,
@@ -575,12 +616,22 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 대화방 열기
   void _openConversation(Conversation conversation) {
+    final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    print('📂 대화방 열기');
+    print('  - conversationId: ${conversation.id}');
+    print('  - participants: ${conversation.participants}');
+    print('  - 내 UID: ${_currentUser!.uid}');
+    print('  - 상대방 UID: $otherUserId');
+    print('  - 상대방 이름: ${conversation.getOtherUserName(_currentUser!.uid)}');
+    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => DMChatScreen(
           conversationId: conversation.id,
-          otherUserId: conversation.getOtherUserId(_currentUser!.uid),
+          otherUserId: otherUserId,
         ),
       ),
     );
@@ -810,14 +861,24 @@ class _DMListScreenState extends State<DMListScreen> {
   /// 친구와 대화 시작
   Future<void> _startConversationWithFriend(UserProfile friend) async {
     try {
-      print('🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🚀 친구와 대화 시작');
+      print('  - 친구 이름: ${friend.displayNameOrNickname}');
+      print('  - 친구 UID: ${friend.uid}');
+      print('  - 내 UID: ${_currentUser?.uid}');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       final conversationId = await _dmService.getOrCreateConversation(
         friend.uid,
-        isOtherUserAnonymous: false,
+        isOtherUserAnonymous: false,  // 친구는 익명이 아님
+        isFriend: true,  // 친구 프로필에서 시작한 대화임을 명시
       );
       
-      print('✅ 대화방 ID: $conversationId');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('✅ 대화방 생성/조회 완료');
+      print('  - conversationId: $conversationId');
+      print('  - 예상 형식: ${_currentUser?.uid}_${friend.uid} (사전순 정렬)');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       if (conversationId != null && mounted) {
         // 대화방으로 이동

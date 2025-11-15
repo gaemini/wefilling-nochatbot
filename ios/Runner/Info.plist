@@ -22,6 +22,8 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>UIUserInterfaceStyle</key>
+	<string>Light</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,6 +32,14 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>wefilling-compose</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wefilling</string>
 			</array>
 		</dict>
 	</array>
@@ -73,11 +83,11 @@
 		</dict>
 	</dict>
 	<key>NSUserNotificationsUsageDescription</key>
-	<string>댓글, 좋아요 등의 알림을 받기 위해 권한이 필요합니다.</string>
+	<string>This app needs notification permission to send alerts for comments, likes, and other activities.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>프로필 사진 및 게시글 이미지를 선택하기 위해 사진첩 접근 권한이 필요합니다.</string>
+	<string>This app needs photo library access to select profile pictures and post images.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>프로필 사진 촬영 및 게시글 작성을 위해 카메라 접근 권한이 필요합니다.</string>
+	<string>This app needs camera access to take profile pictures and photos for posts.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
@@ -91,6 +101,52 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>com.wefilling.app.compose</string>
+	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Images</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.image</string>
+				<string>public.jpeg</string>
+				<string>public.png</string>
+				<string>public.heic</string>
+				<string>public.heif</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Wefilling Shared Image</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.wefilling.shared-image</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.mime-type</key>
+				<array>
+					<string>image/jpeg</string>
+					<string>image/png</string>
+					<string>image/heic</string>
+				</array>
+			</dict>
+		</dict>
 	</array>
 </dict>
 </plist>

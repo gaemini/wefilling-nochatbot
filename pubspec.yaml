@@ -84,10 +84,10 @@ dev_dependencies:
 flutter_icons:
   android: "launcher_icon"
   ios: true
-  image_path: "assets/icons/app_logo.png"
+  image_path: "assets/icons/app_logo_ios.png"
   # iOS는 여백이 있는 버전 사용 (잘림 방지)
   image_path_ios: "assets/icons/app_logo_ios.png"
-  # Android는 원본 사용
+  # Android는 여백이 없는 버전 사용 (adaptive icon으로 여백 처리)
   image_path_android: "assets/icons/app_logo.png"
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icons/app_logo.png"

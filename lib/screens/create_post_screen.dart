@@ -12,8 +12,9 @@ import '../l10n/app_localizations.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
+  final List<String>? initialImagePaths; // 공유로 전달된 초기 이미지 경로들
 
-  const CreatePostScreen({super.key, required this.onPostCreated});
+  const CreatePostScreen({super.key, required this.onPostCreated, this.initialImagePaths});
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -45,6 +46,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentFocusNode.addListener(() {
       setState(() {}); // 포커스 상태가 변경되면 화면 갱신
     });
+    // 공유로 전달된 초기 이미지가 있으면 반영
+    final paths = widget.initialImagePaths;
+    if (paths != null && paths.isNotEmpty) {
+      setState(() {
+        _selectedImages.clear();
+        for (final p in paths) {
+          _selectedImages.add(File(p));
+        }
+      });
+      // 용량 체크
+      _checkImagesSize();
+    }
   }
 
   // 제목과 본문이 모두 입력되었는지 확인

@@ -50,6 +50,7 @@ class _MainScreenState extends State<MainScreen> {
   bool _isSearching = false;
   late VoidCallback _cleanupCallback;
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
+  AuthProvider? _authProvider; // AuthProvider 참조 저장
 
   @override
   void initState() {
@@ -69,11 +70,11 @@ class _MainScreenState extends State<MainScreen> {
     };
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.registerStreamCleanup(_cleanupCallback);
+      _authProvider = Provider.of<AuthProvider>(context, listen: false);
+      _authProvider!.registerStreamCleanup(_cleanupCallback);
       
       // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
-      if (authProvider.consumeSignupRequiredFlag()) {
+      if (_authProvider!.consumeSignupRequiredFlag()) {
         _showSignupRequiredBanner();
       }
 
@@ -89,13 +90,8 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    // AuthProvider에서 콜백 제거
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.unregisterStreamCleanup(_cleanupCallback);
-    } catch (e) {
-      print('MainScreen AuthProvider 콜백 제거 오류: $e');
-    }
+    // AuthProvider에서 콜백 제거 (저장된 참조 사용)
+    _authProvider?.unregisterStreamCleanup(_cleanupCallback);
     
     // 서비스 정리
     _notificationService.dispose();
@@ -514,18 +510,10 @@ service firebase.storage {
 
       // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
       bottomNavigationBar: StreamBuilder<int>(
-        stream: _dmService.getTotalUnreadCount(),
+        stream: _dmService.getTotalUnreadCountV2(),
+        initialData: 0,  // 초기값 설정
         builder: (context, snapshot) {
-          print('📊 StreamBuilder 상태:');
-          print('  - hasData: ${snapshot.hasData}');
-          print('  - hasError: ${snapshot.hasError}');
-          print('  - data: ${snapshot.data}');
-          if (snapshot.hasError) {
-            print('  - error: ${snapshot.error}');
-          }
-          
           final unreadDMCount = snapshot.data ?? 0;
-          print('  - unreadDMCount: $unreadDMCount');
           
           return AdaptiveBottomNavigation(
             selectedIndex: _selectedIndex,

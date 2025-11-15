@@ -4,6 +4,7 @@
 // 앱 테마 및 라우팅 설정
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
@@ -33,6 +34,9 @@ import 'services/ad_banner_service.dart';
 import 'services/language_service.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
+import 'services/share_receiver_service.dart';
+import 'screens/create_post_screen.dart';
+import 'package:path_provider/path_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -260,7 +264,7 @@ class MeetupApp extends StatefulWidget {
       context.findAncestorStateOfType<_MeetupAppState>();
 }
 
-class _MeetupAppState extends State<MeetupApp> {
+class _MeetupAppState extends State<MeetupApp> with WidgetsBindingObserver {
   Locale _locale = const Locale('ko'); // 기본 언어: 한국어
   final LanguageService _languageService = LanguageService();
 
@@ -268,6 +272,15 @@ class _MeetupAppState extends State<MeetupApp> {
   void initState() {
     super.initState();
     _loadLanguage();
+    _initShareReceiver();
+    WidgetsBinding.instance.addObserver(this);
+    
+    // iOS에서 앱이 URL 스킴으로 열렸을 때를 대비해 추가 확인
+    if (Platform.isIOS) {
+      Future.delayed(const Duration(milliseconds: 1000), () {
+        _checkForPendingShare();
+      });
+    }
   }
 
   /// 저장된 언어 불러오기
@@ -283,6 +296,146 @@ class _MeetupAppState extends State<MeetupApp> {
     }
   }
 
+  void _initShareReceiver() {
+    final receiver = ShareReceiverService.instance;
+    // 런타임 수신 (앱이 실행 중일 때)
+    receiver.onImagesReceived = (paths) async {
+      if (kDebugMode) {
+        debugPrint('📸 공유 이미지 수신 (런타임): ${paths.length}개');
+      }
+      final copied = await _copyToAppTemp(paths);
+      // 원본 정리 시도(iOS App Group 등)
+      await ShareReceiverService.instance.cleanupSharedFiles(paths);
+      await _openCreateWithImagesWhenReady(copied);
+    };
+    
+    // 콜드스타트/앱 시작 시 남아있는 공유 페이로드를 직접 조회
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // 약간의 딜레이를 주어 앱이 완전히 초기화되도록 함
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      final pending = await receiver.fetchPendingShare();
+      if (pending.isNotEmpty) {
+        if (kDebugMode) {
+          debugPrint('📸 공유 이미지 발견 (콜드스타트): ${pending.length}개');
+        }
+        final copied = await _copyToAppTemp(pending);
+        await ShareReceiverService.instance.cleanupSharedFiles(pending);
+        await _openCreateWithImagesWhenReady(copied);
+      }
+    });
+  }
+
+  Future<void> _openCreateWithImagesWhenReady(List<String> paths) async {
+    if (paths.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 공유 이미지 경로가 비어있음');
+      }
+      return;
+    }
+    
+    if (kDebugMode) {
+      debugPrint('🚀 게시글 작성 화면으로 이동 준비 중...');
+    }
+    
+    // 로그인 대기 (최대 5초)
+    int attempts = 0;
+    while (FirebaseAuth.instance.currentUser == null && attempts < 10) {
+      await Future.delayed(const Duration(milliseconds: 500));
+      attempts++;
+      if (kDebugMode && attempts % 2 == 0) {
+        debugPrint('⏳ 로그인 대기 중... ($attempts/10)');
+      }
+    }
+    
+    // Navigator가 준비될 때까지 대기
+    int navAttempts = 0;
+    while (NavigationService.navigatorKey.currentState == null && navAttempts < 10) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      navAttempts++;
+    }
+    
+    final nav = NavigationService.navigatorKey.currentState;
+    if (nav == null) {
+      if (kDebugMode) {
+        debugPrint('❌ Navigator를 찾을 수 없음');
+      }
+      return;
+    }
+    
+    if (kDebugMode) {
+      debugPrint('✅ 게시글 작성 화면으로 이동: ${paths.length}개 이미지');
+    }
+    
+    // 기존 CreatePostScreen이 있다면 제거하고 새로 열기
+    nav.popUntil((route) => route.isFirst);
+    
+    nav.push(MaterialPageRoute(
+      builder: (_) => CreatePostScreen(
+        onPostCreated: () {
+          if (kDebugMode) {
+            debugPrint('✅ 게시글 작성 완료');
+          }
+        },
+        initialImagePaths: paths,
+      ),
+    ));
+  }
+
+  // 공유 원본(특히 iOS App Group 내 파일)을 앱의 임시 디렉토리로 안전하게 복사
+  Future<List<String>> _copyToAppTemp(List<String> paths) async {
+    try {
+      final dir = await getTemporaryDirectory();
+      final List<String> results = [];
+      for (final p in paths) {
+        final src = File(p);
+        if (await src.exists()) {
+          final name = p.split('/').last;
+          final dst = File('${dir.path}/shared_$name');
+          await src.copy(dst.path);
+          results.add(dst.path);
+        }
+      }
+      return results.isEmpty ? paths : results;
+    } catch (_) {
+      return paths;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (kDebugMode) {
+        debugPrint('🔄 앱이 포그라운드로 복귀');
+      }
+      // 백그라운드에서 복귀 시 공유 데이터 확인
+      _checkForPendingShare();
+    }
+  }
+  
+  Future<void> _checkForPendingShare() async {
+    try {
+      final paths = await ShareReceiverService.instance.fetchPendingShare();
+      if (paths.isNotEmpty) {
+        if (kDebugMode) {
+          debugPrint('📸 공유 이미지 발견: ${paths.length}개');
+        }
+        final copied = await _copyToAppTemp(paths);
+        await ShareReceiverService.instance.cleanupSharedFiles(paths);
+        await _openCreateWithImagesWhenReady(copied);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('❌ 공유 데이터 확인 중 오류: $e');
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
   /// 언어 변경
   void changeLanguage(String languageCode) {
     if (_locale.languageCode != languageCode) {

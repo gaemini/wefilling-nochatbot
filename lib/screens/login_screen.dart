@@ -307,9 +307,9 @@ class _LoginScreenState extends State<LoginScreen>
                                               color: Colors.black,
                                             ),
                                             const SizedBox(width: 12),
-                                            const Text(
-                                              'Apple로 로그인',
-                                              style: TextStyle(
+                                            Text(
+                                              AppLocalizations.of(context)!.appleLogin,
+                                              style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w500,
                                                 color: Colors.black87,

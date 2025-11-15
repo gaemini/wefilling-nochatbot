@@ -27,8 +27,10 @@ class Meetup {
   final String visibility; // 공개 범위: 'public', 'friends', 'category'
   final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
   final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
+  final bool isClosed; // 모임장이 "모집 마감" 버튼을 눌렀는지
   final bool hasReview; // 후기가 작성되었는지
   final String? reviewId; // 작성된 후기 ID
+  final List<String> reviewAcceptedBy; // 후기를 확인한 참여자 UID 목록
 
   const Meetup({
     required this.id,
@@ -51,8 +53,10 @@ class Meetup {
     this.visibility = 'public', // 기본값: 전체 공개
     this.visibleToCategoryIds = const [],
     this.isCompleted = false, // 기본값: 미완료
+    this.isClosed = false, // 기본값: 모집 중
     this.hasReview = false, // 기본값: 후기 없음
     this.reviewId,
+    this.reviewAcceptedBy = const [], // 기본값: 빈 목록
   });
 
   Meetup copyWith({
@@ -76,8 +80,10 @@ class Meetup {
     String? visibility,
     List<String>? visibleToCategoryIds,
     bool? isCompleted,
+    bool? isClosed,
     bool? hasReview,
     String? reviewId,
+    List<String>? reviewAcceptedBy,
   }) {
     return Meetup(
       id: id ?? this.id,
@@ -100,8 +106,10 @@ class Meetup {
       visibility: visibility ?? this.visibility,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
       isCompleted: isCompleted ?? this.isCompleted,
+      isClosed: isClosed ?? this.isClosed,
       hasReview: hasReview ?? this.hasReview,
       reviewId: reviewId ?? this.reviewId,
+      reviewAcceptedBy: reviewAcceptedBy ?? this.reviewAcceptedBy,
     );
   }
 
@@ -293,6 +301,16 @@ class Meetup {
     return imageUrl.isEmpty && thumbnailImageUrl.isEmpty;
   }
 
+  // 특정 사용자가 후기를 확인했는지 확인
+  bool hasUserAcceptedReview(String userId) {
+    return reviewAcceptedBy.contains(userId);
+  }
+
+  // 후기가 있고 사용자가 아직 확인하지 않았는지 확인
+  bool needsReviewAcceptance(String userId) {
+    return hasReview && !hasUserAcceptedReview(userId);
+  }
+
   // Firebase에서 데이터를 가져올 때 사용
   factory Meetup.fromJson(Map<String, dynamic> json) {
     return Meetup(
@@ -318,8 +336,12 @@ class Meetup {
           ? List<String>.from(json['visibleToCategoryIds'] as List)
           : [],
       isCompleted: json['isCompleted'] ?? false,
+      isClosed: json['isClosed'] ?? false,
       hasReview: json['hasReview'] ?? false,
       reviewId: json['reviewId'],
+      reviewAcceptedBy: json['reviewAcceptedBy'] != null
+          ? List<String>.from(json['reviewAcceptedBy'] as List)
+          : [],
     );
   }
 
@@ -358,8 +380,10 @@ class Meetup {
       'visibility': visibility,
       'visibleToCategoryIds': visibleToCategoryIds,
       'isCompleted': isCompleted,
+      'isClosed': isClosed,
       'hasReview': hasReview,
       'reviewId': reviewId,
+      'reviewAcceptedBy': reviewAcceptedBy,
     };
   }
 }

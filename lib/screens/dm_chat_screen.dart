@@ -12,7 +12,6 @@ import '../services/post_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'post_detail_screen.dart';
 
 // DM 전용 색상
@@ -51,7 +50,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
   
   Conversation? _conversation;
   bool _isLoading = false;
-  bool _isLeaving = false; // 나가기 진행 중 플래그
 
   @override
   void initState() {
@@ -91,7 +89,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 잘못된 대화방 ID입니다'),
+              content: Text('${AppLocalizations.of(context)!.error}: 잘못된 대화방 ID입니다'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -130,7 +128,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         print('📝 대화방 미생성 상태 - 첫 메시지 전송 시 생성됨');
       }
       
-      // 참여자 확인 (대화방이 이미 존재했던 경우에만)
+      // 참여자 확인 및 재입장 처리 (대화방이 이미 존재했던 경우에만)
       if (_conversationExists && conv.exists) {
         final data = conv.data() as Map<String, dynamic>;
         final participants = List<String>.from(data['participants'] ?? []);
@@ -161,16 +159,38 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 대화방 참여자가 아닙니다'),
+                content: Text('${AppLocalizations.of(context)!.error}: 대화방 참여자가 아닙니다'),
                 duration: const Duration(seconds: 2),
               ),
             );
           }
           return;
         }
+
+        // 🔁 마지막 액션이 "나가기"인 경우에만 재입장 처리
+        final userLeftAt = (data['userLeftAt'] as Map<String, dynamic>? ?? {});
+        final rejoinedAt = (data['rejoinedAt'] as Map<String, dynamic>? ?? {});
+        
+        if (_currentUser != null && userLeftAt[_currentUser!.uid] != null) {
+          final leftTimestamp = userLeftAt[_currentUser!.uid] as Timestamp?;
+          final rejoinTimestamp = rejoinedAt[_currentUser!.uid] as Timestamp?;
+          
+          if (leftTimestamp != null) {
+            final leftTime = leftTimestamp.toDate();
+            final rejoinTime = rejoinTimestamp?.toDate();
+            
+            // 마지막 액션이 "나가기"인 경우에만 재입장 처리
+            if (rejoinTime == null || leftTime.isAfter(rejoinTime)) {
+              print('🔁 마지막 액션이 "나가기" → 재입장 처리 실행');
+              await _dmService.rejoinConversation(widget.conversationId);
+            } else {
+              print('✅ 이미 재입장 상태 → 재입장 처리 스킵');
+            }
+          }
+        }
       }
       
-      // 대화방이 존재하면 정상 진행
+      // 대화방이 존재하면 정상 진행 (재입장 기록 후 메시지 스트림 초기화)
       await _initializeMessagesStream();
       if (mounted) setState(() {});
       await _loadConversation();
@@ -184,7 +204,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 접근 권한이 없습니다'),
+              content: Text('${AppLocalizations.of(context)!.error}: 접근 권한이 없습니다'),
               duration: const Duration(seconds: 2),
             ),
           );
@@ -290,19 +310,112 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
   }
 
+  /// AppBar 타이틀 빌드
+  Widget _buildAppBarTitle(String otherUserId, bool isAnonymous, bool hasCustomTitle, String? dmTitle) {
+    // 익명이 아닌 경우 실시간 프로필 조회
+    if (!isAnonymous && !hasCustomTitle) {
+      return FutureBuilder<DocumentSnapshot>(
+        future: FirebaseFirestore.instance.collection('users').doc(otherUserId).get(),
+        builder: (context, userSnapshot) {
+          // 로딩 중이거나 오류가 있어도 기본 정보로 표시
+          String displayName;
+          String photoUrl;
+          
+          if (userSnapshot.connectionState == ConnectionState.waiting) {
+            // 로딩 중: 대화방에 저장된 이름 사용
+            displayName = _conversation?.getOtherUserName(_currentUser!.uid) ?? 'Loading...';
+            photoUrl = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
+          } else if (userSnapshot.hasData && userSnapshot.data!.exists) {
+            final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+            // 닉네임 우선, 없으면 displayName 사용
+            displayName = userData?['nickname'] ?? userData?['displayName'] ?? 'Unknown';
+            photoUrl = userData?['photoURL'] ?? '';
+          } else {
+            // 프로필 조회 실패 시 대화방에 저장된 이름 사용
+            displayName = _conversation?.getOtherUserName(_currentUser!.uid) ?? 'Unknown';
+            photoUrl = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
+          }
+
+          return Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: Colors.grey[200],
+                backgroundImage: photoUrl.isNotEmpty ? NetworkImage(photoUrl) : null,
+                child: photoUrl.isNotEmpty ? null : const Icon(Icons.person, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(
+                  displayName,
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    } else {
+      // 익명이거나 커스텀 타이틀이 있는 경우
+      return Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.grey[200],
+            child: const Icon(Icons.person, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  hasCustomTitle
+                      ? '${AppLocalizations.of(context)!.topic}: $dmTitle'
+                      : 'Anonymous',
+                  style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (hasCustomTitle) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    AppLocalizations.of(context)!.author ?? "",
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
-    final otherUserName = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
-    final otherUserPhoto = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
+    final otherUserId = widget.otherUserId;
     final isAnonymous = _conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false;
     
     final dmTitle = _conversation?.dmTitle;
-    final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
-        : (isAnonymous 
-            ? 'Anonymous' : otherUserName);
-    final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? (AppLocalizations.of(context)!.author ?? "") : null;
+    final hasCustomTitle = dmTitle != null && dmTitle.isNotEmpty;
 
     String _formatHeaderDate() {
       final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
@@ -317,52 +430,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         icon: const Icon(Icons.arrow_back, color: Colors.black87),
         onPressed: () => Navigator.pop(context),
       ),
-      title: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.grey[200],
-            backgroundImage: !isAnonymous && otherUserPhoto.isNotEmpty
-                ? NetworkImage(otherUserPhoto)
-                : null,
-            child: (!isAnonymous && otherUserPhoto.isNotEmpty)
-                ? null
-                : const Icon(Icons.person, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  primaryTitle,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (secondaryTitle != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    secondaryTitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.black54,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+      title: _buildAppBarTitle(otherUserId, isAnonymous, hasCustomTitle, dmTitle),
       actions: [
         if (_conversation != null) ...[
           Center(
@@ -415,22 +483,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
   }
 
-  /// 채팅방 보관(삭제) - 서버 플래그 기반
-  Future<void> _archiveConversation() async {
-    try {
-      await _dmService.archiveConversation(widget.conversationId);
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('채팅방이 목록에서 삭제되었습니다')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
-      );
-    }
-  }
 
   /// 나가기 확인 다이얼로그
   Future<void> _confirmLeaveConversation() async {
@@ -475,7 +527,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
       // 스트림을 먼저 해제해 나간 직후 권한 오류가 토스트로 보이지 않게 한다
       if (mounted) {
         setState(() {
-          _isLeaving = true;
           _messagesStream = null; // StreamBuilder가 기존 구독을 해제함
         });
       }
@@ -497,8 +548,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
       print('대화방 나가기 오류: $e');
       
       // 오류가 발생해도 사용자에게는 성공적으로 나간 것처럼 처리 (인스타그램 방식)
-      print('오류 발생했지만 사용자 경험을 위해 성공 처리');
-      
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -510,12 +559,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
           ),
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLeaving = false;
-        });
-      }
     }
   }
 
@@ -996,7 +1039,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '이 대화는 게시글에서 시작되었습니다',
+              AppLocalizations.of(context)!.conversationStartedFromPost,
               style: TextStyle(
                 color: Colors.blue.shade700,
                 fontSize: 14,
@@ -1012,9 +1055,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text(
-              '게시글 보기',
-              style: TextStyle(
+            child: Text(
+              AppLocalizations.of(context)!.viewPost,
+              style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -1040,7 +1083,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('게시글을 찾을 수 없습니다')),
+            SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound)),
           );
         }
       }
@@ -1048,7 +1091,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       print('게시글 로드 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('게시글을 불러오는 중 오류가 발생했습니다')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.postLoadError)),
         );
       }
     }

@@ -213,25 +213,30 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
     }
 
     return Scaffold(
-      backgroundColor: Colors.grey[50],
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('리뷰 요청'),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 0,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: Colors.grey[200],
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '후기 요청',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Pretendard',
           ),
         ),
+        centerTitle: true,
       ),
       body: Column(
         children: [
           Expanded(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -591,92 +596,92 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
   /// 하단 버튼들
   Widget _buildBottomButtons() {
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        16, 
-        12, 
-        16, 
-        MediaQuery.of(context).padding.bottom + 16
-      ),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: const Color(0xFFE6EAF0),
-            width: 1,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          // 거절 버튼
-          Expanded(
-            flex: 1,
-            child: SizedBox(
-              height: 48,
-              child: OutlinedButton(
-                onPressed: _isProcessing ? null : _rejectRequest,
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF6B6B6B)),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: _isProcessing 
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Color(0xFF6B6B6B),
-                        ),
-                      )
-                    : const Text(
-                        '거절',
-                        style: TextStyle(
-                          color: Color(0xFF6B6B6B),
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          // 수락 버튼
-          Expanded(
-            flex: 2,
-            child: SizedBox(
-              height: 48,
-              child: ElevatedButton(
-                onPressed: _isProcessing ? null : _acceptRequest,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4A90E2),
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
-                child: _isProcessing 
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        '수락하고 리뷰 작성',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-              ),
-            ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -2),
           ),
         ],
+      ),
+      child: SafeArea(
+        child: Row(
+          children: [
+            // 거절 버튼
+            Expanded(
+              flex: 1,
+              child: SizedBox(
+                height: 52,
+                child: OutlinedButton(
+                  onPressed: _isProcessing ? null : _rejectRequest,
+                  style: OutlinedButton.styleFrom(
+                    side: BorderSide(color: Colors.grey[400]!),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isProcessing 
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.grey,
+                          ),
+                        )
+                      : const Text(
+                          '거절',
+                          style: TextStyle(
+                            color: Colors.grey,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // 수락 버튼
+            Expanded(
+              flex: 2,
+              child: SizedBox(
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _isProcessing ? null : _acceptRequest,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4A90E2),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isProcessing 
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text(
+                          '수락하고 리뷰 작성',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            fontFamily: 'Pretendard',
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -684,11 +689,24 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
   /// 만료된 요청 화면
   Widget _buildExpiredScreen() {
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('만료된 요청'),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '만료된 요청',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        centerTitle: true,
       ),
       body: Center(
         child: Padding(
@@ -761,11 +779,24 @@ class _ReviewAcceptScreenState extends State<ReviewAcceptScreen> {
         : Colors.red;
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text('처리 완료된 요청'),
         backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          '처리 완료된 요청',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            fontFamily: 'Pretendard',
+          ),
+        ),
+        centerTitle: true,
       ),
       body: Center(
         child: Padding(

@@ -2,6 +2,7 @@
 // 완전 반응형 하단 네비게이션 바
 
 import 'package:flutter/material.dart';
+import 'dart:io' show Platform;
 import 'notification_badge.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
@@ -168,8 +169,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   count: item.badgeCount ?? 0,
                   size: 13, // 더 작은 크기
                   fontSize: 8,
-                  top: -5, // 더 위로 이동
-                  right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
+                  top: Platform.isIOS ? -7 : -5, // iOS에서 살짝 더 위로
+                  right: Platform.isIOS ? -10 : -8, // iOS에서 약간 더 오른쪽
                   child: Icon(
                     isSelected ? item.selectedIcon : item.icon,
                     size: iconSize,

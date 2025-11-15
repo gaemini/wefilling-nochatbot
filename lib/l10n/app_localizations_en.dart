@@ -496,7 +496,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get meetupFull => 'Meetup is full';
 
   @override
-  String get meetupClosed => 'Meetup is closed';
+  String get meetupClosed => 'Meetup Closed';
 
   @override
   String get hostedMeetups => 'Hosted Meetups';
@@ -539,9 +539,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reviews => 'Reviews';
-
-  @override
-  String get checkReview => 'Check Review';
 
   @override
   String get saved => 'Saved';
@@ -1767,7 +1764,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deleteReview => 'Delete Review';
 
   @override
-  String get completeOrCancelMeetup => 'Complete / Cancel Meetup';
+  String get completeOrCancelMeetup => 'Complete/Cancel Meetup';
 
   @override
   String get meetupCompleteTitle => 'Complete Meetup';
@@ -2062,6 +2059,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendsOnly => 'Friends Only';
 
   @override
+  String get topic => 'Topic';
+
+  @override
+  String get conversationStartedFromPost =>
+      'This conversation started from the post';
+
+  @override
+  String get viewPost => 'View Post';
+
+  @override
+  String get postLoadError => 'Failed to load the post';
+
+  @override
   String get signUpFirstMessage =>
       'Please click the \"Sign Up\" button below\nto complete Hanyang email verification first.';
 
@@ -2259,4 +2269,46 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get friendSelection => 'Friend Selection';
+
+  @override
+  String get checkReview => 'Check Review Post';
+
+  @override
+  String get reviewChecked => 'Review Checked';
+
+  @override
+  String get reviewConfirmed => 'Review Confirmed';
+
+  @override
+  String get checkMeetupReview => 'Check Review';
+
+  @override
+  String get reviewAcceptance => 'Review Acceptance';
+
+  @override
+  String get acceptReview => 'Accept Review';
+
+  @override
+  String get confirmReview => 'Confirm';
+
+  @override
+  String get addPhoto => 'Add Photo';
+
+  @override
+  String get closeMeetup => 'Close Meetup';
+
+  @override
+  String get closeMeetupConfirm => 'Do you want to close the meetup?';
+
+  @override
+  String get closeMeetupSuccess => 'Meetup has been closed';
+
+  @override
+  String get closeMeetupFailed => 'Failed to close meetup';
+
+  @override
+  String get completeMeetup => 'Complete Meetup';
+
+  @override
+  String get meetupConfirmed => 'Meetup Confirmed';
 }

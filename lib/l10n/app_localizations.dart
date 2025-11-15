@@ -1067,7 +1067,7 @@ abstract class AppLocalizations {
   /// No description provided for @meetupClosed.
   ///
   /// In ko, this message translates to:
-  /// **'종료된 모임입니다'**
+  /// **'모집 마감됨'**
   String get meetupClosed;
 
   /// No description provided for @hostedMeetups.
@@ -1153,12 +1153,6 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'후기'**
   String get reviews;
-
-  /// No description provided for @checkReview.
-  ///
-  /// In ko, this message translates to:
-  /// **'후기 확인'**
-  String get checkReview;
 
   /// No description provided for @saved.
   ///
@@ -3365,7 +3359,7 @@ abstract class AppLocalizations {
   /// No description provided for @completeOrCancelMeetup.
   ///
   /// In ko, this message translates to:
-  /// **'모임 완료 / 취소'**
+  /// **'모임 확정/취소'**
   String get completeOrCancelMeetup;
 
   /// No description provided for @meetupCompleteTitle.
@@ -3872,6 +3866,30 @@ abstract class AppLocalizations {
   /// **'친구 공개'**
   String get friendsOnly;
 
+  /// No description provided for @topic.
+  ///
+  /// In ko, this message translates to:
+  /// **'제목'**
+  String get topic;
+
+  /// No description provided for @conversationStartedFromPost.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 대화는 게시글에서 시작되었습니다'**
+  String get conversationStartedFromPost;
+
+  /// No description provided for @viewPost.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 보기'**
+  String get viewPost;
+
+  /// No description provided for @postLoadError.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글을 불러오는 중 오류가 발생했습니다'**
+  String get postLoadError;
+
   /// No description provided for @signUpFirstMessage.
   ///
   /// In ko, this message translates to:
@@ -4231,6 +4249,90 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'친구 선택'**
   String get friendSelection;
+
+  /// No description provided for @checkReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기글 확인하기'**
+  String get checkReview;
+
+  /// No description provided for @reviewChecked.
+  ///
+  /// In ko, this message translates to:
+  /// **'리뷰 확인 완료'**
+  String get reviewChecked;
+
+  /// No description provided for @reviewConfirmed.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기 확인됨'**
+  String get reviewConfirmed;
+
+  /// No description provided for @checkMeetupReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기 확인'**
+  String get checkMeetupReview;
+
+  /// No description provided for @reviewAcceptance.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기 수락'**
+  String get reviewAcceptance;
+
+  /// No description provided for @acceptReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'후기 수락하기'**
+  String get acceptReview;
+
+  /// No description provided for @confirmReview.
+  ///
+  /// In ko, this message translates to:
+  /// **'확인 완료'**
+  String get confirmReview;
+
+  /// No description provided for @addPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진 추가'**
+  String get addPhoto;
+
+  /// No description provided for @closeMeetup.
+  ///
+  /// In ko, this message translates to:
+  /// **'모집 마감'**
+  String get closeMeetup;
+
+  /// No description provided for @closeMeetupConfirm.
+  ///
+  /// In ko, this message translates to:
+  /// **'모집을 마감하시겠습니까?'**
+  String get closeMeetupConfirm;
+
+  /// No description provided for @closeMeetupSuccess.
+  ///
+  /// In ko, this message translates to:
+  /// **'모집이 마감되었습니다'**
+  String get closeMeetupSuccess;
+
+  /// No description provided for @closeMeetupFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'모집 마감에 실패했습니다'**
+  String get closeMeetupFailed;
+
+  /// No description provided for @completeMeetup.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 확정'**
+  String get completeMeetup;
+
+  /// No description provided for @meetupConfirmed.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 확정'**
+  String get meetupConfirmed;
 }
 
 class _AppLocalizationsDelegate

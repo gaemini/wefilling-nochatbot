@@ -18,6 +18,7 @@ import '../ui/dialogs/block_dialog.dart';
 import '../l10n/app_localizations.dart';
 import 'meetup_participants_screen.dart';
 import 'edit_meetup_screen.dart';
+import 'meetup_review_screen.dart';
 import 'create_meetup_review_screen.dart';
 import 'review_approval_screen.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
@@ -87,11 +88,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 국가명을 현재 언어로 변환
   String _getLocalizedCountryName(String countryName) {
-    final isEnglish = Localizations.localeOf(context).languageCode == 'en';
+    final languageCode = Localizations.localeOf(context).languageCode;
+    final countryInfo = CountryFlagHelper.getCountryInfo(countryName);
     
-    if (!isEnglish) return countryName; // 한국어면 그대로 반환
+    if (countryInfo != null) {
+      return countryInfo.getLocalizedName(languageCode);
+    }
     
-    // 영어 변환 매핑
+    // CountryFlagHelper에 없는 경우 기존 매핑 사용
+    if (languageCode != 'en') return countryName; // 한국어면 그대로 반환
+    
+    // 영어 변환 매핑 (fallback)
     final countryMap = {
       '한국': 'South Korea',
       '미국': 'United States',
@@ -513,10 +520,39 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     ? _buildNewHostActionButton() 
                     : (_currentMeetup.hasReview 
                         ? _buildNewParticipantActionButton()
-                        : _buildLeaveButton()),
+                        : (_currentMeetup.isCompleted 
+                            ? SizedBox(
+                                width: double.infinity,
+                                height: 56, // 다른 버튼들과 동일한 두께
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey[300], // 카드와 동일한 회색 톤
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Center(
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.check_circle, size: 20, color: Colors.grey[700]),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          AppLocalizations.of(context)!.meetupConfirmed,
+                                          style: TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey[700],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : _buildLeaveButton())),
               ),
             // 참여하지 않은 사용자를 위한 참여 버튼
-            if (!_isHost && !_isParticipant && !_currentMeetup.isFull() && !_currentMeetup.isCompleted)
+            if (!_isHost && !_isParticipant && !_currentMeetup.isFull() && !_currentMeetup.isCompleted && !_currentMeetup.isClosed)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
@@ -972,7 +1008,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 Icon(Icons.report_outlined, size: 18, color: Colors.red[600]),
                 const SizedBox(width: 12),
                 Text(
-                  '신고하기',
+                  AppLocalizations.of(context)!.reportAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
@@ -989,7 +1025,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 Icon(Icons.block, size: 18, color: Colors.red[600]),
                 const SizedBox(width: 12),
                 Text(
-                  '차단하기',
+                  AppLocalizations.of(context)!.blockAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
@@ -1087,15 +1123,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         // 참여자 상태 확인
         await _checkIfUserIsParticipant();
         
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupInfoRefreshed ?? "모임 정보가 새로고침되었습니다"),
-              backgroundColor: Colors.blue,
-              duration: const Duration(seconds: 1),
-            ),
-          );
-        }
+        // 새로고침 알림(스낵바) 제거: 페이지 이탈 시 불필요한 알림 방지
       }
     } catch (e) {
       print('모임 데이터 새로고침 오류: $e');
@@ -1115,9 +1143,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     final isFull = _currentMeetup.isFull();
     final isCompleted = _currentMeetup.isCompleted;
     final hasReview = _currentMeetup.hasReview;
+    final isClosed = _currentMeetup.isClosed;
 
-    // 1. 모임 마감 전 or 마감 후이지만 완료 안됨 → 모임 취소 버튼
-    if (!isCompleted) {
+    // 1. 모집 마감되지 않은 경우 → 모임 취소 버튼 표시
+    if (!isCompleted && !isClosed) {
       return SizedBox(
         width: double.infinity,
         height: 56,
@@ -1153,7 +1182,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     const SizedBox(width: 8),
                     Text(
                       isFull
-                          ? (AppLocalizations.of(context)!.completeOrCancelMeetup ?? "") : AppLocalizations.of(context)!.cancelMeetup,
+                          ? (AppLocalizations.of(context)!.completeOrCancelMeetup ?? "") 
+                          : AppLocalizations.of(context)!.cancelMeetup,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
@@ -1166,7 +1196,50 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       );
     }
 
-    // 2. 모임 완료 & 후기 없음 → 모임 후기 쓰기 버튼
+    // 2. 모집 마감되었지만 완료되지 않은 경우 → 모임 확정 버튼 표시
+    if (isClosed && !isCompleted) {
+      return SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: ElevatedButton(
+          onPressed: _isLoading ? null : () => _showCompleteMeetupDialog(),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF10B981), // 녹색
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.check_circle, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      AppLocalizations.of(context)!.completeMeetup ?? '모임 확정',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
+
+    // 3. 모임 완료 & 후기 없음 → 모임 후기 쓰기 버튼
     if (!hasReview) {
       return SizedBox(
         width: double.infinity,
@@ -1244,14 +1317,18 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 새로운 디자인의 참여자 액션 버튼
   Widget _buildNewParticipantActionButton() {
+    // 사용자가 이미 후기를 확인했는지 체크
+    final user = FirebaseAuth.instance.currentUser;
+    final hasAccepted = user != null ? _currentMeetup.hasUserAcceptedReview(user.uid) : false;
+    
     return SizedBox(
       width: double.infinity,
       height: 56,
       child: ElevatedButton(
-        onPressed: _isLoading ? null : () => _navigateToReviewApproval(),
+        onPressed: (_isLoading || hasAccepted) ? null : () => _navigateToReviewScreen(),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Color(0xFF10B981), // 초록색
-          foregroundColor: Colors.white,
+          backgroundColor: hasAccepted ? Colors.grey[300] : const Color(0xFF22C55E), // 더 선명한 녹색
+          foregroundColor: hasAccepted ? Colors.grey[600] : Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
@@ -1260,10 +1337,15 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_outline, size: 20),
+            Icon(
+              hasAccepted ? Icons.check_circle : Icons.rate_review, 
+              size: 20,
+            ),
             const SizedBox(width: 8),
             Text(
-              AppLocalizations.of(context)!.reviewAccept,
+              hasAccepted 
+                  ? AppLocalizations.of(context)!.reviewChecked
+                  : AppLocalizations.of(context)!.checkReview,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 16,
@@ -1349,7 +1431,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   const Icon(Icons.exit_to_app, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    AppLocalizations.of(context)!.leaveMeetup,
+                    AppLocalizations.of(context)!.leaveMeetup ?? '나가기',
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -2235,30 +2317,41 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       final success = await _meetupService.markMeetupAsCompleted(widget.meetupId);
 
       if (success && mounted) {
-        setState(() {
-          _currentMeetup = _currentMeetup.copyWith(isCompleted: true);
-          _isLoading = false;
-        });
+        // 성공 시 데이터 새로고침
+        await _refreshMeetupData();
+        
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupMarkedCompleted ?? "")),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.meetupMarkedCompleted ?? "모임이 완료되었습니다"),
+            backgroundColor: Colors.green,
+          ),
         );
+        print('✅ [MeetupDetailScreen] 모임 완료 처리 성공: ${widget.meetupId}');
       } else if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupMarkCompleteFailed ?? "")),
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.meetupMarkCompleteFailed ?? "모임 완료 처리에 실패했습니다"),
+            backgroundColor: Colors.red,
+          ),
         );
+        print('❌ [MeetupDetailScreen] 모임 완료 처리 실패: ${widget.meetupId}');
       }
     } catch (e) {
       print('❌ 모임 완료 처리 오류: $e');
       if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('모임 완료 처리 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      // 로딩 상태 해제
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('오류가 발생했습니다')),
-        );
       }
     }
   }
@@ -2426,110 +2519,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     }
-  }
-
-  /// 모임 취소 확인 다이얼로그
-  void _showCancelConfirmation() {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 바깥 영역 터치로 닫기 방지
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.help_outline, color: Colors.orange[600]),
-            const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)!.cancelMeetupConfirm ?? ""),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              AppLocalizations.of(context)!.cancelMeetupMessage(_currentMeetup.title),
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.warning_amber, 
-                           size: 16, 
-                           color: Colors.orange[700]),
-                      const SizedBox(width: 4),
-                      Text(
-                        AppLocalizations.of(context)!.warningTitle,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.orange[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning1}\n'
-                    '• ${AppLocalizations.of(context)!.cancelMeetupWarning2}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            child: Text(
-              AppLocalizations.of(context)!.no,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _cancelMeetup();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red[600],
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            child: Text(
-              AppLocalizations.of(context)!.yesCancel,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        buttonPadding: const EdgeInsets.symmetric(horizontal: 8),
-      ),
-    );
   }
 
   // 참여자 목록 섹션 (새로운 디자인)
@@ -2879,5 +2868,127 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       },
     );
+  }
+
+  /// 후기 확인 화면으로 이동
+  Future<void> _navigateToReviewScreen() async {
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => MeetupReviewScreen(
+            meetupId: _currentMeetup.id,
+            reviewId: _currentMeetup.reviewId,
+          ),
+        ),
+      );
+      
+      // 화면에서 돌아온 후 모임 데이터 새로고침
+      await _refreshMeetupData();
+    } catch (e) {
+      print('후기 화면 이동 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('후기 화면으로 이동하는 중 오류가 발생했습니다.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// 모임 취소 확인 다이얼로그
+  void _showCancelConfirmation() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_outlined, color: Colors.red[600]),
+            const SizedBox(width: 8),
+            Text(AppLocalizations.of(context)!.cancelMeetup),
+          ],
+        ),
+        content: Text(
+          Localizations.localeOf(context).languageCode == 'ko'
+              ? '정말로 모임을 취소하시겠습니까? 취소된 모임은 복구할 수 없습니다.'
+              : 'Are you sure you want to cancel this meetup? Cancelled meetups cannot be restored.',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _cancelMeetup();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red[600],
+              foregroundColor: Colors.white,
+            ),
+            child: Text(AppLocalizations.of(context)!.cancelMeetup),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 모집 마감 처리 (낙관적 업데이트)
+  Future<void> _closeMeetup() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // 서버 요청
+      final meetupService = MeetupService();
+      final success = await meetupService.closeMeetup(_currentMeetup.id);
+
+      if (success) {
+        // 성공 시 데이터 새로고침
+        await _refreshMeetupData();
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.closeMeetupSuccess),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        print('✅ [MeetupDetailScreen] 모집 마감 성공: ${_currentMeetup.id}');
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.closeMeetupFailed),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        print('❌ [MeetupDetailScreen] 모집 마감 실패: ${_currentMeetup.id}');
+      }
+    } catch (e) {
+      print('❌ [MeetupDetailScreen] 모집 마감 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('모집 마감 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
   }
 }

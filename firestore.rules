@@ -482,10 +482,13 @@ service cloud.firestore {
 
     // 알림 컬렉션 (기존 확장)
     match /notifications/{notificationId} {
-      // 본인의 알림만 읽기 가능
-      allow read: if 
+      // 개별 알림 읽기: 본인만 가능
+      allow get: if 
         request.auth != null && 
         request.auth.uid == resource.data.userId;
+      
+      // 알림 목록 조회: where('userId', '==', currentUser.uid) 쿼리 사용
+      allow list: if request.auth != null;
       
       // 알림 생성: 인증된 사용자만 생성 가능
       allow create: if request.auth != null;
@@ -583,54 +586,43 @@ service cloud.firestore {
     match /conversations/{conversationId} {
       // conversationId 형식: {작은uid}_{큰uid} (사전순 정렬)
       
-      // 개별 문서 읽기: 로그인한 사용자 모두 허용
-      allow get: if request.auth != null;
+      // conversationId에서 사용자 ID 추출 (일반: uid1_uid2, 익명: anon_uid1_uid2_postId)
+      function isMyConversation() {
+        let parts = conversationId.split('_');
+        let isAnonymous = conversationId.matches('anon_.*');
+        
+        // 익명 대화방: anon_uid1_uid2_postId 형식
+        // parts[0] = 'anon', parts[1] = uid1, parts[2] = uid2, parts[3+] = postId
+        return isAnonymous 
+          ? (parts.size() >= 3 && (request.auth.uid == parts[1] || request.auth.uid == parts[2]))
+          : (parts.size() >= 2 && (request.auth.uid == parts[0] || request.auth.uid == parts[1]));
+      }
       
-      // 목록 조회: 로그인한 사용자 모두 허용
+      // 개별 문서 읽기: participants 또는 conversationId 파싱으로 확인
+      allow get: if request.auth != null && 
+        (request.auth.uid in resource.data.participants || isMyConversation());
+      
+      // 목록 조회: arrayContains 쿼리 사용 (코드에서 이미 사용 중)
       allow list: if request.auth != null;
       
-      // 생성: 로그인한 사용자 모두 허용 (명시적으로)
-      allow create: if request.auth != null;
+      // 생성: 본인이 participants에 포함된 경우만
+      allow create: if request.auth != null &&
+        request.auth.uid in request.resource.data.participants &&
+        request.resource.data.participants.size() == 2;
       
-      // 쓰기 권한: 로그인한 사용자 모두 허용 (create, update, delete 포함)
-      allow write: if request.auth != null;
-      
-      // 수정: (1) 메시지 관련 필드/보관, (2) '나가기' 허용
+      // 수정: participants만 가능, 특정 필드만 수정 허용
       allow update: if request.auth != null &&
         request.auth.uid in resource.data.participants &&
-        (
-          (
-            // 일반 메시지 관련 변경 + 보관
-            request.resource.data.participants == resource.data.participants &&
-            request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'unreadCount', 'updatedAt', 'archivedBy'])
-          ) ||
-          (
-            // '나가기': participants에서 본인만 제거 (N → N-1), 기타 필드는 unreadCount/updatedAt만 변경 가능
-            request.auth.uid in resource.data.participants &&
-            !(request.auth.uid in request.resource.data.participants) &&
-            request.resource.data.participants.size() == resource.data.participants.size() - 1 &&
-            // 남아있는 모든 참여자는 기존 참여자 중 일부여야 함 (여기서는 1명만 남는 구조)
-            request.resource.data.participants.size() == 1 &&
-            request.resource.data.participants[0] in resource.data.participants &&
-            request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['participants','unreadCount','updatedAt'])
-          )
-        );
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['lastMessage', 'lastMessageTime', 'unreadCount', 'updatedAt', 
+                    'userLeftAt', 'rejoinedAt', 'archivedBy', 'participants', 'lastMessageSenderId']);
       
-      // 삭제: 대화방 참여자라면 삭제 가능 (클라이언트에서 메시지 먼저 삭제 후 문서 삭제)
-      allow delete: if request.auth != null && request.auth.uid in resource.data.participants;
+      // 삭제: participants만 가능
+      allow delete: if request.auth != null &&
+        request.auth.uid in resource.data.participants;
       
       // ===== 메시지 서브컬렉션 =====
       match /messages/{messageId} {
-        // 읽기: 대화방 참여자만
-        // get() 호출 최소화를 위해 함수 사용
-        function isParticipant() {
-          // 대화방이 존재하면 participants 체크
-          return exists(/databases/$(database)/documents/conversations/$(conversationId)) &&
-                 request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.participants;
-        }
-        
         // conversationId에서 사용자 ID 추출 (일반: uid1_uid2, 익명: anon_uid1_uid2_postId)
         function isMyConversation() {
           let parts = conversationId.split('_');
@@ -640,18 +632,18 @@ service cloud.firestore {
           // parts[0] = 'anon', parts[1] = uid1, parts[2] = uid2, parts[3+] = postId
           return isAnonymous 
             ? (parts.size() >= 3 && (request.auth.uid == parts[1] || request.auth.uid == parts[2]))
-            : (request.auth.uid in parts);
+            : (parts.size() >= 2 && (request.auth.uid == parts[0] || request.auth.uid == parts[1]));
         }
         
-        // 개별 메시지 읽기
-        allow get: if request.auth != null && (isParticipant() || isMyConversation());
+        // 개별 메시지 읽기: conversationId 파싱으로 확인 (get() 호출 없음)
+        allow get: if request.auth != null && isMyConversation();
         
-        // 메시지 목록 조회
-        allow list: if request.auth != null && (isParticipant() || isMyConversation());
+        // 메시지 목록 조회: conversationId 파싱으로 확인 (get() 호출 없음)
+        allow list: if request.auth != null && isMyConversation();
         
-        // 생성: 핵심 검증만 유지
+        // 생성: conversationId 파싱으로 확인
         allow create: if request.auth != null &&
-          (isParticipant() || isMyConversation()) &&
+          isMyConversation() &&
           // 발신자는 본인
           request.auth.uid == request.resource.data.senderId &&
           // 메시지는 비어있지 않음
@@ -661,9 +653,9 @@ service cloud.firestore {
           // 초기 읽음 상태는 false
           request.resource.data.isRead == false;
         
-        // 수정: 읽음 처리 로직만 유지
+        // 수정: 읽음 처리만 허용
         allow update: if request.auth != null &&
-          (isParticipant() || isMyConversation()) &&
+          isMyConversation() &&
           // 수신자만 읽음 처리 가능
           request.auth.uid != resource.data.senderId &&
           // isRead만 false→true로 변경
@@ -673,8 +665,8 @@ service cloud.firestore {
           request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['isRead', 'readAt']);
         
-        // 삭제: 대화방 참여자는 자신의 채팅방 하위 메시지를 삭제 가능 (대화방 완전 삭제 시 사용)
-        allow delete: if request.auth != null && (isParticipant() || isMyConversation());
+        // 삭제: conversationId 파싱으로 확인
+        allow delete: if request.auth != null && isMyConversation();
       }
     }
   }

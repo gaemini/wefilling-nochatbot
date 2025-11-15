@@ -124,10 +124,24 @@ class Conversation {
 
   /// 상대방 사용자 ID 가져오기
   String getOtherUserId(String currentUserId) {
-    return participants.firstWhere(
+    // 현재 사용자가 participants에 포함되어 있는지 확인
+    if (!participants.contains(currentUserId)) {
+      print('❌ [getOtherUserId] 오류: 현재 사용자가 participants에 없음!');
+      print('   conversationId: $id, participants: $participants');
+      // 비상 상황: 첫 번째 참여자 반환 (하지만 로그로 문제 표시)
+      return participants.isNotEmpty ? participants[0] : currentUserId;
+    }
+    
+    // 상대방 찾기
+    final otherUserId = participants.firstWhere(
       (id) => id != currentUserId,
-      orElse: () => participants[0],
+      orElse: () {
+        print('⚠️ [getOtherUserId] 경고: 상대방을 찾을 수 없음 (본인 DM?)');
+        return participants.isNotEmpty ? participants[0] : currentUserId;
+      },
     );
+    
+    return otherUserId;
   }
 
   /// 상대방 이름 가져오기 (익명 처리 포함)

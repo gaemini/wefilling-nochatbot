@@ -356,6 +356,13 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditMode = widget.existingReviewId != null;
+    final media = MediaQuery.of(context);
+    final platform = Theme.of(context).platform;
+    // 안드로이드 내비게이션 바(제스처 바) 영역을 고려해 추가 여백을 준다.
+    // iOS는 SafeArea가 이미 적절히 처리하므로 추가 여백을 주지 않는다.
+    final double androidBottomInset =
+        platform == TargetPlatform.android ? media.viewPadding.bottom : 0.0;
+    final double bottomPadding = 16.0 + (androidBottomInset > 0 ? androidBottomInset : 12.0);
     
     return Scaffold(
       appBar: AppBar(
@@ -363,7 +370,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        // 하단바를 피하도록 하단 패딩을 플랫폼/인셋에 따라 가변 적용
+        padding: EdgeInsets.fromLTRB(16.0, 16.0, 16.0, bottomPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -459,7 +467,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           Icon(Icons.add_photo_alternate, size: 32, color: Colors.grey[400]),
                           const SizedBox(height: 4),
                           Text(
-                            '사진 추가',
+                            AppLocalizations.of(context)!.addPhoto,
                             style: TextStyle(
                               color: Colors.grey[600],
                               fontSize: 12,

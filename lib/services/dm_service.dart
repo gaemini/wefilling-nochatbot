@@ -4,11 +4,9 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'notification_service.dart';
-import '../utils/dm_feature_flags.dart';
 
 class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -112,8 +110,9 @@ class DMService {
     }
   }
 
-  /// 새 DM 시작을 위한 안전한 ID 준비
-  /// - 기존 방이 있고 내가 archivedBy에 포함되어 있으면 새로운 ID를 부여해 과거 방으로 연결되지 않게 함
+  /// 새 DM 시작을 위한 안전한 ID 준비 (댓글 위젯 전용)
+  /// ⚠️ 경고: 이 함수는 댓글 위젯에서만 사용됩니다!
+  /// ⚠️ 일반 친구 DM에서는 절대 사용하지 마세요!
   /// - 익명 게시글 DM의 경우: 기존 방이 존재하지만 내가 participants에 없다면(이전에 나간 경우)
   ///   baseId에 접미사("__timestamp")를 붙여 새 방을 생성하도록 함
   Future<String> prepareConversationId(String otherUserId, {bool isOtherUserAnonymous = false, String? postId}) async {
@@ -122,7 +121,7 @@ class DMService {
       throw StateError('User not logged in');
     }
 
-    // 익명 게시글 DM: 기존 방이 있고 내가 나가 있었다면 새 ID로 분기
+    // ✅ 익명 게시글 DM만 타임스탬프 추가 가능
     if (isOtherUserAnonymous && postId != null && postId.isNotEmpty) {
       final baseId = _generateConversationId(currentUser.uid, otherUserId, anonymous: true, postId: postId);
       try {
@@ -142,21 +141,8 @@ class DMService {
       }
     }
 
-    // 일반 DM: 기존 방이 보관된 경우 복원
+    // ✅ 일반 DM: 절대 타임스탬프 추가 안 함!
     final baseId = _generateConversationId(currentUser.uid, otherUserId, anonymous: false);
-    try {
-      final existing = await _firestore.collection('conversations').doc(baseId).get();
-      if (existing.exists) {
-        final data = existing.data() as Map<String, dynamic>;
-        final participants = List<String>.from(data['participants'] ?? []);
-        final archivedBy = (data['archivedBy'] as List?)?.map((e) => e.toString()).toList() ?? const [];
-
-        // archivedBy 상태는 유지 (별도 복원 로직 없음)
-      }
-    } catch (e) {
-      // 조회 실패 시 기본 ID로 진행 (최소 동작 보장)
-      print('prepareConversationId check error: $e');
-    }
     return baseId;
   }
 
@@ -197,19 +183,6 @@ class DMService {
     }
   }
 
-  /// 친구 확인
-  Future<bool> _isFriend(String userId1, String userId2) async {
-    try {
-      final sorted = [userId1, userId2]..sort();
-      final pairId = '${sorted[0]}__${sorted[1]}';
-
-      final doc = await _firestore.collection('friendships').doc(pairId).get();
-      return doc.exists;
-    } catch (e) {
-      print('친구 확인 오류: $e');
-      return false;
-    }
-  }
 
   /// Firestore 규칙 테스트 함수
   Future<bool> testFirestoreRules() async {
@@ -283,25 +256,28 @@ class DMService {
 
   /// DM 전송 가능 여부 확인 (차단 여부만 확인)
   Future<bool> canSendDM(String otherUserId, {String? postId}) async {
-    print('🔍 canSendDM 확인 시작: otherUserId=$otherUserId, postId=$postId');
+    print('🔍 canSendDM 시작: otherUserId=$otherUserId, postId=$postId');
     
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('❌ 로그인 안 됨');
+      print('❌ canSendDM: currentUser == null');
       return false;
     }
+    print('  - currentUser.uid: ${currentUser.uid}');
 
     // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어, 하이픈 포함 가능)
     // 익명 사용자의 경우에도 유효한 UID 형식이어야 함
+    print('  - UID 형식 검증 중...');
     final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
     if (!uidPattern.hasMatch(otherUserId)) {
-      print('❌ 잘못된 userId 형식: $otherUserId (길이: ${otherUserId.length}자)');
+      print('❌ 잘못된 userId 형식: $otherUserId (len=${otherUserId.length})');
       return false;
     }
+    print('  - UID 형식 검증 통과');
 
     // 'deleted' 또는 빈 userId 체크
     if (otherUserId == 'deleted' || otherUserId.isEmpty) {
-      print('❌ 탈퇴했거나 삭제된 사용자');
+      print('❌ 탈퇴/삭제된 사용자');
       return false;
     }
 
@@ -313,13 +289,20 @@ class DMService {
 
     // 차단 확인만 수행 (친구 여부는 체크하지 않음)
     // 익명 사용자의 경우에도 차단 확인 수행
-    final blocked = await _isBlocked(currentUser.uid, otherUserId);
-    if (blocked) {
-      print('❌ 차단됨');
-      return false;
+    print('  - 차단 여부 확인 중...');
+    try {
+      final blocked = await _isBlocked(currentUser.uid, otherUserId);
+      print('🔍 차단 여부: blocked=$blocked');
+      if (blocked) {
+        print('❌ 차단됨');
+        return false;
+      }
+    } catch (e) {
+      print('⚠️ 차단 확인 중 오류 (무시하고 진행): $e');
+      // 차단 확인 실패 시에도 진행
     }
 
-    print('✅ DM 전송 가능');
+    print('✅ canSendDM: 전송 가능');
     return true;
   }
 
@@ -354,9 +337,13 @@ class DMService {
     print('  - currentUser.uid: ${currentUser.uid}');
     
     try {
-
+      print('🔥 canSendDM 호출 시작 (me=${currentUser.uid}, other=$otherUserId)');
+      
       // DM 전송 가능 여부 확인 (차단 및 userId 유효성 체크 포함)
-      if (!await canSendDM(otherUserId, postId: postId)) {
+      final canSend = await canSendDM(otherUserId, postId: postId);
+      print('🔥 canSendDM=$canSend');
+      
+      if (!canSend) {
         print('❌ DM 전송 불가');
         return null;
       }
@@ -368,7 +355,7 @@ class DMService {
         anonymous: isOtherUserAnonymous,
         postId: postId,
       );
-      print('📌 생성된 conversationId: $conversationId');
+      print('🔥 생성/조회할 convId = $conversationId');
 
       // 기존 대화방 확인 - 인스타그램 방식 (항상 재사용)
       print('📌 기존 대화방 확인 중...');
@@ -381,7 +368,7 @@ class DMService {
         if (existingConv.exists) {
           print('✅ 기존 대화방 발견 - 재사용: $conversationId');
           
-          final data = existingConv.data() as Map<String, dynamic>?;
+          final data = existingConv.data();
           
           // 기존 대화방의 participants 필드 확인 및 업데이트
           final participants = data?['participants'] as List?;
@@ -395,15 +382,45 @@ class DMService {
                 'updatedAt': Timestamp.fromDate(DateTime.now()),
               });
               print('✅ participants 업데이트 완료');
+            } on FirebaseException catch (e) {
+              print('⚠️ participants 업데이트 Firebase 실패: code=${e.code}, message=${e.message}');
             } catch (e) {
               print('⚠️ participants 업데이트 실패 (무시): $e');
             }
           }
           
+          // ✅ 추가: 나갔던 대화방을 다시 여는 경우 재입장 처리
+          final userLeftAt = data?['userLeftAt'] as Map<String, dynamic>? ?? {};
+          final rejoinedAt = data?['rejoinedAt'] as Map<String, dynamic>? ?? {};
+          
+          if (userLeftAt[currentUser.uid] != null) {
+            final leftTime = (userLeftAt[currentUser.uid] as Timestamp).toDate();
+            final rejoinTime = rejoinedAt[currentUser.uid] != null 
+                ? (rejoinedAt[currentUser.uid] as Timestamp).toDate() 
+                : null;
+            
+            // 마지막 액션이 "나가기"인 경우 → 재입장 처리
+            if (rejoinTime == null || leftTime.isAfter(rejoinTime)) {
+              print('🔄 나갔던 대화방 재입장 처리 실행');
+              try {
+                await _firestore.collection('conversations').doc(conversationId).update({
+                  'rejoinedAt.${currentUser.uid}': Timestamp.fromDate(DateTime.now()),
+                  'updatedAt': Timestamp.fromDate(DateTime.now()),
+                });
+                print('✅ 재입장 처리 완료');
+              } catch (e) {
+                print('⚠️ 재입장 처리 실패 (무시): $e');
+              }
+            }
+          }
+          
           return conversationId;
         } else {
-          print('📌 기존 대화방 없음 - 새로 생성 필요');
+          print('🆕 대화방 없음 → 새로 생성');
         }
+      } on FirebaseException catch (e) {
+        print('⚠️ 대화방 확인 중 Firebase 오류: code=${e.code}, message=${e.message}');
+        // 오류가 발생해도 생성 시도
       } catch (e) {
         print('⚠️ 대화방 확인 중 오류 (무시하고 생성 시도): $e');
         // 오류가 발생해도 생성 시도
@@ -493,6 +510,7 @@ class DMService {
         },
         'lastMessage': '',
         'lastMessageTime': Timestamp.fromDate(now),
+        'lastMessageSenderId': '',  // 초기값 추가
         'unreadCount': {
           currentUser.uid: 0,
           otherUserId: 0,
@@ -500,6 +518,8 @@ class DMService {
         'createdAt': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
         'archivedBy': [],
+        'userLeftAt': {},  // 초기값 명시
+        'rejoinedAt': {},  // 초기값 명시
       };
       
       if (postId != null) {
@@ -540,9 +560,11 @@ class DMService {
 
       print('✅ 새 대화방 생성 (conversations 컬렉션): $conversationId');
       return conversationId;
-    } on FirebaseException catch (e) {
+    } on FirebaseException catch (e, st) {
       // Firebase 예외에 대해 상세 코드/경로 로그
-      print('❌ 대화방 생성 Firebase 오류: code=${e.code}, message=${e.message}, plugin=${e.plugin}');
+      print('❌ getOrCreateConversation Firebase 오류: code=${e.code}, message=${e.message}');
+      print('  - plugin: ${e.plugin}');
+      print('  - stackTrace: $st');
       
       // 서브컬렉션 방식으로 재시도
       print('🔄 서브컬렉션 방식으로 재시도...');
@@ -558,8 +580,9 @@ class DMService {
         postId: postId,
         isOtherUserAnonymous: isOtherUserAnonymous,
       );
-    } catch (e) {
-      print('❌ 대화방 생성 일반 오류: $e');
+    } catch (e, st) {
+      print('❌ getOrCreateConversation 일반 오류: $e');
+      print(st);
       return null;
     }
   }
@@ -665,50 +688,62 @@ class DMService {
         print('  - ID: ${doc.id}');
         print('    participants: ${data['participants']}');
         print('    lastMessage: ${data['lastMessage']}');
+        print('    archivedBy: ${data['archivedBy']}');
       }
       
       final conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
           .where((conv) {
-            // 인스타그램 방식: 나간 대화방 필터링
+            // 🔧 0단계: participants 검증 - 현재 사용자가 포함되어 있는지 확인
+            if (!conv.participants.contains(currentUser.uid)) {
+              print('  - [${conv.id}] ❌ 심각한 오류: 현재 사용자가 participants에 없음!');
+              print('    participants: ${conv.participants}');
+              print('    현재 사용자: ${currentUser.uid}');
+              return false; // 잘못된 데이터이므로 숨김
+            }
+            
+            // 🔧 1단계: archivedBy 체크 - 내가 보관한 대화방은 무조건 숨김
+            if (conv.archivedBy.contains(currentUser.uid)) {
+              print('  - [${conv.id}] 숨김: archivedBy에 포함됨');
+              return false;
+            }
+            
+            // 🔧 2단계: 나간/재입장 상태를 정확히 반영
             final userLeftTime = conv.userLeftAt[currentUser.uid];
+            final userRejoinedTime = conv.rejoinedAt[currentUser.uid];
             final lastMessageTime = conv.lastMessageTime;
             
             bool show;
-            // 나간 적이 없으면 표시
+            
+            // 1. 나간 적이 없으면 → 표시
             if (userLeftTime == null) {
               show = true;
             }
-            // 나간 이후 새 활동(메시지)이 있으면 표시
-            // isAfter 대신 compareTo로 >= 비교
-            else if (lastMessageTime.compareTo(userLeftTime) >= 0) {
-              show = true;
+            // 2. 나갔지만 재입장하지 않은 상태 → 새 메시지가 오면 표시
+            else if (userRejoinedTime == null) {
+              // 나간 후 새 메시지가 오면 표시 (상대방이 메시지를 보냈을 때만)
+              show = lastMessageTime.compareTo(userLeftTime) > 0;
             }
-            // 나갔고 새 활동 없음 → 숨김
+            // 3. 나간 후 재입장한 상태 → 마지막 액션에 따라 결정
             else {
-              show = false;
-            }
-            
-            // ⭐ 추가: 익명 대화방에서 모든 상대방이 나간 경우만 숨김 (getTotalUnreadCount와 일치)
-            if (show && conv.id.startsWith('anon_') && conv.userLeftAt.isNotEmpty) {
-              final otherParticipants = conv.participants.where((id) => id != currentUser.uid).toList();
-              bool allOthersLeft = otherParticipants.isNotEmpty && 
-                  otherParticipants.every((otherId) => conv.userLeftAt[otherId] != null);
+              final leftTime = userLeftTime;
+              final rejoinTime = userRejoinedTime;
               
-              if (allOthersLeft) {
-                show = false;
-                print('  - [${conv.id}] 숨김: 익명 대화방에서 모든 상대방이 나감');
+              // 마지막 액션이 "나가기"라면 → 새 메시지 와야 표시
+              if (leftTime.compareTo(rejoinTime) > 0) {
+                show = lastMessageTime.compareTo(leftTime) > 0;
+              }
+              // 마지막 액션이 "재입장"이라면 → 표시
+              else {
+                show = true;
               }
             }
             
-            // 문제 대화방 필터링 결과 로그
-            if (conv.id.contains('ewm0tYZ2jS0xc8uJ5ssy')) {
-              print('⚠️ [문제 대화방 목록 표시 여부]');
-              print('  - ID: ${conv.id}');
-              print('  - 표시됨: $show');
-              print('  - userLeftAt: ${conv.userLeftAt[currentUser.uid]}');
-              print('  - lastMessageTime: ${conv.lastMessageTime}');
-            }
+            // 디버깅 로그
+            print('📋 [${conv.id}] 필터링 결과: $show');
+            print('  - userLeftTime: $userLeftTime');
+            print('  - userRejoinedTime: $userRejoinedTime');
+            print('  - lastMessageTime: $lastMessageTime');
             
             return show;
           })
@@ -830,23 +865,48 @@ class DMService {
       
       final convData = convSnapshot.data() as Map<String, dynamic>;
       final userLeftAtData = convData['userLeftAt'] as Map<String, dynamic>? ?? {};
+      final rejoinedAtData = convData['rejoinedAt'] as Map<String, dynamic>? ?? {};
       
-      print('  - userLeftAt: ${userLeftAtData.keys.toList()}');
+      print('  - userLeftAt 키들: ${userLeftAtData.keys.toList()}');
+      print('  - rejoinedAt 키들: ${rejoinedAtData.keys.toList()}');
+
+      final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
+      final rejoinedTimestamp = rejoinedAtData[currentUser.uid] as Timestamp?;
+
+      print('  - 내 leftTimestamp: $leftTimestamp');
+      print('  - 내 rejoinedTimestamp: $rejoinedTimestamp');
+
+      // 🔧 수정된 로직: 나간/재입장 상태를 정확히 판단
       
-      // 나간 적이 있으면 그 시점부터만 메시지 표시
-      if (userLeftAtData.containsKey(currentUser.uid)) {
-        final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
-        if (leftTimestamp != null) {
-          final leftTime = leftTimestamp.toDate();
-          print('  - 결과: $leftTime (나간 시점부터 표시)');
-          return leftTime;
-        }
+      // 1. 나간 적이 없으면 → 모든 메시지 표시
+      if (leftTimestamp == null) {
+        print('  - 결과: null (나간 기록 없음 - 모든 메시지 표시)');
+        return null;
       }
       
-      print('  - 결과: null (나간 적 없음 - 모든 메시지 표시)');
-      return null;
+      // 2. 나갔지만 재입장하지 않은 상태 → 현재 "나간 상태"이므로 메시지 숨김
+      if (rejoinedTimestamp == null) {
+        print('  - 결과: 현재 나간 상태 - 메시지 숨김 (매우 미래 시간 반환)');
+        // 매우 미래 시간을 반환하여 모든 기존 메시지를 필터링
+        return DateTime.now().add(const Duration(days: 365));
+      }
+      
+      // 3. 나간 후 재입장한 상태 → 마지막 재입장 시점부터 표시
+      final leftTime = leftTimestamp.toDate();
+      final rejoinTime = rejoinedTimestamp.toDate();
+      
+      // 마지막 액션이 "나가기"인지 "재입장"인지 확인
+      if (leftTime.isAfter(rejoinTime)) {
+        print('  - 결과: 마지막 액션이 나가기 - 메시지 숨김 (매우 미래 시간 반환)');
+        return DateTime.now().add(const Duration(days: 365));
+      } else {
+        print('  - 결과: $rejoinTime (마지막 재입장 시점부터 표시)');
+        return rejoinTime;
+      }
+      
     } catch (e) {
       print('❌ 가시성 시간 계산 실패: $e');
+      // 오류 시 안전하게 모든 메시지 표시
       return null;
     }
   }
@@ -1001,27 +1061,46 @@ class DMService {
 
       final convData = convDocAfter.data()!;
       final participants = List<String>.from(convData['participants']);
-      final unreadCount = Map<String, int>.from(convData['unreadCount']);
-      final userLeftAt = convData['userLeftAt'] as Map<String, dynamic>?;
+      final unreadCount = _parseUnreadCountMap(convData['unreadCount']);
+      final userLeftAt = convData['userLeftAt'] as Map<String, dynamic>? ?? {};
+      final rejoinedAt = convData['rejoinedAt'] as Map<String, dynamic>? ?? {};
 
       // 모든 상대방의 읽지 않은 메시지 수 증가 (나간 사용자 제외)
       print('🔍 unreadCount 업데이트 시작 - 업데이트 전: $unreadCount');
       for (final participantId in participants) {
         if (participantId != currentUser.uid) {
-          // 상대방이 나간 경우 unreadCount 증가하지 않음 (최적화)
-          final hasLeft = userLeftAt != null && userLeftAt[participantId] != null;
-          if (!hasLeft) {
+          // 상대방이 "현재" 나가있는 경우(unreadCount/알림 증가 X)
+          bool isCurrentlyLeft = false;
+          try {
+            final leftTs = userLeftAt[participantId] as Timestamp?;
+            final rejoinedTs = rejoinedAt[participantId] as Timestamp?;
+            if (leftTs != null) {
+              if (rejoinedTs == null) {
+                isCurrentlyLeft = true;
+              } else {
+                final leftTime = leftTs.toDate();
+                final rejoinTime = rejoinedTs.toDate();
+                // 마지막 나간 시간이 재입장 이후라면 아직 나가있는 상태
+                isCurrentlyLeft = leftTime.isAfter(rejoinTime);
+              }
+            }
+          } catch (e) {
+            print('  - [$participantId] 현재 나간 상태 계산 실패(보수적으로 활성으로 간주): $e');
+            isCurrentlyLeft = false;
+          }
+
+          if (!isCurrentlyLeft) {
             final currentCount = unreadCount[participantId] ?? 0;
             unreadCount[participantId] = currentCount + 1;
             print('  - [$participantId] unreadCount 증가: $currentCount → ${unreadCount[participantId]}');
           } else {
-            print('  - [$participantId] 나간 사용자이므로 unreadCount 증가 안 함');
+            print('  - [$participantId] 현재 나간 상태이므로 unreadCount 증가 안 함');
           }
         }
       }
       
       // 강제 확인: unreadCount가 실제로 증가했는지 검증
-      final hasAnyUnread = unreadCount.values.any((count) => count > 0);
+      final hasAnyUnread = unreadCount.values.any((msgCount) => msgCount > 0);
       print('🔍 unreadCount 검증 완료:');
       print('  - hasAnyUnread: $hasAnyUnread');
       print('  - 최종 unreadCount 맵: $unreadCount');
@@ -1037,6 +1116,15 @@ class DMService {
         }
       }
 
+      // ✅ archivedBy에서 모든 참가자 제거 (새 메시지가 오면 대화방 복원)
+      final archivedBy = (convData['archivedBy'] as List?)?.map((e) => e.toString()).toList() ?? [];
+      final shouldRestoreConversation = archivedBy.isNotEmpty;
+      
+      if (shouldRestoreConversation) {
+        print('🔓 대화방 복원: archivedBy에서 모든 참가자 제거');
+        print('  - 기존 archivedBy: $archivedBy');
+      }
+
       // 메시지 전송 시 대화방 업데이트
       final updateData = {
         'lastMessage': text.trim(),
@@ -1044,12 +1132,14 @@ class DMService {
         'lastMessageSenderId': currentUser.uid,
         'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
+        // ✅ 새 메시지가 오면 archivedBy 초기화 (대화방 복원)
+        'archivedBy': [],
       };
       
       print('🔄 대화방 업데이트 데이터: $updateData');
       print('  - 각 사용자별 unreadCount:');
-      unreadCount.forEach((userId, count) {
-        print('    • $userId: $count개 (읽지 않음)');
+      unreadCount.forEach((userId, msgCount) {
+        print('    • $userId: $msgCount개 (읽지 않음)');
       });
       
       try {
@@ -1062,7 +1152,7 @@ class DMService {
         final verifyDoc = await convRef.get();
         if (verifyDoc.exists) {
           final verifyData = verifyDoc.data()!;
-          final verifyUnread = Map<String, int>.from(verifyData['unreadCount'] ?? {});
+          final verifyUnread = _parseUnreadCountMap(verifyData['unreadCount']);
           print('  ✓ Firestore 확인 - unreadCount: $verifyUnread');
         }
       } catch (e) {
@@ -1173,7 +1263,43 @@ class DMService {
     }
   }
 
+  /// 대화방 재입장 처리 - 사용자가 나갔다가 다시 대화방을 연 순간 호출
+  /// userLeftAt은 유지하고 rejoinedAt에 현재 시각을 기록하여
+  /// - 나갔던 사람: 재입장 시점 이후 메시지만 보이게 함
+  /// - 안 나간 사람: 전체 메시지 계속 유지
+  Future<void> rejoinConversation(String conversationId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    final convRef = _firestore.collection('conversations').doc(conversationId);
+    try {
+      final snap = await convRef.get();
+      if (!snap.exists) return;
+
+      final data = snap.data() as Map<String, dynamic>;
+      final participants = List<String>.from(data['participants'] ?? []);
+      if (!participants.contains(currentUser.uid)) {
+        print('rejoinConversation: 참여자가 아닌 사용자입니다 - 무시');
+        return;
+      }
+
+      await convRef.update({
+        'rejoinedAt.${currentUser.uid}': Timestamp.fromDate(DateTime.now()),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+
+      print('✅ rejoinConversation 완료: $conversationId / user=${currentUser.uid}');
+    } on FirebaseException catch (e) {
+      print('rejoinConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
+    } catch (e) {
+      print('rejoinConversation 일반 오류: $e');
+    }
+  }
+
   /// 대화방 나가기 - 인스타그램 DM 방식 (타임스탬프 기록)
+  /// - 나간 사람: 이전 대화 내용 안 보임, 대화방도 목록에서 사라짐
+  /// - 안 나간 사람: 모든 대화 내용 계속 유지, 대화방도 유지
+  /// - 나간 후 새 메시지 오면: 나간 사람에게 대화방 다시 생김 (이전 대화는 여전히 안 보임)
   Future<void> leaveConversation(String conversationId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
@@ -1187,13 +1313,16 @@ class DMService {
       if (!participants.contains(currentUser.uid)) return;
 
       // 사용자가 나간 시간을 기록 (participants에서는 제거하지 않음)
+      // userLeftAt 기록 시 rejoinedAt은 그대로 유지 (나중에 비교해서 마지막 액션 판단)
       await convRef.update({
         'userLeftAt.${currentUser.uid}': Timestamp.fromDate(DateTime.now()),
         'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
       
       print('✅ 대화방 나가기 완료 (인스타그램 방식): $conversationId');
-      print('  - 사용자는 이전 메시지를 볼 수 없지만 상대방은 모든 메시지 유지');
+      print('  - 나간 사람: 이전 대화 내용 안 보임, 대화방 목록에서 사라짐');
+      print('  - 안 나간 사람: 모든 대화 내용 유지, 대화방 유지');
+      print('  - 새 메시지 오면: 나간 사람에게 대화방 다시 생김');
     } on FirebaseException catch (e) {
       print('leaveConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
       rethrow;
@@ -1226,7 +1355,7 @@ class DMService {
       print('✓ 대화방 존재 확인');
 
       final convData = convDoc.data()!;
-      final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
+      final unreadCount = _parseUnreadCountMap(convData['unreadCount']);
       print('  - 현재 unreadCount: $unreadCount');
       print('  - 내 읽지 않은 메시지 수 (Firestore 필드): ${unreadCount[currentUser.uid] ?? 0}');
 
@@ -1345,7 +1474,7 @@ class DMService {
               }
             }
             
-            final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
+            final unreadCount = _parseUnreadCountMap(data['unreadCount']);
             final myUnread = unreadCount[currentUser.uid] ?? 0;
             
             print('  ✓ [$convId] 처리 완료 - 읽지 않음: ${myUnread}개');
@@ -1357,6 +1486,10 @@ class DMService {
             skippedConv++;
             continue;
           }
+        }
+        
+        if (totalUnread == 0 && snapshot.docs.isNotEmpty) {
+          print('⚠️ 배지 합계가 0입니다. iOS 타입 변환/데이터 불일치 가능성 확인 필요.');
         }
         
         print('  📊 처리 완료:');
@@ -1393,7 +1526,7 @@ class DMService {
                 }
               }
               
-              final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
+              final unreadCount = _parseUnreadCountMap(data['unreadCount']);
               final myUnread = unreadCount[currentUser.uid] ?? 0;
               if (myUnread > 0) {
                 print('  ✅ $convId: $myUnread개 (실제 배지에 포함됨)');
@@ -1416,6 +1549,82 @@ class DMService {
     }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
 
+  /// V2: 타입 안전화 및 로직 정리 버전 (iOS 캐스팅 이슈 방지)
+  Stream<int> getTotalUnreadCountV2() {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      return Stream.value(0);
+    }
+    
+    final stream = _firestore
+        .collection('conversations')
+        .where('participants', arrayContains: currentUser.uid)
+        .snapshots(includeMetadataChanges: false);  // 메타데이터 변경 제외
+
+    return stream.map((snapshot) {
+      int total = 0;
+      
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+
+          // 보관됨 제외
+          final archivedBy = List<String>.from(data['archivedBy'] ?? []);
+          if (archivedBy.contains(currentUser.uid)) {
+            continue;
+          }
+
+          // 나간 이후 새 메시지 없음인 경우 제외
+          final userLeftAt = data['userLeftAt'];
+          final lastMessageTime = data['lastMessageTime'];
+          if (userLeftAt != null && lastMessageTime != null) {
+            final left = userLeftAt[currentUser.uid];
+            if (left != null) {
+              final leftAt = (left as Timestamp).toDate();
+              final lastAt = (lastMessageTime as Timestamp).toDate();
+              if (lastAt.compareTo(leftAt) < 0) {
+                continue;
+              }
+            }
+          }
+
+          final unread = _parseUnreadCountMap(data['unreadCount']);
+          final count = unread[currentUser.uid] ?? 0;
+          
+          total += count;
+        } catch (e) {
+          continue;
+        }
+      }
+      
+      return total;
+    }).distinct();
+  }
+
+  /// iOS에서 num/double로 내려오는 경우를 포함해 안전하게 파싱
+  Map<String, int> _parseUnreadCountMap(dynamic raw) {
+    if (raw is Map) {
+      try {
+        return raw.map((k, v) => MapEntry(
+              k.toString(),
+              (v is num) ? v.toInt() : int.tryParse('$v') ?? 0,
+            ));
+      } catch (_) {
+        // 방어적 처리
+        final Map<String, int> result = {};
+        raw.forEach((key, value) {
+          if (key == null) return;
+          if (value is num) {
+            result[key.toString()] = value.toInt();
+          } else {
+            result[key.toString()] = int.tryParse('$value') ?? 0;
+          }
+        });
+        return result;
+      }
+    }
+    return <String, int>{};
+  }
   /// 캐시 클리어
   void clearCache() {
     _conversationCache.clear();
@@ -1426,21 +1635,22 @@ class DMService {
   /// 상대방이 나에게 보낸 메시지 중 내가 읽지 않은 것만 카운트
   /// 기존 DM 기능에 영향 없음 (읽기 전용)
   Stream<int> getActualUnreadCountStream(String conversationId, String currentUserId) {
+    // 복합 쿼리 대신 단순 쿼리 사용 (Firestore 인덱스 불필요)
     return _firestore
         .collection('conversations')
         .doc(conversationId)
         .collection('messages')
-        .where('senderId', isNotEqualTo: currentUserId)  // 상대방이 보낸 메시지
-        .where('isRead', isEqualTo: false)               // 읽지 않은 메시지
+        .where('isRead', isEqualTo: false)  // 읽지 않은 메시지만
         .snapshots()
         .map((snapshot) {
-          final count = snapshot.docs.length;
+          // 클라이언트 측에서 필터링: 상대방이 보낸 메시지만 카운트
+          final unreadCount = snapshot.docs.where((doc) {
+            final data = doc.data();
+            final senderId = data['senderId'] as String?;
+            return senderId != null && senderId != currentUserId;
+          }).length;
           
-          if (DMFeatureFlags.enableDebugLogs) {
-            print('🔄 배지 스트림 업데이트: $conversationId - $count개');
-          }
-          
-          return count;
+          return unreadCount;
         })
         .distinct(); // 중복 값 제거로 불필요한 리빌드 방지
   }

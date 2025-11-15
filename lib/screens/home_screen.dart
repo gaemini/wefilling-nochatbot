@@ -18,6 +18,7 @@ import '../ui/widgets/skeletons.dart';
 import '../services/preload_service.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
+import 'meetup_review_screen.dart';
 import '../l10n/app_localizations.dart';
 
 class MeetupHomePage extends StatefulWidget {
@@ -63,8 +64,14 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   final Map<String, DateTime> _participationCacheTime = {};
   static const Duration _cacheValidDuration = Duration(seconds: 30);
 
+  // 참여자 수 캐시 (무한 로딩 방지)
+  final Map<String, int> _participantCountCache = {};
+  final Map<String, DateTime> _participantCountCacheTime = {};
+
   // Stream 구독 관리
   final Map<String, StreamSubscription?> _participationSubscriptions = {};
+  // 참여 상태 조회 타임아웃 (무한 로딩 방지)
+  static const Duration _participationFetchTimeout = Duration(seconds: 4);
 
   // 주차 네비게이션을 위한 기준 날짜
   DateTime _currentWeekAnchor = DateTime.now();
@@ -124,6 +131,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _categoryMeetupCache.clear();
     _participationStatusCache.clear();
     _participationCacheTime.clear();
+    _participantCountCache.clear();
+    _participantCountCacheTime.clear();
 
     print('✅ MeetupHomePage dispose 완료');
     super.dispose();
@@ -206,6 +215,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         _participationStatusCache.clear();
         _participationCacheTime.clear();
         _participationSubscriptions.clear();
+        _participantCountCache.clear();
+        _participantCountCacheTime.clear();
       });
     }
   }
@@ -641,6 +652,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                             _participationStatusCache.clear();
                             _participationCacheTime.clear();
                             _participationSubscriptions.clear();
+                            _participantCountCache.clear();
+                            _participantCountCacheTime.clear();
                           });
                         }
 
@@ -879,12 +892,29 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         color: Color(0xFF6B7280),
                       ),
                       const SizedBox(width: 4),
-                      FutureBuilder<int>(
-                        future: _meetupService.getRealTimeParticipantCount(meetup.id),
-                        builder: (context, snapshot) {
-                          final participantCount = snapshot.data ?? meetup.currentParticipants;
+                      Builder(
+                        builder: (context) {
+                          // 캐시된 참여자 수 확인
+                          final cachedCount = _getCachedParticipantCount(meetup.id);
+                          if (cachedCount != null) {
                           return Text(
-                            AppLocalizations.of(context)!.participantCount('$participantCount', '${meetup.maxParticipants}'),
+                              AppLocalizations.of(context)!.participantCount('$cachedCount', '${meetup.maxParticipants}'),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                color: Color(0xFF6B7280),
+                              ),
+                            );
+                          }
+                          
+                          // 캐시가 없으면 기본값 표시하고 백그라운드에서 로드
+                          _loadParticipantCount(meetup.id);
+                          
+                          // 캐시된 참여자 수 사용 (낙관적 업데이트 반영)
+                          final displayParticipantCount = _participantCountCache[meetup.id] ?? meetup.currentParticipants;
+                          
+                          return Text(
+                            AppLocalizations.of(context)!.participantCount('$displayParticipantCount', '${meetup.maxParticipants}'),
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 14,
@@ -1046,11 +1076,77 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     }
 
     final isParticipating = cachedStatus;
+    final bool isClosed = meetup.isClosed;
+    final bool isCompleted = meetup.isCompleted;
+    final bool hasReview = meetup.hasReview == true;
 
-    // 마감된 모임이지만 이미 참여 중이면 나가기 버튼 표시
-    if (meetup.currentParticipants >= meetup.maxParticipants &&
-        !isParticipating) {
-      return const SizedBox.shrink();
+    // 참여자인 경우: 후기 → 녹색 버튼, 아니면 모임 확정 시 "모임 확정" 표시, 그 외 나가기 버튼
+    if (isParticipating) {
+      if (hasReview) {
+        final bool hasAccepted = meetup.hasUserAcceptedReview(currentUser.uid);
+        return GestureDetector(
+          onTap: hasAccepted
+              ? null
+              : () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => MeetupReviewScreen(
+                        meetupId: meetup.id,
+                        reviewId: meetup.reviewId,
+                      ),
+                    ),
+                  );
+                },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: hasAccepted ? Colors.grey[300] : const Color(0xFF22C55E),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              hasAccepted
+                  ? AppLocalizations.of(context)!.reviewChecked
+                  : AppLocalizations.of(context)!.checkReview,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: hasAccepted ? Colors.grey[700]! : Colors.white,
+              ),
+            ),
+          ),
+        );
+      }
+      if (isCompleted) {
+        // 참여자 + 모임 확정 → "모임 확정" 표시
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey[300],
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            AppLocalizations.of(context)!.meetupConfirmed,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            ),
+          ),
+        );
+      }
+      // 참여자 + 미마감 → 아래 공용 토글 버튼 로직(나가기)로 진행
+    } else {
+      // 비참여자인 경우: 모집 마감 시 버튼 숨김, 정원 초과 시 숨김
+      final displayParticipantCount = _participantCountCache[meetup.id] ?? meetup.currentParticipants;
+      if (isClosed) {
+        return const SizedBox.shrink();
+      }
+      if (displayParticipantCount >= meetup.maxParticipants && !isParticipating) {
+        return const SizedBox.shrink();
+      }
     }
 
     return GestureDetector(
@@ -1071,7 +1167,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
-          isParticipating ? '나가기' : '참여하기',
+          isParticipating
+              ? (AppLocalizations.of(context)!.leaveMeetup)
+              : (AppLocalizations.of(context)!.joinMeetup),
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 12,
@@ -1090,19 +1188,30 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     // 이미 구독이 있으면 무시
     if (_participationSubscriptions.containsKey(meetupId)) return;
 
-    _participationSubscriptions[meetupId] = null; // 플래그 설정
+    _participationSubscriptions[meetupId] = null; // 진행 플래그 설정
 
-    _meetupService.getUserParticipationStatus(meetupId).then((participant) {
-      if (mounted) {
-        final isParticipating =
-            participant?.status == ParticipantStatus.approved;
-        _updateParticipationCache(meetupId, isParticipating);
-        // 상태가 변경되었으면 UI 업데이트
-                  setState(() {});
-      }
-    }).catchError((e) {
-      print('참여 상태 로드 오류: $e');
-    });
+    _meetupService
+        .getUserParticipationStatus(meetupId)
+        .timeout(_participationFetchTimeout)
+        .then((participant) {
+          if (!mounted) return;
+          final isParticipating =
+              participant?.status == ParticipantStatus.approved;
+          _updateParticipationCache(meetupId, isParticipating);
+          // UI 업데이트 → 카드 로딩 종료
+          setState(() {});
+        })
+        .catchError((e) {
+          // 실패/타임아웃 시 기본값 false로 캐시하여 로딩 고착 방지
+          print('참여 상태 로드 오류(또는 타임아웃): $e');
+          if (!mounted) return;
+          _updateParticipationCache(meetupId, false);
+          setState(() {});
+        })
+        .whenComplete(() {
+          // 다음 번에 필요 시 재시도 가능하도록 진행 플래그 해제
+          _participationSubscriptions.remove(meetupId);
+        });
   }
 
   // 캐시된 참여 상태 조회
@@ -1121,12 +1230,45 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _participationCacheTime[meetupId] = DateTime.now();
   }
 
+  // 캐시된 참여자 수 조회
+  int? _getCachedParticipantCount(String meetupId) {
+    final cacheTime = _participantCountCacheTime[meetupId];
+    if (cacheTime != null &&
+        DateTime.now().difference(cacheTime) < _cacheValidDuration) {
+      return _participantCountCache[meetupId];
+    }
+    return null;
+  }
+
+  // 참여자 수 캐시 업데이트
+  void _updateParticipantCountCache(String meetupId, int count) {
+    _participantCountCache[meetupId] = count;
+    _participantCountCacheTime[meetupId] = DateTime.now();
+  }
+
+  // 참여자 수 백그라운드 로드
+  Future<void> _loadParticipantCount(String meetupId) async {
+    try {
+      final count = await _meetupService.getRealTimeParticipantCount(meetupId);
+      if (mounted) {
+        _updateParticipantCountCache(meetupId, count);
+        setState(() {}); // UI 업데이트
+      }
+    } catch (e) {
+      print('참여자 수 로드 오류: $e');
+    }
+  }
+
   // 모임 참여하기
   Future<void> _joinMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
+    final originalParticipantCount = _participantCountCache[meetup.id] ?? meetup.currentParticipants;
+    
     if (mounted) {
-                  setState(() {
+      setState(() {
         _updateParticipationCache(meetup.id, true);
+        // 참여자 수도 즉시 업데이트 (낙관적 업데이트)
+        _updateParticipantCountCache(meetup.id, originalParticipantCount + 1);
       });
     }
 
@@ -1137,6 +1279,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, true);
+            // 성공 시 참여자 수 확정
+            _updateParticipantCountCache(meetup.id, originalParticipantCount + 1);
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1152,6 +1296,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, false);
+            // 참여자 수도 원래대로 롤백
+            _updateParticipantCountCache(meetup.id, originalParticipantCount);
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1168,6 +1314,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         setState(() {
           _updateParticipationCache(meetup.id, false);
+          // 참여자 수도 원래대로 롤백
+          _updateParticipantCountCache(meetup.id, originalParticipantCount);
         });
       }
       print('모임 참여 오류: $e');
@@ -1186,9 +1334,13 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 모임 나가기
   Future<void> _leaveMeetup(Meetup meetup) async {
     // 즉시 캐시 업데이트 (깜빡임 방지)
+    final originalParticipantCount = _participantCountCache[meetup.id] ?? meetup.currentParticipants;
+    
     if (mounted) {
       setState(() {
         _updateParticipationCache(meetup.id, false);
+        // 참여자 수도 즉시 업데이트 (낙관적 업데이트)
+        _updateParticipantCountCache(meetup.id, originalParticipantCount - 1);
       });
     }
 
@@ -1199,6 +1351,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, false);
+            // 성공 시 참여자 수 확정
+            _updateParticipantCountCache(meetup.id, originalParticipantCount - 1);
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1214,6 +1368,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, true);
+            // 참여자 수도 원래대로 롤백
+            _updateParticipantCountCache(meetup.id, originalParticipantCount);
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1230,6 +1386,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         setState(() {
           _updateParticipationCache(meetup.id, true);
+          // 참여자 수도 원래대로 롤백
+          _updateParticipantCountCache(meetup.id, originalParticipantCount);
         });
       }
       print('모임 나가기 오류: $e');

@@ -36,32 +36,31 @@ class NotificationBadge extends StatelessWidget {
             top: top ?? 0,
             right: right ?? 0,
             child: Container(
-              padding: EdgeInsets.all(size < 16 ? 1.0 : 2.0),
+              padding: EdgeInsets.all(size < 16 ? 2.0 : 3.0),
               decoration: BoxDecoration(
                 color: color, 
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white, width: 1.5), // 흰색 테두리 추가
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
               constraints: BoxConstraints(minWidth: size, minHeight: size),
               child: Center(
-                child:
-                    count > 99
-                        ? Text(
-                          '99+',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: fontSize,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        )
-                        : Text(
-                          count.toString(),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: fontSize,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                child: Text(
+                  count > 99 ? '99+' : count.toString(),
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
             ),
           ),

@@ -14,6 +14,8 @@ import '../services/comment_service.dart';
 import '../services/storage_service.dart';
 import '../services/dm_service.dart';
 import 'dm_chat_screen.dart';
+import '../ui/dialogs/report_dialog.dart';
+import '../ui/dialogs/block_dialog.dart';
 import 'dart:math' as math;
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
@@ -116,18 +118,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   /// 게시글 상세에서 DM 열기
   Future<void> _openDMFromDetail() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.loginRequired ?? ""),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     try {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      print('🔥 _openDMFromDetail 호출 - currentUser=${currentUser?.uid}, postUser=${_currentPost.userId}, postId=${_currentPost.id}');
+      
+      if (currentUser == null) {
+        print('❌ _openDMFromDetail: currentUser == null');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.loginRequired ?? ""),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
       // post.userId가 올바른 Firebase UID인지 확인
       print('🔍 DM 대상 확인 (상세페이지):');
       print('  - post.id: ${_currentPost.id}');
@@ -181,16 +186,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return;
       }
       
-      // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
-      final conversationId = _dmService.generateConversationId(
+      // getOrCreateConversation 호출하여 대화방 생성/조회
+      print('🔥 getOrCreateConversation 호출 시작...');
+      final conversationId = await _dmService.getOrCreateConversation(
         _currentPost.userId,
         postId: _currentPost.id,
         isOtherUserAnonymous: _currentPost.isAnonymous,
       );
       
-      print('✅ DM conversation ID 생성: $conversationId');
+      print('🔥 getOrCreateConversation 결과: $conversationId');
 
-      if (mounted) {
+      if (conversationId != null && mounted) {
+        print('✅ DM 화면으로 이동: $conversationId');
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -200,10 +207,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
           ),
         );
+      } else {
+        print('❌ conversationId == null 이라서 화면 이동 안 함');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.cannotSendDM),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
-    } catch (e) {
-      print('❌ DM 열기 오류: $e');
-      print('오류 타입: ${e.runtimeType}');
+    } on FirebaseException catch (e, st) {
+      print('❌ _openDMFromDetail Firebase 예외: code=${e.code}, message=${e.message}');
+      print(st);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('DM 오류: ${e.code}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e, st) {
+      print('❌ _openDMFromDetail 예외: $e');
+      print(st);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -213,6 +243,74 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
     }
+  }
+
+  /// 게시글 신고 다이얼로그
+  Future<void> _reportThisPost() async {
+    await showReportDialog(
+      context,
+      reportedUserId: _currentPost.userId,
+      targetType: 'post',
+      targetId: _currentPost.id,
+      targetTitle: _currentPost.title,
+    );
+  }
+
+  /// 게시글 작성자 차단 다이얼로그
+  Future<void> _blockPostAuthor() async {
+    await showBlockUserDialog(
+      context,
+      userId: _currentPost.userId,
+      userName: _currentPost.author,
+    );
+  }
+
+  /// 액션 라인 우측 케밥 메뉴 (신고/차단)
+  Widget _buildKebabMenu() {
+    final isMyPost = FirebaseAuth.instance.currentUser?.uid == _currentPost.userId;
+    if (isMyPost) return const SizedBox.shrink();
+    return PopupMenuButton<String>(
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: 'report',
+          child: Row(
+            children: [
+              Icon(Icons.report_outlined, size: 18, color: Colors.red[600]),
+              const SizedBox(width: 12),
+              Text(
+                AppLocalizations.of(context)!.reportAction,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'block',
+          child: Row(
+            children: [
+              Icon(Icons.block, size: 18, color: Colors.red[600]),
+              const SizedBox(width: 12),
+              Text(
+                AppLocalizations.of(context)!.blockAction,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ],
+          ),
+        ),
+      ],
+      onSelected: (value) {
+        switch (value) {
+          case 'report':
+            _reportThisPost();
+            break;
+          case 'block':
+            _blockPostAuthor();
+            break;
+        }
+      },
+      padding: EdgeInsets.zero,
+      icon: const Icon(Icons.more_vert, color: Colors.black, size: 22),
+    );
   }
 
   @override
@@ -1244,6 +1342,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             onPressed: _openDMFromDetail,
                             splashRadius: 20,
                           ),
+                        // 우측 정렬 공간
+                        const Spacer(),
+                        // 케밥 메뉴 (신고/차단)
+                        _buildKebabMenu(),
                       ],
                     ),
                   ),
@@ -1337,6 +1439,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               onPressed: _openDMFromDetail,
                               splashRadius: 20,
                             ),
+                          // 우측 정렬 공간
+                          const Spacer(),
+                          // 케밥 메뉴 (신고/차단)
+                          _buildKebabMenu(),
                         ],
                       ),
                     ),

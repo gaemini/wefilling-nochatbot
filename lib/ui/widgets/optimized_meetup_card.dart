@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
 import '../../models/meetup.dart';
 import 'package:intl/intl.dart';
 import '../../l10n/app_localizations.dart';
@@ -16,6 +17,7 @@ import '../dialogs/report_dialog.dart';
 import '../dialogs/block_dialog.dart';
 import '../../screens/edit_meetup_screen.dart';
 import '../../screens/review_approval_screen.dart';
+import '../../screens/meetup_review_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// 최적화된 모임 카드
@@ -25,6 +27,7 @@ class OptimizedMeetupCard extends StatefulWidget {
   final VoidCallback onTap;
   final bool preloadImage;
   final VoidCallback? onMeetupDeleted; // 삭제 후 콜백 추가
+  final VoidCallback? onParticipationChanged; // 참여 상태 변경 콜백 추가
 
   const OptimizedMeetupCard({
     super.key,
@@ -33,6 +36,7 @@ class OptimizedMeetupCard extends StatefulWidget {
     required this.onTap,
     this.preloadImage = false,
     this.onMeetupDeleted,
+    this.onParticipationChanged,
   });
 
   @override
@@ -43,12 +47,73 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   late Meetup currentMeetup;
   bool isParticipating = false;
   bool isCheckingParticipation = true;
+  bool isJoinLeaveProcessing = false; // 참여/나가기 처리 중 상태
+  StreamSubscription<DocumentSnapshot>? _meetupSubscription;
 
   @override
   void initState() {
     super.initState();
     currentMeetup = widget.meetup;
+    
+    // 초기 상태 로깅
+    print('🚀 [OptimizedMeetupCard-Init] 카드 초기화:');
+    print('   - 모임 ID: ${currentMeetup.id}');
+    print('   - 제목: ${currentMeetup.title}');
+    print('   - hasReview: ${currentMeetup.hasReview}');
+    print('   - isClosed: ${currentMeetup.isClosed}');
+    
     _checkParticipationStatus();
+    _setupMeetupStream();
+  }
+
+  @override
+  void dispose() {
+    _meetupSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// 실시간 모임 데이터 스트림 설정
+  void _setupMeetupStream() {
+    _meetupSubscription = FirebaseFirestore.instance
+        .collection('meetups')
+        .doc(currentMeetup.id)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists && mounted) {
+        final data = snapshot.data()!;
+        data['id'] = snapshot.id;
+        
+        final oldHasReview = currentMeetup.hasReview;
+        final oldIsClosed = currentMeetup.isClosed;
+        final newMeetup = Meetup.fromJson(data);
+        final newHasReview = newMeetup.hasReview;
+        final newIsClosed = newMeetup.isClosed;
+        
+        // 상태 변경 감지 및 상세 로깅
+        if (oldHasReview != newHasReview || oldIsClosed != newIsClosed) {
+          print('🔄 [OptimizedMeetupCard-Stream] 실시간 상태 변경 감지:');
+          print('   - 모임 ID: ${currentMeetup.id}');
+          print('   - hasReview: $oldHasReview → $newHasReview');
+          print('   - isClosed: $oldIsClosed → $newIsClosed');
+          print('   - isCompleted: ${newMeetup.isCompleted}');
+          print('   - reviewId: ${newMeetup.reviewId}');
+          print('   - 타임스탬프: ${DateTime.now()}');
+        } else {
+          print('🔄 [OptimizedMeetupCard-Stream] 상태 변경 없음: hasReview=$newHasReview, isClosed=$newIsClosed');
+        }
+        
+        setState(() {
+          currentMeetup = newMeetup;
+        });
+        
+        // 상태 변경 후 버튼 로직 재확인
+        if (oldHasReview != newHasReview || oldIsClosed != newIsClosed) {
+          print('🔍 [OptimizedMeetupCard-Stream] 업데이트 후 상태: hasReview=$newHasReview, isClosed=$newIsClosed');
+        }
+      }
+    }, onError: (error) {
+      print('❌ [OptimizedMeetupCard-Stream] 실시간 스트림 오류: $error');
+    });
   }
 
   /// 현재 사용자의 참여 상태 확인 (meetup_participants 컬렉션 기반)
@@ -140,7 +205,19 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         side: BorderSide(color: colorScheme.outline.withOpacity(0.15)), // 0.2 → 0.15 (더 얇은 테두리)
       ),
       child: InkWell(
-        onTap: widget.onTap,
+        onTap: () async {
+          // 카드 탭 시 강제 데이터 새로고침 후 원래 onTap 실행
+          print('👆 [OptimizedMeetupCard-Tap] 카드 탭됨, 강제 새로고침 시작');
+          try {
+            await _refreshMeetupData();
+            print('👆 [OptimizedMeetupCard-Tap] 새로고침 완료, 상세 화면으로 이동');
+            widget.onTap();
+          } catch (e) {
+            print('❌ [OptimizedMeetupCard-Tap] 새로고침 실패: $e');
+            // 실패해도 상세 화면으로 이동
+            widget.onTap();
+          }
+        },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 16, 12, 12), // 상단 여백만 16으로 증가하여 대칭 맞춤
@@ -343,8 +420,14 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     
     // 내가 만든 모임이면 아무것도 표시하지 않음 (위쪽에 이미 참가자 수 표시됨)
     if (currentMeetup.userId == currentUser.uid) {
+      print('🏠 [OptimizedMeetupCard-Button] 주최자이므로 버튼 숨김');
       return const SizedBox.shrink();
     }
+    
+    // 버튼 빌드 시점에 강제 데이터 새로고침 (디버깅용)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _refreshMeetupData();
+    });
     
     // 참여 상태 확인 중이면 로딩
     if (isCheckingParticipation) {
@@ -361,18 +444,54 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       );
     }
     
+    // 전체 상황 파악을 위한 종합 로깅
+    print('🎯 [OptimizedMeetupCard-Button] =====버튼 결정 시작=====');
+    print('   📋 모임 정보:');
+    print('      - ID: ${currentMeetup.id}');
+    print('      - 제목: ${currentMeetup.title}');
+    print('      - 주최자: ${currentMeetup.userId}');
+    print('      - 현재 사용자: ${currentUser.uid}');
+    print('   🔄 상태 정보:');
+    print('      - hasReview: ${currentMeetup.hasReview}');
+    print('      - isClosed: ${currentMeetup.isClosed}');
+    print('      - isCompleted: ${currentMeetup.isCompleted}');
+    print('      - reviewId: ${currentMeetup.reviewId}');
+    print('   👤 사용자 정보:');
+    print('      - isParticipating: $isParticipating');
+    print('      - isCheckingParticipation: $isCheckingParticipation');
+    print('      - isJoinLeaveProcessing: $isJoinLeaveProcessing');
+    
     final current = currentMeetup.currentParticipants;
     final max = currentMeetup.maxParticipants;
     final isOpen = current < max;
     
-    // 참여 중: 참가자 수 배지 표시
+    print('   📊 참여자 정보:');
+    print('      - 현재 참여자: $current');
+    print('      - 최대 참여자: $max');
+    print('      - 참여 가능: $isOpen');
+    
+    // 참여 중: 상세 페이지와 동일한 로직 적용
     if (isParticipating) {
+      // 디버깅: 현재 후기 상태 로그
+      print('🔍 [OptimizedMeetupCard-Button] 참여자 버튼 로직 (상세 페이지와 동일):');
+      print('   - 모임 ID: ${currentMeetup.id}');
+      print('   - hasReview: ${currentMeetup.hasReview}');
+      print('   - isClosed: ${currentMeetup.isClosed}');
+      print('   - isCompleted: ${currentMeetup.isCompleted}');
+      
+      // 상세 페이지와 동일한 로직: hasReview가 있으면 후기 확인 버튼, 없으면 나가기 버튼
       if (currentMeetup.hasReview == true) {
+        print('✅ [OptimizedMeetupCard-Button] 후기 확인 버튼 선택됨 (hasReview=true)');
+        
+        // 사용자가 이미 후기를 확인했는지 체크
+        final user = FirebaseAuth.instance.currentUser;
+        final hasAccepted = user != null ? currentMeetup.hasUserAcceptedReview(user.uid) : false;
+        
         return ElevatedButton(
-          onPressed: () => _viewAndRespondToReview(currentMeetup),
+          onPressed: hasAccepted ? null : () => _navigateToReviewScreen(currentMeetup),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green[600],
-            foregroundColor: Colors.white,
+            backgroundColor: hasAccepted ? Colors.grey[300] : const Color(0xFF22C55E), // 더 선명한 녹색
+            foregroundColor: hasAccepted ? Colors.grey[600] : Colors.white,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             minimumSize: const Size(100, 40),
@@ -381,7 +500,9 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                 ),
           ),
           child: Text(
-            AppLocalizations.of(context)!.checkReview,
+            hasAccepted 
+                ? AppLocalizations.of(context)!.reviewChecked
+                : AppLocalizations.of(context)!.checkReview,
             style: const TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -389,9 +510,15 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           ),
         );
       } else {
-        // 참여 중이지만 후기가 없는 경우 - 나가기 버튼 표시
+        // 후기가 없는 경우 - 모임 확정되었으면 나가기 버튼 숨기고 "모임 확정" 칩 표시
+        if (currentMeetup.isCompleted) {
+          print('✅ [OptimizedMeetupCard-Button] 모임 확정 표시 (isCompleted=true)');
+          return _buildConfirmedChip();
+        }
+        
+        print('🔶 [OptimizedMeetupCard-Button] 나가기 버튼 선택됨 (hasReview=false, isClosed=false)');
         return ElevatedButton(
-          onPressed: () => _leaveMeetup(currentMeetup),
+          onPressed: isJoinLeaveProcessing ? null : () => _leaveMeetup(currentMeetup),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange[600],
             foregroundColor: Colors.white,
@@ -402,25 +529,47 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               borderRadius: BorderRadius.circular(6),
             ),
           ),
-          child: Text(
-            AppLocalizations.of(context)!.leaveMeetup,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-                              ),
-                          ),
+          child: isJoinLeaveProcessing 
+              ? const SizedBox(
+                  height: 14,
+                  width: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  AppLocalizations.of(context)!.leaveMeetup ?? '나가기',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
         );
       }
     }
     
+    // 비참여자 로직
+    print('🔍 [OptimizedMeetupCard-Button] 비참여자 버튼 로직:');
+    print('   - isClosed: ${currentMeetup.isClosed}');
+    print('   - isOpen: $isOpen (current: $current, max: $max)');
+    
+    // 모집 마감된 경우 - 버튼 숨김 (모임 확정으로 보이게)
+    if (currentMeetup.isClosed) {
+      print('🚫 [OptimizedMeetupCard-Button] 비참여자 버튼 숨김 (isClosed=true)');
+      return const SizedBox.shrink();
+    }
+    
     // 마감된 모임: 배지 표시
     if (!isOpen) {
+      print('⚪ [OptimizedMeetupCard-Button] 정원 초과 배지 표시');
       return _buildParticipantBadge();
     }
     
     // 참여하기 버튼
+    print('🔵 [OptimizedMeetupCard-Button] 참여하기 버튼 선택됨');
     return ElevatedButton(
-      onPressed: () => _joinMeetup(currentMeetup),
+      onPressed: isJoinLeaveProcessing ? null : () => _joinMeetup(currentMeetup),
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF6B7FDE),
         foregroundColor: Colors.white,
@@ -431,7 +580,16 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           borderRadius: BorderRadius.circular(6), // 8 → 6 (모서리 덜 둥글게)
         ),
       ),
-      child: Text(
+      child: isJoinLeaveProcessing 
+          ? const SizedBox(
+              height: 14,
+              width: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            )
+          : Text(
         AppLocalizations.of(context)!.joinMeetup,
         style: const TextStyle(
           fontSize: 14, // 15 → 14 (폰트 크기 줄임)
@@ -463,135 +621,32 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     );
   }
 
-  /// 컴팩트 참여 버튼 (사용 안 함 - _buildCompactButton으로 대체됨)
-  Widget _buildCompactJoinButton(
-    Meetup currentMeetup,
-    ThemeData theme,
-    ColorScheme colorScheme,
-  ) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) return const SizedBox.shrink();
-
-    // 내가 만든 모임이면 버튼 숨김
-    if (currentMeetup.userId == currentUser.uid) {
-      return const SizedBox.shrink();
-    }
-
-    // 참여 상태 확인 중이면 로딩
-    if (isCheckingParticipation) {
-      return ElevatedButton(
-        onPressed: null,
-        style: ElevatedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          minimumSize: const Size(80, 32),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
-        ),
-        child: const SizedBox(
-          height: 16,
-          width: 16,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      );
-    }
-
-    final current = currentMeetup.currentParticipants;
-    final max = currentMeetup.maxParticipants;
-    final isOpen = current < max;
-
-    // 참여 중인 경우 - 나가기 버튼
-    if (isParticipating) {
-      if (currentMeetup.hasReview == true) {
-        return ElevatedButton(
-          onPressed: () => _viewAndRespondToReview(currentMeetup),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green[600],
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            minimumSize: const Size(80, 32),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: Text(
-            AppLocalizations.of(context)!.checkReview,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-            ),
-          ),
-        );
-      } else {
-        return ElevatedButton(
-          onPressed: () => _leaveMeetup(currentMeetup),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.orange[600],
-            foregroundColor: Colors.white,
-            elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            minimumSize: const Size(80, 32),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: Text(
-            AppLocalizations.of(context)!.leaveMeetup,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.3,
-            ),
-          ),
-        );
-      }
-    }
-
-    // 마감된 모임
-    if (!isOpen) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        constraints: const BoxConstraints(minWidth: 80, minHeight: 32),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey[400]!, width: 1),
-        ),
-        child: Text(
-          AppLocalizations.of(context)!.fullShort,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Colors.grey[700],
-            letterSpacing: 0.3,
-          ),
-        ),
-      );
-    }
-
-    // 참여 가능한 모임 - 참여하기 버튼
-    return ElevatedButton(
-      onPressed: () => _joinMeetup(currentMeetup),
-      style: ElevatedButton.styleFrom(
-        backgroundColor: colorScheme.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        minimumSize: const Size(80, 32),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-        ),
+  /// 모임 확정 칩 (참여자에게 버튼 대신 표시)
+  Widget _buildConfirmedChip() {
+    final Color bg = const Color(0xFFE6F4EA); // 연한 초록 배경
+    final Color fg = const Color(0xFF1E7D4E); // 진한 초록 텍스트
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: fg.withOpacity(0.2)),
       ),
-      child: Text(
-        AppLocalizations.of(context)!.joinMeetup,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check_circle, size: 16, color: fg),
+          const SizedBox(width: 6),
+          Text(
+            AppLocalizations.of(context)!.meetupConfirmed,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -766,7 +821,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
             itemBuilder: (context) => isMyMeetup 
                 ? [
-                    // 내가 쓴 글: 수정/삭제 메뉴 (모임 완료 전에만)
+                    // 내가 쓴 글: 수정/모집마감/삭제 메뉴
                     PopupMenuItem(
                       value: 'edit',
                       child: Row(
@@ -777,13 +832,17 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                         ],
                       ),
                     ),
+                    if (!currentMeetup.isClosed) // 모집 마감되지 않은 경우에만 표시
                     PopupMenuItem(
-                      value: 'cancel',
+                        value: 'close',
                       child: Row(
                         children: [
-                          Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                            Icon(Icons.close, size: 16, color: Colors.orange[600]),
                           const SizedBox(width: 8),
-                          Text(AppLocalizations.of(context)!.cancelMeetupButton, style: const TextStyle(color: Colors.red)),
+                            Text(
+                              AppLocalizations.of(context)!.closeMeetup,
+                              style: TextStyle(color: Colors.orange[600]),
+                            ),
                         ],
                       ),
                     ),
@@ -834,9 +893,9 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           await _refreshMeetupData();
         }
         break;
-      case 'cancel':
-        // 모임 취소 확인 다이얼로그
-        _showCancelConfirmation(context);
+      case 'close':
+        // 모집 마감 확인 다이얼로그
+        _showCloseConfirmation(context);
         break;
       case 'report':
         if (currentMeetup.userId != null) {
@@ -861,152 +920,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     }
   }
 
-  /// 실제 모임 취소 처리
-  Future<void> _cancelMeetup(BuildContext context) async {
-    try {
-      final meetupService = MeetupService();
-      final success = await meetupService.deleteMeetup(currentMeetup.id);
 
-      if (success) {
-        if (context.mounted) {
-          // 취소 성공 시 콜백 호출
-          widget.onMeetupDeleted?.call();
-          
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('모임이 성공적으로 취소되었습니다.'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('모임 취소에 실패했습니다. 다시 시도해주세요.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  /// 모임 취소 확인 다이얼로그
-  void _showCancelConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      barrierDismissible: false, // 바깥 영역 터치로 닫기 방지
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.help_outline, color: Colors.orange[600]),
-            const SizedBox(width: 8),
-            Text(AppLocalizations.of(context)!.cancelMeetupConfirm ?? ""),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              Localizations.localeOf(context).languageCode == 'ko'
-                  ? '정말로 "${currentMeetup.title}" 모임을 취소하시겠습니까?'
-                  : 'Are you sure you want to cancel the meetup "${currentMeetup.title}"?',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.warning_amber, 
-                           size: 16, 
-                           color: Colors.orange[700]),
-                      const SizedBox(width: 4),
-                      Text(
-                        Localizations.localeOf(context).languageCode == 'ko' ? '주의사항' : 'Notice',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.orange[700],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    Localizations.localeOf(context).languageCode == 'ko'
-                        ? '• 취소된 모임은 복구할 수 없습니다\n• 참여 중인 모든 사용자에게 알림이 발송됩니다'
-                        : '• Cancelled meetups cannot be restored\n• All participants will be notified',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            child: Text(
-              AppLocalizations.of(context)!.no,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _cancelMeetup(context);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red[600],
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            ),
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'ko' ? '예, 취소합니다' : 'Yes, cancel',
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        buttonPadding: const EdgeInsets.symmetric(horizontal: 8),
-      ),
-    );
-  }
 
   /// 카테고리 뱃지 빌드
   Widget _buildCategoryBadge(String category, ColorScheme colorScheme) {
@@ -1356,18 +1270,38 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     final max = currentMeetup.maxParticipants;
     final isOpen = current < max;
 
-    // 참여 중인 경우: 후기 존재 시 "후기 확인 및 수락" 버튼, 아니면 참여취소 버튼
+    // 참여 중인 경우: 상세 페이지와 동일한 로직 적용 (hasReview만 체크)
     if (isParticipating) {
+      // 디버깅: 현재 후기 상태 로그
+      print('🔍 [OptimizedMeetupCard-JoinButton] 참여자 버튼 로직 (상세 페이지와 동일):');
+      print('   - 모임 ID: ${currentMeetup.id}');
+      print('   - hasReview: ${currentMeetup.hasReview}');
+      print('   - reviewId: ${currentMeetup.reviewId}');
+      
+      // 상세 페이지와 동일한 로직: hasReview가 있으면 후기 확인 버튼, 없으면 나가기 버튼
       if (currentMeetup.hasReview == true) {
+        print('✅ [OptimizedMeetupCard-JoinButton] 후기 확인 버튼 선택됨 (hasReview=true)');
+        
+        // 사용자가 이미 후기를 확인했는지 체크
+        final user = FirebaseAuth.instance.currentUser;
+        final hasAccepted = user != null ? currentMeetup.hasUserAcceptedReview(user.uid) : false;
+        
         return SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: () => _viewAndRespondToReview(currentMeetup),
-            icon: const Icon(Icons.rate_review, size: 18),
-            label: Text(AppLocalizations.of(context)!.viewAndRespondToReview ?? ""),
+            onPressed: hasAccepted ? null : () => _navigateToReviewScreen(currentMeetup),
+            icon: Icon(
+              hasAccepted ? Icons.check_circle : Icons.rate_review, 
+              size: 18,
+            ),
+            label: Text(
+              hasAccepted 
+                  ? AppLocalizations.of(context)!.reviewChecked
+                  : AppLocalizations.of(context)!.checkReview,
+            ),
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green[600],
-              foregroundColor: Colors.white,
+              backgroundColor: hasAccepted ? Colors.grey[300] : const Color(0xFF22C55E), // 더 선명한 녹색
+              foregroundColor: hasAccepted ? Colors.grey[600] : Colors.white,
               padding: const EdgeInsets.symmetric(vertical: 8),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
@@ -1376,12 +1310,38 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           ),
         );
       } else {
+        // 후기가 없는 경우 - 모임 확정되었으면 나가기 버튼 숨기고 "모임 확정" 칩 표시
+        if (currentMeetup.isCompleted) {
+          print('✅ [OptimizedMeetupCard-JoinButton] 모임 확정 표시 (isCompleted=true)');
+          return SizedBox(
+            width: double.infinity,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: _buildConfirmedChip(),
+            ),
+          );
+        }
+        
+        print('🔶 [OptimizedMeetupCard-JoinButton] 나가기 버튼 선택됨 (hasReview=false, isClosed=false)');
         return SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: () => _leaveMeetup(currentMeetup),
-            icon: const Icon(Icons.exit_to_app, size: 18),
-            label: Text(AppLocalizations.of(context)!.leaveMeetup ?? ""),
+            onPressed: isJoinLeaveProcessing ? null : () => _leaveMeetup(currentMeetup),
+            icon: isJoinLeaveProcessing 
+                ? const SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.exit_to_app, size: 18),
+            label: Text(
+              isJoinLeaveProcessing 
+                  ? "처리 중..." 
+                  : (AppLocalizations.of(context)!.leaveMeetup ?? "나가기")
+            ),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange[600],
               foregroundColor: Colors.white,
@@ -1395,6 +1355,12 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       }
     }
 
+    // 모집 마감된 모임은 버튼 표시 안함 (모임 확정으로 보이게)
+    if (currentMeetup.isClosed) {
+      print('🚫 [OptimizedMeetupCard-JoinButton] 모집 마감으로 참여 버튼 숨김 (isClosed=true)');
+      return const SizedBox.shrink();
+    }
+    
     // 마감된 모임은 버튼 표시 안함
     if (!isOpen) return const SizedBox.shrink();
 
@@ -1402,9 +1368,22 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: () => _joinMeetup(currentMeetup),
-        icon: const Icon(Icons.group_add, size: 18),
-        label: Text(AppLocalizations.of(context)!.joinMeetup ?? ""),
+        onPressed: isJoinLeaveProcessing ? null : () => _joinMeetup(currentMeetup),
+        icon: isJoinLeaveProcessing 
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Icon(Icons.group_add, size: 18),
+        label: Text(
+          isJoinLeaveProcessing 
+              ? "처리 중..." 
+              : (AppLocalizations.of(context)!.joinMeetup ?? "")
+        ),
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
           foregroundColor: Colors.white, // 글씨 색상을 흰색으로 변경
@@ -1516,94 +1495,187 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     }
   }
 
-  /// 모임 참여하기
+  /// 모임 참여하기 (낙관적 업데이트)
   Future<void> _joinMeetup(Meetup currentMeetup) async {
+    if (isJoinLeaveProcessing) return; // 중복 처리 방지
+    
+    // 1. 즉시 UI 업데이트 (낙관적 업데이트)
+    final originalParticipants = this.currentMeetup.currentParticipants;
+    final originalIsParticipating = isParticipating;
+    
+        setState(() {
+      isJoinLeaveProcessing = true;
+          this.currentMeetup = this.currentMeetup.copyWith(
+            currentParticipants: this.currentMeetup.currentParticipants + 1,
+          );
+      isParticipating = true;
+        });
+
     try {
+      // 2. 서버 요청
       final meetupService = MeetupService();
       final success = await meetupService.joinMeetup(currentMeetup.id);
 
       if (success) {
-        // 참여 성공 시 UI 업데이트
-        setState(() {
-          this.currentMeetup = this.currentMeetup.copyWith(
-            currentParticipants: this.currentMeetup.currentParticipants + 1,
-          );
-          isParticipating = true; // 참여 상태 업데이트
-        });
-
+        // 3. 성공 시 성공 메시지 표시 및 부모 위젯에 알림
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoined ?? ""),
+              content: Text(AppLocalizations.of(context)!.meetupJoined ?? "모임에 참여했습니다"),
               backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
             ),
           );
+          
+          // 부모 위젯에 참여 상태 변경 알림
+          widget.onParticipationChanged?.call();
         }
+        print('✅ [OptimizedMeetupCard] 모임 참여 성공: ${currentMeetup.id}');
       } else {
+        // 4. 실패 시 원래 상태로 롤백
+        setState(() {
+          this.currentMeetup = this.currentMeetup.copyWith(
+            currentParticipants: originalParticipants,
+          );
+          isParticipating = originalIsParticipating;
+        });
+        
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoinFailed ?? ""),
+              content: Text(AppLocalizations.of(context)!.meetupJoinFailed ?? "모임 참여에 실패했습니다"),
               backgroundColor: Colors.red,
             ),
           );
         }
+        print('❌ [OptimizedMeetupCard] 모임 참여 실패: ${currentMeetup.id}');
       }
     } catch (e) {
-      print('모임 참여 오류: $e');
+      // 5. 오류 시 원래 상태로 롤백
+      setState(() {
+        this.currentMeetup = this.currentMeetup.copyWith(
+          currentParticipants: originalParticipants,
+        );
+        isParticipating = originalIsParticipating;
+      });
+      
+      print('❌ [OptimizedMeetupCard] 모임 참여 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text('모임 참여 중 오류가 발생했습니다: $e'),
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      // 6. 로딩 상태 해제
+      if (mounted) {
+        setState(() {
+          isJoinLeaveProcessing = false;
+        });
       }
     }
   }
 
-  /// 모임 참여취소
+  /// 모임 참여취소 (낙관적 업데이트)
   Future<void> _leaveMeetup(Meetup currentMeetup) async {
+    if (isJoinLeaveProcessing) return; // 중복 처리 방지
+    
     try {
-      final meetupService = MeetupService();
-      final success = await meetupService.leaveMeetup(currentMeetup.id);
-
-      if (success) {
-        // 참여취소 성공 시 UI 업데이트
-        setState(() {
-          this.currentMeetup = this.currentMeetup.copyWith(
-            currentParticipants: this.currentMeetup.currentParticipants - 1,
-          );
-          isParticipating = false; // 참여 상태 업데이트
-        });
-
+      // 최신 데이터로 후기 상태 재확인
+      await _refreshMeetupData();
+      
+      // 후기가 작성된 경우 나가기 방지
+      if (this.currentMeetup.hasReview) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetup ?? ""),
+            const SnackBar(
+              content: Text('주최자가 후기를 작성한 모임은 나갈 수 없습니다. 후기를 확인해주세요.'),
               backgroundColor: Colors.orange,
             ),
           );
         }
-      } else {
+        return;
+      }
+      
+      // 1. 즉시 UI 업데이트 (낙관적 업데이트)
+      final originalParticipants = this.currentMeetup.currentParticipants;
+      final originalIsParticipating = isParticipating;
+      
+        setState(() {
+        isJoinLeaveProcessing = true;
+          this.currentMeetup = this.currentMeetup.copyWith(
+            currentParticipants: this.currentMeetup.currentParticipants - 1,
+          );
+        isParticipating = false;
+        });
+
+      // 2. 서버 요청
+      final meetupService = MeetupService();
+      final success = await meetupService.leaveMeetup(currentMeetup.id);
+
+      if (success) {
+        // 3. 성공 시 성공 메시지 표시 및 부모 위젯에 알림
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? ""),
+              content: Text(AppLocalizations.of(context)!.leaveMeetup ?? "모임에서 나갔습니다"),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          
+          // 부모 위젯에 참여 상태 변경 알림
+          widget.onParticipationChanged?.call();
+        }
+        print('✅ [OptimizedMeetupCard] 모임 나가기 성공: ${currentMeetup.id}');
+      } else {
+        // 4. 실패 시 원래 상태로 롤백
+        setState(() {
+          this.currentMeetup = this.currentMeetup.copyWith(
+            currentParticipants: originalParticipants,
+          );
+          isParticipating = originalIsParticipating;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? "모임 나가기에 실패했습니다"),
               backgroundColor: Colors.red,
             ),
           );
         }
+        print('❌ [OptimizedMeetupCard] 모임 나가기 실패: ${currentMeetup.id}');
       }
     } catch (e) {
-      print('모임 참여취소 오류: $e');
+      // 5. 오류 시 원래 상태로 롤백 (만약 이미 UI가 업데이트되었다면)
+      if (isJoinLeaveProcessing) {
+        final originalParticipants = this.currentMeetup.currentParticipants + 1; // 원래 값으로 복원
+        setState(() {
+          this.currentMeetup = this.currentMeetup.copyWith(
+            currentParticipants: originalParticipants,
+          );
+          isParticipating = true;
+        });
+      }
+      
+      print('❌ [OptimizedMeetupCard] 모임 나가기 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Text('모임 나가기 중 오류가 발생했습니다: $e'),
             backgroundColor: Colors.red,
           ),
         );
+      }
+    } finally {
+      // 6. 로딩 상태 해제
+      if (mounted) {
+        setState(() {
+          isJoinLeaveProcessing = false;
+        });
       }
     }
   }
@@ -1703,9 +1775,38 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     );
   }
 
+  /// 후기 확인 화면으로 이동
+  Future<void> _navigateToReviewScreen(Meetup meetup) async {
+    try {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => MeetupReviewScreen(
+            meetupId: meetup.id,
+            reviewId: meetup.reviewId,
+          ),
+        ),
+      );
+      
+      // 화면에서 돌아온 후 모임 데이터 새로고침
+      await _refreshMeetupData();
+    } catch (e) {
+      print('후기 화면 이동 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('후기 화면으로 이동하는 중 오류가 발생했습니다.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   /// 모임 데이터 새로고침
   Future<void> _refreshMeetupData() async {
     try {
+      print('🔄 [OptimizedMeetupCard-Refresh] 모임 데이터 새로고침 시작: ${currentMeetup.id}');
+      
       final doc = await FirebaseFirestore.instance
           .collection('meetups')
           .doc(currentMeetup.id)
@@ -1715,12 +1816,130 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         final data = doc.data()!;
         data['id'] = doc.id; // doc.id를 데이터에 추가
         
+        final oldHasReview = currentMeetup.hasReview;
+        final oldIsClosed = currentMeetup.isClosed;
+        final newHasReview = data['hasReview'] ?? false;
+        final newIsClosed = data['isClosed'] ?? false;
+        
+        // 상태 변경 상세 로깅
+        if (oldHasReview != newHasReview || oldIsClosed != newIsClosed) {
+          print('🔄 [OptimizedMeetupCard-Refresh] 상태 변경 감지:');
+          print('   - hasReview: $oldHasReview → $newHasReview');
+          print('   - isClosed: $oldIsClosed → $newIsClosed');
+        } else {
+          print('🔄 [OptimizedMeetupCard-Refresh] 상태 변경 없음: hasReview=$newHasReview, isClosed=$newIsClosed');
+        }
+        
         setState(() {
           currentMeetup = Meetup.fromJson(data);
         });
+        
+        print('✅ [OptimizedMeetupCard-Refresh] 모임 데이터 새로고침 완료');
+      } else {
+        print('⚠️ [OptimizedMeetupCard-Refresh] 문서가 존재하지 않거나 위젯이 unmounted됨');
       }
     } catch (e) {
-      print('모임 데이터 새로고침 오류: $e');
+      print('❌ [OptimizedMeetupCard-Refresh] 모임 데이터 새로고침 오류: $e');
+    }
+  }
+
+  /// 모집 마감 확인 다이얼로그
+  void _showCloseConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.help_outline, color: Colors.orange[600]),
+            const SizedBox(width: 8),
+            Text(AppLocalizations.of(context)!.closeMeetupConfirm),
+          ],
+        ),
+        content: Text(
+          Localizations.localeOf(context).languageCode == 'ko'
+              ? '모집을 마감하면 더 이상 새로운 참여자가 참여할 수 없습니다.'
+              : 'Once closed, no new participants can join this meetup.',
+          style: const TextStyle(fontSize: 16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(AppLocalizations.of(context)!.cancel),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _closeMeetup();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[600],
+              foregroundColor: Colors.white,
+            ),
+            child: Text(AppLocalizations.of(context)!.closeMeetup),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 모집 마감 처리 (낙관적 업데이트)
+  Future<void> _closeMeetup() async {
+    // 1. 즉시 UI 업데이트 (낙관적 업데이트)
+    final originalIsClosed = currentMeetup.isClosed;
+    
+    setState(() {
+      currentMeetup = currentMeetup.copyWith(isClosed: true);
+    });
+
+    try {
+      // 2. 서버 요청
+      final meetupService = MeetupService();
+      final success = await meetupService.closeMeetup(currentMeetup.id);
+
+      if (success) {
+        // 3. 성공 시 성공 메시지 표시
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.closeMeetupSuccess),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+        print('✅ [OptimizedMeetupCard] 모집 마감 성공: ${currentMeetup.id}');
+      } else {
+        // 4. 실패 시 원래 상태로 롤백
+        setState(() {
+          currentMeetup = currentMeetup.copyWith(isClosed: originalIsClosed);
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.closeMeetupFailed),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        print('❌ [OptimizedMeetupCard] 모집 마감 실패: ${currentMeetup.id}');
+      }
+    } catch (e) {
+      // 5. 오류 시 원래 상태로 롤백
+      setState(() {
+        currentMeetup = currentMeetup.copyWith(isClosed: originalIsClosed);
+      });
+      
+      print('❌ [OptimizedMeetupCard] 모집 마감 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('모집 마감 중 오류가 발생했습니다: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 

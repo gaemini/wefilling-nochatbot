@@ -12,6 +12,7 @@ import '../services/meetup_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'review_comments_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -34,6 +35,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   List<Map<String, dynamic>> _participants = [];
   int _currentImageIndex = 0; // 현재 이미지 인덱스
   final PageController _pageController = PageController();
+  String? _meetupLocation; // 모임 장소 정보
   
   // 이미지 페이지 인디케이터 표시 상태
   bool _showPageIndicator = false;
@@ -43,6 +45,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   void initState() {
     super.initState();
     _loadParticipants();
+    _loadMeetupInfo(); // 모임 정보(장소) 로드
     
     // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
     if (widget.review.imageUrls.length > 1) {
@@ -234,7 +237,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     
     return Scaffold(
       backgroundColor: Colors.white,
-      body: StreamBuilder<ReviewPost?>(
+      body: SafeArea(
+        top: false,
+        bottom: true,
+        child: StreamBuilder<ReviewPost?>(
         stream: _reviewService.getReviewStream(widget.review.id, widget.review.authorId),
         initialData: widget.review,
         builder: (context, snapshot) {
@@ -306,6 +312,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     if (_participants.isNotEmpty)
                       _buildParticipantsSection(l10n),
                     
+                    // 장소 섹션 (참여자 아래)
+                    if ((_meetupLocation ?? '').isNotEmpty)
+                      _buildLocationSection(),
+                    
                     // 하단 네비게이션 바를 고려한 여백 추가
                     SizedBox(
                       height: MediaQuery.of(context).padding.bottom + 80,
@@ -316,6 +326,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             ],
           );
         },
+      ),
       ),
     );
   }
@@ -347,6 +358,84 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
                 color: BrandColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 모임 정보(장소) 로드
+  Future<void> _loadMeetupInfo() async {
+    try {
+      if (widget.review.meetupId.isEmpty) return;
+      final meetup = await _meetupService.getMeetupById(widget.review.meetupId);
+      if (!mounted) return;
+      setState(() {
+        _meetupLocation = meetup?.location ?? '';
+      });
+    } catch (e) {
+      print('⚠️ 모임 정보 로드 실패(장소): $e');
+    }
+  }
+
+  bool _isUrl(String value) {
+    final uri = Uri.tryParse(value);
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  Future<void> _openUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      // 런타임 의존성은 이미 다른 화면에서 사용 중이므로 생략 (url_launcher)
+      // ignore: deprecated_member_use
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      print('링크 열기 실패: $e');
+    }
+  }
+
+  /// 장소 섹션
+  Widget _buildLocationSection() {
+    final location = _meetupLocation ?? '';
+    final isUrl = _isUrl(location);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.location_on_outlined, size: 18, color: BrandColors.textSecondary),
+              const SizedBox(width: 6),
+              Text(
+                AppLocalizations.of(context)!.location,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: BrandColors.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: isUrl ? () => _openUrl(location) : null,
+            child: Text(
+              location,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: isUrl ? const Color(0xFF5865F2) : BrandColors.textSecondary,
+                decoration: isUrl ? TextDecoration.underline : TextDecoration.none,
+                height: 1.4,
               ),
             ),
           ),
@@ -389,44 +478,23 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () {
-                  // 터치 시 인디케이터 표시
-                  if (review.imageUrls.length > 1) {
-                    _showPageIndicatorTemporarily();
-                  } else {
-                    // 이미지가 1장일 때는 전체 화면으로 보기
-                    showDialog(
-                      context: context,
-                      builder: (context) => Dialog(
-                        insetPadding: const EdgeInsets.all(8),
-                        child: InteractiveViewer(
-                          panEnabled: true,
-                          boundaryMargin: const EdgeInsets.all(20),
-                          minScale: 0.5,
-                          maxScale: 3.0,
-                          child: Image.network(
-                            review.imageUrls[index],
-                            fit: BoxFit.contain,
-                          ),
-                        ),
+                  // 탭 시 전체 화면 갤러리로 이동 (스와이프/확대 지원)
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _FullScreenGallery(
+                        imageUrls: review.imageUrls,
+                        initialIndex: index,
                       ),
-                    );
-                  }
+                    ),
+                  );
                 },
                 onLongPress: () {
-                  // 롱프레스 시 전체 화면으로 보기
-                  showDialog(
-                    context: context,
-                    builder: (context) => Dialog(
-                      insetPadding: const EdgeInsets.all(8),
-                      child: InteractiveViewer(
-                        panEnabled: true,
-                        boundaryMargin: const EdgeInsets.all(20),
-                        minScale: 0.5,
-                        maxScale: 3.0,
-                        child: Image.network(
-                          review.imageUrls[index],
-                          fit: BoxFit.contain,
-                        ),
+                  // 롱프레스 시에도 동일하게 전체 화면 갤러리
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => _FullScreenGallery(
+                        imageUrls: review.imageUrls,
+                        initialIndex: index,
                       ),
                     ),
                   );
@@ -750,6 +818,116 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => ReviewCommentsScreen(review: review),
+      ),
+    );
+  }
+}
+
+class _FullScreenGallery extends StatefulWidget {
+  final List<String> imageUrls;
+  final int initialIndex;
+  
+  const _FullScreenGallery({
+    Key? key,
+    required this.imageUrls,
+    required this.initialIndex,
+  }) : super(key: key);
+  
+  @override
+  State<_FullScreenGallery> createState() => _FullScreenGalleryState();
+}
+
+class _FullScreenGalleryState extends State<_FullScreenGallery> {
+  late PageController _controller;
+  late int _currentIndex;
+  
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex.clamp(0, widget.imageUrls.length - 1);
+    _controller = PageController(initialPage: _currentIndex);
+  }
+  
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+  
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            PageView.builder(
+              controller: _controller,
+              onPageChanged: (i) => setState(() => _currentIndex = i),
+              itemCount: widget.imageUrls.length,
+              itemBuilder: (context, index) {
+                return Center(
+                  child: InteractiveViewer(
+                    minScale: 0.5,
+                    maxScale: 4.0,
+                    child: Image.network(
+                      widget.imageUrls[index],
+                      fit: BoxFit.contain,
+                      width: double.infinity,
+                      errorBuilder: (context, error, stack) {
+                        return Container(
+                          color: Colors.black,
+                          alignment: Alignment.center,
+                          child: const Icon(Icons.broken_image, color: Colors.white70, size: 48),
+                        );
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+            
+            // 상단 닫기 버튼
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.5),
+                  shape: BoxShape.circle,
+                ),
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ),
+            
+            // 하단 페이지 인디케이터 (여러 장일 때만)
+            if (widget.imageUrls.length > 1)
+              Positioned(
+                bottom: 16,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(widget.imageUrls.length, (i) {
+                    final bool active = i == _currentIndex;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: active ? 8 : 6,
+                      height: active ? 8 : 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: active ? Colors.white : Colors.white54,
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

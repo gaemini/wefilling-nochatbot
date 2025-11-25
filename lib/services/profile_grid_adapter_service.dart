@@ -13,6 +13,7 @@ import 'post_service.dart';
 import 'auth_service.dart';
 import '../repositories/users_repository.dart';
 import 'feature_flag_service.dart';
+import '../utils/logger.dart';
 
 /// 프로필 그리드 전용 포스트 모델
 class ProfilePost {
@@ -93,13 +94,13 @@ class ProfileImageAdapter {
       final uploadedUrl = await _storageService.uploadImage(imageFile);
       
       if (uploadedUrl != null) {
-        print('프로필 포스트 이미지 업로드 성공: $uploadedUrl');
+        Logger.log('프로필 포스트 이미지 업로드 성공: $uploadedUrl');
         return uploadedUrl;
       }
       
       return null;
     } catch (e) {
-      print('프로필 포스트 이미지 업로드 오류: $e');
+      Logger.error('프로필 포스트 이미지 업로드 오류: $e');
       return null;
     }
   }
@@ -111,7 +112,7 @@ class ProfileImageAdapter {
     try {
       if (imageFiles.isEmpty) return [];
 
-      print('프로필 이미지 업로드 시작: ${imageFiles.length}개 파일');
+      Logger.log('프로필 이미지 업로드 시작: ${imageFiles.length}개 파일');
 
       // 병렬 업로드
       final futures = imageFiles.map(
@@ -126,11 +127,11 @@ class ProfileImageAdapter {
       // null이 아닌 URL만 반환
       final successUrls = results.where((url) => url != null).cast<String>().toList();
       
-      print('프로필 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
+      Logger.log('프로필 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
       return successUrls;
 
     } catch (e) {
-      print('프로필 이미지 다중 업로드 오류: $e');
+      Logger.error('프로필 이미지 다중 업로드 오류: $e');
       return [];
     }
   }
@@ -151,7 +152,7 @@ class ProfileDataAdapter {
     try {
       return await _usersRepository.getUserProfile(uid);
     } catch (e) {
-      print('프로필 조회 오류: $e');
+      Logger.error('프로필 조회 오류: $e');
       return null;
     }
   }
@@ -183,7 +184,7 @@ class ProfileDataAdapter {
           try {
             return ProfilePost.fromFirestore(doc);
           } catch (e) {
-            print('포스트 파싱 오류: $e');
+            Logger.error('포스트 파싱 오류: $e');
             // 오류 발생시 기본값 반환
             return ProfilePost(
               postId: doc.id,
@@ -198,7 +199,7 @@ class ProfileDataAdapter {
         }).toList();
       });
     } catch (e) {
-      print('포스트 스트림 오류: $e');
+      Logger.error('포스트 스트림 오류: $e');
       return Stream.value([]);
     }
   }
@@ -223,7 +224,7 @@ class ProfileDataAdapter {
 
       return false;
     } catch (e) {
-      print('친구 관계 확인 오류: $e');
+      Logger.error('친구 관계 확인 오류: $e');
       return false; // 안전한 기본값
     }
   }
@@ -257,10 +258,10 @@ class ProfileDataAdapter {
           .collection('posts')
           .add(profilePost.toFirestore());
 
-      print('미팅 리뷰 포스트 생성 완료: $userId');
+      Logger.log('미팅 리뷰 포스트 생성 완료: $userId');
       return true;
     } catch (e) {
-      print('미팅 리뷰 포스트 생성 오류: $e');
+      Logger.error('미팅 리뷰 포스트 생성 오류: $e');
       return false;
     }
   }
@@ -291,7 +292,7 @@ class ProfileDataAdapter {
         'comments': totalComments,
       };
     } catch (e) {
-      print('포스트 통계 조회 오류: $e');
+      Logger.error('포스트 통계 조회 오류: $e');
       return {'posts': 0, 'likes': 0, 'comments': 0};
     }
   }

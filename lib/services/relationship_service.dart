@@ -8,6 +8,7 @@ import '../models/user_profile.dart';
 import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../repositories/users_repository.dart';
+import '../utils/logger.dart';
 
 class RelationshipService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -48,7 +49,7 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('친구요청 전송 성공: $toUid');
+        Logger.log('친구요청 전송 성공: $toUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -56,7 +57,7 @@ class RelationshipService {
       }
     } on FirebaseFunctionsException catch (e) {
       // Firebase Functions 오류 메시지를 정확히 파싱
-      print('친구요청 전송 오류 (Functions): ${e.code} - ${e.message}');
+      Logger.error('친구요청 전송 오류 (Functions): ${e.code} - ${e.message}');
       
       String userMessage;
       switch (e.code) {
@@ -78,7 +79,7 @@ class RelationshipService {
       
       throw Exception(userMessage);
     } catch (e) {
-      print('친구요청 전송 오류: $e');
+      Logger.error('친구요청 전송 오류: $e');
       rethrow;
     }
   }
@@ -96,14 +97,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('친구요청 취소 성공: $toUid');
+        Logger.log('친구요청 취소 성공: $toUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('친구요청 취소 오류: $e');
+      Logger.error('친구요청 취소 오류: $e');
       rethrow;
     }
   }
@@ -121,14 +122,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('친구요청 수락 성공: $fromUid');
+        Logger.log('친구요청 수락 성공: $fromUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('친구요청 수락 오류: $e');
+      Logger.error('친구요청 수락 오류: $e');
       rethrow;
     }
   }
@@ -146,14 +147,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('친구요청 거절 성공: $fromUid');
+        Logger.log('친구요청 거절 성공: $fromUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('친구요청 거절 오류: $e');
+      Logger.error('친구요청 거절 오류: $e');
       rethrow;
     }
   }
@@ -171,14 +172,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('친구 삭제 성공: $otherUid');
+        Logger.log('친구 삭제 성공: $otherUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('친구 삭제 오류: $e');
+      Logger.error('친구 삭제 오류: $e');
       rethrow;
     }
   }
@@ -200,14 +201,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('사용자 차단 성공: $targetUid');
+        Logger.log('사용자 차단 성공: $targetUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('사용자 차단 오류: $e');
+      Logger.error('사용자 차단 오류: $e');
       rethrow;
     }
   }
@@ -225,14 +226,14 @@ class RelationshipService {
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
-        print('사용자 차단 해제 성공: $targetUid');
+        Logger.log('사용자 차단 해제 성공: $targetUid');
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
         throw Exception(error);
       }
     } catch (e) {
-      print('사용자 차단 해제 오류: $e');
+      Logger.error('사용자 차단 해제 오류: $e');
       rethrow;
     }
   }
@@ -280,7 +281,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(toUid);
       return status.canSendRequest;
     } catch (e) {
-      print('친구요청 가능 여부 확인 오류: $e');
+      Logger.error('친구요청 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -293,7 +294,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(toUid);
       return status.canCancelRequest;
     } catch (e) {
-      print('친구요청 취소 가능 여부 확인 오류: $e');
+      Logger.error('친구요청 취소 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -306,7 +307,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(fromUid);
       return status.canAcceptRequest;
     } catch (e) {
-      print('친구요청 수락 가능 여부 확인 오류: $e');
+      Logger.error('친구요청 수락 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -319,7 +320,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(fromUid);
       return status.canRejectRequest;
     } catch (e) {
-      print('친구요청 거절 가능 여부 확인 오류: $e');
+      Logger.error('친구요청 거절 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -332,7 +333,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(otherUid);
       return status.canUnfriend;
     } catch (e) {
-      print('친구 삭제 가능 여부 확인 오류: $e');
+      Logger.error('친구 삭제 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -345,7 +346,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(targetUid);
       return status.canBlock;
     } catch (e) {
-      print('사용자 차단 가능 여부 확인 오류: $e');
+      Logger.error('사용자 차단 가능 여부 확인 오류: $e');
       return false;
     }
   }
@@ -358,7 +359,7 @@ class RelationshipService {
       final status = await getRelationshipStatus(targetUid);
       return status.canUnblock;
     } catch (e) {
-      print('사용자 차단 해제 가능 여부 확인 오류: $e');
+      Logger.error('사용자 차단 해제 가능 여부 확인 오류: $e');
       return false;
     }
   }

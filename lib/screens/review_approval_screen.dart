@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
   final String requestId;
@@ -52,7 +53,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
         });
       }
     } catch (e) {
-      print('❌ 요청 상태 확인 오류: $e');
+      Logger.error('❌ 요청 상태 확인 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -88,7 +89,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
         }
       }
     } catch (e) {
-      print('❌ 후기 수락/거절 처리 오류: $e');
+      Logger.error('❌ 후기 수락/거절 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.error ?? "")),

@@ -18,6 +18,7 @@ import 'review_approval_screen.dart';
 import 'review_detail_screen.dart';
 import '../services/review_service.dart';
 import '../models/review_post.dart';
+import '../utils/logger.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -256,7 +257,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       }
     } catch (e) {
-      print('❌ 후기 조회 오류: $e');
+      Logger.error('❌ 후기 조회 오류: $e');
       // 로딩 다이얼로그가 열려있다면 닫기
       if (mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -461,7 +462,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
           return notification.message;
       }
     } catch (e) {
-      print('알림 메시지 번역 오류: $e');
+      Logger.error('알림 메시지 번역 오류: $e');
       return notification.message; // 오류 발생 시 기본 메시지 사용
     }
   }

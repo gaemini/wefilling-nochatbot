@@ -8,14 +8,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'navigation_service.dart';
+import '../utils/logger.dart';
 
 // 백그라운드 메시지 핸들러 (최상위 함수여야 함)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  print('📱 백그라운드 메시지 수신: ${message.messageId}');
-  print('📱 제목: ${message.notification?.title}');
-  print('📱 내용: ${message.notification?.body}');
-  print('📱 데이터: ${message.data}');
+  Logger.log('📱 백그라운드 메시지 수신: ${message.messageId}');
+  Logger.log('📱 제목: ${message.notification?.title}');
+  Logger.log('📱 내용: ${message.notification?.body}');
+  Logger.log('📱 데이터: ${message.data}');
 }
 
 class FCMService {
@@ -62,7 +63,7 @@ class FCMService {
     await _localNotifications.initialize(
       initializationSettings,
       onDidReceiveNotificationResponse: (NotificationResponse response) async {
-        print('📱 알림 클릭: ${response.payload}');
+        Logger.log('📱 알림 클릭: ${response.payload}');
         // 포그라운드 로컬 알림 탭 시 딥링크 라우팅
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
@@ -70,19 +71,19 @@ class FCMService {
             final Map<String, dynamic> data = jsonDecode(payload) as Map<String, dynamic>;
             await NavigationService.handlePushNavigation(data);
           } catch (e) {
-            print('⚠️ 로컬 알림 payload 파싱 실패: $e');
+            Logger.error('⚠️ 로컬 알림 payload 파싱 실패: $e');
           }
         }
       },
     );
 
-    print('✅ 로컬 알림 초기화 완료');
+    Logger.log('✅ 로컬 알림 초기화 완료');
   }
 
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
-      print('📱 FCM 초기화 시작: $userId');
+      Logger.log('📱 FCM 초기화 시작: $userId');
 
       // 로컬 알림 초기화
       await _initializeLocalNotifications();
@@ -98,39 +99,39 @@ class FCMService {
         sound: true,
       );
 
-      print('📱 알림 권한 상태: ${settings.authorizationStatus}');
+      Logger.log('📱 알림 권한 상태: ${settings.authorizationStatus}');
 
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        print('✅ 알림 권한 승인됨');
+        Logger.log('✅ 알림 권한 승인됨');
       } else if (settings.authorizationStatus ==
           AuthorizationStatus.provisional) {
-        print('⚠️ 임시 알림 권한 승인됨');
+        Logger.log('⚠️ 임시 알림 권한 승인됨');
       } else {
-        print('❌ 알림 권한 거부됨');
+        Logger.log('❌ 알림 권한 거부됨');
         return;
       }
 
       // FCM 토큰 가져오기
       String? token = await _messaging.getToken();
       if (token != null) {
-        print('📱 FCM 토큰: $token');
+        Logger.log('📱 FCM 토큰: $token');
         await _saveFCMToken(userId, token);
       } else {
-        print('❌ FCM 토큰을 가져올 수 없습니다');
+        Logger.log('❌ FCM 토큰을 가져올 수 없습니다');
       }
 
       // 토큰 갱신 리스너 등록
       _messaging.onTokenRefresh.listen((newToken) {
-        print('📱 FCM 토큰 갱신: $newToken');
+        Logger.log('📱 FCM 토큰 갱신: $newToken');
         _saveFCMToken(userId, newToken);
       });
 
       // 포어그라운드 메시지 리스너 등록
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        print('📱 포어그라운드 메시지 수신: ${message.messageId}');
-        print('📱 제목: ${message.notification?.title}');
-        print('📱 내용: ${message.notification?.body}');
-        print('📱 데이터: ${message.data}');
+        Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
+        Logger.log('📱 제목: ${message.notification?.title}');
+        Logger.log('📱 내용: ${message.notification?.body}');
+        Logger.log('📱 데이터: ${message.data}');
 
         // 로컬 알림 표시
         _showLocalNotification(message);
@@ -138,22 +139,22 @@ class FCMService {
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-        print('📱 백그라운드에서 앱 열림: ${message.messageId}');
-        print('📱 데이터: ${message.data}');
+        Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
+        Logger.log('📱 데이터: ${message.data}');
         await NavigationService.handlePushNavigation(message.data);
       });
 
       // 앱이 종료된 상태에서 알림을 통해 열렸을 때
       RemoteMessage? initialMessage = await _messaging.getInitialMessage();
       if (initialMessage != null) {
-        print('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
-        print('📱 데이터: ${initialMessage.data}');
+        Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
+        Logger.log('📱 데이터: ${initialMessage.data}');
         await NavigationService.handlePushNavigation(initialMessage.data);
       }
 
-      print('✅ FCM 초기화 완료');
+      Logger.log('✅ FCM 초기화 완료');
     } catch (e) {
-      print('❌ FCM 초기화 실패: $e');
+      Logger.error('❌ FCM 초기화 실패: $e');
       rethrow;
     }
   }
@@ -163,7 +164,7 @@ class FCMService {
     try {
       final notification = message.notification;
       if (notification == null) {
-        print('⚠️ 알림 데이터가 없습니다');
+        Logger.log('⚠️ 알림 데이터가 없습니다');
         return;
       }
 
@@ -198,9 +199,9 @@ class FCMService {
         payload: jsonEncode(message.data),
       );
 
-      print('✅ 로컬 알림 표시 완료');
+      Logger.log('✅ 로컬 알림 표시 완료');
     } catch (e) {
-      print('❌ 로컬 알림 표시 실패: $e');
+      Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
   }
 
@@ -211,9 +212,9 @@ class FCMService {
         'fcmToken': token,
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ FCM 토큰 저장 완료');
+      Logger.log('✅ FCM 토큰 저장 완료');
     } catch (e) {
-      print('❌ FCM 토큰 저장 실패: $e');
+      Logger.error('❌ FCM 토큰 저장 실패: $e');
       
       // 문서가 없는 경우 set으로 생성
       try {
@@ -221,9 +222,9 @@ class FCMService {
           'fcmToken': token,
           'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        print('✅ FCM 토큰 병합 저장 완료');
+        Logger.log('✅ FCM 토큰 병합 저장 완료');
       } catch (e2) {
-        print('❌ FCM 토큰 병합 저장 실패: $e2');
+        Logger.error('❌ FCM 토큰 병합 저장 실패: $e2');
       }
     }
   }
@@ -235,24 +236,24 @@ class FCMService {
       await Future.wait([
         // FCM 토큰 삭제
         _messaging.deleteToken().then((_) {
-          print('✅ FCM 토큰 삭제 완료');
+          Logger.log('✅ FCM 토큰 삭제 완료');
         }),
         // Firestore에서도 토큰 제거
         _firestore.collection('users').doc(userId).update({
           'fcmToken': FieldValue.delete(),
           'fcmTokenUpdatedAt': FieldValue.delete(),
         }).then((_) {
-          print('✅ Firestore에서 FCM 토큰 제거 완료');
+          Logger.log('✅ Firestore에서 FCM 토큰 제거 완료');
         }),
       ]).timeout(
         const Duration(seconds: 5),
         onTimeout: () {
-          print('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
+          Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
           return [];
         },
       );
     } catch (e) {
-      print('❌ FCM 토큰 삭제 실패 (계속 진행): $e');
+      Logger.error('❌ FCM 토큰 삭제 실패 (계속 진행): $e');
       // 예외를 다시 던지지 않음 - 로그아웃은 계속 진행되어야 함
     }
   }
@@ -261,9 +262,9 @@ class FCMService {
   Future<void> subscribeToTopic(String topic) async {
     try {
       await _messaging.subscribeToTopic(topic);
-      print('✅ 토픽 구독 완료: $topic');
+      Logger.log('✅ 토픽 구독 완료: $topic');
     } catch (e) {
-      print('❌ 토픽 구독 실패: $e');
+      Logger.error('❌ 토픽 구독 실패: $e');
       rethrow;
     }
   }
@@ -272,9 +273,9 @@ class FCMService {
   Future<void> unsubscribeFromTopic(String topic) async {
     try {
       await _messaging.unsubscribeFromTopic(topic);
-      print('✅ 토픽 구독 취소 완료: $topic');
+      Logger.log('✅ 토픽 구독 취소 완료: $topic');
     } catch (e) {
-      print('❌ 토픽 구독 취소 실패: $e');
+      Logger.error('❌ 토픽 구독 취소 실패: $e');
       rethrow;
     }
   }
@@ -285,7 +286,7 @@ class FCMService {
       String? token = await _messaging.getToken();
       return token;
     } catch (e) {
-      print('❌ FCM 토큰 가져오기 실패: $e');
+      Logger.error('❌ FCM 토큰 가져오기 실패: $e');
       return null;
     }
   }

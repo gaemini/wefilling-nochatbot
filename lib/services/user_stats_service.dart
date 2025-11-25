@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../utils/logger.dart';
 
 class UserStatsService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -158,7 +159,7 @@ class UserStatsService {
               );
             }).toList();
           } catch (e) {
-            print('참여 모임 처리 오류: $e');
+            Logger.error('참여 모임 처리 오류: $e');
             return <Meetup>[];
           }
         });

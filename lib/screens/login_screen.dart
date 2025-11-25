@@ -11,6 +11,7 @@ import '../screens/main_screen.dart';
 import '../screens/hanyang_email_verification_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
@@ -679,11 +680,11 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        print("로그인 성공: ${authProvider.user?.email}");
+        Logger.log("로그인 성공: ${authProvider.user?.email}");
 
         // 닉네임 설정 여부 확인
         if (!authProvider.hasNickname) {
-          print("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -692,7 +693,7 @@ class _LoginScreenState extends State<LoginScreen>
         }
 
         // 닉네임 있으면 메인 화면
-        print("로그인 성공 -> 메인 화면으로 이동");
+        Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -700,7 +701,7 @@ class _LoginScreenState extends State<LoginScreen>
       } 
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
-        print("로그인 실패 -> 회원가입 필요 여부 확인");
+        Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
         
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -708,7 +709,7 @@ class _LoginScreenState extends State<LoginScreen>
           
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            print("회원가입 필요 메시지 표시");
+            Logger.log("회원가입 필요 메시지 표시");
             showDialog(
               context: context,
               barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
@@ -824,12 +825,12 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             );
           } else {
-            print("로그인 취소 또는 기타 실패 - 조용히 처리");
+            Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }
         });
       }
     } catch (e) {
-      print("로그인 오류: $e");
+      Logger.error("로그인 오류: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -855,11 +856,11 @@ class _LoginScreenState extends State<LoginScreen>
 
       // 로그인 성공한 경우
       if (success && authProvider.isLoggedIn) {
-        print("로그인 성공: ${authProvider.user?.email}");
+        Logger.log("로그인 성공: ${authProvider.user?.email}");
 
         // 닉네임 설정 여부 확인
         if (!authProvider.hasNickname) {
-          print("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -868,7 +869,7 @@ class _LoginScreenState extends State<LoginScreen>
         }
 
         // 닉네임 있으면 메인 화면
-        print("로그인 성공 -> 메인 화면으로 이동");
+        Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
@@ -876,7 +877,7 @@ class _LoginScreenState extends State<LoginScreen>
       } 
       // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
       else if (!success) {
-        print("로그인 실패 -> 회원가입 필요 여부 확인");
+        Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
         
         // 프레임 이후에 다이얼로그를 열어, 재빌드/상태변경과 충돌하지 않도록 함
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -884,7 +885,7 @@ class _LoginScreenState extends State<LoginScreen>
           
           // signupRequired 플래그 확인 (취소가 아닌 실제 회원가입 필요한 경우만)
           if (authProvider.consumeSignupRequiredFlag()) {
-            print("회원가입 필요 메시지 표시");
+            Logger.log("회원가입 필요 메시지 표시");
             showDialog(
               context: context,
               barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
@@ -1000,12 +1001,12 @@ class _LoginScreenState extends State<LoginScreen>
               ),
             );
           } else {
-            print("로그인 취소 또는 기타 실패 - 조용히 처리");
+            Logger.error("로그인 취소 또는 기타 실패 - 조용히 처리");
           }
         });
       }
     } catch (e) {
-      print("Apple 로그인 오류: $e");
+      Logger.error("Apple 로그인 오류: $e");
       
       // 사용자 친화적 에러 메시지 생성
       String errorMessage = '로그인 중 오류가 발생했습니다';

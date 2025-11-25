@@ -27,6 +27,7 @@ import '../utils/firebase_debug_helper.dart';
 import 'firebase_security_rules_helper.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -94,7 +95,7 @@ class _MainScreenState extends State<MainScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.unregisterStreamCleanup(_cleanupCallback);
     } catch (e) {
-      print('MainScreen AuthProvider 콜백 제거 오류: $e');
+      Logger.error('MainScreen AuthProvider 콜백 제거 오류: $e');
     }
     
     // 서비스 정리
@@ -208,21 +209,21 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _testFirebaseStorage() async {
     try {
-      print('=========== Firebase Storage 진단 시작 ===========');
+      Logger.log('=========== Firebase Storage 진단 시작 ===========');
       final storageTest = await _firebaseDebugHelper.testFirebaseStorage();
-      print('Storage 버킷: ${storageTest['storage_bucket']}');
-      print('앱 이름: ${storageTest['app_name']}');
+      Logger.log('Storage 버킷: ${storageTest['storage_bucket']}');
+      Logger.log('앱 이름: ${storageTest['app_name']}');
 
       // 루트 리스트 테스트 결과
       final listTest = storageTest['tests']['list_root'];
       if (listTest != null) {
         if (listTest['success'] == true) {
-          print('스토리지 접근 권한: 성공');
-          print('- 아이템 수: ${listTest['items_count']}');
-          print('- 폴더 수: ${listTest['prefixes_count']}');
+          Logger.log('스토리지 접근 권한: 성공');
+          Logger.log('- 아이템 수: ${listTest['items_count']}');
+          Logger.log('- 폴더 수: ${listTest['prefixes_count']}');
         } else {
-          print('스토리지 접근 권한: 실패');
-          print('- 오류: ${listTest['error']}');
+          Logger.error('스토리지 접근 권한: 실패');
+          Logger.log('- 오류: ${listTest['error']}');
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
               _showStorageSecurityAlert();
@@ -235,9 +236,9 @@ class _MainScreenState extends State<MainScreen> {
       final uploadTest = storageTest['tests']['upload_test'];
       if (uploadTest != null) {
         if (uploadTest['success'] == true) {
-          print('파일 업로드 테스트: 성공');
-          print('- 경로: ${uploadTest['path']}');
-          print('- 다운로드 URL: ${uploadTest['download_url']}');
+          Logger.log('파일 업로드 테스트: 성공');
+          Logger.log('- 경로: ${uploadTest['path']}');
+          Logger.log('- 다운로드 URL: ${uploadTest['download_url']}');
 
           // 테스트 URL의 유효성 테스트
           final testUrl = uploadTest['download_url'];
@@ -245,32 +246,32 @@ class _MainScreenState extends State<MainScreen> {
             final urlTest = await _firebaseDebugHelper.testImageUrl(testUrl);
             final httpResponse = urlTest['http_response'];
             if (httpResponse != null && httpResponse['success'] == true) {
-              print('URL 접근 테스트: 성공 (상태 코드: ${httpResponse['status_code']})');
+              Logger.log('URL 접근 테스트: 성공 (상태 코드: ${httpResponse['status_code']})');
             } else {
-              print('URL 접근 테스트: 실패');
+              Logger.error('URL 접근 테스트: 실패');
               if (httpResponse != null && httpResponse['error'] != null) {
-                print('- 오류: ${httpResponse['error']}');
+                Logger.log('- 오류: ${httpResponse['error']}');
               }
             }
           }
         } else {
-          print('파일 업로드 테스트: 실패');
-          print('- 오류: ${uploadTest['error']}');
+          Logger.error('파일 업로드 테스트: 실패');
+          Logger.log('- 오류: ${uploadTest['error']}');
         }
       }
 
       // 보안 규칙 테스트
       final securityTest = await _firebaseDebugHelper.testSecurityRules();
-      print('보안 규칙 테스트: ${securityTest ? '성공' : '실패'}');
+      Logger.log('보안 규칙 테스트: ${securityTest ? '성공' : '실패'}');
 
       // Firebase Storage 보안 규칙 수정 안내
       if (!securityTest) {
         // Firebase 프로젝트 ID 가져오기
         final projectId = _firebaseDebugHelper.projectId;
 
-        print('\n=== 중요: Firebase Storage 보안 규칙 수정 필요 ===');
-        print('Firebase Console에서 다음과 같이 Storage 규칙을 수정하세요:');
-        print('''
+        Logger.log('\n=== 중요: Firebase Storage 보안 규칙 수정 필요 ===');
+        Logger.log('Firebase Console에서 다음과 같이 Storage 규칙을 수정하세요:');
+        Logger.log('''
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
@@ -280,14 +281,14 @@ service firebase.storage {
     }
   }
 }''');
-        print(
+        Logger.log(
           'Firebase 콘솔 주소: https://console.firebase.google.com/project/$projectId/storage/rules',
         );
       }
 
-      print('=========== Firebase Storage 진단 완료 ===========');
+      Logger.log('=========== Firebase Storage 진단 완료 ===========');
     } catch (e) {
-      print('Firebase Storage 진단 중 오류 발생: $e');
+      Logger.error('Firebase Storage 진단 중 오류 발생: $e');
     }
   }
 
@@ -516,16 +517,16 @@ service firebase.storage {
       bottomNavigationBar: StreamBuilder<int>(
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, snapshot) {
-          print('📊 StreamBuilder 상태:');
-          print('  - hasData: ${snapshot.hasData}');
-          print('  - hasError: ${snapshot.hasError}');
-          print('  - data: ${snapshot.data}');
+          Logger.log('📊 StreamBuilder 상태:');
+          Logger.log('  - hasData: ${snapshot.hasData}');
+          Logger.error('  - hasError: ${snapshot.hasError}');
+          Logger.log('  - data: ${snapshot.data}');
           if (snapshot.hasError) {
-            print('  - error: ${snapshot.error}');
+            Logger.error('  - error: ${snapshot.error}');
           }
           
           final unreadDMCount = snapshot.data ?? 0;
-          print('  - unreadDMCount: $unreadDMCount');
+          Logger.log('  - unreadDMCount: $unreadDMCount');
           
           return AdaptiveBottomNavigation(
             selectedIndex: _selectedIndex,

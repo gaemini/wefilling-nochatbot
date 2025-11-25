@@ -285,6 +285,48 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
           duration: const Duration(seconds: 3),
         ),
       );
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+      
+      // 재인증 필요 에러 처리
+      if (e.code == 'requires-recent-login') {
+        // 재로그인 안내 다이얼로그
+        final shouldRelogin = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('재인증 필요'),
+            content: const Text('계정 삭제를 위해 다시 로그인해주세요.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(loc.cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('로그인'),
+              ),
+            ],
+          ),
+        );
+        
+        if (shouldRelogin == true && mounted) {
+          // 로그인 화면으로 이동 후 다시 돌아오기
+          await authProvider.signOut();
+          if (!mounted) return;
+          
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
+          );
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${loc.deletionFailed}: ${e.message}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

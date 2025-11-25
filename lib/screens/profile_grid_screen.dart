@@ -27,6 +27,7 @@ import 'dm_chat_screen.dart';
 import 'post_detail_screen.dart';
 import 'profile_edit_screen.dart';
 import 'requests_page.dart';
+import '../utils/logger.dart';
 
 class ProfileGridScreen extends StatefulWidget {
   final String? userId; // null이면 현재 사용자 프로필
@@ -149,7 +150,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
         _isLoading = false;
       });
     } catch (e) {
-      print('프로필 데이터 로드 오류: $e');
+      Logger.error('프로필 데이터 로드 오류: $e');
       setState(() {
         _isLoading = false;
       });
@@ -205,7 +206,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
         _relationshipStatus = status;
       });
     } catch (e) {
-      print('관계 상태 갱신 오류: $e');
+      Logger.error('관계 상태 갱신 오류: $e');
     }
   }
 

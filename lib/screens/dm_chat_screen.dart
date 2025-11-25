@@ -14,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'post_detail_screen.dart';
+import '../utils/logger.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -60,16 +61,16 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
   Future<void> _initConversationState() async {
     try {
-      print('🚀 대화방 초기화: ${widget.conversationId}');
+      Logger.log('🚀 대화방 초기화: ${widget.conversationId}');
       
       // conversationId 형식 확인
-      print('🔍 대화방 ID 확인: ${widget.conversationId}');
-      print('🔍 상대방 ID: ${widget.otherUserId}');
+      Logger.log('🔍 대화방 ID 확인: ${widget.conversationId}');
+      Logger.log('🔍 상대방 ID: ${widget.otherUserId}');
       
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(widget.otherUserId)) {
-        print('❌ 잘못된 userId 형식: ${widget.otherUserId} (길이: ${widget.otherUserId.length}자)');
+        Logger.log('❌ 잘못된 userId 형식: ${widget.otherUserId} (길이: ${widget.otherUserId.length}자)');
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -86,7 +87,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       // DM conversation ID 형식 검증 (타임스탬프 포함 형식도 지원)
       final validIdPattern = RegExp(r'^(anon_)?[a-zA-Z0-9_-]+_[a-zA-Z0-9_-]+(_[a-zA-Z0-9_-]+)?(_\d{13})?(__\d+)?$');
       if (!validIdPattern.hasMatch(widget.conversationId)) {
-        print('❌ 잘못된 conversation ID 형식: ${widget.conversationId}');
+        Logger.log('❌ 잘못된 conversation ID 형식: ${widget.conversationId}');
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -108,11 +109,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       // 대화방이 존재하지 않으면 메시지 전송 시까지 대기
       if (!_conversationExists) {
-        print('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: ${widget.conversationId}');
+        Logger.log('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: ${widget.conversationId}');
         
         // 본인 DM 체크
         if (widget.otherUserId == _currentUser?.uid) {
-          print('❌ 본인 DM 생성 시도 차단');
+          Logger.log('❌ 본인 DM 생성 시도 차단');
           if (mounted) {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -127,7 +128,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
         
         // 대화방이 없으면 생성하지 않고 대기 상태로 설정
-        print('📝 대화방 미생성 상태 - 첫 메시지 전송 시 생성됨');
+        Logger.log('📝 대화방 미생성 상태 - 첫 메시지 전송 시 생성됨');
       }
       
       // 참여자 확인 (대화방이 이미 존재했던 경우에만)
@@ -141,7 +142,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                         participants[1] == _currentUser?.uid;
         
         if (isSelfDM) {
-          print('❌ 본인 DM은 허용되지 않음');
+          Logger.log('❌ 본인 DM은 허용되지 않음');
           if (mounted) {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -156,7 +157,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
         
         if (!participants.contains(_currentUser?.uid)) {
-          print('❌ 대화방 참여자가 아님');
+          Logger.log('❌ 대화방 참여자가 아님');
           if (mounted) {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
@@ -176,8 +177,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       await _loadConversation();
       await _markAsRead();
     } catch (e) {
-      print('대화 초기화 오류: $e');
-      print('오류 상세: ${e.runtimeType} - ${e.toString()}');
+      Logger.error('대화 초기화 오류: $e');
+      Logger.error('오류 상세: ${e.runtimeType} - ${e.toString()}');
       // 권한 오류인 경우 뒤로가기
       if (e.toString().contains('permission-denied')) {
         if (mounted) {
@@ -215,7 +216,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         });
       }
     } catch (e) {
-      print('대화방 정보 로드 오류: $e');
+      Logger.error('대화방 정보 로드 오류: $e');
     }
   }
 
@@ -225,19 +226,19 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Future<void> _initializeMessagesStream({String? conversationId}) async {
     try {
       final targetConversationId = conversationId ?? widget.conversationId;
-      print('📱 메시지 스트림 초기화:');
-      print('  - 대상 conversationId: $targetConversationId');
+      Logger.log('📱 메시지 스트림 초기화:');
+      Logger.log('  - 대상 conversationId: $targetConversationId');
 
       // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
       final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(targetConversationId);
-      print('  - 가시성 시작 시간(leave 기록 기반): $visibilityStartTime');
+      Logger.log('  - 가시성 시작 시간(leave 기록 기반): $visibilityStartTime');
 
       _messagesStream = _dmService.getMessages(
         targetConversationId,
         visibilityStartTime: visibilityStartTime, // null이면 전체 표시
       );
     } catch (e) {
-      print('메시지 스트림 초기화 실패: $e');
+      Logger.error('메시지 스트림 초기화 실패: $e');
       final targetConversationId = conversationId ?? widget.conversationId;
       _messagesStream = _dmService.getMessages(targetConversationId);
     }
@@ -245,19 +246,19 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 읽음 처리
   Future<void> _markAsRead() async {
-    print('📖 읽음 처리 시작: ${widget.conversationId}');
+    Logger.log('📖 읽음 처리 시작: ${widget.conversationId}');
     await Future.delayed(const Duration(milliseconds: 500));
     try {
       await _dmService.markAsRead(widget.conversationId);
-      print('✅ 읽음 처리 완료: ${widget.conversationId}');
+      Logger.log('✅ 읽음 처리 완료: ${widget.conversationId}');
       
       // UI 강제 업데이트를 위해 스트림 재초기화
       if (mounted) {
         await Future.delayed(const Duration(milliseconds: 100));
-        print('🔄 스트림 리스너 업데이트 트리거');
+        Logger.log('🔄 스트림 리스너 업데이트 트리거');
       }
     } catch (e) {
-      print('⚠️ 읽음 처리 중 오류: $e');
+      Logger.error('⚠️ 읽음 처리 중 오류: $e');
     }
   }
 
@@ -494,10 +495,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
         ),
       );
     } catch (e) {
-      print('대화방 나가기 오류: $e');
+      Logger.error('대화방 나가기 오류: $e');
       
       // 오류가 발생해도 사용자에게는 성공적으로 나간 것처럼 처리 (인스타그램 방식)
-      print('오류 발생했지만 사용자 경험을 위해 성공 처리');
+      Logger.error('오류 발생했지만 사용자 경험을 위해 성공 처리');
       
       if (!mounted) return;
       Navigator.pop(context);
@@ -557,7 +558,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
 
         if (snapshot.hasError) {
-          print('❌ 메시지 로드 오류: ${snapshot.error}');
+          Logger.error('❌ 메시지 로드 오류: ${snapshot.error}');
           
           // Permission denied 오류 감지
           final errorMessage = snapshot.error.toString();
@@ -829,8 +830,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (!_conversationExists) {
-        print('📝 첫 메시지 전송 - 대화방 생성 시도');
-        print('📝 기존 conversationId: ${widget.conversationId}');
+        Logger.log('📝 첫 메시지 전송 - 대화방 생성 시도');
+        Logger.log('📝 기존 conversationId: ${widget.conversationId}');
         
         // conversationId에서 익명 여부와 postId 추출
         final isAnonymousConv = widget.conversationId.startsWith('anon_');
@@ -853,7 +854,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         );
         
         if (newConversationId == null) {
-          print('❌ 대화방 생성 실패');
+          Logger.error('❌ 대화방 생성 실패');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -867,28 +868,28 @@ class _DMChatScreenState extends State<DMChatScreen> {
           return;
         }
         
-        print('✅ 대화방 생성 성공: $newConversationId');
-        print('📝 생성된 conversationId와 기존 ID 비교:');
-        print('   - 생성된 ID: $newConversationId');
-        print('   - 기존 ID: ${widget.conversationId}');
-        print('   - 일치 여부: ${newConversationId == widget.conversationId}');
+        Logger.log('✅ 대화방 생성 성공: $newConversationId');
+        Logger.log('📝 생성된 conversationId와 기존 ID 비교:');
+        Logger.log('   - 생성된 ID: $newConversationId');
+        Logger.log('   - 기존 ID: ${widget.conversationId}');
+        Logger.log('   - 일치 여부: ${newConversationId == widget.conversationId}');
         
         // ✅ 수정: 새로 생성된 conversationId를 사용
         actualConversationId = newConversationId;
         _conversationExists = true;
       }
       
-      print('📤 메시지 전송 시도: conversationId=$actualConversationId');
+      Logger.log('📤 메시지 전송 시도: conversationId=$actualConversationId');
       final success = await _dmService.sendMessage(actualConversationId, text);
-      print('📤 메시지 전송 결과: success=$success');
+      Logger.log('📤 메시지 전송 결과: success=$success');
       
       if (success) {
-        print('✅ 메시지 전송 성공 - 후속 처리 시작');
+        Logger.log('✅ 메시지 전송 성공 - 후속 처리 시작');
         
         // 첫 메시지 전송 시 대화방이 없었다면 생성 되었으므로 스트림을 초기화
         if (_messagesStream == null) {
-          print('📱 메시지 스트림이 null - 초기화 시작 (actualConversationId 사용)');
-          print('⚠️  첫 메시지 전송이므로 가시성 필터 없이 스트림 초기화');
+          Logger.log('📱 메시지 스트림이 null - 초기화 시작 (actualConversationId 사용)');
+          Logger.log('⚠️  첫 메시지 전송이므로 가시성 필터 없이 스트림 초기화');
           
           // 첫 메시지 전송 직후에는 가시성 필터를 적용하지 않음
           // (방금 보낸 메시지가 필터링되는 것을 방지)
@@ -899,11 +900,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
           
           if (mounted) {
             setState(() {});
-            print('✅ setState 호출 완료 - UI 업데이트 예정');
+            Logger.log('✅ setState 호출 완료 - UI 업데이트 예정');
           }
         }
         if (_conversation == null) {
-          print('📖 대화방 정보 로드 시작');
+          Logger.log('📖 대화방 정보 로드 시작');
           await _loadConversation();
         }
         // 메시지 목록 맨 아래로 스크롤
@@ -927,7 +928,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         _messageController.text = text;
       }
     } catch (e) {
-      print('메시지 전송 오류: $e');
+      Logger.error('메시지 전송 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1045,7 +1046,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
       }
     } catch (e) {
-      print('게시글 로드 오류: $e');
+      Logger.error('게시글 로드 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('게시글을 불러오는 중 오류가 발생했습니다')),

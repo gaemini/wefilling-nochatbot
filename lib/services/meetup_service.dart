@@ -13,6 +13,7 @@ import '../constants/app_constants.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'dart:io';
+import '../utils/logger.dart';
 
 class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -114,13 +115,13 @@ class MeetupService {
           // 이미지 URL 업데이트
           await docRef.update({'thumbnailImageUrl': imageUrl});
         } catch (e) {
-          print('썸네일 이미지 업로드 오류: $e');
+          Logger.error('썸네일 이미지 업로드 오류: $e');
         }
       }
 
       return true;
     } catch (e) {
-      print('모임 생성 오류: $e');
+      Logger.error('모임 생성 오류: $e');
       return false;
     }
   }
@@ -328,7 +329,7 @@ class MeetupService {
         reviewId: data['reviewId'], // 후기 ID
       );
     } catch (e) {
-      print('모임 정보 불러오기 오류: $e');
+      Logger.error('모임 정보 불러오기 오류: $e');
       return null;
     }
   }
@@ -488,7 +489,7 @@ class MeetupService {
               }
               return null;
             } catch (e) {
-              print('모임 검색 파싱 오류: $e');
+              Logger.error('모임 검색 파싱 오류: $e');
               return null;
             }
           })
@@ -496,7 +497,7 @@ class MeetupService {
           .cast<Meetup>()
           .toList();
     } catch (e) {
-      print('모임 검색 오류: $e');
+      Logger.error('모임 검색 오류: $e');
       return [];
     }
   }
@@ -512,21 +513,21 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 로그인 필요');
+        Logger.log('❌ 로그인 필요');
         return false;
       }
 
       // 이미 참여 중인지 확인
       final existingParticipation = await getUserParticipationStatus(meetupId);
       if (existingParticipation != null) {
-        print('⚠️ 이미 참여 중인 모임: $meetupId');
+        Logger.log('⚠️ 이미 참여 중인 모임: $meetupId');
         return false;
       }
 
       // 모임 정보 가져오기
       final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) {
-        print('❌ 모임 문서가 존재하지 않음: $meetupId');
+        Logger.log('❌ 모임 문서가 존재하지 않음: $meetupId');
         return false;
       }
 
@@ -538,14 +539,14 @@ class MeetupService {
 
       // 정원 초과 확인
       if (currentParticipants >= maxParticipants) {
-        print('❌ 모임 정원 초과: $meetupId');
+        Logger.log('❌ 모임 정원 초과: $meetupId');
         return false;
       }
 
       // 사용자 정보 가져오기
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (!userDoc.exists) {
-        print('❌ 사용자 정보 없음');
+        Logger.log('❌ 사용자 정보 없음');
         return false;
       }
 
@@ -580,7 +581,7 @@ class MeetupService {
       // 동기화 검증 (선택적)
       await _validateParticipantCount(meetupId);
 
-      print('✅ 모임 참여 성공: $meetupId');
+      Logger.log('✅ 모임 참여 성공: $meetupId');
 
       // 정원이 다 찬 경우 알림 발송
       final newCurrentParticipants = currentParticipants + 1;
@@ -605,7 +606,7 @@ class MeetupService {
 
       return true;
     } catch (e) {
-      print('모임 참여 오류: $e');
+      Logger.error('모임 참여 오류: $e');
       return false;
     }
   }
@@ -615,7 +616,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 로그인 필요');
+        Logger.log('❌ 로그인 필요');
         return false;
       }
 
@@ -627,7 +628,7 @@ class MeetupService {
           .get();
 
       if (!participantDoc.exists) {
-        print('⚠️ 참여 기록이 없습니다: $meetupId');
+        Logger.log('⚠️ 참여 기록이 없습니다: $meetupId');
         return false;
       }
 
@@ -646,10 +647,10 @@ class MeetupService {
       // 동기화 검증 (선택적)
       await _validateParticipantCount(meetupId);
 
-      print('✅ 모임 참여 취소 성공: $meetupId');
+      Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       return true;
     } catch (e) {
-      print('❌ 모임 참여 취소 오류: $e');
+      Logger.error('❌ 모임 참여 취소 오류: $e');
       return false;
     }
   }
@@ -672,7 +673,7 @@ class MeetupService {
 
         // 참여하지 않은 상태인지 확인
         if (!participants.contains(user.uid)) {
-          print('참여하지 않은 모임: $meetupId');
+          Logger.log('참여하지 않은 모임: $meetupId');
           return false;
         }
 
@@ -693,12 +694,12 @@ class MeetupService {
       });
 
       if (success) {
-        print('✅ 모임 참여 취소 성공: $meetupId');
+        Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       }
 
       return success;
     } catch (e) {
-      print('❌ 모임 참여 취소 실패: $e');
+      Logger.error('❌ 모임 참여 취소 실패: $e');
       return false;
     }
   }
@@ -708,11 +709,11 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 모임 삭제 실패: 로그인되지 않은 사용자');
+        Logger.error('❌ 모임 삭제 실패: 로그인되지 않은 사용자');
         return false;
       }
 
-      print('🗑️ 모임 삭제 시작: meetupId=$meetupId, currentUser=${user.uid}');
+      Logger.log('🗑️ 모임 삭제 시작: meetupId=$meetupId, currentUser=${user.uid}');
 
       // 모임 문서 가져오기 (서버에서 최신 데이터 가져오기)
       final meetupDoc = await _firestore
@@ -722,13 +723,13 @@ class MeetupService {
 
       // 문서가 없는 경우
       if (!meetupDoc.exists) {
-        print('❌ 모임 삭제 실패: 모임 문서가 존재하지 않음');
+        Logger.error('❌ 모임 삭제 실패: 모임 문서가 존재하지 않음');
         return false;
       }
 
       final data = meetupDoc.data()!;
-      print('📄 모임 데이터: userId=${data['userId']}, hostNickname=${data['hostNickname']}, host=${data['host']}');
-      print('📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
+      Logger.log('📄 모임 데이터: userId=${data['userId']}, hostNickname=${data['hostNickname']}, host=${data['host']}');
+      Logger.log('📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
 
       // 권한 체크: userId가 있으면 userId로, 없으면 hostNickname/host로 비교
       bool isOwner = false;
@@ -736,7 +737,7 @@ class MeetupService {
       if (data['userId'] != null && data['userId'].toString().isNotEmpty) {
         // 새로운 데이터: userId로 비교
         isOwner = data['userId'] == user.uid;
-        print('🔍 userId 기반 권한 체크: ${data['userId']} == ${user.uid} → $isOwner');
+        Logger.log('🔍 userId 기반 권한 체크: ${data['userId']} == ${user.uid} → $isOwner');
       } else {
         // 기존 데이터: 현재 사용자 닉네임과 비교
         final hostToCheck = data['hostNickname'] ?? data['host'];
@@ -749,26 +750,26 @@ class MeetupService {
             
             if (currentUserNickname != null && currentUserNickname.isNotEmpty) {
               isOwner = hostToCheck.toString().trim() == currentUserNickname.trim();
-              print('🔍 닉네임 기반 권한 체크: "$hostToCheck" == "$currentUserNickname" → $isOwner');
+              Logger.log('🔍 닉네임 기반 권한 체크: "$hostToCheck" == "$currentUserNickname" → $isOwner');
             }
           }
         }
       }
 
       if (!isOwner) {
-        print('❌ 모임 삭제 실패: 권한 없음 (현재 사용자가 주최자가 아님)');
+        Logger.error('❌ 모임 삭제 실패: 권한 없음 (현재 사용자가 주최자가 아님)');
         return false;
       }
 
       // 후기가 있는 경우 후기 관련 데이터도 삭제
       final reviewId = data['reviewId'] as String?;
       if (reviewId != null && reviewId.isNotEmpty) {
-        print('🗑️ 후기 관련 데이터 삭제 시작: reviewId=$reviewId');
+        Logger.log('🗑️ 후기 관련 데이터 삭제 시작: reviewId=$reviewId');
         
         try {
           // 1. meetup_reviews 문서 삭제 (Cloud Function이 자동으로 users/{userId}/posts 삭제)
           await _firestore.collection('meetup_reviews').doc(reviewId).delete();
-          print('✅ meetup_reviews 삭제 완료');
+          Logger.log('✅ meetup_reviews 삭제 완료');
           
           // 2. review_requests 문서들 삭제
           final reviewRequestsSnapshot = await _firestore
@@ -779,9 +780,9 @@ class MeetupService {
           for (var doc in reviewRequestsSnapshot.docs) {
             await doc.reference.delete();
           }
-          print('✅ review_requests ${reviewRequestsSnapshot.docs.length}개 삭제 완료');
+          Logger.log('✅ review_requests ${reviewRequestsSnapshot.docs.length}개 삭제 완료');
         } catch (e) {
-          print('⚠️ 후기 데이터 삭제 중 오류 (계속 진행): $e');
+          Logger.error('⚠️ 후기 데이터 삭제 중 오류 (계속 진행): $e');
         }
       }
 
@@ -795,17 +796,17 @@ class MeetupService {
         for (var doc in participantsSnapshot.docs) {
           await doc.reference.delete();
         }
-        print('✅ meetup_participants ${participantsSnapshot.docs.length}개 삭제 완료');
+        Logger.log('✅ meetup_participants ${participantsSnapshot.docs.length}개 삭제 완료');
       } catch (e) {
-        print('⚠️ 참여자 데이터 삭제 중 오류 (계속 진행): $e');
+        Logger.error('⚠️ 참여자 데이터 삭제 중 오류 (계속 진행): $e');
       }
 
       // 4. 모임 문서 삭제
       await _firestore.collection('meetups').doc(meetupId).delete();
-      print('✅ 모임 삭제 성공: meetupId=$meetupId');
+      Logger.log('✅ 모임 삭제 성공: meetupId=$meetupId');
       return true;
     } catch (e) {
-      print('❌ 모임 삭제 오류: $e');
+      Logger.error('❌ 모임 삭제 오류: $e');
       return false;
     }
   }
@@ -823,7 +824,7 @@ class MeetupService {
       final data = meetupDoc.data()!;
       return data['userId'] == user.uid;
     } catch (e) {
-      print('주최자 확인 오류: $e');
+      Logger.error('주최자 확인 오류: $e');
       return false;
     }
   }
@@ -843,7 +844,7 @@ class MeetupService {
           .map((doc) => MeetupParticipant.fromJson(doc.data()))
           .toList();
     } catch (e) {
-      print('참여자 목록 조회 오류: $e');
+      Logger.error('참여자 목록 조회 오류: $e');
       return [];
     }
   }
@@ -854,7 +855,7 @@ class MeetupService {
     String status,
   ) async {
     try {
-      print('🔍 참여자 조회 시작: meetupId=$meetupId, status=$status');
+      Logger.log('🔍 참여자 조회 시작: meetupId=$meetupId, status=$status');
       
       // orderBy 제거하여 복합 인덱스 문제 회피
       final querySnapshot = await _firestore
@@ -863,11 +864,11 @@ class MeetupService {
           .where('status', isEqualTo: status)
           .get();
 
-      print('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
+      Logger.log('📊 조회 결과: ${querySnapshot.docs.length}명의 참여자');
       
       final participants = querySnapshot.docs
           .map((doc) {
-            print('  - 참여자: ${doc.data()['userName']} (${doc.id})');
+            Logger.log('  - 참여자: ${doc.data()['userName']} (${doc.id})');
             return MeetupParticipant.fromJson(doc.data());
           })
           .toList();
@@ -877,7 +878,7 @@ class MeetupService {
       
       return participants;
     } catch (e) {
-      print('❌ 참여자 목록 조회 오류: $e');
+      Logger.error('❌ 참여자 목록 조회 오류: $e');
       return [];
     }
   }
@@ -893,10 +894,10 @@ class MeetupService {
           .doc(participantId)
           .update({'status': newStatus});
 
-      print('✅ 참여자 상태 업데이트 성공: $participantId -> $newStatus');
+      Logger.log('✅ 참여자 상태 업데이트 성공: $participantId -> $newStatus');
       return true;
     } catch (e) {
-      print('❌ 참여자 상태 업데이트 실패: $e');
+      Logger.error('❌ 참여자 상태 업데이트 실패: $e');
       return false;
     }
   }
@@ -919,10 +920,10 @@ class MeetupService {
           .doc(participantId)
           .delete();
 
-      print('✅ 참여자 제거 성공: $participantId');
+      Logger.log('✅ 참여자 제거 성공: $participantId');
       return true;
     } catch (e) {
-      print('❌ 참여자 제거 실패: $e');
+      Logger.error('❌ 참여자 제거 실패: $e');
       return false;
     }
   }
@@ -958,10 +959,10 @@ class MeetupService {
           .doc(participantId)
           .set(participant.toJson());
 
-      print('✅ 모임 참여 신청 성공: $meetupId');
+      Logger.log('✅ 모임 참여 신청 성공: $meetupId');
       return true;
     } catch (e) {
-      print('❌ 모임 참여 신청 실패: $e');
+      Logger.error('❌ 모임 참여 신청 실패: $e');
       return false;
     }
   }
@@ -983,7 +984,7 @@ class MeetupService {
       }
       return null;
     } catch (e) {
-      print('참여 상태 확인 오류: $e');
+      Logger.error('참여 상태 확인 오류: $e');
       return null;
     }
   }
@@ -1001,20 +1002,20 @@ class MeetupService {
       // 호스트 포함하여 +1
       final participantCount = participantsQuery.docs.length + 1;
       
-      print('🔢 실시간 참여자 수 조회: $meetupId -> $participantCount명 (호스트 포함)');
+      Logger.log('🔢 실시간 참여자 수 조회: $meetupId -> $participantCount명 (호스트 포함)');
       return participantCount;
     } catch (e) {
-      print('❌ 실시간 참여자 수 조회 오류: $e');
+      Logger.error('❌ 실시간 참여자 수 조회 오류: $e');
       // 오류 시 Firestore 필드값 사용
       try {
         final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
         if (meetupDoc.exists) {
           final currentParticipants = meetupDoc.data()?['currentParticipants'] ?? 1;
-          print('📋 Firestore 필드값 사용: $currentParticipants명');
+          Logger.log('📋 Firestore 필드값 사용: $currentParticipants명');
           return currentParticipants;
         }
       } catch (fallbackError) {
-        print('❌ Firestore 필드값 조회도 실패: $fallbackError');
+        Logger.error('❌ Firestore 필드값 조회도 실패: $fallbackError');
       }
       return 1; // 최소 호스트 1명
     }
@@ -1034,15 +1035,15 @@ class MeetupService {
       
       // 불일치 시 수정
       if (realCount != storedCount) {
-        print('⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
+        Logger.log('⚠️ 참여자 수 불일치 감지: $meetupId (실제: $realCount, 저장된 값: $storedCount)');
         await _firestore.collection('meetups').doc(meetupId).update({
           'currentParticipants': realCount,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        print('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
+        Logger.log('✅ 참여자 수 동기화 완료: $meetupId -> $realCount명');
       }
     } catch (e) {
-      print('❌ 참여자 수 검증 오류: $e');
+      Logger.error('❌ 참여자 수 검증 오류: $e');
     }
   }
 
@@ -1062,7 +1063,7 @@ class MeetupService {
           .get();
       
       if (!participantDoc.exists) {
-        print('⚠️ 참여자 문서가 존재하지 않음: $participantId');
+        Logger.log('⚠️ 참여자 문서가 존재하지 않음: $participantId');
         return false;
       }
 
@@ -1084,10 +1085,10 @@ class MeetupService {
         }
       });
 
-      print('✅ 모임 참여 취소 성공: $meetupId');
+      Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       return true;
     } catch (e) {
-      print('❌ 모임 참여 취소 실패: $e');
+      Logger.error('❌ 모임 참여 취소 실패: $e');
       return false;
     }
   }
@@ -1100,7 +1101,7 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return [];
 
-      // 디버그: print('🔍 모임 필터링 시작: categoryIds = $categoryIds');
+      // 디버그: Logger.log('🔍 모임 필터링 시작: categoryIds = $categoryIds');
 
       // 1. 전체 모임 가져오기 (현재 날짜 이후만)
       final now = DateTime.now();
@@ -1148,7 +1149,7 @@ class MeetupService {
           reviewId: data['reviewId'],
         );
         
-        // 디버그: print('📄 모임 로드: ${meetup.title}');
+        // 디버그: Logger.log('📄 모임 로드: ${meetup.title}');
         return meetup;
       }).toList();
 
@@ -1238,7 +1239,7 @@ class MeetupService {
 
       return filteredMeetups;
     } catch (e) {
-      print('❌ 친구 그룹별 모임 필터링 오류: $e');
+      Logger.error('❌ 친구 그룹별 모임 필터링 오류: $e');
       return [];
     }
   }
@@ -1250,20 +1251,20 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
       // 모임 존재 및 권한 확인
       final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) {
-        print('❌ 모임을 찾을 수 없음');
+        Logger.log('❌ 모임을 찾을 수 없음');
         return false;
       }
 
       final meetupData = meetupDoc.data()!;
       if (meetupData['userId'] != user.uid) {
-        print('❌ 모임장만 완료 처리 가능');
+        Logger.log('❌ 모임장만 완료 처리 가능');
         return false;
       }
 
@@ -1273,10 +1274,10 @@ class MeetupService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ 모임 완료 처리 성공: $meetupId');
+      Logger.log('✅ 모임 완료 처리 성공: $meetupId');
       return true;
     } catch (e) {
-      print('❌ 모임 완료 처리 오류: $e');
+      Logger.error('❌ 모임 완료 처리 오류: $e');
       return false;
     }
   }
@@ -1290,14 +1291,14 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return null;
       }
 
       // 모임 정보 가져오기
       final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
       if (!meetupDoc.exists) {
-        print('❌ 모임을 찾을 수 없음');
+        Logger.log('❌ 모임을 찾을 수 없음');
         return null;
       }
 
@@ -1306,13 +1307,13 @@ class MeetupService {
 
       // 모임장 확인
       if (meetup.userId != user.uid) {
-        print('❌ 모임장만 후기 작성 가능');
+        Logger.log('❌ 모임장만 후기 작성 가능');
         return null;
       }
 
       // 모임 완료 여부 확인
       if (!meetup.isCompleted) {
-        print('❌ 모임이 완료되지 않음');
+        Logger.log('❌ 모임이 완료되지 않음');
         return null;
       }
 
@@ -1367,10 +1368,10 @@ class MeetupService {
         },
       );
 
-      print('✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId (이미지 ${imageUrls.length}장)');
+      Logger.log('✅ 모임 후기 생성 성공 및 주최자 프로필에 게시: $reviewId (이미지 ${imageUrls.length}장)');
       return reviewId;
     } catch (e) {
-      print('❌ 모임 후기 생성 오류: $e');
+      Logger.error('❌ 모임 후기 생성 오류: $e');
       return null;
     }
   }
@@ -1380,13 +1381,13 @@ class MeetupService {
     try {
       final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음');
+        Logger.log('❌ 후기를 찾을 수 없음');
         return null;
       }
 
       return {...reviewDoc.data()!, 'id': reviewDoc.id};
     } catch (e) {
-      print('❌ 모임 후기 조회 오류: $e');
+      Logger.error('❌ 모임 후기 조회 오류: $e');
       return null;
     }
   }
@@ -1398,44 +1399,44 @@ class MeetupService {
     required String content,
   }) async {
     try {
-      print('✏️ 후기 수정 시작: reviewId=$reviewId (이미지 ${imageUrls.length}장)');
+      Logger.log('✏️ 후기 수정 시작: reviewId=$reviewId (이미지 ${imageUrls.length}장)');
       
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
       // 후기 존재 및 권한 확인
       final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음');
+        Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
       final reviewData = reviewDoc.data()!;
       if (reviewData['authorId'] != user.uid) {
-        print('❌ 작성자만 후기 수정 가능');
+        Logger.log('❌ 작성자만 후기 수정 가능');
         return false;
       }
 
       final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
       final authorId = reviewData['authorId'];
 
-      print('📋 수정 대상: 참여자 ${approvedParticipants.length}명');
+      Logger.log('📋 수정 대상: 참여자 ${approvedParticipants.length}명');
 
       // 1. meetup_reviews 문서 업데이트
-      print('✏️ 1단계: meetup_reviews 문서 업데이트...');
+      Logger.log('✏️ 1단계: meetup_reviews 문서 업데이트...');
       await _firestore.collection('meetup_reviews').doc(reviewId).update({
         'imageUrls': imageUrls,
         'imageUrl': imageUrls.isNotEmpty ? imageUrls.first : '', // 하위 호환성
         'content': content,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ meetup_reviews 업데이트 완료');
+      Logger.log('✅ meetup_reviews 업데이트 완료');
 
       // 2. 본인 프로필의 후기 업데이트 (다른 사용자는 Cloud Function에서 처리)
-      print('✏️ 2단계: 본인 프로필 후기 업데이트...');
+      Logger.log('✏️ 2단계: 본인 프로필 후기 업데이트...');
       final currentUser = _auth.currentUser;
       
       if (currentUser != null) {
@@ -1460,23 +1461,23 @@ class MeetupService {
               'content': content,
               'updatedAt': FieldValue.serverTimestamp(),
             });
-            print('✅ 본인 프로필 후기 업데이트 완료');
+            Logger.log('✅ 본인 프로필 후기 업데이트 완료');
           } else {
-            print('⚠️ 본인 프로필에 후기 없음');
+            Logger.log('⚠️ 본인 프로필에 후기 없음');
           }
         } catch (e) {
-          print('⚠️ 본인 프로필 후기 업데이트 실패: $e');
+          Logger.error('⚠️ 본인 프로필 후기 업데이트 실패: $e');
         }
       }
       
       // 다른 참여자들의 프로필은 Cloud Function(onMeetupReviewUpdated)에서 자동 처리됨
-      print('💡 다른 참여자 프로필은 Cloud Function에서 자동 업데이트됩니다');
-      print('📋 총 대상자: ${[authorId, ...approvedParticipants].length}명 (본인 포함)');
+      Logger.log('💡 다른 참여자 프로필은 Cloud Function에서 자동 업데이트됩니다');
+      Logger.log('📋 총 대상자: ${[authorId, ...approvedParticipants].length}명 (본인 포함)');
 
-      print('✅ 모임 후기 수정 완료: $reviewId');
+      Logger.log('✅ 모임 후기 수정 완료: $reviewId');
       return true;
     } catch (e) {
-      print('❌ 모임 후기 수정 오류: $e');
+      Logger.error('❌ 모임 후기 수정 오류: $e');
       return false;
     }
   }
@@ -1484,28 +1485,28 @@ class MeetupService {
   /// 모임 후기 삭제
   Future<bool> deleteMeetupReview(String reviewId) async {
     try {
-      print('🗑️ 후기 삭제 시작: reviewId=$reviewId');
+      Logger.log('🗑️ 후기 삭제 시작: reviewId=$reviewId');
       
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         throw Exception('로그인이 필요합니다');
       }
 
-      print('👤 현재 사용자: ${user.uid}');
+      Logger.log('👤 현재 사용자: ${user.uid}');
 
       // 후기 존재 및 권한 확인
       final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음');
+        Logger.log('❌ 후기를 찾을 수 없음');
         throw Exception('후기를 찾을 수 없습니다');
       }
 
       final reviewData = reviewDoc.data()!;
-      print('📄 후기 데이터: authorId=${reviewData['authorId']}, meetupId=${reviewData['meetupId']}');
+      Logger.log('📄 후기 데이터: authorId=${reviewData['authorId']}, meetupId=${reviewData['meetupId']}');
       
       if (reviewData['authorId'] != user.uid) {
-        print('❌ 작성자만 후기 삭제 가능: authorId=${reviewData['authorId']}, currentUser=${user.uid}');
+        Logger.log('❌ 작성자만 후기 삭제 가능: authorId=${reviewData['authorId']}, currentUser=${user.uid}');
         throw Exception('작성자만 후기를 삭제할 수 있습니다');
       }
 
@@ -1513,47 +1514,47 @@ class MeetupService {
       final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
       final authorId = reviewData['authorId'];
 
-      print('📋 삭제 대상: meetupId=$meetupId, 참여자 ${approvedParticipants.length}명');
+      Logger.log('📋 삭제 대상: meetupId=$meetupId, 참여자 ${approvedParticipants.length}명');
 
       // 1. 후기 삭제
-      print('🗑️ 1단계: meetup_reviews 문서 삭제...');
+      Logger.log('🗑️ 1단계: meetup_reviews 문서 삭제...');
       await _firestore.collection('meetup_reviews').doc(reviewId).delete();
-      print('✅ meetup_reviews 삭제 완료');
+      Logger.log('✅ meetup_reviews 삭제 완료');
 
       // 2. 모임에서 후기 정보 제거
-      print('🗑️ 2단계: meetups 문서 업데이트...');
+      Logger.log('🗑️ 2단계: meetups 문서 업데이트...');
       try {
         await _firestore.collection('meetups').doc(meetupId).update({
           'hasReview': false,
           'reviewId': null,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        print('✅ meetups 업데이트 완료');
+        Logger.log('✅ meetups 업데이트 완료');
       } catch (e) {
-        print('⚠️ meetups 업데이트 실패 (계속 진행): $e');
+        Logger.error('⚠️ meetups 업데이트 실패 (계속 진행): $e');
       }
 
       // 3. 관련 review_requests도 삭제
-      print('🗑️ 3단계: review_requests 삭제...');
+      Logger.log('🗑️ 3단계: review_requests 삭제...');
       try {
         final requests = await _firestore
             .collection('review_requests')
             .where('metadata.reviewId', isEqualTo: reviewId)
             .get();
         
-        print('📋 삭제할 요청: ${requests.docs.length}개');
+        Logger.log('📋 삭제할 요청: ${requests.docs.length}개');
         for (final doc in requests.docs) {
           await doc.reference.delete();
         }
-        print('✅ review_requests 삭제 완료');
+        Logger.log('✅ review_requests 삭제 완료');
       } catch (e) {
-        print('⚠️ review_requests 삭제 실패 (계속 진행): $e');
+        Logger.error('⚠️ review_requests 삭제 실패 (계속 진행): $e');
       }
 
       // 4. 모든 참여자 프로필에서 후기 삭제 (주최자 + 수락한 참여자)
-      print('🗑️ 4단계: 프로필 후기 삭제...');
+      Logger.log('🗑️ 4단계: 프로필 후기 삭제...');
       final allUserIds = [authorId, ...approvedParticipants];
-      print('📋 삭제 대상 사용자: ${allUserIds.length}명');
+      Logger.log('📋 삭제 대상 사용자: ${allUserIds.length}명');
       
       for (final userId in allUserIds) {
         try {
@@ -1563,17 +1564,17 @@ class MeetupService {
               .collection('posts')
               .doc(reviewId)
               .delete();
-          print('✅ 프로필에서 후기 삭제: userId=$userId');
+          Logger.log('✅ 프로필에서 후기 삭제: userId=$userId');
         } catch (e) {
-          print('⚠️ 프로필 후기 삭제 실패 (계속 진행): userId=$userId, error=$e');
+          Logger.error('⚠️ 프로필 후기 삭제 실패 (계속 진행): userId=$userId, error=$e');
         }
       }
 
-      print('✅ 모임 후기 삭제 완료: $reviewId');
+      Logger.log('✅ 모임 후기 삭제 완료: $reviewId');
       return true;
     } catch (e, stackTrace) {
-      print('❌ 모임 후기 삭제 오류: $e');
-      print('스택 트레이스: $stackTrace');
+      Logger.error('❌ 모임 후기 삭제 오류: $e');
+      Logger.log('스택 트레이스: $stackTrace');
       rethrow; // 에러를 다시 던져서 UI에서 처리할 수 있도록
     }
   }
@@ -1583,7 +1584,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return [];
       }
 
@@ -1597,7 +1598,7 @@ class MeetupService {
           .map((doc) => {...doc.data(), 'id': doc.id})
           .toList();
     } catch (e) {
-      print('❌ 내 후기 목록 조회 오류: $e');
+      Logger.error('❌ 내 후기 목록 조회 오류: $e');
       return [];
     }
   }
@@ -1610,14 +1611,14 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
       // 후기 정보 가져오기
       final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음');
+        Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
@@ -1659,10 +1660,10 @@ class MeetupService {
         });
       }
 
-      print('✅ 후기 수락 요청 전송 완료: ${participantIds.length}명');
+      Logger.log('✅ 후기 수락 요청 전송 완료: ${participantIds.length}명');
       return true;
     } catch (e) {
-      print('❌ 후기 수락 요청 전송 오류: $e');
+      Logger.error('❌ 후기 수락 요청 전송 오류: $e');
       return false;
     }
   }
@@ -1673,13 +1674,13 @@ class MeetupService {
       final requestDoc = await _firestore.collection('review_requests').doc(requestId).get();
       
       if (!requestDoc.exists) {
-        print('❌ 요청을 찾을 수 없음: $requestId');
+        Logger.log('❌ 요청을 찾을 수 없음: $requestId');
         return null;
       }
       
       return requestDoc.data();
     } catch (e) {
-      print('❌ 요청 상태 조회 오류: $e');
+      Logger.error('❌ 요청 상태 조회 오류: $e');
       return null;
     }
   }
@@ -1692,27 +1693,27 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
       // 요청 정보 가져오기
       final requestDoc = await _firestore.collection('review_requests').doc(requestId).get();
       if (!requestDoc.exists) {
-        print('❌ 요청을 찾을 수 없음');
+        Logger.log('❌ 요청을 찾을 수 없음');
         return false;
       }
 
       final requestData = requestDoc.data()!;
       if (requestData['recipientId'] != user.uid) {
-        print('❌ 권한 없음');
+        Logger.log('❌ 권한 없음');
         return false;
       }
 
       // 이미 응답한 경우 중복 처리 방지
       final currentStatus = requestData['status'];
       if (currentStatus == 'accepted' || currentStatus == 'rejected') {
-        print('⚠️ 이미 응답한 요청입니다: $currentStatus');
+        Logger.log('⚠️ 이미 응답한 요청입니다: $currentStatus');
         return false;
       }
 
@@ -1738,18 +1739,18 @@ class MeetupService {
           reviewData: requestData,
         );
         
-        print('✅ 후기 수락 완료 및 프로필에 게시됨');
+        Logger.log('✅ 후기 수락 완료 및 프로필에 게시됨');
       } else {
         await _firestore.collection('meetup_reviews').doc(reviewId).update({
           'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
           'pendingParticipants': FieldValue.arrayRemove([user.uid]),
         });
-        print('✅ 후기 거절 완료');
+        Logger.log('✅ 후기 거절 완료');
       }
 
       return true;
     } catch (e) {
-      print('❌ 후기 수락/거절 처리 오류: $e');
+      Logger.error('❌ 후기 수락/거절 처리 오류: $e');
       return false;
     }
   }
@@ -1759,7 +1760,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return [];
       }
 
@@ -1773,7 +1774,7 @@ class MeetupService {
           .map((doc) => {...doc.data(), 'id': doc.id})
           .toList();
     } catch (e) {
-      print('❌ 내 후기 요청 목록 조회 오류: $e');
+      Logger.error('❌ 내 후기 요청 목록 조회 오류: $e');
       return [];
     }
   }
@@ -1785,18 +1786,18 @@ class MeetupService {
     required Map<String, dynamic> reviewData,
   }) async {
     try {
-      print('📝 프로필에 후기 게시 시작: userId=$userId, reviewId=$reviewId');
-      print('📝 reviewData: $reviewData');
+      Logger.log('📝 프로필에 후기 게시 시작: userId=$userId, reviewId=$reviewId');
+      Logger.log('📝 reviewData: $reviewData');
       
       // 후기 전체 정보 가져오기
       final reviewDoc = await _firestore.collection('meetup_reviews').doc(reviewId).get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음: reviewId=$reviewId');
+        Logger.log('❌ 후기를 찾을 수 없음: reviewId=$reviewId');
         return;
       }
       
       final fullReviewData = reviewDoc.data()!;
-      print('📊 fullReviewData: $fullReviewData');
+      Logger.log('📊 fullReviewData: $fullReviewData');
       
       final postData = {
         'type': 'meetup_review',
@@ -1814,8 +1815,8 @@ class MeetupService {
         'commentCount': 0,
       };
       
-      print('📤 저장할 데이터: $postData');
-      print('📍 저장 경로: users/$userId/posts/$reviewId');
+      Logger.log('📤 저장할 데이터: $postData');
+      Logger.log('📍 저장 경로: users/$userId/posts/$reviewId');
       
       // users/{userId}/posts 컬렉션에 후기 게시
       await _firestore
@@ -1825,11 +1826,11 @@ class MeetupService {
           .doc(reviewId) // reviewId를 문서 ID로 사용하여 중복 방지
           .set(postData);
       
-      print('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
-      print('✅ 저장된 경로: users/$userId/posts/$reviewId');
+      Logger.log('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
+      Logger.log('✅ 저장된 경로: users/$userId/posts/$reviewId');
     } catch (e, stackTrace) {
-      print('❌ 프로필에 후기 게시 오류: $e');
-      print('❌ Stack trace: $stackTrace');
+      Logger.error('❌ 프로필에 후기 게시 오류: $e');
+      Logger.log('❌ Stack trace: $stackTrace');
       // 에러가 발생해도 전체 프로세스는 계속 진행
       rethrow; // 에러를 다시 던져서 상위에서 확인 가능하도록
     }
@@ -1843,7 +1844,7 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('❌ 사용자 인증 필요');
+        Logger.log('❌ 사용자 인증 필요');
         return false;
       }
 
@@ -1858,10 +1859,10 @@ class MeetupService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ 후기 ${hide ? "숨김" : "표시"} 처리 완료: $reviewId');
+      Logger.log('✅ 후기 ${hide ? "숨김" : "표시"} 처리 완료: $reviewId');
       return true;
     } catch (e) {
-      print('❌ 후기 숨김/표시 처리 오류: $e');
+      Logger.error('❌ 후기 숨김/표시 처리 오류: $e');
       return false;
     }
   }
@@ -1877,10 +1878,10 @@ class MeetupService {
       await storageRef.putFile(imageFile);
       final imageUrl = await storageRef.getDownloadURL();
       
-      print('✅ 모임 이미지 업로드 완료: $imageUrl');
+      Logger.log('✅ 모임 이미지 업로드 완료: $imageUrl');
       return imageUrl;
     } catch (e) {
-      print('❌ 모임 이미지 업로드 오류: $e');
+      Logger.error('❌ 모임 이미지 업로드 오류: $e');
       throw Exception('이미지 업로드에 실패했습니다: $e');
     }
   }

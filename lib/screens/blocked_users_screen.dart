@@ -8,6 +8,7 @@ import '../services/report_service.dart';
 import '../services/auth_service.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
+import '../utils/logger.dart';
 
 class BlockedUsersScreen extends StatefulWidget {
   const BlockedUsersScreen({super.key});
@@ -49,7 +50,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             profiles[blockedUser.blockedUserId] = profile;
           }
         } catch (e) {
-          print('프로필 로딩 실패: ${blockedUser.blockedUserId}');
+          Logger.error('프로필 로딩 실패: ${blockedUser.blockedUserId}');
         }
       }
 
@@ -60,7 +61,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         _hasError = false;
       });
     } catch (e) {
-      print('❌ 차단 목록 조회 실패: $e');
+      Logger.error('❌ 차단 목록 조회 실패: $e');
       
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       final errorMsg = isKo
@@ -110,7 +111,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         }
       }
     } catch (e) {
-      print('차단 해제 실패: $e');
+      Logger.error('차단 해제 실패: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

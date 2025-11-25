@@ -11,6 +11,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart';
 import 'fcm_service.dart';
+import '../utils/logger.dart';
+import '../config/app_config.dart';
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -27,9 +29,7 @@ class AuthService {
   Future<UserCredential?> signInWithGoogle() async {
     try {
       // Google Sign-In 초기화 (플랫폼별 분기)
-      final clientId = (Platform.isIOS || Platform.isMacOS)
-          ? '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com'
-          : null;
+      final clientId = AppConfig.getGoogleClientId();
       await _googleSignIn.initialize(clientId: clientId);
 
       // Google Sign-In 7.x API 사용
@@ -50,7 +50,7 @@ class AuthService {
 
       return userCredential;
     } catch (e) {
-      print('구글 로그인 오류: $e');
+      Logger.error('구글 로그인 오류', e);
       return null;
     }
   }
@@ -62,7 +62,7 @@ class AuthService {
       final userCredential = await _auth.signInWithProvider(appleProvider);
       return userCredential;
     } catch (e) {
-      print('Apple 로그인 오류: $e');
+      Logger.error('Apple 로그인 오류', e);
       return null;
     }
   }
@@ -123,10 +123,40 @@ class AuthService {
   /// - Storage: profile_images, post_images
   /// - FCM 토큰
   /// - Firebase Auth 계정
+  /// 
+  /// 보안: 최근 로그인 확인 (5분 이내)
+  /// 5분 초과 시 FirebaseAuthException(requires-recent-login) 발생
   Future<void> deleteUserAccount(String userId) async {
     try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        throw Exception('로그인된 사용자가 없습니다');
+      }
+      
       if (kDebugMode) {
         debugPrint('🗑️ 회원 탈퇴 시작: $userId');
+      }
+
+      // 0. 최근 로그인 확인 (보안)
+      final metadata = user.metadata;
+      final lastSignIn = metadata.lastSignInTime;
+      
+      if (lastSignIn != null) {
+        final now = DateTime.now();
+        final timeSinceLogin = now.difference(lastSignIn);
+        
+        if (kDebugMode) {
+          debugPrint('⏰ 마지막 로그인: ${timeSinceLogin.inMinutes}분 전');
+        }
+        
+        // 5분 초과 시 재인증 요구
+        if (timeSinceLogin.inMinutes > 5) {
+          Logger.warning('재인증 필요: ${timeSinceLogin.inMinutes}분 경과');
+          throw FirebaseAuthException(
+            code: 'requires-recent-login',
+            message: '계정 삭제를 위해 다시 로그인해주세요',
+          );
+        }
       }
 
       // 1. FCM 토큰 삭제
@@ -148,15 +178,20 @@ class AuthService {
       await _deleteStorageFiles(userId);
 
       // 4. Firebase Auth 계정 삭제
-      await _auth.currentUser?.delete();
+      await user.delete();
       
       if (kDebugMode) {
         debugPrint('✅ 회원 탈퇴 완료: $userId');
       }
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('❌ 회원 탈퇴 오류: $e');
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'requires-recent-login') {
+        Logger.error('재인증 필요', e);
+        rethrow; // UI에서 재로그인 처리
       }
+      Logger.error('Firebase Auth 오류', e);
+      rethrow;
+    } catch (e) {
+      Logger.error('회원 탈퇴 오류', e);
       rethrow;
     }
   }

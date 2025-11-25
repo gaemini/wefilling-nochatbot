@@ -14,6 +14,7 @@ import '../../services/dm_service.dart';
 import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
+import '../../utils/logger.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -541,16 +542,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
     try {
       // post.userId가 올바른 Firebase UID인지 확인
-      print('🔍 DM 대상 확인:');
-      print('  - post.id: ${post.id}');
-      print('  - post.userId: ${post.userId}');
-      print('  - post.isAnonymous: ${post.isAnonymous}');
-      print('  - post.author: ${post.author}');
-      print('  - currentUser.uid: ${currentUser.uid}');
+      Logger.log('🔍 DM 대상 확인:');
+      Logger.log('  - post.id: ${post.id}');
+      Logger.log('  - post.userId: ${post.userId}');
+      Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
+      Logger.log('  - post.author: ${post.author}');
+      Logger.log('  - currentUser.uid: ${currentUser.uid}');
       
       // 본인에게 DM 전송 체크 (익명 포함)
       if (post.userId == currentUser.uid) {
-        print('❌ 본인 게시글에는 DM 불가');
+        Logger.log('❌ 본인 게시글에는 DM 불가');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -568,7 +569,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(post.userId)) {
-        print('❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
+        Logger.log('❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -585,7 +586,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (post.userId == 'deleted' || post.userId.isEmpty) {
-        print('❌ 탈퇴했거나 삭제된 사용자');
+        Logger.log('❌ 탈퇴했거나 삭제된 사용자');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -610,7 +611,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
       
-      print('✅ DM conversation ID: $conversationId');
+      Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
         Navigator.push(
@@ -627,8 +628,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
       
-      print('❌ DM 열기 오류: $e');
-      print('오류 타입: ${e.runtimeType}');
+      Logger.error('❌ DM 열기 오류: $e');
+      Logger.error('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

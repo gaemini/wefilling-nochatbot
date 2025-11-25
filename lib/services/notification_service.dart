@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_notification.dart';
 import '../models/meetup.dart';
 import 'notification_settings_service.dart';
+import '../utils/logger.dart';
 
 class NotificationService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -21,12 +22,12 @@ class NotificationService {
 
   // 모든 스트림 구독 정리
   void dispose() {
-    print('NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
+    Logger.log('NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
     _activeSubscriptions.clear();
-    print('NotificationService: 모든 스트림 정리 완료');
+    Logger.log('NotificationService: 모든 스트림 정리 완료');
   }
 
   // 알림 생성
@@ -42,14 +43,14 @@ class NotificationService {
     Map<String, dynamic>? data, // 알림 번역을 위한 추가 데이터
   }) async {
     try {
-      print('📬 알림 생성 시도: $type - $title');
-      print('   대상 사용자: $userId');
-      print('   게시글 ID: $postId');
+      Logger.log('📬 알림 생성 시도: $type - $title');
+      Logger.log('   대상 사용자: $userId');
+      Logger.log('   게시글 ID: $postId');
       
       // 알림 설정 확인 - 해당 유형의 알림이 비활성화되어 있으면 알림 생성 안 함
       final isEnabled = await _settingsService.isNotificationEnabled(type);
       if (!isEnabled) {
-        print('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
+        Logger.log('⚠️ 알림 유형 $type 비활성화됨: 알림 생성 건너뜀');
         return false;
       }
 
@@ -68,10 +69,10 @@ class NotificationService {
       };
 
       final docRef = await _firestore.collection('notifications').add(notificationData);
-      print('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
+      Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
       return true;
     } catch (e) {
-      print('❌ 알림 생성 오류: $e');
+      Logger.error('❌ 알림 생성 오류: $e');
       return false;
     }
   }
@@ -92,7 +93,7 @@ class NotificationService {
         },
       );
     } catch (e) {
-      print('모임 정원 알림 오류: $e');
+      Logger.error('모임 정원 알림 오류: $e');
       return false;
     }
   }
@@ -122,7 +123,7 @@ class NotificationService {
       }
       return allSuccess;
     } catch (e) {
-      print('모임 취소 알림 오류: $e');
+      Logger.error('모임 취소 알림 오류: $e');
       return false;
     }
   }
@@ -166,7 +167,7 @@ class NotificationService {
         },
       );
     } catch (e) {
-      print('새 댓글 알림 오류: $e');
+      Logger.error('새 댓글 알림 오류: $e');
       return false;
     }
   }
@@ -199,7 +200,7 @@ class NotificationService {
         },
       );
     } catch (e) {
-      print('좋아요 알림 오류: $e');
+      Logger.error('좋아요 알림 오류: $e');
       return false;
     }
   }
@@ -218,7 +219,7 @@ class NotificationService {
         .orderBy('createdAt', descending: true)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-          print('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
+          Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
           return snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               .toList();
@@ -238,7 +239,7 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-          print('📬 읽지 않은 알림 수 업데이트: ${snapshot.docs.length}개');
+          Logger.log('📬 읽지 않은 알림 수 업데이트: ${snapshot.docs.length}개');
           return snapshot.docs.length;
         })
         .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
@@ -252,7 +253,7 @@ class NotificationService {
       });
       return true;
     } catch (e) {
-      print('알림 읽음 처리 오류: $e');
+      Logger.error('알림 읽음 처리 오류: $e');
       return false;
     }
   }
@@ -280,7 +281,7 @@ class NotificationService {
       await batch.commit();
       return true;
     } catch (e) {
-      print('모든 알림 읽음 처리 오류: $e');
+      Logger.error('모든 알림 읽음 처리 오류: $e');
       return false;
     }
   }
@@ -291,7 +292,7 @@ class NotificationService {
       await _firestore.collection('notifications').doc(notificationId).delete();
       return true;
     } catch (e) {
-      print('알림 삭제 오류: $e');
+      Logger.error('알림 삭제 오류: $e');
       return false;
     }
   }

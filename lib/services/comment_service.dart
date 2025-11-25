@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
+import '../utils/logger.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -28,7 +29,7 @@ class CommentService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('댓글 작성 실패: 로그인이 필요합니다.');
+        Logger.error('댓글 작성 실패: 로그인이 필요합니다.');
         return false;
       }
 
@@ -73,14 +74,14 @@ class CommentService {
       targetAuthorId ??= reviewOwnerUserId;
       if (reviewTitle != null) notificationTitle = reviewTitle;
 
-      print('💬 댓글 작성 완료 - 알림 전송 확인 중');
-      print('   대상 작성자: $targetAuthorId');
-      print('   댓글 작성자: ${user.uid}');
-      print('   제목: $notificationTitle');
+      Logger.log('💬 댓글 작성 완료 - 알림 전송 확인 중');
+      Logger.log('   대상 작성자: $targetAuthorId');
+      Logger.log('   댓글 작성자: ${user.uid}');
+      Logger.log('   제목: $notificationTitle');
 
       // 대댓글인 경우: 원댓글 작성자에게 알림 전송
       if (parentCommentId != null && replyToUserId != null && replyToUserId != user.uid) {
-        print('🔔 대댓글 알림 전송 시작... (대상: $replyToUserId)');
+        Logger.log('🔔 대댓글 알림 전송 시작... (대상: $replyToUserId)');
         final notificationSent = await _notificationService.sendNewCommentNotification(
           postId,
           notificationTitle,
@@ -88,11 +89,11 @@ class CommentService {
           nickname,
           user.uid,
         );
-        print(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
+        Logger.log(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
       } 
       // 원댓글: 대상 작성자에게 알림 (자기 자신 제외)
       else if (parentCommentId == null && targetAuthorId != null && targetAuthorId != user.uid) {
-        print('🔔 댓글 알림 전송 시작... (작성자: $targetAuthorId)');
+        Logger.log('🔔 댓글 알림 전송 시작... (작성자: $targetAuthorId)');
         
         // 리뷰 댓글인 경우 별도 알림 타입 사용
         final isReview = reviewOwnerUserId != null;
@@ -106,9 +107,9 @@ class CommentService {
           isReview: isReview,
           reviewOwnerUserId: reviewOwnerUserId,
         );
-        print(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
+        Logger.log(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
       } else {
-        print('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
+        Logger.log('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
       }
 
       // 댓글 수 업데이트 (게시글/리뷰 모두 시도, 실패해도 무시)
@@ -116,7 +117,7 @@ class CommentService {
 
       return true;
     } catch (e) {
-      print('댓글 작성 오류: $e');
+      Logger.error('댓글 작성 오류: $e');
       return false;
     }
   }
@@ -159,7 +160,7 @@ class CommentService {
         }
       }
     } catch (e) {
-      print('댓글 수 업데이트 오류: $e');
+      Logger.error('댓글 수 업데이트 오류: $e');
     }
   }
 
@@ -193,7 +194,7 @@ class CommentService {
             return comments;
           });
     } catch (e) {
-      print('댓글 불러오기 오류: $e');
+      Logger.error('댓글 불러오기 오류: $e');
       // 오류 발생 시 빈 리스트 반환
       return Stream.value([]);
     }
@@ -204,7 +205,7 @@ class CommentService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('댓글 삭제 실패: 로그인이 필요합니다.');
+        Logger.error('댓글 삭제 실패: 로그인이 필요합니다.');
         return false;
       }
 
@@ -214,7 +215,7 @@ class CommentService {
 
       // 문서가 없는 경우
       if (!commentDoc.exists) {
-        print('댓글 삭제 실패: 댓글이 존재하지 않습니다.');
+        Logger.error('댓글 삭제 실패: 댓글이 존재하지 않습니다.');
         return false;
       }
 
@@ -222,7 +223,7 @@ class CommentService {
 
       // 현재 사용자가 작성자인지 확인
       if (data['userId'] != user.uid) {
-        print('댓글 삭제 실패: 댓글 작성자만 삭제할 수 있습니다.');
+        Logger.error('댓글 삭제 실패: 댓글 작성자만 삭제할 수 있습니다.');
         return false;
       }
 
@@ -234,7 +235,7 @@ class CommentService {
 
       return true;
     } catch (e) {
-      print('댓글 삭제 오류: $e');
+      Logger.error('댓글 삭제 오류: $e');
       return false;
     }
   }
@@ -242,10 +243,10 @@ class CommentService {
   // 댓글 좋아요 토글
   Future<bool> toggleCommentLike(String commentId, String userId) async {
     try {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('댓글 좋아요 토글 시작');
-      print('  - commentId: $commentId');
-      print('  - userId: $userId');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('댓글 좋아요 토글 시작');
+      Logger.log('  - commentId: $commentId');
+      Logger.log('  - userId: $userId');
       
       final commentRef = _firestore.collection('comments').doc(commentId);
       
@@ -253,7 +254,7 @@ class CommentService {
         final commentDoc = await transaction.get(commentRef);
         
         if (!commentDoc.exists) {
-          print('  ❌ 댓글을 찾을 수 없습니다.');
+          Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
           throw Exception('댓글을 찾을 수 없습니다.');
         }
         
@@ -261,9 +262,9 @@ class CommentService {
         final List<String> likedBy = List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
         
-        print('  - 현재 좋아요 수: $currentLikeCount');
-        print('  - 좋아요 누른 사용자: ${likedBy.length}명');
-        print('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
+        Logger.log('  - 현재 좋아요 수: $currentLikeCount');
+        Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
+        Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
         
         if (likedBy.contains(userId)) {
           // 좋아요 취소
@@ -272,7 +273,7 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount - 1,
           });
-          print('  ✅ 좋아요 취소 완료');
+          Logger.log('  ✅ 좋아요 취소 완료');
           return false; // 좋아요 취소됨
         } else {
           // 좋아요 추가
@@ -281,20 +282,20 @@ class CommentService {
             'likedBy': likedBy,
             'likeCount': currentLikeCount + 1,
           });
-          print('  ✅ 좋아요 추가 완료');
+          Logger.log('  ✅ 좋아요 추가 완료');
           return true; // 좋아요 추가됨
         }
       });
     } catch (e, stackTrace) {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('❌ 댓글 좋아요 토글 오류');
-      print('  에러: $e');
-      print('  스택 트레이스: $stackTrace');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('❌ 댓글 좋아요 토글 오류');
+      Logger.error('  에러: $e');
+      Logger.log('  스택 트레이스: $stackTrace');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
     } finally {
-      print('댓글 좋아요 토글 종료');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('댓글 좋아요 토글 종료');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -316,7 +317,7 @@ class CommentService {
             return allComments;
           });
     } catch (e) {
-      print('댓글 불러오기 오류: $e');
+      Logger.error('댓글 불러오기 오류: $e');
       return Stream.empty();
     }
   }
@@ -361,7 +362,7 @@ class CommentService {
 
       return true;
     } catch (e) {
-      print('댓글 삭제 오류: $e');
+      Logger.error('댓글 삭제 오류: $e');
       return false;
     }
   }

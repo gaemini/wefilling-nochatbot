@@ -4,6 +4,7 @@
 import 'package:firebase_storage/firebase_storage.dart';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../utils/logger.dart';
 
 class FirebaseDebugHelper {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -105,7 +106,7 @@ class FirebaseDebugHelper {
 
       // HTTP 요청으로 실제 파일에 접근 가능한지 테스트
       try {
-        print('이미지 URL 접근성 테스트 시작: $imageUrl');
+        Logger.log('이미지 URL 접근성 테스트 시작: $imageUrl');
 
         // 헤더 추가 (브라우저 에이전트 설정)
         final headers = {
@@ -127,7 +128,7 @@ class FirebaseDebugHelper {
           'content_type': response.headers['content-type'],
         };
 
-        print(
+        Logger.log(
           '이미지 URL 접근성 테스트 결과: 상태 코드=${response.statusCode}, 콘텐츠 타입=${response.headers['content-type']}',
         );
 
@@ -137,21 +138,21 @@ class FirebaseDebugHelper {
               response.bodyBytes.length > 16
                   ? response.bodyBytes.sublist(0, 16)
                   : response.bodyBytes;
-          print('응답 미리보기: $previewBytes');
+          Logger.log('응답 미리보기: $previewBytes');
         } else {
           // 오류 응답인 경우 전체 응답 내용 로깅
-          print(
+          Logger.log(
             '오류 응답 본문: ${response.body.length > 100 ? response.body.substring(0, 100) + "..." : response.body}',
           );
         }
       } catch (e) {
         result['http_response'] = {'error': e.toString(), 'success': false};
 
-        print('URL 액세스 오류: $e');
+        Logger.error('URL 액세스 오류: $e');
       }
     } catch (e) {
       result['uri_parse_error'] = e.toString();
-      print('URL 구문 분석 오류: $e');
+      Logger.error('URL 구문 분석 오류: $e');
     }
 
     return result;
@@ -174,7 +175,7 @@ class FirebaseDebugHelper {
       // URL을 얻을 수 있으면 읽기 권한 있음
       return true;
     } catch (e) {
-      print('Firebase 보안 규칙 테스트 실패: $e');
+      Logger.error('Firebase 보안 규칙 테스트 실패: $e');
       return false;
     }
   }

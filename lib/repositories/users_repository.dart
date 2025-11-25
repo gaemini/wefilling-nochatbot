@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../models/friend_request.dart';
+import '../utils/logger.dart';
 
 class UsersRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -35,7 +36,7 @@ class UsersRepository {
       }
       return null;
     } catch (e) {
-      print('사용자 프로필 조회 오류: $e');
+      Logger.error('사용자 프로필 조회 오류: $e');
       return null;
     }
   }
@@ -78,7 +79,7 @@ class UsersRepository {
             matchedProfiles.add(profile);
           }
         } catch (e) {
-          print('사용자 데이터 파싱 오류: $e');
+          Logger.error('사용자 데이터 파싱 오류: $e');
           continue;
         }
       }
@@ -93,7 +94,7 @@ class UsersRepository {
       // 제한된 개수만 반환
       return matchedProfiles.take(limit).toList();
     } catch (e) {
-      print('사용자 검색 오류: $e');
+      Logger.error('사용자 검색 오류: $e');
       return [];
     }
   }
@@ -199,7 +200,7 @@ class UsersRepository {
 
       return RelationshipStatus.none;
     } catch (e) {
-      print('관계 상태 조회 오류: $e');
+      Logger.error('관계 상태 조회 오류: $e');
       return RelationshipStatus.none;
     }
   }
@@ -212,7 +213,7 @@ class UsersRepository {
           await _firestore.collection(_blocksCollection).doc(blockId).get();
       return doc.exists;
     } catch (e) {
-      print('차단 상태 확인 오류: $e');
+      Logger.error('차단 상태 확인 오류: $e');
       return false;
     }
   }
@@ -228,7 +229,7 @@ class UsersRepository {
 
       return doc.exists;
     } catch (e) {
-      print('친구 관계 확인 오류: $e');
+      Logger.error('친구 관계 확인 오류: $e');
       return false;
     }
   }
@@ -273,7 +274,7 @@ class UsersRepository {
 
       return null;
     } catch (e) {
-      print('친구요청 상태 확인 오류: $e');
+      Logger.error('친구요청 상태 확인 오류: $e');
       return null;
     }
   }
@@ -296,7 +297,7 @@ class UsersRepository {
                 .toList();
           });
     } catch (e) {
-      print('받은 친구요청 조회 오류: $e');
+      Logger.error('받은 친구요청 조회 오류: $e');
       return Stream.value([]);
     }
   }
@@ -319,7 +320,7 @@ class UsersRepository {
                 .toList();
           });
     } catch (e) {
-      print('보낸 친구요청 조회 오류: $e');
+      Logger.error('보낸 친구요청 조회 오류: $e');
       return Stream.value([]);
     }
   }
@@ -360,7 +361,7 @@ class UsersRepository {
             return profiles;
           });
     } catch (e) {
-      print('친구 목록 조회 오류: $e');
+      Logger.error('친구 목록 조회 오류: $e');
       return Stream.value([]);
     }
   }
@@ -373,7 +374,7 @@ class UsersRepository {
           .doc(profile.uid)
           .update(profile.toFirestore());
     } catch (e) {
-      print('사용자 프로필 업데이트 오류: $e');
+      Logger.error('사용자 프로필 업데이트 오류: $e');
       rethrow;
     }
   }
@@ -394,7 +395,7 @@ class UsersRepository {
 
       await _firestore.collection(_usersCollection).doc(userId).update(updates);
     } catch (e) {
-      print('사용자 카운터 업데이트 오류: $e');
+      Logger.error('사용자 카운터 업데이트 오류: $e');
       rethrow;
     }
   }

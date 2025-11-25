@@ -13,6 +13,7 @@ import '../services/post_service.dart';
 import '../constants/app_constants.dart';
 import '../utils/country_flag_helper.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -177,7 +178,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
         // 기본 이미지로 변경하는 경우
         if (_useDefaultImage) {
-          print("🗑️ 기본 이미지로 변경 요청");
+          Logger.log("🗑️ 기본 이미지로 변경 요청");
           
           // resetProfilePhotoToDefault를 호출하여 Storage 이미지 삭제 및 과거 콘텐츠 업데이트
           success = await authProvider.resetProfilePhotoToDefault();
@@ -306,12 +307,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       final nickname = userData?['nickname'] ?? '익명';
       final photoURL = userData?['photoURL'];
       
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🔥 수동 게시물 업데이트 시작');
-      print('   - User ID: ${user.uid}');
-      print('   - Nickname: $nickname');
-      print('   - PhotoURL: ${photoURL ?? "없음"}');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🔥 수동 게시물 업데이트 시작');
+      Logger.log('   - User ID: ${user.uid}');
+      Logger.log('   - Nickname: $nickname');
+      Logger.log('   - PhotoURL: ${photoURL ?? "없음"}');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       // 1단계: users 컬렉션의 displayName을 nickname과 동기화
       try {
@@ -321,9 +322,9 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             .update({
           'displayName': nickname,
         });
-        print('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
+        Logger.log('✅ users 컬렉션의 displayName 동기화 완료: $nickname');
       } catch (e) {
-        print('⚠️ displayName 동기화 실패: $e');
+        Logger.error('⚠️ displayName 동기화 실패: $e');
       }
 
       // 2단계: PostService를 사용하여 게시물 업데이트
@@ -354,8 +355,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
       }
     } catch (e, stackTrace) {
-      print('❌ 수동 업데이트 오류: $e');
-      print('스택 트레이스: $stackTrace');
+      Logger.error('❌ 수동 업데이트 오류: $e');
+      Logger.log('스택 트레이스: $stackTrace');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

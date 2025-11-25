@@ -17,6 +17,7 @@ import '../dialogs/block_dialog.dart';
 import '../../screens/edit_meetup_screen.dart';
 import '../../screens/review_approval_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../utils/logger.dart';
 
 /// 최적화된 모임 카드
 class OptimizedMeetupCard extends StatefulWidget {
@@ -79,7 +80,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         });
       }
     } catch (e) {
-      print('참여 상태 확인 오류: $e');
+      Logger.error('참여 상태 확인 오류: $e');
       if (mounted) {
         setState(() {
           isCheckingParticipation = false;
@@ -114,7 +115,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         }
       }
     } catch (e) {
-      print('URL 열기 오류: $e');
+      Logger.error('URL 열기 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -655,15 +656,15 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       builder: (context, snapshot) {
         final isMyMeetup = snapshot.data ?? false;
         
-        print('🔍🔍🔍 [OptimizedMeetupCard] 권한 체크 상세 정보:');
-        print('   - 현재 사용자 UID: ${currentUser.uid}');
-        print('   - 모임 ID: ${currentMeetup.id}');
-        print('   - 모임 제목: ${currentMeetup.title}');
-        print('   - 모임 userId: ${currentMeetup.userId}');
-        print('   - 모임 hostNickname: ${currentMeetup.hostNickname}');
-        print('   - 모임 host: ${currentMeetup.host}');
-        print('   - isMyMeetup 결과: $isMyMeetup');
-        print('   - 표시될 메뉴: ${isMyMeetup ? "수정/삭제" : "신고/차단"}');
+        Logger.log('🔍🔍🔍 [OptimizedMeetupCard] 권한 체크 상세 정보:');
+        Logger.log('   - 현재 사용자 UID: ${currentUser.uid}');
+        Logger.log('   - 모임 ID: ${currentMeetup.id}');
+        Logger.log('   - 모임 제목: ${currentMeetup.title}');
+        Logger.log('   - 모임 userId: ${currentMeetup.userId}');
+        Logger.log('   - 모임 hostNickname: ${currentMeetup.hostNickname}');
+        Logger.log('   - 모임 host: ${currentMeetup.host}');
+        Logger.log('   - isMyMeetup 결과: $isMyMeetup');
+        Logger.log('   - 표시될 메뉴: ${isMyMeetup ? "수정/삭제" : "신고/차단"}');
 
         return _buildHeaderContent(context, colorScheme, currentUser, isMyMeetup);
       },
@@ -673,71 +674,71 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   /// 현재 사용자가 모임 작성자인지 확인
   Future<bool> _checkIsMyMeetup(User currentUser) async {
     try {
-      print('🔍 [_checkIsMyMeetup] 시작');
-      print('   - 현재 사용자 UID: ${currentUser.uid}');
-      print('   - 모임 userId: ${currentMeetup.userId}');
-      print('   - 모임 hostNickname: ${currentMeetup.hostNickname}');
+      Logger.log('🔍 [_checkIsMyMeetup] 시작');
+      Logger.log('   - 현재 사용자 UID: ${currentUser.uid}');
+      Logger.log('   - 모임 userId: ${currentMeetup.userId}');
+      Logger.log('   - 모임 hostNickname: ${currentMeetup.hostNickname}');
       
       // 1. userId가 있으면 userId로 비교 (새로운 데이터)
       if (currentMeetup.userId != null && currentMeetup.userId!.isNotEmpty) {
         final result = currentMeetup.userId == currentUser.uid;
-        print('   - userId 비교 결과: $result (${currentMeetup.userId} == ${currentUser.uid})');
+        Logger.log('   - userId 비교 결과: $result (${currentMeetup.userId} == ${currentUser.uid})');
         return result;
       } 
       
-      print('   - userId가 없음, hostNickname으로 비교 시도');
+      Logger.log('   - userId가 없음, hostNickname으로 비교 시도');
       
       // 2. userId가 없으면 hostNickname 또는 host로 비교 (기존 데이터 호환성)
       final hostToCheck = currentMeetup.hostNickname ?? currentMeetup.host;
-      print('   - hostToCheck: $hostToCheck (hostNickname: ${currentMeetup.hostNickname}, host: ${currentMeetup.host})');
+      Logger.log('   - hostToCheck: $hostToCheck (hostNickname: ${currentMeetup.hostNickname}, host: ${currentMeetup.host})');
       
       if (hostToCheck != null && hostToCheck.isNotEmpty) {
-        print('   - Firestore에서 현재 사용자 닉네임 조회 중...');
+        Logger.log('   - Firestore에서 현재 사용자 닉네임 조회 중...');
         
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(currentUser.uid)
             .get();
         
-        print('   - userDoc.exists: ${userDoc.exists}');
+        Logger.log('   - userDoc.exists: ${userDoc.exists}');
         
         if (userDoc.exists) {
           final userData = userDoc.data();
-          print('   - 전체 userData: $userData');
+          Logger.log('   - 전체 userData: $userData');
           
           final currentUserNickname = userData?['nickname'] as String?;
           
-          print('   - 현재 사용자 닉네임: "$currentUserNickname"');
-          print('   - 모임 hostToCheck: "$hostToCheck"');
-          print('   - 닉네임 타입 확인: currentUserNickname.runtimeType = ${currentUserNickname.runtimeType}');
-          print('   - hostToCheck 타입 확인: hostToCheck.runtimeType = ${hostToCheck.runtimeType}');
+          Logger.log('   - 현재 사용자 닉네임: "$currentUserNickname"');
+          Logger.log('   - 모임 hostToCheck: "$hostToCheck"');
+          Logger.log('   - 닉네임 타입 확인: currentUserNickname.runtimeType = ${currentUserNickname.runtimeType}');
+          Logger.log('   - hostToCheck 타입 확인: hostToCheck.runtimeType = ${hostToCheck.runtimeType}');
           
           if (currentUserNickname != null && currentUserNickname.isNotEmpty) {
             // 문자열 비교를 더 엄격하게
             final trimmedCurrentNickname = currentUserNickname.trim();
             final trimmedHostToCheck = hostToCheck.trim();
             
-            print('   - 트림된 현재 사용자 닉네임: "$trimmedCurrentNickname"');
-            print('   - 트림된 모임 hostToCheck: "$trimmedHostToCheck"');
+            Logger.log('   - 트림된 현재 사용자 닉네임: "$trimmedCurrentNickname"');
+            Logger.log('   - 트림된 모임 hostToCheck: "$trimmedHostToCheck"');
             
             final result = trimmedHostToCheck == trimmedCurrentNickname;
-            print('   - 📋 최종 닉네임 비교 결과: $result');
-            print('   - 📋 비교식: "$trimmedHostToCheck" == "$trimmedCurrentNickname"');
+            Logger.log('   - 📋 최종 닉네임 비교 결과: $result');
+            Logger.log('   - 📋 비교식: "$trimmedHostToCheck" == "$trimmedCurrentNickname"');
             return result;
           } else {
-            print('   - 현재 사용자 닉네임이 null이거나 비어있음');
+            Logger.log('   - 현재 사용자 닉네임이 null이거나 비어있음');
           }
         } else {
-          print('   - ❌ 사용자 문서가 존재하지 않음');
+          Logger.log('   - ❌ 사용자 문서가 존재하지 않음');
         }
       } else {
-        print('   - hostNickname과 host 모두 없음');
+        Logger.log('   - hostNickname과 host 모두 없음');
       }
       
-      print('   - 최종 결과: false (내 모임 아님)');
+      Logger.log('   - 최종 결과: false (내 모임 아님)');
       return false;
     } catch (e) {
-      print('❌ 권한 체크 오류: $e');
+      Logger.error('❌ 권한 체크 오류: $e');
       return false;
     }
   }
@@ -1507,7 +1508,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         ),
       );
     } catch (e) {
-      print('후기 확인 이동 오류: $e');
+      Logger.error('후기 확인 이동 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
@@ -1550,7 +1551,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         }
       }
     } catch (e) {
-      print('모임 참여 오류: $e');
+      Logger.error('모임 참여 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1596,7 +1597,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         }
       }
     } catch (e) {
-      print('모임 참여취소 오류: $e');
+      Logger.error('모임 참여취소 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1720,7 +1721,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         });
       }
     } catch (e) {
-      print('모임 데이터 새로고침 오류: $e');
+      Logger.error('모임 데이터 새로고침 오류: $e');
     }
   }
 

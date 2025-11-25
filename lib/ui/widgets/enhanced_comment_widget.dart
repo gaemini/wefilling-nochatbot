@@ -14,6 +14,7 @@ import '../../design/theme.dart';
 import '../../l10n/app_localizations.dart';
 import '../../services/dm_service.dart';
 import '../../screens/dm_chat_screen.dart';
+import '../../utils/logger.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -113,14 +114,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     try {
       // comment.userId가 올바른 Firebase UID인지 확인
-      print('🔍 DM 대상 확인 (댓글):');
-      print('  - comment.userId: ${widget.comment.userId}');
-      print('  - comment.author: ${widget.comment.authorNickname}');
+      Logger.log('🔍 DM 대상 확인 (댓글):');
+      Logger.log('  - comment.userId: ${widget.comment.userId}');
+      Logger.log('  - comment.author: ${widget.comment.authorNickname}');
       
       // Firebase Auth UID 형식 검증 (28자 영숫자)
       final uidPattern = RegExp(r'^[a-zA-Z0-9]{28}$');
       if (!uidPattern.hasMatch(widget.comment.userId)) {
-        print('❌ 잘못된 userId 형식: ${widget.comment.userId}');
+        Logger.log('❌ 잘못된 userId 형식: ${widget.comment.userId}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -138,7 +139,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         postId: widget.postId,
       );
       
-      print('✅ DM conversation ID 생성됨: $conversationId');
+      Logger.log('✅ DM conversation ID 생성됨: $conversationId');
 
       if (mounted) {
         Navigator.push(
@@ -152,8 +153,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         );
       }
     } catch (e) {
-      print('❌ DM 열기 오류: $e');
-      print('오류 타입: ${e.runtimeType}');
+      Logger.error('❌ DM 열기 오류: $e');
+      Logger.error('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM ?? "")),
@@ -196,7 +197,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return deletedText;
       }
     } catch (e) {
-      print('닉네임 조회 오류: $e');
+      Logger.error('닉네임 조회 오류: $e');
     }
     // 조회 실패 시 댓글에 저장된 닉네임 반환
     return widget.comment.authorNickname;
@@ -224,7 +225,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         );
       }
     } catch (e) {
-      print('댓글 좋아요 토글 오류: $e');
+      Logger.error('댓글 좋아요 토글 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),

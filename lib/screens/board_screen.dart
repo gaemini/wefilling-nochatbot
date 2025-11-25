@@ -14,6 +14,7 @@ import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class BoardScreen extends StatefulWidget {
   final String? searchQuery;
@@ -54,11 +55,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   @override
   void dispose() {
-    print('🔄 BoardScreen dispose 시작');
+    Logger.log('🔄 BoardScreen dispose 시작');
     _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
-    print('✅ BoardScreen dispose 완료');
+    Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
   }
 

@@ -5,6 +5,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/friend_category.dart';
+import '../utils/logger.dart';
 
 class FriendCategoryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -15,12 +16,12 @@ class FriendCategoryService {
 
   // 모든 스트림 구독 정리
   void dispose() {
-    print('FriendCategoryService: ${_activeSubscriptions.length}개 스트림 정리 중...');
+    Logger.log('FriendCategoryService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
     _activeSubscriptions.clear();
-    print('FriendCategoryService: 모든 스트림 정리 완료');
+    Logger.log('FriendCategoryService: 모든 스트림 정리 완료');
   }
 
   // 현재 사용자의 모든 카테고리 가져오기
@@ -33,7 +34,7 @@ class FriendCategoryService {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .handleError((error) {
-          print('카테고리 스트림 오류: $error');
+          Logger.error('카테고리 스트림 오류: $error');
           return Stream.value([]);
         })
         .map((snapshot) {
@@ -43,7 +44,7 @@ class FriendCategoryService {
               try {
                 return FriendCategory.fromFirestore(doc);
               } catch (e) {
-                print('카테고리 파싱 오류: $e, 문서 ID: ${doc.id}');
+                Logger.error('카테고리 파싱 오류: $e, 문서 ID: ${doc.id}');
                 return null;
               }
             })
@@ -55,7 +56,7 @@ class FriendCategoryService {
         categories.sort((a, b) => a.createdAt.compareTo(b.createdAt));
         return categories;
       } catch (e) {
-        print('카테고리 리스트 처리 오류: $e');
+        Logger.error('카테고리 리스트 처리 오류: $e');
         return <FriendCategory>[];
       }
     });
@@ -90,7 +91,7 @@ class FriendCategoryService {
 
       return docRef.id;
     } catch (e) {
-      print('카테고리 생성 오류: $e');
+      Logger.error('카테고리 생성 오류: $e');
       return null;
     }
   }
@@ -123,7 +124,7 @@ class FriendCategoryService {
 
       return true;
     } catch (e) {
-      print('카테고리 수정 오류: $e');
+      Logger.error('카테고리 수정 오류: $e');
       return false;
     }
   }
@@ -145,7 +146,7 @@ class FriendCategoryService {
 
       return true;
     } catch (e) {
-      print('카테고리 삭제 오류: $e');
+      Logger.error('카테고리 삭제 오류: $e');
       return false;
     }
   }
@@ -173,7 +174,7 @@ class FriendCategoryService {
 
       return true;
     } catch (e) {
-      print('친구 카테고리 추가 오류: $e');
+      Logger.error('친구 카테고리 추가 오류: $e');
       return false;
     }
   }
@@ -197,7 +198,7 @@ class FriendCategoryService {
 
       return true;
     } catch (e) {
-      print('친구 카테고리 제거 오류: $e');
+      Logger.error('친구 카테고리 제거 오류: $e');
       return false;
     }
   }
@@ -207,7 +208,7 @@ class FriendCategoryService {
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        print('기본 카테고리 생성 실패: 사용자가 로그인되지 않음');
+        Logger.error('기본 카테고리 생성 실패: 사용자가 로그인되지 않음');
         return false;
       }
 
@@ -219,7 +220,7 @@ class FriendCategoryService {
           .get();
 
       if (existingCategories.docs.isNotEmpty) {
-        print('기본 카테고리 생성 건너뜀: 이미 카테고리가 존재함');
+        Logger.log('기본 카테고리 생성 건너뜀: 이미 카테고리가 존재함');
         return true;
       }
 
@@ -238,10 +239,10 @@ class FriendCategoryService {
       }
 
       await batch.commit();
-      print('기본 카테고리 ${DefaultFriendCategories.defaults.length}개 생성 완료');
+      Logger.log('기본 카테고리 ${DefaultFriendCategories.defaults.length}개 생성 완료');
       return true;
     } catch (e) {
-      print('기본 카테고리 생성 오류: $e');
+      Logger.error('기본 카테고리 생성 오류: $e');
       return false;
     }
   }
@@ -265,24 +266,24 @@ class FriendCategoryService {
 
       return null;
     } catch (e) {
-      print('친구 카테고리 검색 오류: $e');
+      Logger.error('친구 카테고리 검색 오류: $e');
       return null;
     }
   }
 
   // 친구를 모든 카테고리에서 제거
   Future<void> removeFriendFromAllCategories(String friendId) async {
-    print('   ┌─────────────────────────────────');
-    print('   │ removeFriendFromAllCategories 시작');
-    print('   │ friendId: $friendId');
+    Logger.log('   ┌─────────────────────────────────');
+    Logger.log('   │ removeFriendFromAllCategories 시작');
+    Logger.log('   │ friendId: $friendId');
     
     final user = _auth.currentUser;
     if (user == null) {
-      print('   │ ❌ 로그인된 사용자 없음');
-      print('   └─────────────────────────────────');
+      Logger.log('   │ ❌ 로그인된 사용자 없음');
+      Logger.log('   └─────────────────────────────────');
       return;
     }
-    print('   │ 현재 사용자: ${user.uid}');
+    Logger.log('   │ 현재 사용자: ${user.uid}');
 
     // 해당 친구를 포함하는 카테고리 찾기
     final snapshot = await _firestore
@@ -291,20 +292,20 @@ class FriendCategoryService {
         .where('friendIds', arrayContains: friendId)
         .get();
 
-    print('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
+    Logger.log('   │ 찾은 카테고리 수: ${snapshot.docs.length}');
     
     if (snapshot.docs.isEmpty) {
-      print('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
-      print('   └─────────────────────────────────');
+      Logger.log('   │ ℹ️ 해당 친구가 속한 카테고리 없음');
+      Logger.log('   └─────────────────────────────────');
       return;
     }
 
     // 각 카테고리 정보 출력
     for (var doc in snapshot.docs) {
       final data = doc.data();
-      print('   │ 카테고리: ${data['name']}');
-      print('   │   - ID: ${doc.id}');
-      print('   │   - 현재 친구 수: ${(data['friendIds'] as List).length}');
+      Logger.log('   │ 카테고리: ${data['name']}');
+      Logger.log('   │   - ID: ${doc.id}');
+      Logger.log('   │   - 현재 친구 수: ${(data['friendIds'] as List).length}');
     }
 
     // 배치로 한 번에 업데이트
@@ -316,11 +317,11 @@ class FriendCategoryService {
       });
     }
 
-    print('   │ Firestore 배치 업데이트 실행 중...');
+    Logger.log('   │ Firestore 배치 업데이트 실행 중...');
     await batch.commit();
-    print('   │ ✅ Firestore 배치 커밋 완료');
-    print('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
-    print('   └─────────────────────────────────');
+    Logger.log('   │ ✅ Firestore 배치 커밋 완료');
+    Logger.log('   │ ${snapshot.docs.length}개 카테고리에서 제거됨');
+    Logger.log('   └─────────────────────────────────');
   }
 
   // 카테고리 삭제 시 친구들을 기본 카테고리로 이동
@@ -361,7 +362,7 @@ class FriendCategoryService {
         });
       }
     } catch (e) {
-      print('친구 이동 오류: $e');
+      Logger.error('친구 이동 오류: $e');
     }
   }
 }

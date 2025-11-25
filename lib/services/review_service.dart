@@ -5,6 +5,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/review_post.dart';
+import '../utils/logger.dart';
 
 class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -28,7 +29,7 @@ class ReviewService {
           .asyncMap((snapshot) async {
         final reviews = <ReviewPost>[];
         
-        print('📊 후기 조회: ${snapshot.docs.length}개 문서 발견');
+        Logger.log('📊 후기 조회: ${snapshot.docs.length}개 문서 발견');
         
         // 실제 사용자 정보 한 번만 조회
         String authorName = '익명';
@@ -42,7 +43,7 @@ class ReviewService {
             authorProfileImage = userData['photoURL'] ?? '';
           }
         } catch (e) {
-          print('⚠️ 사용자 정보 조회 실패: $e');
+          Logger.error('⚠️ 사용자 정보 조회 실패: $e');
         }
         
         for (var doc in snapshot.docs) {
@@ -77,26 +78,26 @@ class ReviewService {
             
             reviews.add(review);
             if (data['isHidden'] == true) {
-              print('👁️ 숨겨진 후기 포함 (본인): ${doc.id} - ${review.meetupTitle}');
+              Logger.log('👁️ 숨겨진 후기 포함 (본인): ${doc.id} - ${review.meetupTitle}');
             } else {
-              print('✅ 후기 추가: ${doc.id} - ${review.meetupTitle}');
+              Logger.log('✅ 후기 추가: ${doc.id} - ${review.meetupTitle}');
             }
           } catch (e) {
-            print('❌ 개별 후기 파싱 오류: $e');
+            Logger.error('❌ 개별 후기 파싱 오류: $e');
             // 개별 문서 오류는 건너뛰고 계속 진행
           }
         }
         
         // 메모리에서 정렬 (인덱스 문제 회피)
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        print('📋 최종 후기 목록: ${reviews.length}개');
+        Logger.log('📋 최종 후기 목록: ${reviews.length}개');
         return reviews;
       }).handleError((error) {
-        print('❌ 후기 스트림 오류: $error');
+        Logger.error('❌ 후기 스트림 오류: $error');
         return <ReviewPost>[];
       });
     } catch (e) {
-      print('❌ getUserReviews 오류: $e');
+      Logger.error('❌ getUserReviews 오류: $e');
       return Stream.value([]);
     }
   }
@@ -150,7 +151,7 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('후기 추가 오류: $e');
+      Logger.error('후기 추가 오류: $e');
       return false;
     }
   }
@@ -175,7 +176,7 @@ class ReviewService {
 
       return true;
     } catch (e) {
-      print('후기 수정 오류: $e');
+      Logger.error('후기 수정 오류: $e');
       return false;
     }
   }
@@ -191,7 +192,7 @@ class ReviewService {
       await _firestore.collection('reviews').doc(reviewId).delete();
       return true;
     } catch (e) {
-      print('후기 삭제 오류: $e');
+      Logger.error('후기 삭제 오류: $e');
       return false;
     }
   }
@@ -209,7 +210,7 @@ class ReviewService {
       }
       return null;
     } catch (e) {
-      print('후기 조회 오류: $e');
+      Logger.error('후기 조회 오류: $e');
       return null;
     }
   }
@@ -240,7 +241,7 @@ class ReviewService {
           .get();
       return snapshot.docs.length;
     } catch (e) {
-      print('후기 수 조회 오류: $e');
+      Logger.error('후기 수 조회 오류: $e');
       return 0;
     }
   }
@@ -258,7 +259,7 @@ class ReviewService {
           .map((snapshot) {
         final reviews = <ReviewPost>[];
         
-        print('📊 친구 후기 조회: ${snapshot.docs.length}개 문서 발견 (userId: $userId)');
+        Logger.log('📊 친구 후기 조회: ${snapshot.docs.length}개 문서 발견 (userId: $userId)');
         
         for (var doc in snapshot.docs) {
           try {
@@ -266,7 +267,7 @@ class ReviewService {
             
             // 다른 사람 프로필: isHidden이 true인 경우 건너뛰기
             if (data['isHidden'] == true) {
-              print('⏭️ 숨겨진 후기 건너뛰기 (다른 사람 프로필): ${doc.id}');
+              Logger.log('⏭️ 숨겨진 후기 건너뛰기 (다른 사람 프로필): ${doc.id}');
               continue;
             }
             
@@ -294,20 +295,20 @@ class ReviewService {
             );
             
             reviews.add(review);
-            print('✅ 친구 후기 추가: ${doc.id} - ${review.meetupTitle}');
+            Logger.log('✅ 친구 후기 추가: ${doc.id} - ${review.meetupTitle}');
           } catch (e) {
-            print('❌ 후기 파싱 오류: $e');
+            Logger.error('❌ 후기 파싱 오류: $e');
             // 개별 문서 오류는 무시하고 계속 진행
           }
         }
         
         // 메모리에서 정렬
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        print('📋 최종 친구 후기 목록: ${reviews.length}개');
+        Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
         return reviews;
       });
     } catch (e) {
-      print('❌ 후기 스트림 오류: $e');
+      Logger.error('❌ 후기 스트림 오류: $e');
       return Stream.value([]);
     }
   }
@@ -331,10 +332,10 @@ class ReviewService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ 후기 숨김 처리 완료: $reviewId');
+      Logger.log('✅ 후기 숨김 처리 완료: $reviewId');
       return true;
     } catch (e) {
-      print('❌ 후기 숨김 오류: $e');
+      Logger.error('❌ 후기 숨김 오류: $e');
       return false;
     }
   }
@@ -358,10 +359,10 @@ class ReviewService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      print('✅ 후기 숨김 해제 완료: $reviewId');
+      Logger.log('✅ 후기 숨김 해제 완료: $reviewId');
       return true;
     } catch (e) {
-      print('❌ 후기 숨김 해제 오류: $e');
+      Logger.error('❌ 후기 숨김 해제 오류: $e');
       return false;
     }
   }
@@ -374,7 +375,7 @@ class ReviewService {
         throw Exception('로그인이 필요합니다');
       }
 
-      print('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
+      Logger.log('❤️ 좋아요 토글: reviewId=$reviewId, userId=$userId');
 
       // users/{userId}/posts/{reviewId} 문서 가져오기
       final reviewRef = _firestore
@@ -385,7 +386,7 @@ class ReviewService {
 
       final reviewDoc = await reviewRef.get();
       if (!reviewDoc.exists) {
-        print('❌ 후기를 찾을 수 없음');
+        Logger.log('❌ 후기를 찾을 수 없음');
         return false;
       }
 
@@ -399,19 +400,19 @@ class ReviewService {
           'likedBy': FieldValue.arrayRemove([user.uid]),
           'likeCount': FieldValue.increment(-1),
         });
-        print('💔 좋아요 취소 완료');
+        Logger.log('💔 좋아요 취소 완료');
       } else {
         // 좋아요 추가
         await reviewRef.update({
           'likedBy': FieldValue.arrayUnion([user.uid]),
           'likeCount': FieldValue.increment(1),
         });
-        print('❤️ 좋아요 추가 완료');
+        Logger.log('❤️ 좋아요 추가 완료');
       }
 
       return true;
     } catch (e) {
-      print('❌ 좋아요 토글 오류: $e');
+      Logger.error('❌ 좋아요 토글 오류: $e');
       return false;
     }
   }
@@ -444,7 +445,7 @@ class ReviewService {
             authorProfileImage = userData['photoURL'] ?? '';
           }
         } catch (e) {
-          print('⚠️ 사용자 정보 조회 실패: $e');
+          Logger.error('⚠️ 사용자 정보 조회 실패: $e');
         }
         
         return ReviewPost(
@@ -470,7 +471,7 @@ class ReviewService {
         );
       });
     } catch (e) {
-      print('❌ 후기 스트림 오류: $e');
+      Logger.error('❌ 후기 스트림 오류: $e');
       return Stream.value(null);
     }
   }

@@ -11,7 +11,11 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/fcm_service.dart';
+import '../config/app_config.dart';
+import '../utils/logger.dart';
+import '../utils/logger.dart';
 
 class AuthProvider with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -41,14 +45,12 @@ class AuthProvider with ChangeNotifier {
     // Google Sign-In 7.x 초기화 (플랫폼별 분기)
     try {
       // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
-      final clientId = (Platform.isIOS || Platform.isMacOS)
-          ? '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com'
-          : null;
+      final clientId = AppConfig.getGoogleClientId();
       
       await _googleSignIn.initialize(clientId: clientId);
-      print('Google Sign-In 초기화 완료');
+      Logger.log('Google Sign-In 초기화 완료');
     } catch (e) {
-      print('Google Sign-In 초기화 실패: $e');
+      Logger.error('Google Sign-In 초기화 실패: $e');
     }
 
     // 먼저 현재 사용자 확인
@@ -135,10 +137,10 @@ class AuthProvider with ChangeNotifier {
         }
       } catch (e) {
         retryCount++;
-        print('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
+        Logger.error('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
         
         if (retryCount >= maxRetries) {
-          print('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
+          Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
           try {
             // 마지막으로 캐시에서만 시도
             final cachedDoc = await _firestore
@@ -147,7 +149,7 @@ class AuthProvider with ChangeNotifier {
                 .get(const GetOptions(source: Source.cache));
             _userData = cachedDoc.exists ? cachedDoc.data() : null;
           } catch (cacheError) {
-            print('캐시에서도 데이터 로드 실패: $cacheError');
+            Logger.error('캐시에서도 데이터 로드 실패: $cacheError');
             _userData = null;
           }
           break;
@@ -201,13 +203,13 @@ class AuthProvider with ChangeNotifier {
           // 신규 사용자 - 회원가입 필요
           if (skipEmailVerifiedCheck) {
             // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
-            print('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+            Logger.log('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
             _isLoading = false;
             notifyListeners();
             return true; // 로그인 허용 (completeEmailVerification 실행 예정)
           }
           
-          print('❌ 신규 사용자: 회원가입이 필요합니다.');
+          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
@@ -228,7 +230,7 @@ class AuthProvider with ChangeNotifier {
 
         if (!emailVerified && !skipEmailVerifiedCheck) {
           // 한양메일 인증 미완료
-          print('❌ 한양메일 인증이 완료되지 않았습니다.');
+          Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
@@ -250,9 +252,9 @@ class AuthProvider with ChangeNotifier {
         // FCM 초기화 (알림 기능)
         try {
           await FCMService().initialize(_user!.uid);
-          print('✅ FCM 초기화 완료');
+          Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
-          print('⚠️ FCM 초기화 실패 (계속 진행): $e');
+          Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
           // FCM 실패해도 로그인은 계속 진행
         }
       }
@@ -262,20 +264,20 @@ class AuthProvider with ChangeNotifier {
       // Google Sign-In 관련 예외 처리
       final errorMessage = e.toString();
       if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
-        print('사용자가 Google 로그인을 취소했습니다: $e');
+        Logger.log('사용자가 Google 로그인을 취소했습니다: $e');
         // 취소는 오류가 아니므로 조용히 처리
       } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
                  errorMessage.contains('connection') || errorMessage.contains('Connection')) {
-        print('네트워크 연결 오류: $e');
+        Logger.error('네트워크 연결 오류: $e');
         // 네트워크 오류 시 재시도 가능하도록 상태 초기화
       } else {
-        print('구글 로그인 오류: $e');
+        Logger.error('구글 로그인 오류: $e');
       }
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
-      print('구글 로그인 예상치 못한 오류: $e');
+      Logger.error('구글 로그인 예상치 못한 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -286,14 +288,14 @@ class AuthProvider with ChangeNotifier {
   // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
   Future<bool> signInWithApple({bool skipEmailVerifiedCheck = false}) async {
     try {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🍎 Apple Sign In 시작');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🍎 Apple Sign In 시작');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       // 플랫폼 체크
       if (!Platform.isIOS && !Platform.isMacOS) {
-        print('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
-        print('   현재 플랫폼: ${Platform.operatingSystem}');
+        Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
+        Logger.log('   현재 플랫폼: ${Platform.operatingSystem}');
         _isLoading = false;
         notifyListeners();
         return false;
@@ -303,19 +305,19 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
 
       // Apple Sign-In 직접 호출 (Google과 일관성 유지)
-      print('🍎 AppleAuthProvider 생성 중...');
+      Logger.log('🍎 AppleAuthProvider 생성 중...');
       final appleProvider = AppleAuthProvider();
       appleProvider.addScope('email');
       appleProvider.addScope('name');
-      print('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
+      Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
       
-      print('🍎 Firebase Auth signInWithProvider 호출 중...');
+      Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
       final userCredential = await _auth.signInWithProvider(appleProvider);
       
-      print('🍎 Apple Sign In 성공!');
-      print('   User ID: ${userCredential.user?.uid}');
-      print('   Email: ${userCredential.user?.email ?? "비공개"}');
-      print('   Display Name: ${userCredential.user?.displayName ?? "없음"}');
+      Logger.log('🍎 Apple Sign In 성공!');
+      Logger.log('   User ID: ${userCredential.user?.uid}');
+      Logger.log('   Email: ${userCredential.user?.email ?? "비공개"}');
+      Logger.log('   Display Name: ${userCredential.user?.displayName ?? "없음"}');
 
       // 사용자 정보 업데이트
       _user = userCredential.user;
@@ -332,13 +334,13 @@ class AuthProvider with ChangeNotifier {
           // 신규 사용자 - 회원가입 필요
           if (skipEmailVerifiedCheck) {
             // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
-            print('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+            Logger.log('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
             _isLoading = false;
             notifyListeners();
             return true; // 로그인 허용 (completeEmailVerification 실행 예정)
           }
           
-          print('❌ 신규 사용자: 회원가입이 필요합니다.');
+          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
@@ -359,7 +361,7 @@ class AuthProvider with ChangeNotifier {
 
         if (!emailVerified && !skipEmailVerifiedCheck) {
           // 한양메일 인증 미완료
-          print('❌ 한양메일 인증이 완료되지 않았습니다.');
+          Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
@@ -381,29 +383,29 @@ class AuthProvider with ChangeNotifier {
         // FCM 초기화 (알림 기능)
         try {
           await FCMService().initialize(_user!.uid);
-          print('✅ FCM 초기화 완료');
+          Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
-          print('⚠️ FCM 초기화 실패 (계속 진행): $e');
+          Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
           // FCM 실패해도 로그인은 계속 진행
         }
       }
 
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return _user != null;
     } on FirebaseAuthException catch (e) {
       // Firebase Auth 관련 예외 처리 (구체적)
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🍎 Apple Sign In 실패 (FirebaseAuthException)');
-      print('   에러 코드: ${e.code}');
-      print('   에러 메시지: ${e.message}');
-      print('   상세 정보: ${e.toString()}');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('🍎 Apple Sign In 실패 (FirebaseAuthException)');
+      Logger.error('   에러 코드: ${e.code}');
+      Logger.error('   에러 메시지: ${e.message}');
+      Logger.log('   상세 정보: ${e.toString()}');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       if (e.code == 'unknown') {
-        print('💡 해결 방법:');
-        print('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
-        print('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
-        print('   3. 실제 iOS 기기에서 테스트 권장');
+        Logger.log('💡 해결 방법:');
+        Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
+        Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
+        Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
       }
       
       _isLoading = false;
@@ -411,27 +413,27 @@ class AuthProvider with ChangeNotifier {
       return false;
     } on Exception catch (e) {
       // 기타 예외 처리
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🍎 Apple Sign In 실패 (Exception)');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('🍎 Apple Sign In 실패 (Exception)');
       final errorMessage = e.toString();
       if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
-        print('   사용자가 Apple 로그인을 취소했습니다');
+        Logger.log('   사용자가 Apple 로그인을 취소했습니다');
       } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
                  errorMessage.contains('connection') || errorMessage.contains('Connection')) {
-        print('   네트워크 연결 오류');
+        Logger.error('   네트워크 연결 오류');
       } else {
-        print('   에러: $e');
+        Logger.error('   에러: $e');
       }
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
     } catch (e) {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🍎 Apple Sign In 실패 (알 수 없는 에러)');
-      print('   에러 타입: ${e.runtimeType}');
-      print('   에러 내용: $e');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('🍎 Apple Sign In 실패 (알 수 없는 에러)');
+      Logger.error('   에러 타입: ${e.runtimeType}');
+      Logger.error('   에러 내용: $e');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -454,7 +456,7 @@ class AuthProvider with ChangeNotifier {
         
         // nickname이 있고 displayName과 다르면 동기화
         if (nickname != null && nickname != displayName) {
-          print('🔄 로그인 시 displayName 자동 동기화: "$displayName" → "$nickname"');
+          Logger.log('🔄 로그인 시 displayName 자동 동기화: "$displayName" → "$nickname"');
           await docRef.update({
             'displayName': nickname,
             'lastLogin': FieldValue.serverTimestamp(),
@@ -465,7 +467,7 @@ class AuthProvider with ChangeNotifier {
         }
       }
     } catch (e) {
-      print('사용자 문서 업데이트 오류: $e');
+      Logger.error('사용자 문서 업데이트 오류: $e');
     }
   }
 
@@ -486,7 +488,7 @@ class AuthProvider with ChangeNotifier {
       await _loadUserData();
       return true;
     } catch (e) {
-      print('닉네임 업데이트 오류: $e');
+      Logger.error('닉네임 업데이트 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -510,15 +512,15 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      print("Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality, photoURL=${photoURL != null ? '변경됨' : '없음'}");
+      Logger.log("Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality, photoURL=${photoURL != null ? '변경됨' : '없음'}");
 
       // 기존 닉네임 및 사진 확인 (로깅용)
       final oldNickname = _userData?['nickname'];
       final oldPhotoURL = _userData?['photoURL'];
       
-      print("기존 프로필 정보:");
-      print("  - 기존 닉네임: '$oldNickname'");
-      print("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
+      Logger.log("기존 프로필 정보:");
+      Logger.log("  - 기존 닉네임: '$oldNickname'");
+      Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
 
       while (retryCount < maxRetries) {
         try {
@@ -539,9 +541,9 @@ class AuthProvider with ChangeNotifier {
             updateData['photoURL'] = photoURL;
           }
           
-          print("Firestore 업데이트 시작...");
+          Logger.log("Firestore 업데이트 시작...");
           await _firestore.collection('users').doc(_user!.uid).update(updateData);
-          print("✅ Firestore 업데이트 완료 (displayName과 nickname 동기화)");
+          Logger.log("✅ Firestore 업데이트 완료 (displayName과 nickname 동기화)");
           
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
           if (photoURL != null) {
@@ -551,17 +553,17 @@ class AuthProvider with ChangeNotifier {
               await _user!.updatePhotoURL(authPhotoURL);
               await _user!.reload();
               _user = _auth.currentUser;
-              print("✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
+              Logger.log("✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
             } catch (authError) {
-              print('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
+              Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
               // Auth 업데이트 실패해도 계속 진행
             }
           }
           
           // 🔥 조건 없이 항상 모든 게시글과 모임글 업데이트
-          print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          print("🔥 모든 과거 콘텐츠 업데이트 시작!");
-          print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+          Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+          Logger.log("🔥 모든 과거 콘텐츠 업데이트 시작!");
+          Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
           
           // photoURL이 없으면 기존 것을 사용하거나 빈 문자열
           final finalPhotoURL = photoURL ?? oldPhotoURL ?? '';
@@ -571,7 +573,7 @@ class AuthProvider with ChangeNotifier {
           return true;
         } catch (e) {
           retryCount++;
-          print('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
+          Logger.error('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
           
           if (retryCount >= maxRetries) {
             throw e; // 마지막 시도에서 실패하면 예외 발생
@@ -584,7 +586,7 @@ class AuthProvider with ChangeNotifier {
       
       return false;
     } catch (e) {
-      print('프로필 업데이트 최종 실패: $e');
+      Logger.error('프로필 업데이트 최종 실패: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -594,7 +596,7 @@ class AuthProvider with ChangeNotifier {
   // 공개 메서드: 수동으로 모든 콘텐츠 업데이트
   Future<bool> manuallyUpdateAllContent() async {
     if (_user == null) {
-      print('❌ manuallyUpdateAllContent: 사용자가 null입니다');
+      Logger.log('❌ manuallyUpdateAllContent: 사용자가 null입니다');
       return false;
     }
 
@@ -603,15 +605,15 @@ class AuthProvider with ChangeNotifier {
       final photoURL = _userData?['photoURL'];
       final nationality = _userData?['nationality'] ?? '';
       
-      print('🔧 수동 콘텐츠 업데이트 시작');
-      print('   - 현재 닉네임: $nickname');
-      print('   - 현재 photoURL: ${photoURL ?? '없음'}');
-      print('   - 현재 nationality: $nationality');
+      Logger.log('🔧 수동 콘텐츠 업데이트 시작');
+      Logger.log('   - 현재 닉네임: $nickname');
+      Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
+      Logger.log('   - 현재 nationality: $nationality');
       
       await _updateAllUserContent(nickname, photoURL, nationality);
       return true;
     } catch (e) {
-      print('❌ 수동 콘텐츠 업데이트 실패: $e');
+      Logger.error('❌ 수동 콘텐츠 업데이트 실패: $e');
       return false;
     }
   }
@@ -619,7 +621,7 @@ class AuthProvider with ChangeNotifier {
   // 프로필 이미지를 기본 이미지로 초기화
   Future<bool> resetProfilePhotoToDefault() async {
     if (_user == null) {
-      print('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
+      Logger.log('❌ resetProfilePhotoToDefault: 사용자가 null입니다');
       return false;
     }
 
@@ -627,12 +629,12 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      print("🗑️ 프로필 이미지를 기본 이미지로 초기화");
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("🗑️ 프로필 이미지를 기본 이미지로 초기화");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
       final oldPhotoURL = _userData?['photoURL'];
-      print("기존 photoURL: ${oldPhotoURL ?? '없음'}");
+      Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
 
       // 1. Firebase Storage에서 기존 프로필 이미지 삭제
       if (oldPhotoURL != null && oldPhotoURL.isNotEmpty) {
@@ -646,19 +648,19 @@ class AuthProvider with ChangeNotifier {
             // URL 디코딩하여 실제 경로 얻기
             final decodedPath = Uri.decodeComponent(path);
             
-            print("🗑️ Storage에서 이미지 삭제 시도: $decodedPath");
+            Logger.log("🗑️ Storage에서 이미지 삭제 시도: $decodedPath");
             
             try {
               final ref = FirebaseStorage.instance.ref().child(decodedPath);
               await ref.delete();
-              print("✅ Storage 이미지 삭제 완료");
+              Logger.log("✅ Storage 이미지 삭제 완료");
             } catch (storageError) {
-              print("⚠️ Storage 이미지 삭제 실패 (파일이 이미 없을 수 있음): $storageError");
+              Logger.error("⚠️ Storage 이미지 삭제 실패 (파일이 이미 없을 수 있음): $storageError");
               // 파일이 없어도 계속 진행
             }
           }
         } catch (e) {
-          print("⚠️ Storage 이미지 삭제 중 오류: $e");
+          Logger.error("⚠️ Storage 이미지 삭제 중 오류: $e");
           // 오류가 발생해도 계속 진행
         }
       }
@@ -668,23 +670,23 @@ class AuthProvider with ChangeNotifier {
         'photoURL': '',
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
+      Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
 
       // 3. Firebase Auth photoURL을 null로 업데이트
       try {
         await _user!.updatePhotoURL(null);
         await _user!.reload();
         _user = _auth.currentUser;
-        print("✅ Firebase Auth photoURL을 null로 업데이트 완료");
+        Logger.log("✅ Firebase Auth photoURL을 null로 업데이트 완료");
       } catch (authError) {
-        print('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
+        Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
         // Auth 업데이트 실패해도 계속 진행
       }
 
       // 4. 과거 게시글 및 댓글의 authorPhotoUrl 업데이트
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      print("🔥 모든 과거 콘텐츠 업데이트 시작!");
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("🔥 모든 과거 콘텐츠 업데이트 시작!");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       
       final nickname = _userData?['nickname'] ?? '익명';
       final nationality = _userData?['nationality'] ?? '';
@@ -696,13 +698,13 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       notifyListeners();
 
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      print("✅ 프로필 이미지 초기화 완료!");
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("✅ 프로필 이미지 초기화 완료!");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       
       return true;
     } catch (e) {
-      print('❌ 프로필 이미지 초기화 실패: $e');
+      Logger.error('❌ 프로필 이미지 초기화 실패: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -712,13 +714,13 @@ class AuthProvider with ChangeNotifier {
   // 사용자가 작성한 모든 게시글 및 모임글의 작성자 정보 업데이트
   Future<void> _updateAllUserContent(String newNickname, String? newPhotoURL, String newNationality) async {
     if (_user == null) {
-      print('❌ _updateAllUserContent: 사용자가 null입니다');
+      Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
       return;
     }
 
     try {
       final userId = _user!.uid;
-      print('🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
+      Logger.log('🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
       
       // Firestore의 배치는 최대 500개 작업만 가능
       // 따라서 큰 데이터셋의 경우 여러 배치로 나눠서 처리
@@ -728,16 +730,16 @@ class AuthProvider with ChangeNotifier {
       const maxOperationsPerBatch = 500;
 
       // 1. 게시글 업데이트
-      print("📝 게시글 작성자 정보 업데이트 시작...");
+      Logger.log("📝 게시글 작성자 정보 업데이트 시작...");
       QuerySnapshot postsQuery;
       try {
         postsQuery = await _firestore
             .collection('posts')
             .where('userId', isEqualTo: userId)
             .get();
-        print("   → 찾은 게시글: ${postsQuery.docs.length}개");
+        Logger.log("   → 찾은 게시글: ${postsQuery.docs.length}개");
       } catch (e) {
-        print("❌ 게시글 조회 실패: $e");
+        Logger.error("❌ 게시글 조회 실패: $e");
         throw e;
       }
 
@@ -746,7 +748,7 @@ class AuthProvider with ChangeNotifier {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          print("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
         
         final updateData = <String, dynamic>{
@@ -759,19 +761,19 @@ class AuthProvider with ChangeNotifier {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      print("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
+      Logger.log("✅ 게시글 ${postsQuery.docs.length}개 배치에 추가 완료");
 
       // 2. 모임글 업데이트
-      print("🎉 모임 주최자 정보 업데이트 시작...");
+      Logger.log("🎉 모임 주최자 정보 업데이트 시작...");
       QuerySnapshot meetupsQuery;
       try {
         meetupsQuery = await _firestore
             .collection('meetups')
             .where('userId', isEqualTo: userId)
             .get();
-        print("   → 찾은 모임: ${meetupsQuery.docs.length}개");
+        Logger.log("   → 찾은 모임: ${meetupsQuery.docs.length}개");
       } catch (e) {
-        print("❌ 모임 조회 실패: $e");
+        Logger.error("❌ 모임 조회 실패: $e");
         throw e;
       }
 
@@ -780,7 +782,7 @@ class AuthProvider with ChangeNotifier {
           batches.add(_firestore.batch());
           currentBatchIndex++;
           operationCount = 0;
-          print("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+          Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
         
         final updateData = <String, dynamic>{
@@ -793,10 +795,10 @@ class AuthProvider with ChangeNotifier {
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
-      print("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
+      Logger.log("✅ 모임 ${meetupsQuery.docs.length}개 배치에 추가 완료");
 
       // 3. 댓글 업데이트 (게시글의 댓글)
-      print("💬 게시글 댓글 작성자 정보 업데이트 시작...");
+      Logger.log("💬 게시글 댓글 작성자 정보 업데이트 시작...");
       int postCommentsCount = 0;
       try {
         // 각 게시글의 댓글을 개별적으로 조회
@@ -813,7 +815,7 @@ class AuthProvider with ChangeNotifier {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              print("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
             
             final updateData = <String, dynamic>{
@@ -826,14 +828,14 @@ class AuthProvider with ChangeNotifier {
             postCommentsCount++;
           }
         }
-        print("   → 찾은 게시글 댓글: $postCommentsCount개");
+        Logger.log("   → 찾은 게시글 댓글: $postCommentsCount개");
       } catch (e) {
-        print("❌ 게시글 댓글 조회 실패: $e");
-        print("   스택 트레이스: ${StackTrace.current}");
+        Logger.error("❌ 게시글 댓글 조회 실패: $e");
+        Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
 
       // 4. 댓글 업데이트 (모임의 댓글)
-      print("💬 모임 댓글 작성자 정보 업데이트 시작...");
+      Logger.log("💬 모임 댓글 작성자 정보 업데이트 시작...");
       int meetupCommentsCount = 0;
       try {
         // 각 모임의 댓글을 개별적으로 조회
@@ -850,7 +852,7 @@ class AuthProvider with ChangeNotifier {
               batches.add(_firestore.batch());
               currentBatchIndex++;
               operationCount = 0;
-              print("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+              Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
             
             final updateData = <String, dynamic>{
@@ -863,28 +865,28 @@ class AuthProvider with ChangeNotifier {
             meetupCommentsCount++;
           }
         }
-        print("   → 찾은 모임 댓글: $meetupCommentsCount개");
+        Logger.log("   → 찾은 모임 댓글: $meetupCommentsCount개");
       } catch (e) {
-        print("❌ 모임 댓글 조회 실패: $e");
-        print("   스택 트레이스: ${StackTrace.current}");
+        Logger.error("❌ 모임 댓글 조회 실패: $e");
+        Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
       
       // 5. 최상위 comments 컬렉션 업데이트
-      print("💬 최상위 댓글 작성자 정보 업데이트 시작...");
+      Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
       int topLevelCommentsCount = 0;
       try {
         final topLevelCommentsQuery = await _firestore
             .collection('comments')
             .where('userId', isEqualTo: userId)
             .get();
-        print("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
+        Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
         
         for (var commentDoc in topLevelCommentsQuery.docs) {
           if (operationCount >= maxOperationsPerBatch) {
             batches.add(_firestore.batch());
             currentBatchIndex++;
             operationCount = 0;
-            print("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
+            Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
           }
           
           final updateData = <String, dynamic>{
@@ -896,57 +898,69 @@ class AuthProvider with ChangeNotifier {
           operationCount++;
           topLevelCommentsCount++;
         }
-        print("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
+        Logger.log("✅ 최상위 댓글 ${topLevelCommentsCount}개 배치에 추가 완료");
       } catch (e) {
-        print("❌ 최상위 댓글 조회 실패: $e");
-        print("   스택 트레이스: ${StackTrace.current}");
+        Logger.error("❌ 최상위 댓글 조회 실패: $e");
+        Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
       
       final totalCommentsCount = postCommentsCount + meetupCommentsCount + topLevelCommentsCount;
-      print("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
+      Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
 
       // 모든 배치 커밋
-      print("💾 총 ${batches.length}개의 배치 커밋 시작...");
-      print("   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
+      Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
+      Logger.log("   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
       int successCount = 0;
       int failCount = 0;
+      List<String> failedBatches = [];
       
       for (int i = 0; i < batches.length; i++) {
         try {
           await batches[i].commit();
           successCount++;
-          print("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
+          Logger.log("   ✅ 배치 ${i + 1}/${batches.length} 커밋 완료");
         } catch (e, stackTrace) {
           failCount++;
-          print("   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패: $e");
-          print("      스택 트레이스: $stackTrace");
-          // 일부 배치 실패해도 계속 진행
+          failedBatches.add('배치 ${i + 1}');
+          Logger.error("   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패", e, stackTrace);
+          
+          // Crashlytics에 에러 기록
+          await FirebaseCrashlytics.instance.recordError(
+            e,
+            stackTrace,
+            reason: 'Profile update batch commit failed (batch ${i + 1}/${batches.length})',
+            fatal: false,
+          );
         }
       }
       
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      print("🎉 콘텐츠 업데이트 완료!");
-      print("   - 닉네임: '$newNickname'");
-      print("   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
-      print("   - 국가: '$newNationality'");
-      print("   - 업데이트 대상:");
-      print("      게시글: ${postsQuery.docs.length}개");
-      print("      모임: ${meetupsQuery.docs.length}개");
-      print("      게시글 댓글: $postCommentsCount개");
-      print("      모임 댓글: $meetupCommentsCount개");
-      print("      최상위 댓글: $topLevelCommentsCount개");
-      print("      총 댓글: $totalCommentsCount개");
-      print("   - 성공한 배치: $successCount/${batches.length}");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("🎉 콘텐츠 업데이트 완료!");
+      Logger.log("   - 닉네임: '$newNickname'");
+      Logger.log("   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
+      Logger.log("   - 국가: '$newNationality'");
+      Logger.log("   - 업데이트 대상:");
+      Logger.log("      게시글: ${postsQuery.docs.length}개");
+      Logger.log("      모임: ${meetupsQuery.docs.length}개");
+      Logger.log("      게시글 댓글: $postCommentsCount개");
+      Logger.log("      모임 댓글: $meetupCommentsCount개");
+      Logger.log("      최상위 댓글: $topLevelCommentsCount개");
+      Logger.log("      총 댓글: $totalCommentsCount개");
+      Logger.log("   - 성공한 배치: $successCount/${batches.length}");
       if (failCount > 0) {
-        print("   ⚠️  실패한 배치: $failCount/${batches.length}");
+        Logger.error("   ⚠️  실패한 배치: $failCount/${batches.length}");
+        Logger.error("   실패한 배치 목록: ${failedBatches.join(", ")}");
+        
+        // 실패가 있으면 예외 발생
+        throw Exception('일부 데이터 업데이트 실패: ${failedBatches.join(", ")}');
       }
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     } catch (e, stackTrace) {
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      print("❌ 콘텐츠 작성자 정보 업데이트 오류!");
-      print("   에러: $e");
-      print("   스택 트레이스: $stackTrace");
-      print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      Logger.error("❌ 콘텐츠 작성자 정보 업데이트 오류!");
+      Logger.error("   에러: $e");
+      Logger.log("   스택 트레이스: $stackTrace");
+      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       // 오류가 발생해도 프로필 업데이트는 성공으로 처리
       // (사용자 경험을 위해)
     }
@@ -964,9 +978,9 @@ class AuthProvider with ChangeNotifier {
       // Firestore 사용자 데이터 다시 로드
       await _loadUserData();
       
-      print('사용자 정보 새로고침 완료');
+      Logger.log('사용자 정보 새로고침 완료');
     } catch (e) {
-      print('사용자 정보 새로고침 오류: $e');
+      Logger.error('사용자 정보 새로고침 오류: $e');
     }
   }
 
@@ -982,16 +996,16 @@ class AuthProvider with ChangeNotifier {
 
   // 모든 스트림 정리
   void _cleanupAllStreams() {
-    print('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
+    Logger.log('모든 스트림 정리 시작 (${_streamCleanupCallbacks.length}개)...');
     for (final cleanup in _streamCleanupCallbacks) {
       try {
         cleanup();
       } catch (e) {
-        print('스트림 정리 오류: $e');
+        Logger.error('스트림 정리 오류: $e');
       }
     }
     _streamCleanupCallbacks.clear();
-    print('모든 스트림 정리 완료');
+    Logger.log('모든 스트림 정리 완료');
   }
 
   // 이메일 인증번호 전송
@@ -1018,12 +1032,12 @@ class AuthProvider with ChangeNotifier {
       };
     } on FirebaseFunctionsException catch (e) {
       // 서버가 already-exists(이미 사용중) 에러를 반환한 경우
-      print('이메일 인증번호 전송 오류 (FirebaseFunctionsException): ${e.code} - ${e.message}');
+      Logger.error('이메일 인증번호 전송 오류 (FirebaseFunctionsException): ${e.code} - ${e.message}');
       _isLoading = false;
       notifyListeners();
       rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
     } catch (e) {
-      print('이메일 인증번호 전송 오류: $e');
+      Logger.error('이메일 인증번호 전송 오류: $e');
       _isLoading = false;
       notifyListeners();
       return {
@@ -1056,7 +1070,7 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       rethrow;
     } catch (e) {
-      print('이메일 인증번호 검증 오류: $e');
+      Logger.error('이메일 인증번호 검증 오류: $e');
       return false;
     } finally {
       _isLoading = false;
@@ -1078,12 +1092,12 @@ class AuthProvider with ChangeNotifier {
       await _loadUserData();
       return true;
     } on FirebaseFunctionsException catch (e) {
-      print('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
+      Logger.error('completeEmailVerification 함수 오류: ${e.code} ${e.message}');
       _isLoading = false;
       notifyListeners();
       rethrow;
     } catch (e) {
-      print('한양메일 인증 완료 처리 오류: $e');
+      Logger.error('한양메일 인증 완료 처리 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;
@@ -1093,7 +1107,7 @@ class AuthProvider with ChangeNotifier {
   // 로그아웃
   Future<void> signOut() async {
     try {
-      print('로그아웃 시작...');
+      Logger.log('로그아웃 시작...');
       
       // 로딩 상태 설정
       _isLoading = true;
@@ -1104,35 +1118,35 @@ class AuthProvider with ChangeNotifier {
         await Future.any([
           _performSignOut(),
           Future.delayed(const Duration(seconds: 10)).then((_) {
-            print('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
+            Logger.log('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
             throw TimeoutException('로그아웃 타임아웃', const Duration(seconds: 10));
           }),
         ]);
-        print('✅ 로그아웃 완료');
+        Logger.log('✅ 로그아웃 완료');
       } catch (e) {
         if (e is TimeoutException) {
-          print('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
+          Logger.log('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
         } else {
-          print('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
+          Logger.error('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
         }
       }
       
     } catch (e) {
-      print('로그아웃 전체 오류: $e');
+      Logger.error('로그아웃 전체 오류: $e');
     } finally {
       // 어떤 경우든 상태는 초기화 (로컬 로그아웃)
       _user = null;
       _userData = null;
       _isLoading = false;
       _logoutStatus = null;
-      print('✅ 로그아웃 상태 초기화 완료');
+      Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
     }
   }
 
   // 실제 로그아웃 작업 수행
   Future<void> _performSignOut() async {
-    print('🔄 로그아웃 작업 시작');
+    Logger.log('🔄 로그아웃 작업 시작');
     
     // FCM 토큰 삭제 (3초 타임아웃)
     if (_user != null) {
@@ -1143,12 +1157,12 @@ class AuthProvider with ChangeNotifier {
         await FCMService().deleteFCMToken(_user!.uid).timeout(
           const Duration(seconds: 3),
           onTimeout: () {
-            print('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
+            Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
           },
         );
-        print('✅ FCM 토큰 삭제 완료');
+        Logger.log('✅ FCM 토큰 삭제 완료');
       } catch (e) {
-        print('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
+        Logger.error('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
       }
     }
     
@@ -1158,9 +1172,9 @@ class AuthProvider with ChangeNotifier {
       notifyListeners();
       
       _cleanupAllStreams();
-      print('✅ 스트림 정리 완료');
+      Logger.log('✅ 스트림 정리 완료');
     } catch (e) {
-      print('⚠️ 스트림 정리 실패 (계속 진행): $e');
+      Logger.error('⚠️ 스트림 정리 실패 (계속 진행): $e');
     }
     
     // Google Sign-In에서 로그아웃 (3초 타임아웃)
@@ -1171,12 +1185,12 @@ class AuthProvider with ChangeNotifier {
       await _googleSignIn.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          print('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
+          Logger.log('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      print('✅ Google Sign-In 로그아웃 완료');
+      Logger.log('✅ Google Sign-In 로그아웃 완료');
     } catch (e) {
-      print('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
+      Logger.error('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
     }
     
     // Firebase Auth에서 로그아웃 (3초 타임아웃)
@@ -1187,15 +1201,15 @@ class AuthProvider with ChangeNotifier {
       await _auth.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
-          print('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
+          Logger.log('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
         },
       );
-      print('✅ Firebase Auth 로그아웃 완료');
+      Logger.log('✅ Firebase Auth 로그아웃 완료');
     } catch (e) {
-      print('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
+      Logger.error('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
     }
     
     _logoutStatus = '로그아웃 완료';
-    print('🔄 로그아웃 작업 완료');
+    Logger.log('🔄 로그아웃 작업 완료');
   }
 }

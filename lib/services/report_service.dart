@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/report.dart';
+import '../utils/logger.dart';
 
 class ReportService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -36,14 +37,14 @@ class ReportService {
       });
 
       if (result.data['success'] == true) {
-        print('✅ 신고가 접수되었습니다: $targetType $targetId');
+        Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
         return true;
       } else {
-        print('❌ 신고 접수 실패: ${result.data['message']}');
+        Logger.log('❌ 신고 접수 실패: ${result.data['message']}');
         return false;
       }
     } catch (e) {
-      print('❌ 신고 접수 실패: $e');
+      Logger.error('❌ 신고 접수 실패: $e');
       return false;
     }
   }
@@ -61,14 +62,14 @@ class ReportService {
       });
 
       if (result.data['success'] == true) {
-        print('✅ 사용자를 차단했습니다: $blockedUserId');
+        Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
         return true;
       } else {
-        print('❌ 사용자 차단 실패');
+        Logger.error('❌ 사용자 차단 실패');
         return false;
       }
     } catch (e) {
-      print('❌ 사용자 차단 실패: $e');
+      Logger.error('❌ 사용자 차단 실패: $e');
       return false;
     }
   }
@@ -86,14 +87,14 @@ class ReportService {
       });
 
       if (result.data['success'] == true) {
-        print('✅ 사용자 차단을 해제했습니다: $blockedUserId');
+        Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
         return true;
       } else {
-        print('❌ 사용자 차단 해제 실패');
+        Logger.error('❌ 사용자 차단 해제 실패');
         return false;
       }
     } catch (e) {
-      print('❌ 사용자 차단 해제 실패: $e');
+      Logger.error('❌ 사용자 차단 해제 실패: $e');
       return false;
     }
   }
@@ -114,7 +115,7 @@ class ReportService {
           .map((doc) => BlockedUser.fromFirestore(doc.data()))
           .toList();
     } catch (e) {
-      print('❌ 차단 사용자 목록 조회 실패: $e');
+      Logger.error('❌ 차단 사용자 목록 조회 실패: $e');
       return [];
     }
   }
@@ -130,7 +131,7 @@ class ReportService {
       
       return doc.exists;
     } catch (e) {
-      print('❌ 차단 상태 확인 실패: $e');
+      Logger.error('❌ 차단 상태 확인 실패: $e');
       return false;
     }
   }
@@ -151,7 +152,7 @@ class ReportService {
           .map((doc) => Report.fromJson(doc.data()))
           .toList();
     } catch (e) {
-      print('❌ 신고 내역 조회 실패: $e');
+      Logger.error('❌ 신고 내역 조회 실패: $e');
       return [];
     }
   }

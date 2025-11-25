@@ -11,6 +11,7 @@ import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import 'main_screen.dart';
+import '../utils/logger.dart';
 
 class CreateMeetupReviewScreen extends StatefulWidget {
   final Meetup meetup;
@@ -105,7 +106,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         }
       }
     } catch (e) {
-      print('❌ 이미지 선택 오류: $e');
+      Logger.error('❌ 이미지 선택 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.imagePickFailed ?? "")),
@@ -152,7 +153,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
       return uploadedUrls;
     } catch (e) {
-      print('❌ 이미지 업로드 오류: $e');
+      Logger.error('❌ 이미지 업로드 오류: $e');
       setState(() {
         _isUploading = false;
       });
@@ -282,7 +283,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         }
       }
     } catch (e) {
-      print('❌ 후기 제출 오류: $e');
+      Logger.error('❌ 후기 제출 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(AppLocalizations.of(context)!.error ?? "")),

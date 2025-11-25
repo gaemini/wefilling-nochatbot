@@ -2,12 +2,15 @@
 // 친구요청 관련 상태 관리 Provider
 // Riverpod 대신 기존 코드와 호환되는 Provider 패턴 사용
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/user_profile.dart';
 import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../services/relationship_service.dart';
 import '../services/friend_category_service.dart';
+import '../utils/logger.dart';
+import 'auth_provider.dart';
 
 class RelationshipProvider with ChangeNotifier {
   final RelationshipService _relationshipService = RelationshipService();
@@ -20,6 +23,14 @@ class RelationshipProvider with ChangeNotifier {
   Map<String, RelationshipStatus> _relationshipStatuses = {};
   bool _isLoading = false;
   String? _errorMessage;
+  
+  // 스트림 구독 관리
+  StreamSubscription<List<FriendRequest>>? _incomingRequestsSubscription;
+  StreamSubscription<List<FriendRequest>>? _outgoingRequestsSubscription;
+  StreamSubscription<List<UserProfile>>? _friendsSubscription;
+  
+  // AuthProvider 참조 (스트림 정리 등록용)
+  AuthProvider? _authProvider;
 
   // Getters
   List<UserProfile> get searchResults => _searchResults;
@@ -84,7 +95,7 @@ class RelationshipProvider with ChangeNotifier {
       }
       notifyListeners();
     } catch (e) {
-      print('관계 상태 업데이트 오류: $e');
+      Logger.error('관계 상태 업데이트 오류: $e');
     }
   }
 
@@ -97,7 +108,7 @@ class RelationshipProvider with ChangeNotifier {
       _relationshipStatuses[otherUserId] = status;
       notifyListeners();
     } catch (e) {
-      print('관계 상태 업데이트 오류: $e');
+      Logger.error('관계 상태 업데이트 오류: $e');
     }
   }
 
@@ -204,36 +215,36 @@ class RelationshipProvider with ChangeNotifier {
   /// 친구 삭제
   Future<bool> unfriend(String otherUid) async {
     try {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('🗑️ 친구 삭제 시작');
-      print('   대상 UID: $otherUid');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🗑️ 친구 삭제 시작');
+      Logger.log('   대상 UID: $otherUid');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
       _setLoading(true);
       clearError();
 
       final success = await _relationshipService.unfriend(otherUid);
-      print('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
+      Logger.error('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
       
       if (success) {
         // 관계 상태 업데이트
         await updateRelationshipStatus(otherUid);
-        print('   관계 상태 업데이트: ✅ 완료');
+        Logger.log('   관계 상태 업데이트: ✅ 완료');
         
         // 모든 친구 카테고리에서 제거 (기존 기능에 영향 없도록 try-catch)
         try {
-          print('   카테고리에서 제거 시작...');
+          Logger.log('   카테고리에서 제거 시작...');
           final categoryService = FriendCategoryService();
           await categoryService.removeFriendFromAllCategories(otherUid);
-          print('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
+          Logger.log('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
         } catch (categoryError) {
-          print('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
+          Logger.error('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
           // 카테고리 제거 실패해도 친구 삭제는 성공으로 처리
         }
         
         // 친구 목록에서 제거
         _friends.removeWhere((friend) => friend.uid == otherUid);
-        print('   _friends 목록에서 제거: ✅ 완료');
+        Logger.log('   _friends 목록에서 제거: ✅ 완료');
         
         // 검색 결과에 해당 사용자 다시 추가
         final userProfile = await _relationshipService.getUserProfile(otherUid);
@@ -241,22 +252,22 @@ class RelationshipProvider with ChangeNotifier {
             !_searchResults.any((u) => u.uid == otherUid)) {
           _searchResults.add(userProfile);
         }
-        print('   검색 결과 업데이트: ✅ 완료');
+        Logger.log('   검색 결과 업데이트: ✅ 완료');
         
         notifyListeners();
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('🎉 친구 삭제 완료!');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.log('🎉 친구 삭제 완료!');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       } else {
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('❌ 친구 삭제 실패');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.error('❌ 친구 삭제 실패');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
       return success;
     } catch (e) {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('❌ 친구 삭제 중 예외 발생: $e');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('❌ 친구 삭제 중 예외 발생: $e');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       _setError('친구 삭제 중 오류가 발생했습니다: $e');
       return false;
     } finally {
@@ -324,10 +335,24 @@ class RelationshipProvider with ChangeNotifier {
   /// 받은 친구요청 목록 로드
   Future<void> loadIncomingRequests() async {
     try {
-      _relationshipService.getIncomingRequests().listen((requests) {
-        _incomingRequests = requests;
-        notifyListeners();
-      });
+      // 기존 구독 취소
+      await _incomingRequestsSubscription?.cancel();
+      
+      // 새 구독 시작 및 저장
+      _incomingRequestsSubscription = _relationshipService.getIncomingRequests().listen(
+        (requests) {
+          _incomingRequests = requests;
+          notifyListeners();
+        },
+        onError: (error) {
+          // 로그아웃 중 에러는 무시
+          if (_authProvider?.user == null) {
+            Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
+            return;
+          }
+          _setError('받은 친구요청 목록 로드 중 오류가 발생했습니다: $error');
+        },
+      );
     } catch (e) {
       _setError('받은 친구요청 목록 로드 중 오류가 발생했습니다: $e');
     }
@@ -336,10 +361,24 @@ class RelationshipProvider with ChangeNotifier {
   /// 보낸 친구요청 목록 로드
   Future<void> loadOutgoingRequests() async {
     try {
-      _relationshipService.getOutgoingRequests().listen((requests) {
-        _outgoingRequests = requests;
-        notifyListeners();
-      });
+      // 기존 구독 취소
+      await _outgoingRequestsSubscription?.cancel();
+      
+      // 새 구독 시작 및 저장
+      _outgoingRequestsSubscription = _relationshipService.getOutgoingRequests().listen(
+        (requests) {
+          _outgoingRequests = requests;
+          notifyListeners();
+        },
+        onError: (error) {
+          // 로그아웃 중 에러는 무시
+          if (_authProvider?.user == null) {
+            Logger.log('로그아웃 중 친구요청 조회 에러 무시: $error');
+            return;
+          }
+          _setError('보낸 친구요청 목록 로드 중 오류가 발생했습니다: $error');
+        },
+      );
     } catch (e) {
       _setError('보낸 친구요청 목록 로드 중 오류가 발생했습니다: $e');
     }
@@ -349,11 +388,28 @@ class RelationshipProvider with ChangeNotifier {
   Future<void> loadFriends() async {
     try {
       _setLoading(true);
-      _relationshipService.getFriends().listen((friends) {
-        _friends = friends;
-        _setLoading(false);
-        notifyListeners();
-      });
+      
+      // 기존 구독 취소
+      await _friendsSubscription?.cancel();
+      
+      // 새 구독 시작 및 저장
+      _friendsSubscription = _relationshipService.getFriends().listen(
+        (friends) {
+          _friends = friends;
+          _setLoading(false);
+          notifyListeners();
+        },
+        onError: (error) {
+          // 로그아웃 중 에러는 무시
+          if (_authProvider?.user == null) {
+            Logger.log('로그아웃 중 친구 목록 조회 에러 무시: $error');
+            _setLoading(false);
+            return;
+          }
+          _setError('친구 목록 로드 중 오류가 발생했습니다: $error');
+          _setLoading(false);
+        },
+      );
     } catch (e) {
       _setError('친구 목록 로드 중 오류가 발생했습니다: $e');
       _setLoading(false);
@@ -431,5 +487,37 @@ class RelationshipProvider with ChangeNotifier {
       status: status,
       friendRequest: friendRequest,
     );
+  }
+
+  /// AuthProvider 설정 (스트림 정리 등록용)
+  void setAuthProvider(AuthProvider authProvider) {
+    _authProvider = authProvider;
+    // 스트림 정리 콜백 등록
+    _authProvider?.registerStreamCleanup(_cancelAllSubscriptions);
+    Logger.log('RelationshipProvider: AuthProvider 연결 완료');
+  }
+
+  /// 모든 Firestore 구독 취소
+  void _cancelAllSubscriptions() {
+    Logger.log('RelationshipProvider: 모든 구독 취소 시작...');
+    
+    _incomingRequestsSubscription?.cancel();
+    _incomingRequestsSubscription = null;
+    
+    _outgoingRequestsSubscription?.cancel();
+    _outgoingRequestsSubscription = null;
+    
+    _friendsSubscription?.cancel();
+    _friendsSubscription = null;
+    
+    Logger.log('RelationshipProvider: 모든 구독 취소 완료');
+  }
+
+  @override
+  void dispose() {
+    _cancelAllSubscriptions();
+    // AuthProvider에서 정리 콜백 제거
+    _authProvider?.unregisterStreamCleanup(_cancelAllSubscriptions);
+    super.dispose();
   }
 }

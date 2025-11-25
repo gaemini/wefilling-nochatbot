@@ -13,6 +13,7 @@ import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../utils/logger.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -94,7 +95,7 @@ class _DMListScreenState extends State<DMListScreen> {
         }
 
         if (snapshot.hasError) {
-          print('❌ DM 목록 로드 오류: ${snapshot.error}');
+          Logger.error('❌ DM 목록 로드 오류: ${snapshot.error}');
           
           // Permission denied 오류 감지
           final errorMessage = snapshot.error.toString();
@@ -118,7 +119,7 @@ class _DMListScreenState extends State<DMListScreen> {
         }
         
         // 필터 적용: 친구 / 익명
-        print('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
+        Logger.log('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
         
         final filtered = conversations.where((c) {
           // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
@@ -128,7 +129,7 @@ class _DMListScreenState extends State<DMListScreen> {
           
           // 본인 DM은 무조건 숨김
           if (isSelfDM) {
-            print('  ❌ 제외: ${c.id} (본인 DM)');
+            Logger.log('  ❌ 제외: ${c.id} (본인 DM)');
             return false;
           }
 
@@ -149,18 +150,18 @@ class _DMListScreenState extends State<DMListScreen> {
           final result = passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
           
           if (!result) {
-            print('  ❌ 제외: ${c.id}');
-            print('     - isAnon: $isAnon, isPostDM: $isPostDM');
-            print('     - passesType: $passesType, notHidden: $notHiddenLocal');
-            print('     - notArchived: $notArchivedServer, hasOther: $hasOtherParticipant');
+            Logger.log('  ❌ 제외: ${c.id}');
+            Logger.log('     - isAnon: $isAnon, isPostDM: $isPostDM');
+            Logger.log('     - passesType: $passesType, notHidden: $notHiddenLocal');
+            Logger.log('     - notArchived: $notArchivedServer, hasOther: $hasOtherParticipant');
           } else {
-            print('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
+            Logger.log('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
           }
           
           return result;
         }).toList();
         
-        print('📊 필터링 결과: ${filtered.length}개 대화방 표시');
+        Logger.log('📊 필터링 결과: ${filtered.length}개 대화방 표시');
 
         if (filtered.isEmpty) {
           return _buildEmptyState(
@@ -307,7 +308,7 @@ class _DMListScreenState extends State<DMListScreen> {
         
         // 디버그 로그
         if (unreadCount > 0) {
-          print('🔴 실시간 배지 표시: ${conversation.id} - $unreadCount개');
+          Logger.log('🔴 실시간 배지 표시: ${conversation.id} - $unreadCount개');
         }
 
         return _buildConversationCardContent(
@@ -810,14 +811,14 @@ class _DMListScreenState extends State<DMListScreen> {
   /// 친구와 대화 시작
   Future<void> _startConversationWithFriend(UserProfile friend) async {
     try {
-      print('🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
+      Logger.log('🚀 친구와 대화 시작: ${friend.displayNameOrNickname} (${friend.uid})');
       
       final conversationId = await _dmService.getOrCreateConversation(
         friend.uid,
         isOtherUserAnonymous: false,
       );
       
-      print('✅ 대화방 ID: $conversationId');
+      Logger.log('✅ 대화방 ID: $conversationId');
       
       if (conversationId != null && mounted) {
         // 대화방으로 이동
@@ -831,7 +832,7 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
         );
       } else {
-        print('❌ 대화방 ID가 null입니다');
+        Logger.log('❌ 대화방 ID가 null입니다');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -842,7 +843,7 @@ class _DMListScreenState extends State<DMListScreen> {
         }
       }
     } catch (e) {
-      print('❌ 대화 시작 오류: $e');
+      Logger.error('❌ 대화 시작 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

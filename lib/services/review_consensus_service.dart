@@ -10,6 +10,7 @@ import '../models/review_consensus.dart';
 import '../models/meetup.dart';
 import 'feature_flag_service.dart';
 import 'review_adapter_service.dart';
+import '../utils/logger.dart';
 
 /// 리뷰 합의 기능의 메인 서비스
 class ReviewConsensusService {
@@ -31,7 +32,7 @@ class ReviewConsensusService {
   Future<T?> _executeIfEnabled<T>(Future<T?> Function() action) async {
     final isEnabled = await _featureFlag.isReviewConsensusEnabled;
     if (!isEnabled) {
-      print('리뷰 합의 기능이 비활성화됨');
+      Logger.log('리뷰 합의 기능이 비활성화됨');
       return null;
     }
     return await action();
@@ -104,11 +105,11 @@ class ReviewConsensusService {
           reviewId: docRef.id,
         );
 
-        print('리뷰 요청 생성 완료: ${docRef.id}');
+        Logger.log('리뷰 요청 생성 완료: ${docRef.id}');
         return docRef.id;
 
       } catch (e) {
-        print('리뷰 요청 생성 오류: $e');
+        Logger.error('리뷰 요청 생성 오류: $e');
         rethrow;
       }
     });
@@ -184,11 +185,11 @@ class ReviewConsensusService {
           }
         });
 
-        print('리뷰 요청 응답 완료: $reviewRequestId (수락: $accept)');
+        Logger.log('리뷰 요청 응답 완료: $reviewRequestId (수락: $accept)');
         return true;
 
       } catch (e) {
-        print('리뷰 요청 응답 오류: $e');
+        Logger.error('리뷰 요청 응답 오류: $e');
         return false;
       }
     }) ?? false;
@@ -273,7 +274,7 @@ class ReviewConsensusService {
         }
         return null;
       } catch (e) {
-        print('리뷰 합의 조회 오류: $e');
+        Logger.error('리뷰 합의 조회 오류: $e');
         return null;
       }
     });
@@ -333,11 +334,11 @@ class ReviewConsensusService {
           reviewId: 'consensus',
         );
 
-        print('리뷰 합의 최종화 완료: $meetupId');
+        Logger.log('리뷰 합의 최종화 완료: $meetupId');
         return true;
 
       } catch (e) {
-        print('리뷰 합의 최종화 오류: $e');
+        Logger.error('리뷰 합의 최종화 오류: $e');
         return false;
       }
     }) ?? false;
@@ -435,12 +436,12 @@ class ReviewConsensusService {
 
         if (cleanedCount > 0) {
           await batch.commit();
-          print('만료된 리뷰 요청 정리 완료: ${cleanedCount}개');
+          Logger.log('만료된 리뷰 요청 정리 완료: ${cleanedCount}개');
         }
 
         return cleanedCount;
       } catch (e) {
-        print('만료 요청 정리 오류: $e');
+        Logger.error('만료 요청 정리 오류: $e');
         return 0;
       }
     }) ?? 0;

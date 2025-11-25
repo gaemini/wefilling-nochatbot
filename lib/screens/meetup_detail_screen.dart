@@ -23,6 +23,7 @@ import 'review_approval_screen.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../utils/logger.dart';
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -111,13 +112,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   Future<void> _loadParticipants() async {
     try {
-      print('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
+      Logger.log('🔄 모임 참여자 로드 시작: ${widget.meetupId}');
       
       // 먼저 모든 참여자 조회 (디버깅용)
       final allParticipants = await _meetupService.getMeetupParticipants(widget.meetupId);
-      print('📋 전체 참여자 수: ${allParticipants.length}');
+      Logger.log('📋 전체 참여자 수: ${allParticipants.length}');
       for (var p in allParticipants) {
-        print('  - ${p.userName} (status: ${p.status})');
+        Logger.log('  - ${p.userName} (status: ${p.status})');
       }
       
       // 승인된 참여자만 필터링
@@ -142,27 +143,27 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               
               if (userCountry.isNotEmpty) {
                 participants[i] = participant.copyWith(userCountry: userCountry);
-                print('✅ ${participant.userName}의 국가 정보 업데이트: $userCountry');
+                Logger.log('✅ ${participant.userName}의 국가 정보 업데이트: $userCountry');
               } else {
                 // 테스트를 위한 기본 국가 정보 설정
                 final defaultCountry = _getDefaultCountryForUser(participant.userName);
                 if (defaultCountry.isNotEmpty) {
                   participants[i] = participant.copyWith(userCountry: defaultCountry);
-                  print('🔧 ${participant.userName}의 기본 국가 정보 설정: $defaultCountry');
+                  Logger.log('🔧 ${participant.userName}의 기본 국가 정보 설정: $defaultCountry');
                 }
               }
             }
           } catch (e) {
-            print('❌ ${participant.userName}의 국가 정보 로드 실패: $e');
+            Logger.error('❌ ${participant.userName}의 국가 정보 로드 실패: $e');
             // 오류 발생 시에도 기본 국가 정보 설정
             final defaultCountry = _getDefaultCountryForUser(participant.userName);
             if (defaultCountry.isNotEmpty) {
               participants[i] = participant.copyWith(userCountry: defaultCountry);
-              print('🔧 ${participant.userName}의 기본 국가 정보 설정 (오류 후): $defaultCountry');
+              Logger.error('🔧 ${participant.userName}의 기본 국가 정보 설정 (오류 후): $defaultCountry');
             }
           }
         } else {
-          print('ℹ️ ${participant.userName}은 이미 국가 정보가 있음: ${participant.userCountry}');
+          Logger.log('ℹ️ ${participant.userName}은 이미 국가 정보가 있음: ${participant.userCountry}');
         }
       }
 
@@ -185,7 +186,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       // 중복 방지 (이미 목록에 있으면 추가하지 않음)
       final hasHost = participants.any((p) => p.userId == hostId);
       final combined = [if (!hasHost) hostProfile, ...participants];
-      print('✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
+      Logger.log('✅ 승인된 참여자 ${participants.length}명 로드 완료 (호스트 포함 총 ${combined.length}명)');
       
       // 새로고침 시 setState로 UI 업데이트
       if (mounted) {
@@ -202,12 +203,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             currentParticipants: combined.length, // 호스트 포함
           );
         });
-        print('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
-        print('📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
+        Logger.log('🎨 UI 업데이트 완료: ${_participants.length}명 (표시)');
+        Logger.log('📊 모임 참여자 수 업데이트: ${combined.length}/${_currentMeetup.maxParticipants} (호스트 포함)');
       }
     } catch (e, stackTrace) {
-      print('❌ 참여자 목록 로드 오류: $e');
-      print('Stack trace: $stackTrace');
+      Logger.error('❌ 참여자 목록 로드 오류: $e');
+      Logger.log('Stack trace: $stackTrace');
       if (mounted) {
         setState(() {
           _isLoadingParticipants = false;
@@ -243,7 +244,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
       }
     } catch (e) {
-      print('❌ 참여자 확인 오류: $e');
+      Logger.error('❌ 참여자 확인 오류: $e');
       if (mounted) {
         setState(() {
           _isParticipant = false;
@@ -1061,7 +1062,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         }
       }
     } catch (e) {
-      print('모임 데이터 새로고침 오류: $e');
+      Logger.error('모임 데이터 새로고침 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1382,7 +1383,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         }
       }
     } catch (e) {
-      print('모임 참여 오류: $e');
+      Logger.error('모임 참여 오류: $e');
       // 오류 시 상태 롤백
       if (mounted) {
         setState(() {
@@ -1468,7 +1469,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         }
       }
     } catch (e) {
-      print('모임 나가기 오류: $e');
+      Logger.error('모임 나가기 오류: $e');
       // 오류 시 상태 롤백
       if (mounted) {
         setState(() {
@@ -1636,14 +1637,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         status = requestData['status'] ?? 'pending';
         
         // 디버깅 로그
-        print('📋 후기 요청 상태 확인:');
-        print('  - requestId: $requestId');
-        print('  - status: $status');
-        print('  - recipientId: ${user.uid}');
-        print('  - meetupId: ${_currentMeetup.id}');
+        Logger.log('📋 후기 요청 상태 확인:');
+        Logger.log('  - requestId: $requestId');
+        Logger.log('  - status: $status');
+        Logger.log('  - recipientId: ${user.uid}');
+        Logger.log('  - meetupId: ${_currentMeetup.id}');
       } else {
         // 요청이 없으면 MeetupService를 통해 후기 요청 재전송
-        print('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
+        Logger.log('⚠️ review_request가 없음. 후기 요청 재전송 시도...');
         
         if (_currentMeetup.reviewId != null) {
           // MeetupService를 통해 후기 요청 재전송
@@ -1653,7 +1654,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           );
           
           if (success) {
-            print('✅ 후기 요청 재전송 성공');
+            Logger.log('✅ 후기 요청 재전송 성공');
             // 다시 조회 (서버에서 최신 데이터)
             final retrySnapshot = await FirebaseFirestore.instance
                 .collection('review_requests')
@@ -1670,10 +1671,10 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               authorName = requestData['requesterName'] ?? authorName;
               status = requestData['status'] ?? 'pending';
               
-              print('📋 재전송 후 상태: $status');
+              Logger.log('📋 재전송 후 상태: $status');
             }
           } else {
-            print('❌ 후기 요청 재전송 실패');
+            Logger.error('❌ 후기 요청 재전송 실패');
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed ?? "")),
@@ -1682,7 +1683,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             return;
           }
         } else {
-          print('❌ reviewId가 없음');
+          Logger.log('❌ reviewId가 없음');
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound ?? "")),
@@ -1703,7 +1704,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     } catch (e) {
-      print('❌ 후기 확인 이동 오류: $e');
+      Logger.error('❌ 후기 확인 이동 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: $e')),
@@ -1999,7 +2000,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         await _refreshMeetupData();
       } else if (mounted) {
         // 실패 시: 이미 응답했을 가능성이 높음
-        print('⚠️ 후기 응답 실패 - 이미 응답했거나 권한 없음');
+        Logger.error('⚠️ 후기 응답 실패 - 이미 응답했거나 권한 없음');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(AppLocalizations.of(context)!.reviewAlreadyResponded ?? ""),
@@ -2008,7 +2009,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     } catch (e) {
-      print('❌ 후기 응답 처리 오류: $e');
+      Logger.error('❌ 후기 응답 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: $e')),
@@ -2214,7 +2215,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     } catch (e) {
-      print('❌ 모임 완료 처리 오류: $e');
+      Logger.error('❌ 모임 완료 처리 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -2317,7 +2318,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   /// 후기 삭제
   Future<void> _deleteReview() async {
     if (_currentMeetup.reviewId == null) {
-      print('⚠️ reviewId가 null입니다');
+      Logger.log('⚠️ reviewId가 null입니다');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2334,11 +2335,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     });
 
     try {
-      print('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
+      Logger.log('🗑️ UI: 후기 삭제 시작 - reviewId: ${_currentMeetup.reviewId}');
       
       final success = await _meetupService.deleteMeetupReview(_currentMeetup.reviewId!);
 
-      print('✅ UI: 후기 삭제 결과 - success: $success');
+      Logger.log('✅ UI: 후기 삭제 결과 - success: $success');
 
       if (success && mounted) {
         setState(() {
@@ -2370,7 +2371,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     } catch (e) {
-      print('❌ UI: 후기 삭제 오류: $e');
+      Logger.error('❌ UI: 후기 삭제 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -2556,7 +2557,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             }
           });
         } else if (snapshot.hasError) {
-          print('❌ 참여자 스트림 오류: ${snapshot.error}');
+          Logger.error('❌ 참여자 스트림 오류: ${snapshot.error}');
         }
         
         // 표시할 참여자 결정

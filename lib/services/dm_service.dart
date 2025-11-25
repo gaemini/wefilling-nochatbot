@@ -9,6 +9,7 @@ import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'notification_service.dart';
 import '../utils/dm_feature_flags.dart';
+import '../utils/logger.dart';
 
 class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -39,23 +40,23 @@ class DMService {
   /// - 익명 게시글 기반 DM: "anon_uidA_uidB_<postId>" 로 분리하여
   ///   기존 실명 대화방과는 다른 별개의 대화방을 보장한다.
   String _generateConversationId(String uid1, String uid2, {bool anonymous = false, String? postId}) {
-    print('🔑 _generateConversationId 호출:');
-    print('  - uid1: $uid1 (길이: ${uid1.length})');
-    print('  - uid2: $uid2 (길이: ${uid2.length})');
-    print('  - anonymous: $anonymous');
-    print('  - postId: $postId');
+    Logger.log('🔑 _generateConversationId 호출:');
+    Logger.log('  - uid1: $uid1 (길이: ${uid1.length})');
+    Logger.log('  - uid2: $uid2 (길이: ${uid2.length})');
+    Logger.log('  - anonymous: $anonymous');
+    Logger.log('  - postId: $postId');
     
     final sorted = [uid1, uid2]..sort();
-    print('  - 정렬된 UIDs: $sorted');
+    Logger.log('  - 정렬된 UIDs: $sorted');
     
     if (!anonymous) {
       final id = '${sorted[0]}_${sorted[1]}';
-      print('  - 생성된 일반 ID: $id');
+      Logger.log('  - 생성된 일반 ID: $id');
       return id;
     }
     final suffix = (postId != null && postId.isNotEmpty) ? postId : DateTime.now().millisecondsSinceEpoch.toString();
     final id = 'anon_${sorted[0]}_${sorted[1]}_$suffix';
-    print('  - 생성된 익명 ID: $id');
+    Logger.log('  - 생성된 익명 ID: $id');
     return id;
   }
 
@@ -97,13 +98,13 @@ class DMService {
       final archivedBy = (data['archivedBy'] as List?)?.map((e) => e.toString()).toList() ?? const [];
       if (archivedBy.contains(currentUser.uid)) {
         // archivedBy에서 제거하여 대화방 복원
-        print('🔄 archivedBy에서 제거하여 대화방 복원: $baseId');
+        Logger.log('🔄 archivedBy에서 제거하여 대화방 복원: $baseId');
         final updatedArchivedBy = archivedBy.where((id) => id != currentUser.uid).toList();
         await _firestore.collection('conversations').doc(baseId).update({
           'archivedBy': updatedArchivedBy,
           'updatedAt': FieldValue.serverTimestamp(),
         });
-        print('✅ 대화방 복원 완료');
+        Logger.log('✅ 대화방 복원 완료');
       }
       return baseId;
     } catch (_) {
@@ -155,7 +156,7 @@ class DMService {
       }
     } catch (e) {
       // 조회 실패 시 기본 ID로 진행 (최소 동작 보장)
-      print('prepareConversationId check error: $e');
+      Logger.error('prepareConversationId check error: $e');
     }
     return baseId;
   }
@@ -192,7 +193,7 @@ class DMService {
 
       return results[0].exists || results[1].exists;
     } catch (e) {
-      print('차단 확인 오류: $e');
+      Logger.error('차단 확인 오류: $e');
       return false;
     }
   }
@@ -206,7 +207,7 @@ class DMService {
       final doc = await _firestore.collection('friendships').doc(pairId).get();
       return doc.exists;
     } catch (e) {
-      print('친구 확인 오류: $e');
+      Logger.error('친구 확인 오류: $e');
       return false;
     }
   }
@@ -214,9 +215,9 @@ class DMService {
   /// Firestore 규칙 테스트 함수
   Future<bool> testFirestoreRules() async {
     try {
-      print('🧪 Firestore 규칙 테스트 시작...');
-      print('  - 현재 사용자: ${_auth.currentUser?.uid ?? "로그인 안됨"}');
-      print('  - 인증 상태: ${_auth.currentUser != null ? "인증됨" : "미인증"}');
+      Logger.log('🧪 Firestore 규칙 테스트 시작...');
+      Logger.log('  - 현재 사용자: ${_auth.currentUser?.uid ?? "로그인 안됨"}');
+      Logger.log('  - 인증 상태: ${_auth.currentUser != null ? "인증됨" : "미인증"}');
       
       // 테스트용 임시 문서 ID 생성
       final testId = 'test_${DateTime.now().millisecondsSinceEpoch}';
@@ -226,22 +227,22 @@ class DMService {
         'uid': _auth.currentUser?.uid ?? 'anonymous',
       };
       
-      print('  - 테스트 문서 ID: $testId');
-      print('  - 테스트 데이터: $testData');
+      Logger.log('  - 테스트 문서 ID: $testId');
+      Logger.log('  - 테스트 데이터: $testData');
       
       // conversations 컬렉션에 테스트 문서 생성 시도
       await _firestore.collection('conversations').doc(testId).set(testData);
-      print('  ✅ conversations 컬렉션 문서 생성 성공');
+      Logger.log('  ✅ conversations 컬렉션 문서 생성 성공');
       
       // 생성한 문서 읽기 시도
       final doc = await _firestore.collection('conversations').doc(testId).get();
       if (doc.exists) {
-        print('  ✅ conversations 컬렉션 문서 읽기 성공');
+        Logger.log('  ✅ conversations 컬렉션 문서 읽기 성공');
       }
       
       // 테스트 문서 삭제
       await _firestore.collection('conversations').doc(testId).delete();
-      print('  ✅ conversations 컬렉션 문서 삭제 성공');
+      Logger.log('  ✅ conversations 컬렉션 문서 삭제 성공');
       
       // users 컬렉션도 테스트 (선택적)
       try {
@@ -253,7 +254,7 @@ class DMService {
               .collection('conversations')
               .doc(userTestId)
               .set({'test': true});
-          print('  ✅ users 서브컬렉션 문서 생성 성공');
+          Logger.log('  ✅ users 서브컬렉션 문서 생성 성공');
           
           await _firestore
               .collection('users')
@@ -261,21 +262,21 @@ class DMService {
               .collection('conversations')
               .doc(userTestId)
               .delete();
-          print('  ✅ users 서브컬렉션 문서 삭제 성공');
+          Logger.log('  ✅ users 서브컬렉션 문서 삭제 성공');
         }
       } catch (e) {
-        print('  ⚠️ users 서브컬렉션 테스트 실패 (무시): $e');
+        Logger.error('  ⚠️ users 서브컬렉션 테스트 실패 (무시): $e');
         // 서브컬렉션 실패는 무시하고 메인 컬렉션이 작동하면 성공으로 처리
       }
       
-      print('✅ Firestore 규칙 테스트 완료 - conversations 컬렉션 권한 정상');
+      Logger.log('✅ Firestore 규칙 테스트 완료 - conversations 컬렉션 권한 정상');
       return true;
     } catch (e) {
-      print('❌ Firestore 규칙 테스트 실패: $e');
+      Logger.error('❌ Firestore 규칙 테스트 실패: $e');
       if (e is FirebaseException) {
-        print('  - 오류 코드: ${e.code}');
-        print('  - 오류 메시지: ${e.message}');
-        print('  - 플러그인: ${e.plugin}');
+        Logger.error('  - 오류 코드: ${e.code}');
+        Logger.error('  - 오류 메시지: ${e.message}');
+        Logger.log('  - 플러그인: ${e.plugin}');
       }
       return false;
     }
@@ -283,11 +284,11 @@ class DMService {
 
   /// DM 전송 가능 여부 확인 (차단 여부만 확인)
   Future<bool> canSendDM(String otherUserId, {String? postId}) async {
-    print('🔍 canSendDM 확인 시작: otherUserId=$otherUserId, postId=$postId');
+    Logger.log('🔍 canSendDM 확인 시작: otherUserId=$otherUserId, postId=$postId');
     
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('❌ 로그인 안 됨');
+      Logger.log('❌ 로그인 안 됨');
       return false;
     }
 
@@ -295,19 +296,19 @@ class DMService {
     // 익명 사용자의 경우에도 유효한 UID 형식이어야 함
     final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
     if (!uidPattern.hasMatch(otherUserId)) {
-      print('❌ 잘못된 userId 형식: $otherUserId (길이: ${otherUserId.length}자)');
+      Logger.log('❌ 잘못된 userId 형식: $otherUserId (길이: ${otherUserId.length}자)');
       return false;
     }
 
     // 'deleted' 또는 빈 userId 체크
     if (otherUserId == 'deleted' || otherUserId.isEmpty) {
-      print('❌ 탈퇴했거나 삭제된 사용자');
+      Logger.log('❌ 탈퇴했거나 삭제된 사용자');
       return false;
     }
 
     // 본인에게는 DM 불가 (익명 게시글이어도 본인 게시글이면 불가)
     if (currentUser.uid == otherUserId) {
-      print('❌ 본인에게 DM 불가');
+      Logger.log('❌ 본인에게 DM 불가');
       return false;
     }
 
@@ -315,11 +316,11 @@ class DMService {
     // 익명 사용자의 경우에도 차단 확인 수행
     final blocked = await _isBlocked(currentUser.uid, otherUserId);
     if (blocked) {
-      print('❌ 차단됨');
+      Logger.log('❌ 차단됨');
       return false;
     }
 
-    print('✅ DM 전송 가능');
+    Logger.log('✅ DM 전송 가능');
     return true;
   }
 
@@ -330,34 +331,34 @@ class DMService {
     bool isOtherUserAnonymous = false,
     bool isFriend = false, // 친구 프로필에서 호출 시 true
   }) async {
-    print('📌 getOrCreateConversation 시작');
-    print('  - otherUserId: $otherUserId');
-    print('  - postId: $postId');
-    print('  - isOtherUserAnonymous: $isOtherUserAnonymous');
-    print('  - isFriend: $isFriend');
+    Logger.log('📌 getOrCreateConversation 시작');
+    Logger.log('  - otherUserId: $otherUserId');
+    Logger.log('  - postId: $postId');
+    Logger.log('  - isOtherUserAnonymous: $isOtherUserAnonymous');
+    Logger.log('  - isFriend: $isFriend');
     
     // Firestore 규칙 테스트 (첫 실행 시에만)
     if (!_rulesTestDone) {
-      print('🧪 Firestore 규칙 테스트 실행...');
+      Logger.log('🧪 Firestore 규칙 테스트 실행...');
       final rulesWorking = await testFirestoreRules();
       if (!rulesWorking) {
-        print('⚠️ 일부 Firestore 규칙에 문제가 있지만 계속 진행합니다');
+        Logger.log('⚠️ 일부 Firestore 규칙에 문제가 있지만 계속 진행합니다');
       }
       _rulesTestDone = true;
     }
     
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('❌ 로그인된 사용자가 없습니다');
+      Logger.log('❌ 로그인된 사용자가 없습니다');
       return null;
     }
-    print('  - currentUser.uid: ${currentUser.uid}');
+    Logger.log('  - currentUser.uid: ${currentUser.uid}');
     
     try {
 
       // DM 전송 가능 여부 확인 (차단 및 userId 유효성 체크 포함)
       if (!await canSendDM(otherUserId, postId: postId)) {
-        print('❌ DM 전송 불가');
+        Logger.log('❌ DM 전송 불가');
         return null;
       }
 
@@ -368,10 +369,10 @@ class DMService {
         anonymous: isOtherUserAnonymous,
         postId: postId,
       );
-      print('📌 생성된 conversationId: $conversationId');
+      Logger.log('📌 생성된 conversationId: $conversationId');
 
       // 기존 대화방 확인 - 인스타그램 방식 (항상 재사용)
-      print('📌 기존 대화방 확인 중...');
+      Logger.log('📌 기존 대화방 확인 중...');
       try {
         final existingConv = await _firestore
             .collection('conversations')
@@ -379,7 +380,7 @@ class DMService {
             .get();
 
         if (existingConv.exists) {
-          print('✅ 기존 대화방 발견 - 재사용: $conversationId');
+          Logger.log('✅ 기존 대화방 발견 - 재사용: $conversationId');
           
           final data = existingConv.data() as Map<String, dynamic>?;
           
@@ -388,24 +389,24 @@ class DMService {
           
           // participants가 없거나 현재 사용자가 포함되지 않은 경우 업데이트
           if (participants == null || !participants.contains(currentUser.uid)) {
-            print('⚠️ 기존 대화방 participants 업데이트 필요');
+            Logger.log('⚠️ 기존 대화방 participants 업데이트 필요');
             try {
               await _firestore.collection('conversations').doc(conversationId).update({
                 'participants': [currentUser.uid, otherUserId],
                 'updatedAt': Timestamp.fromDate(DateTime.now()),
               });
-              print('✅ participants 업데이트 완료');
+              Logger.log('✅ participants 업데이트 완료');
             } catch (e) {
-              print('⚠️ participants 업데이트 실패 (무시): $e');
+              Logger.error('⚠️ participants 업데이트 실패 (무시): $e');
             }
           }
           
           return conversationId;
         } else {
-          print('📌 기존 대화방 없음 - 새로 생성 필요');
+          Logger.log('📌 기존 대화방 없음 - 새로 생성 필요');
         }
       } catch (e) {
-        print('⚠️ 대화방 확인 중 오류 (무시하고 생성 시도): $e');
+        Logger.error('⚠️ 대화방 확인 중 오류 (무시하고 생성 시도): $e');
         // 오류가 발생해도 생성 시도
       }
 
@@ -419,7 +420,7 @@ class DMService {
           currentUserData = currentUserDoc.data();
         }
       } catch (e) {
-        print('⚠️ 현재 사용자 정보 조회 실패: $e');
+        Logger.error('⚠️ 현재 사용자 정보 조회 실패: $e');
       }
       
       try {
@@ -428,12 +429,12 @@ class DMService {
           otherUserData = otherUserDoc.data();
         }
       } catch (e) {
-        print('⚠️ 상대방 사용자 정보 조회 실패: $e');
+        Logger.error('⚠️ 상대방 사용자 정보 조회 실패: $e');
       }
       
       // 사용자 정보가 없는 경우 기본값 사용
       if (currentUserData == null) {
-        print('⚠️ 현재 사용자 정보 없음 - 기본값 사용');
+        Logger.log('⚠️ 현재 사용자 정보 없음 - 기본값 사용');
         currentUserData = {
           'nickname': 'User',
           'name': 'User',
@@ -442,7 +443,7 @@ class DMService {
       }
       
       if (otherUserData == null) {
-        print('⚠️ 상대방 사용자 정보 없음 - 기본값 사용');
+        Logger.log('⚠️ 상대방 사용자 정보 없음 - 기본값 사용');
         otherUserData = {
           'nickname': isOtherUserAnonymous ? '익명' : 'User',
           'name': isOtherUserAnonymous ? '익명' : 'User',
@@ -460,7 +461,7 @@ class DMService {
             dmTitle = postDoc.data()!['title'] as String?;
           }
         } catch (e) {
-          print('게시글 제목 로드 실패: $e');
+          Logger.error('게시글 제목 로드 실패: $e');
         }
       }
       
@@ -509,43 +510,43 @@ class DMService {
         conversationData['dmTitle'] = dmTitle;
       }
       
-      print('📦 대화방 데이터 생성');
-      print('  - participants: ${conversationData['participants']}');
-      print('  - isAnonymous: ${conversationData['isAnonymous']}');
+      Logger.log('📦 대화방 데이터 생성');
+      Logger.log('  - participants: ${conversationData['participants']}');
+      Logger.log('  - isAnonymous: ${conversationData['isAnonymous']}');
 
       
       // Firestore 호출 직전 최종 확인
-      print('🔥 Firestore set 호출 직전 최종 확인:');
-      print('  - Collection: conversations');
-      print('  - Document ID: $conversationId');
-      print('  - 데이터 크기: ${conversationData.length} 필드');
-      print('  - participants 확인: ${conversationData['participants']}');
-      print('  - 현재 사용자가 participants에 포함?: ${(conversationData['participants'] as List).contains(currentUser.uid)}');
+      Logger.log('🔥 Firestore set 호출 직전 최종 확인:');
+      Logger.log('  - Collection: conversations');
+      Logger.log('  - Document ID: $conversationId');
+      Logger.log('  - 데이터 크기: ${conversationData.length} 필드');
+      Logger.log('  - participants 확인: ${conversationData['participants']}');
+      Logger.log('  - 현재 사용자가 participants에 포함?: ${(conversationData['participants'] as List).contains(currentUser.uid)}');
       
       try {
-        print('🔥 Firestore set 호출 시작...');
+        Logger.log('🔥 Firestore set 호출 시작...');
         await _firestore.collection('conversations').doc(conversationId).set(conversationData);
-        print('✅ Firestore set 성공!');
+        Logger.log('✅ Firestore set 성공!');
       } catch (firestoreError) {
-        print('❌ Firestore set 실패!');
-        print('  - 오류 타입: ${firestoreError.runtimeType}');
-        print('  - 오류 메시지: $firestoreError');
+        Logger.error('❌ Firestore set 실패!');
+        Logger.error('  - 오류 타입: ${firestoreError.runtimeType}');
+        Logger.error('  - 오류 메시지: $firestoreError');
         if (firestoreError is FirebaseException) {
-          print('  - Firebase 코드: ${firestoreError.code}');
-          print('  - Firebase 메시지: ${firestoreError.message}');
-          print('  - Firebase 플러그인: ${firestoreError.plugin}');
+          Logger.error('  - Firebase 코드: ${firestoreError.code}');
+          Logger.error('  - Firebase 메시지: ${firestoreError.message}');
+          Logger.error('  - Firebase 플러그인: ${firestoreError.plugin}');
         }
         rethrow;
       }
 
-      print('✅ 새 대화방 생성 (conversations 컬렉션): $conversationId');
+      Logger.log('✅ 새 대화방 생성 (conversations 컬렉션): $conversationId');
       return conversationId;
     } on FirebaseException catch (e) {
       // Firebase 예외에 대해 상세 코드/경로 로그
-      print('❌ 대화방 생성 Firebase 오류: code=${e.code}, message=${e.message}, plugin=${e.plugin}');
+      Logger.error('❌ 대화방 생성 Firebase 오류: code=${e.code}, message=${e.message}, plugin=${e.plugin}');
       
       // 서브컬렉션 방식으로 재시도
-      print('🔄 서브컬렉션 방식으로 재시도...');
+      Logger.log('🔄 서브컬렉션 방식으로 재시도...');
       final fallbackConversationId = _generateConversationId(
         currentUser.uid,
         otherUserId,
@@ -559,7 +560,7 @@ class DMService {
         isOtherUserAnonymous: isOtherUserAnonymous,
       );
     } catch (e) {
-      print('❌ 대화방 생성 일반 오류: $e');
+      Logger.error('❌ 대화방 생성 일반 오류: $e');
       return null;
     }
   }
@@ -575,9 +576,9 @@ class DMService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return null;
       
-      print('📁 서브컬렉션 방식 대화방 생성 시도...');
-      print('  - conversationId: $conversationId');
-      print('  - 경로: users/${currentUser.uid}/conversations/$conversationId');
+      Logger.log('📁 서브컬렉션 방식 대화방 생성 시도...');
+      Logger.log('  - conversationId: $conversationId');
+      Logger.log('  - 경로: users/${currentUser.uid}/conversations/$conversationId');
       
       final now = DateTime.now();
       final conversationData = {
@@ -604,7 +605,7 @@ class DMService {
           .doc(conversationId)
           .set(conversationData);
       
-      print('✅ 현재 사용자 서브컬렉션에 대화방 생성 완료');
+      Logger.log('✅ 현재 사용자 서브컬렉션에 대화방 생성 완료');
       
       // 상대방의 서브컬렉션에도 복사 (실패해도 무시)
       try {
@@ -618,9 +619,9 @@ class DMService {
               'otherUserId': currentUser.uid,  // 상대방 입장에서는 현재 사용자가 other
               'unreadCount': 0,
             });
-        print('✅ 상대방 서브컬렉션에도 대화방 생성 완료');
+        Logger.log('✅ 상대방 서브컬렉션에도 대화방 생성 완료');
       } catch (e) {
-        print('⚠️ 상대방 서브컬렉션 생성 실패 (무시): $e');
+        Logger.error('⚠️ 상대방 서브컬렉션 생성 실패 (무시): $e');
       }
       
       // 메인 conversations 컬렉션에도 시도 (실패해도 무시)
@@ -630,14 +631,14 @@ class DMService {
           'createdAt': Timestamp.fromDate(now),
           'updatedAt': Timestamp.fromDate(now),
         });
-        print('✅ 메인 conversations 컬렉션에도 생성 성공');
+        Logger.log('✅ 메인 conversations 컬렉션에도 생성 성공');
       } catch (e) {
-        print('⚠️ 메인 conversations 컬렉션 생성 실패 (무시): $e');
+        Logger.error('⚠️ 메인 conversations 컬렉션 생성 실패 (무시): $e');
       }
       
       return conversationId;
     } catch (e) {
-      print('❌ 서브컬렉션 방식도 실패: $e');
+      Logger.error('❌ 서브컬렉션 방식도 실패: $e');
       return null;
     }
   }
@@ -656,15 +657,15 @@ class DMService {
         .limit(50)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      print('📋 getMyConversations 호출:');
-      print('  - 현재 사용자: ${currentUser.uid}');
-      print('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');
+      Logger.log('📋 getMyConversations 호출:');
+      Logger.log('  - 현재 사용자: ${currentUser.uid}');
+      Logger.log('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');
       
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        print('  - ID: ${doc.id}');
-        print('    participants: ${data['participants']}');
-        print('    lastMessage: ${data['lastMessage']}');
+        Logger.log('  - ID: ${doc.id}');
+        Logger.log('    participants: ${data['participants']}');
+        Logger.log('    lastMessage: ${data['lastMessage']}');
       }
       
       final conversations = snapshot.docs
@@ -697,26 +698,26 @@ class DMService {
               
               if (allOthersLeft) {
                 show = false;
-                print('  - [${conv.id}] 숨김: 익명 대화방에서 모든 상대방이 나감');
+                Logger.log('  - [${conv.id}] 숨김: 익명 대화방에서 모든 상대방이 나감');
               }
             }
             
             // 문제 대화방 필터링 결과 로그
             if (conv.id.contains('ewm0tYZ2jS0xc8uJ5ssy')) {
-              print('⚠️ [문제 대화방 목록 표시 여부]');
-              print('  - ID: ${conv.id}');
-              print('  - 표시됨: $show');
-              print('  - userLeftAt: ${conv.userLeftAt[currentUser.uid]}');
-              print('  - lastMessageTime: ${conv.lastMessageTime}');
+              Logger.log('⚠️ [문제 대화방 목록 표시 여부]');
+              Logger.log('  - ID: ${conv.id}');
+              Logger.log('  - 표시됨: $show');
+              Logger.log('  - userLeftAt: ${conv.userLeftAt[currentUser.uid]}');
+              Logger.log('  - lastMessageTime: ${conv.lastMessageTime}');
             }
             
             return show;
           })
           .toList();
 
-      print('📋 대화방 목록 필터링 완료:');
-      print('  - 전체 대화방: ${snapshot.docs.length}개');
-      print('  - 필터링 후: ${conversations.length}개');
+      Logger.log('📋 대화방 목록 필터링 완료:');
+      Logger.log('  - 전체 대화방: ${snapshot.docs.length}개');
+      Logger.log('  - 필터링 후: ${conversations.length}개');
 
       // 캐시 업데이트
       for (var conv in conversations) {
@@ -729,23 +730,23 @@ class DMService {
 
   /// 메시지 목록 스트림 (사용자별 가시성 필터링 적용)
   Stream<List<DMMessage>> getMessages(String conversationId, {int limit = 50, DateTime? visibilityStartTime}) {
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('📱 getMessages 호출');
-    print('  - conversationId: $conversationId');
-    print('  - limit: $limit');
-    print('  - visibilityStartTime: $visibilityStartTime');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('📱 getMessages 호출');
+    Logger.log('  - conversationId: $conversationId');
+    Logger.log('  - limit: $limit');
+    Logger.log('  - visibilityStartTime: $visibilityStartTime');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('❌ 로그인된 사용자 없음 - 빈 스트림 반환');
+      Logger.log('❌ 로그인된 사용자 없음 - 빈 스트림 반환');
       return Stream.value([]);
     }
-    print('✓ 현재 사용자: ${currentUser.uid}');
+    Logger.log('✓ 현재 사용자: ${currentUser.uid}');
 
     // Firestore 쿼리 레벨에서 필터링 (깜빡임 완전 방지)
-    print('🔍 Firestore 쿼리 생성 중...');
-    print('  - 경로: conversations/$conversationId/messages');
+    Logger.log('🔍 Firestore 쿼리 생성 중...');
+    Logger.log('  - 경로: conversations/$conversationId/messages');
     
     Query messageQuery = _firestore
         .collection('conversations')
@@ -755,40 +756,40 @@ class DMService {
 
     // 가시성 시작 시간이 있으면 서버 사이드에서 필터링
     if (visibilityStartTime != null) {
-      print('  - 가시성 필터 적용: createdAt >= $visibilityStartTime');
+      Logger.log('  - 가시성 필터 적용: createdAt >= $visibilityStartTime');
       messageQuery = messageQuery.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(visibilityStartTime));
     }
 
-    print('✓ 쿼리 생성 완료 - 스트림 리스닝 시작');
+    Logger.log('✓ 쿼리 생성 완료 - 스트림 리스닝 시작');
     
     return messageQuery
         .limit(limit)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      print('📨 스냅샷 수신: ${snapshot.docs.length}개 문서');
+      Logger.log('📨 스냅샷 수신: ${snapshot.docs.length}개 문서');
       
       final messages = snapshot.docs
           .map((doc) {
             try {
               return DMMessage.fromFirestore(doc);
             } catch (e) {
-              print('⚠️ 메시지 파싱 실패 (문서 ID: ${doc.id}): $e');
+              Logger.error('⚠️ 메시지 파싱 실패 (문서 ID: ${doc.id}): $e');
               return null;
             }
           })
           .whereType<DMMessage>()
           .toList();
 
-      print('📱 메시지 조회 완료:');
-      print('  - conversationId: $conversationId');
-      print('  - 사용자: ${currentUser.uid}');
-      print('  - 가시성 시작 시간: $visibilityStartTime');
-      print('  - 원본 문서 수: ${snapshot.docs.length}개');
-      print('  - 파싱 성공 메시지 수: ${messages.length}개');
+      Logger.log('📱 메시지 조회 완료:');
+      Logger.log('  - conversationId: $conversationId');
+      Logger.log('  - 사용자: ${currentUser.uid}');
+      Logger.log('  - 가시성 시작 시간: $visibilityStartTime');
+      Logger.log('  - 원본 문서 수: ${snapshot.docs.length}개');
+      Logger.log('  - 파싱 성공 메시지 수: ${messages.length}개');
       
       if (messages.isNotEmpty) {
-        print('  - 첫 메시지: "${messages.first.text}" (${messages.first.senderId})');
-        print('  - 마지막 메시지: "${messages.last.text}" (${messages.last.senderId})');
+        Logger.log('  - 첫 메시지: "${messages.first.text}" (${messages.first.senderId})');
+        Logger.log('  - 마지막 메시지: "${messages.last.text}" (${messages.last.senderId})');
       }
 
       // 캐시 업데이트
@@ -796,11 +797,11 @@ class DMService {
 
       return messages;
     }).handleError((error) {
-      print('❌ 메시지 스트림 오류: $error');
+      Logger.error('❌ 메시지 스트림 오류: $error');
       if (error is FirebaseException) {
-        print('  - Firebase 코드: ${error.code}');
-        print('  - Firebase 메시지: ${error.message}');
-        print('  - 예상 원인: Firestore Rules 권한 문제 또는 네트워크 오류');
+        Logger.error('  - Firebase 코드: ${error.code}');
+        Logger.error('  - Firebase 메시지: ${error.message}');
+        Logger.error('  - 예상 원인: Firestore Rules 권한 문제 또는 네트워크 오류');
       }
       throw error;
     });
@@ -808,12 +809,12 @@ class DMService {
 
   /// 사용자의 메시지 가시성 시작 시간 계산
   Future<DateTime?> getUserMessageVisibilityStartTime(String conversationId) async {
-    print('🔍 getUserMessageVisibilityStartTime 호출');
-    print('  - conversationId: $conversationId');
+    Logger.log('🔍 getUserMessageVisibilityStartTime 호출');
+    Logger.log('  - conversationId: $conversationId');
     
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('  - 결과: null (사용자 없음)');
+      Logger.log('  - 결과: null (사용자 없음)');
       return null;
     }
 
@@ -824,55 +825,55 @@ class DMService {
           .get();
           
       if (!convSnapshot.exists) {
-        print('  - 결과: null (대화방 없음)');
+        Logger.log('  - 결과: null (대화방 없음)');
         return null;
       }
       
       final convData = convSnapshot.data() as Map<String, dynamic>;
       final userLeftAtData = convData['userLeftAt'] as Map<String, dynamic>? ?? {};
       
-      print('  - userLeftAt: ${userLeftAtData.keys.toList()}');
+      Logger.log('  - userLeftAt: ${userLeftAtData.keys.toList()}');
       
       // 나간 적이 있으면 그 시점부터만 메시지 표시
       if (userLeftAtData.containsKey(currentUser.uid)) {
         final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
         if (leftTimestamp != null) {
           final leftTime = leftTimestamp.toDate();
-          print('  - 결과: $leftTime (나간 시점부터 표시)');
+          Logger.log('  - 결과: $leftTime (나간 시점부터 표시)');
           return leftTime;
         }
       }
       
-      print('  - 결과: null (나간 적 없음 - 모든 메시지 표시)');
+      Logger.log('  - 결과: null (나간 적 없음 - 모든 메시지 표시)');
       return null;
     } catch (e) {
-      print('❌ 가시성 시간 계산 실패: $e');
+      Logger.error('❌ 가시성 시간 계산 실패: $e');
       return null;
     }
   }
 
   /// 메시지 전송
   Future<bool> sendMessage(String conversationId, String text) async {
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    print('📤 sendMessage 시작');
-    print('  - conversationId: $conversationId');
-    print('  - text 길이: ${text.length}자');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('📤 sendMessage 시작');
+    Logger.log('  - conversationId: $conversationId');
+    Logger.log('  - text 길이: ${text.length}자');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        print('❌ 로그인된 사용자가 없습니다');
+        Logger.log('❌ 로그인된 사용자가 없습니다');
         return false;
       }
-      print('✓ 현재 사용자: ${currentUser.uid}');
+      Logger.log('✓ 현재 사용자: ${currentUser.uid}');
 
       // 메시지 길이 검증
       if (text.trim().isEmpty || text.length > 500) {
-        print('❌ 메시지 길이가 유효하지 않습니다 (${text.length}자)');
+        Logger.log('❌ 메시지 길이가 유효하지 않습니다 (${text.length}자)');
         return false;
       }
-      print('✓ 메시지 길이 검증 통과');
+      Logger.log('✓ 메시지 길이 검증 통과');
 
       final now = DateTime.now();
 
@@ -883,21 +884,21 @@ class DMService {
         'createdAt': Timestamp.fromDate(now),
         'isRead': false,
       };
-      print('✓ 메시지 데이터 생성 완료');
+      Logger.log('✓ 메시지 데이터 생성 완료');
 
       // 대화방 존재 여부 확인 및 없으면 생성 후 메시지 추가
-      print('🔍 대화방 문서 조회 시작: conversations/$conversationId');
+      Logger.log('🔍 대화방 문서 조회 시작: conversations/$conversationId');
       final convRef = _firestore.collection('conversations').doc(conversationId);
       
       DocumentSnapshot convDoc;
       try {
         convDoc = await convRef.get();
-        print('✓ 대화방 문서 조회 성공 - exists: ${convDoc.exists}');
+        Logger.log('✓ 대화방 문서 조회 성공 - exists: ${convDoc.exists}');
       } catch (e) {
-        print('❌ 대화방 문서 조회 실패: $e');
+        Logger.error('❌ 대화방 문서 조회 실패: $e');
         if (e is FirebaseException) {
-          print('  - Firebase 오류 코드: ${e.code}');
-          print('  - Firebase 오류 메시지: ${e.message}');
+          Logger.error('  - Firebase 오류 코드: ${e.code}');
+          Logger.error('  - Firebase 오류 메시지: ${e.message}');
         }
         rethrow;
       }
@@ -919,7 +920,7 @@ class DMService {
               dmTitle = postDoc.data()!['title'] as String?;
             }
           } catch (e) {
-            print('게시글 제목 로드 실패: $e');
+            Logger.error('게시글 제목 로드 실패: $e');
           }
         }
 
@@ -962,42 +963,42 @@ class DMService {
 
         await convRef.set(initData);
         convDoc = await convRef.get();
-        print('✅ 대화방 자동 생성 후 첫 메시지 전송');
+        Logger.log('✅ 대화방 자동 생성 후 첫 메시지 전송');
       } else {
         final existingData = convDoc.data() as Map<String, dynamic>;
         final existingParticipants = List<String>.from(existingData['participants'] ?? []);
         if (!existingParticipants.contains(currentUser.uid)) {
-          print('❌ 메시지 전송 실패: 참여자가 아닌 대화방입니다 (conversationId=$conversationId)');
+          Logger.error('❌ 메시지 전송 실패: 참여자가 아닌 대화방입니다 (conversationId=$conversationId)');
           return false;
         }
       }
 
       // 메시지 추가
-      print('📝 메시지 서브컬렉션에 추가 시도...');
-      print('  - 경로: conversations/$conversationId/messages');
-      print('  - messageData: $messageData');
+      Logger.log('📝 메시지 서브컬렉션에 추가 시도...');
+      Logger.log('  - 경로: conversations/$conversationId/messages');
+      Logger.log('  - messageData: $messageData');
       
       try {
         final messageRef = await convRef.collection('messages').add(messageData);
-        print('✅ 메시지 추가 성공! 문서 ID: ${messageRef.id}');
+        Logger.log('✅ 메시지 추가 성공! 문서 ID: ${messageRef.id}');
       } catch (e) {
-        print('❌ 메시지 추가 실패: $e');
+        Logger.error('❌ 메시지 추가 실패: $e');
         if (e is FirebaseException) {
-          print('  - Firebase 오류 코드: ${e.code}');
-          print('  - Firebase 오류 메시지: ${e.message}');
-          print('  - 예상 원인: Firestore Rules 권한 문제');
+          Logger.error('  - Firebase 오류 코드: ${e.code}');
+          Logger.error('  - Firebase 오류 메시지: ${e.message}');
+          Logger.log('  - 예상 원인: Firestore Rules 권한 문제');
         }
         rethrow;
       }
 
       // 대화방 정보 업데이트 (마지막 메시지, 시간, 읽지 않은 메시지 수)
-      print('🔄 대화방 정보 업데이트 시작...');
+      Logger.log('🔄 대화방 정보 업데이트 시작...');
       final convDocAfter = await convRef.get();
       if (!convDocAfter.exists) {
-        print('❌ 대화방을 찾을 수 없습니다');
+        Logger.log('❌ 대화방을 찾을 수 없습니다');
         return false;
       }
-      print('✓ 대화방 문서 재조회 성공');
+      Logger.log('✓ 대화방 문서 재조회 성공');
 
       final convData = convDocAfter.data()!;
       final participants = List<String>.from(convData['participants']);
@@ -1005,7 +1006,7 @@ class DMService {
       final userLeftAt = convData['userLeftAt'] as Map<String, dynamic>?;
 
       // 모든 상대방의 읽지 않은 메시지 수 증가 (나간 사용자 제외)
-      print('🔍 unreadCount 업데이트 시작 - 업데이트 전: $unreadCount');
+      Logger.log('🔍 unreadCount 업데이트 시작 - 업데이트 전: $unreadCount');
       for (final participantId in participants) {
         if (participantId != currentUser.uid) {
           // 상대방이 나간 경우 unreadCount 증가하지 않음 (최적화)
@@ -1013,27 +1014,27 @@ class DMService {
           if (!hasLeft) {
             final currentCount = unreadCount[participantId] ?? 0;
             unreadCount[participantId] = currentCount + 1;
-            print('  - [$participantId] unreadCount 증가: $currentCount → ${unreadCount[participantId]}');
+            Logger.log('  - [$participantId] unreadCount 증가: $currentCount → ${unreadCount[participantId]}');
           } else {
-            print('  - [$participantId] 나간 사용자이므로 unreadCount 증가 안 함');
+            Logger.log('  - [$participantId] 나간 사용자이므로 unreadCount 증가 안 함');
           }
         }
       }
       
       // 강제 확인: unreadCount가 실제로 증가했는지 검증
       final hasAnyUnread = unreadCount.values.any((count) => count > 0);
-      print('🔍 unreadCount 검증 완료:');
-      print('  - hasAnyUnread: $hasAnyUnread');
-      print('  - 최종 unreadCount 맵: $unreadCount');
+      Logger.log('🔍 unreadCount 검증 완료:');
+      Logger.log('  - hasAnyUnread: $hasAnyUnread');
+      Logger.log('  - 최종 unreadCount 맵: $unreadCount');
       
       // 메시지 방향 상세 분석
-      print('📊 메시지 전송 방향 분석:');
-      print('  - 보내는 사람 (나): ${currentUser.uid}');
-      print('  - 받는 사람들: ${participants.where((id) => id != currentUser.uid).toList()}');
-      print('  - 내 배지 (변경 안 됨): ${unreadCount[currentUser.uid] ?? 0}');
+      Logger.log('📊 메시지 전송 방향 분석:');
+      Logger.log('  - 보내는 사람 (나): ${currentUser.uid}');
+      Logger.log('  - 받는 사람들: ${participants.where((id) => id != currentUser.uid).toList()}');
+      Logger.log('  - 내 배지 (변경 안 됨): ${unreadCount[currentUser.uid] ?? 0}');
       for (final participantId in participants) {
         if (participantId != currentUser.uid) {
-          print('  - ${participantId}의 배지 (증가함): ${unreadCount[participantId]}');
+          Logger.log('  - ${participantId}의 배지 (증가함): ${unreadCount[participantId]}');
         }
       }
 
@@ -1046,36 +1047,36 @@ class DMService {
         'updatedAt': Timestamp.fromDate(now),
       };
       
-      print('🔄 대화방 업데이트 데이터: $updateData');
-      print('  - 각 사용자별 unreadCount:');
+      Logger.log('🔄 대화방 업데이트 데이터: $updateData');
+      Logger.log('  - 각 사용자별 unreadCount:');
       unreadCount.forEach((userId, count) {
-        print('    • $userId: $count개 (읽지 않음)');
+        Logger.log('    • $userId: $count개 (읽지 않음)');
       });
       
       try {
         await convRef.update(updateData);
-        print('✅ 대화방 업데이트 성공');
+        Logger.log('✅ 대화방 업데이트 성공');
         
         // 업데이트 확인: 즉시 재조회하여 변경사항 반영 확인
-        print('🔍 업데이트 확인 중...');
+        Logger.log('🔍 업데이트 확인 중...');
         await Future.delayed(const Duration(milliseconds: 100));
         final verifyDoc = await convRef.get();
         if (verifyDoc.exists) {
           final verifyData = verifyDoc.data()!;
           final verifyUnread = Map<String, int>.from(verifyData['unreadCount'] ?? {});
-          print('  ✓ Firestore 확인 - unreadCount: $verifyUnread');
+          Logger.log('  ✓ Firestore 확인 - unreadCount: $verifyUnread');
         }
       } catch (e) {
-        print('❌ 대화방 업데이트 실패: $e');
+        Logger.error('❌ 대화방 업데이트 실패: $e');
         if (e is FirebaseException) {
-          print('  - Firebase 오류 코드: ${e.code}');
-          print('  - Firebase 오류 메시지: ${e.message}');
+          Logger.error('  - Firebase 오류 코드: ${e.code}');
+          Logger.error('  - Firebase 오류 메시지: ${e.message}');
         }
         rethrow;
       }
 
       // 모든 상대방에게 알림 전송
-      print('🔔 알림 전송 시작...');
+      Logger.log('🔔 알림 전송 시작...');
       final isAnonymous = Map<String, bool>.from(convData['isAnonymous']);
       final participantNames = Map<String, String>.from(convData['participantNames']);
       
@@ -1097,32 +1098,32 @@ class DMService {
               data: {'conversationId': conversationId},
             );
             if (success) {
-              print('✅ 알림 전송 성공: $participantId');
+              Logger.log('✅ 알림 전송 성공: $participantId');
             } else {
-              print('⚠️ 알림이 비활성화되었습니다: $participantId');
+              Logger.log('⚠️ 알림이 비활성화되었습니다: $participantId');
             }
           } catch (e) {
-            print('⚠️ 알림 전송 실패 (무시): userId=$participantId, error=$e');
+            Logger.error('⚠️ 알림 전송 실패 (무시): userId=$participantId, error=$e');
             // 알림 실패는 메시지 전송에 영향을 주지 않음
           }
         }
       }
 
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('✅ sendMessage 완료 - 모든 단계 성공');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('✅ sendMessage 완료 - 모든 단계 성공');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return true;
     } catch (e) {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('❌ sendMessage 실패');
-      print('  - 오류: $e');
-      print('  - 오류 타입: ${e.runtimeType}');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('❌ sendMessage 실패');
+      Logger.error('  - 오류: $e');
+      Logger.error('  - 오류 타입: ${e.runtimeType}');
       if (e is FirebaseException) {
-        print('  - Firebase 코드: ${e.code}');
-        print('  - Firebase 메시지: ${e.message}');
-        print('  - Firebase 플러그인: ${e.plugin}');
+        Logger.log('  - Firebase 코드: ${e.code}');
+        Logger.log('  - Firebase 메시지: ${e.message}');
+        Logger.log('  - Firebase 플러그인: ${e.plugin}');
       }
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return false;
     }
   }
@@ -1140,7 +1141,7 @@ class DMService {
         'updatedAt': Timestamp.fromDate(now),
       });
     } catch (e) {
-      print('대화방 보관 오류: $e');
+      Logger.error('대화방 보관 오류: $e');
     }
   }
 
@@ -1168,7 +1169,7 @@ class DMService {
     try {
       await convRef.delete();
     } catch (e) {
-      print('대화방 문서 삭제 오류: $e');
+      Logger.error('대화방 문서 삭제 오류: $e');
       rethrow;
     }
   }
@@ -1192,13 +1193,13 @@ class DMService {
         'updatedAt': Timestamp.fromDate(DateTime.now()),
       });
       
-      print('✅ 대화방 나가기 완료 (인스타그램 방식): $conversationId');
-      print('  - 사용자는 이전 메시지를 볼 수 없지만 상대방은 모든 메시지 유지');
+      Logger.log('✅ 대화방 나가기 완료 (인스타그램 방식): $conversationId');
+      Logger.log('  - 사용자는 이전 메시지를 볼 수 없지만 상대방은 모든 메시지 유지');
     } on FirebaseException catch (e) {
-      print('leaveConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
+      Logger.error('leaveConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
       rethrow;
     } catch (e) {
-      print('leaveConversation 일반 오류: $e');
+      Logger.error('leaveConversation 일반 오류: $e');
       rethrow;
     }
   }
@@ -1206,33 +1207,33 @@ class DMService {
   /// 메시지 읽음 처리
   Future<void> markAsRead(String conversationId) async {
     try {
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      print('📖 markAsRead 시작');
-      print('  - conversationId: $conversationId');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('📖 markAsRead 시작');
+      Logger.log('  - conversationId: $conversationId');
       
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        print('❌ 현재 사용자 없음');
+        Logger.log('❌ 현재 사용자 없음');
         return;
       }
-      print('  - currentUser.uid: ${currentUser.uid}');
+      Logger.log('  - currentUser.uid: ${currentUser.uid}');
 
       // 대화방 정보 가져오기
       final convDoc = await _firestore.collection('conversations').doc(conversationId).get();
       if (!convDoc.exists) {
-        print('❌ 대화방 존재하지 않음');
+        Logger.log('❌ 대화방 존재하지 않음');
         return;
       }
-      print('✓ 대화방 존재 확인');
+      Logger.log('✓ 대화방 존재 확인');
 
       final convData = convDoc.data()!;
       final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
-      print('  - 현재 unreadCount: $unreadCount');
-      print('  - 내 읽지 않은 메시지 수 (Firestore 필드): ${unreadCount[currentUser.uid] ?? 0}');
+      Logger.log('  - 현재 unreadCount: $unreadCount');
+      Logger.log('  - 내 읽지 않은 메시지 수 (Firestore 필드): ${unreadCount[currentUser.uid] ?? 0}');
 
       // 🔥 핵심 수정: unreadCount 필드 무시, 항상 실제 메시지 확인
       // 읽지 않은 메시지 가져오기
-      print('🔍 실제 읽지 않은 메시지 조회 중...');
+      Logger.log('🔍 실제 읽지 않은 메시지 조회 중...');
       final unreadMessages = await _firestore
           .collection('conversations')
           .doc(conversationId)
@@ -1241,15 +1242,15 @@ class DMService {
           .where('isRead', isEqualTo: false)
           .get();
       
-      print('  - 실제 읽지 않은 메시지: ${unreadMessages.docs.length}개');
+      Logger.log('  - 실제 읽지 않은 메시지: ${unreadMessages.docs.length}개');
 
       // 실제 메시지가 없으면 skip (정확한 확인)
       if (unreadMessages.docs.isEmpty) {
-        print('✓ 실제로 읽지 않은 메시지 없음 - skip');
+        Logger.log('✓ 실제로 읽지 않은 메시지 없음 - skip');
         return;
       }
       
-      print('🔄 읽음 처리 실행: ${unreadMessages.docs.length}개 메시지');
+      Logger.log('🔄 읽음 처리 실행: ${unreadMessages.docs.length}개 메시지');
 
       // 배치로 읽음 처리
       final batch = _firestore.batch();
@@ -1261,7 +1262,7 @@ class DMService {
           'readAt': Timestamp.fromDate(now),
         });
       }
-      print('✓ ${unreadMessages.docs.length}개 메시지 읽음 처리 준비');
+      Logger.log('✓ ${unreadMessages.docs.length}개 메시지 읽음 처리 준비');
 
       // 대화방의 unreadCount 업데이트
       unreadCount[currentUser.uid] = 0;
@@ -1269,21 +1270,21 @@ class DMService {
         'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       });
-      print('✓ unreadCount를 0으로 업데이트 준비: $unreadCount');
+      Logger.log('✓ unreadCount를 0으로 업데이트 준비: $unreadCount');
 
       await batch.commit();
-      print('✅ 메시지 읽음 처리 완료');
+      Logger.log('✅ 메시지 읽음 처리 완료');
       
       // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
       _conversationCache.remove(conversationId);
       _messageCache.remove(conversationId);
       
-      print('✓ 캐시 클리어 완료 - 스트림 리스너 업데이트 예정');
+      Logger.log('✓ 캐시 클리어 완료 - 스트림 리스너 업데이트 예정');
       
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
-      print('❌ 메시지 읽음 처리 오류: $e');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('❌ 메시지 읽음 처리 오류: $e');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 
@@ -1291,7 +1292,7 @@ class DMService {
   Stream<int> getTotalUnreadCount() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      print('❌ getTotalUnreadCount: 로그인 사용자 없음');
+      Logger.log('❌ getTotalUnreadCount: 로그인 사용자 없음');
       return Stream.value(0);
     }
 
@@ -1303,11 +1304,11 @@ class DMService {
 
     return baseStream.asyncMap((snapshot) async {
       try {
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('🔢 getTotalUnreadCount 업데이트 - 시작');
-        print('  - 전체 대화방: ${snapshot.docs.length}개');
-        print('  - 메타데이터 변경: ${snapshot.metadata.hasPendingWrites}');
-        print('  - 현재 사용자: ${currentUser.uid}');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.log('🔢 getTotalUnreadCount 업데이트 - 시작');
+        Logger.log('  - 전체 대화방: ${snapshot.docs.length}개');
+        Logger.log('  - 메타데이터 변경: ${snapshot.metadata.hasPendingWrites}');
+        Logger.log('  - 현재 사용자: ${currentUser.uid}');
         
         int totalUnread = 0;
         int processedConv = 0;
@@ -1321,7 +1322,7 @@ class DMService {
             
             // 보관된 대화방은 제외
             if (archivedBy.contains(currentUser.uid)) {
-              print('  - [$convId] 건너뜀: 보관된 대화방');
+              Logger.log('  - [$convId] 건너뜀: 보관된 대화방');
               skippedConv++;
               continue;
             }
@@ -1338,7 +1339,7 @@ class DMService {
                 
                 // 나간 이후 새 메시지가 없으면 카운트하지 않음
                 if (lastMsgTime.compareTo(userLeftTime) < 0) {
-                  print('  - [$convId] 건너뜀: 나간 대화방 (새 메시지 없음)');
+                  Logger.log('  - [$convId] 건너뜀: 나간 대화방 (새 메시지 없음)');
                   skippedConv++;
                   continue;
                 }
@@ -1348,24 +1349,24 @@ class DMService {
             final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
             final myUnread = unreadCount[currentUser.uid] ?? 0;
             
-            print('  ✓ [$convId] 처리 완료 - 읽지 않음: ${myUnread}개');
+            Logger.log('  ✓ [$convId] 처리 완료 - 읽지 않음: ${myUnread}개');
             
             totalUnread += myUnread;
             processedConv++;
           } catch (e) {
-            print('⚠️ 대화방 [${doc.id}] 처리 중 오류 (건너뜀): $e');
+            Logger.error('⚠️ 대화방 [${doc.id}] 처리 중 오류 (건너뜀): $e');
             skippedConv++;
             continue;
           }
         }
         
-        print('  📊 처리 완료:');
-        print('    - 처리됨: $processedConv개');
-        print('    - 건너뜀: $skippedConv개');
-        print('  - 총 읽지 않은 메시지: $totalUnread개');
+        Logger.log('  📊 처리 완료:');
+        Logger.log('    - 처리됨: $processedConv개');
+        Logger.log('    - 건너뜀: $skippedConv개');
+        Logger.log('  - 총 읽지 않은 메시지: $totalUnread개');
         
         // 상세 배지 계산 로그 추가 (실제 처리된 대화방만)
-        print('🔢 배지 계산 상세 결과 (실제 포함된 대화방만):');
+        Logger.log('🔢 배지 계산 상세 결과 (실제 포함된 대화방만):');
         if (totalUnread > 0) {
           for (var doc in snapshot.docs) {
             try {
@@ -1396,21 +1397,21 @@ class DMService {
               final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
               final myUnread = unreadCount[currentUser.uid] ?? 0;
               if (myUnread > 0) {
-                print('  ✅ $convId: $myUnread개 (실제 배지에 포함됨)');
+                Logger.log('  ✅ $convId: $myUnread개 (실제 배지에 포함됨)');
               }
             } catch (e) {
               // 오류는 무시하고 계속 진행
             }
           }
         } else {
-          print('  (배지에 포함된 대화방 없음)');
+          Logger.log('  (배지에 포함된 대화방 없음)');
         }
-        print('🔢 최종 배지 숫자: $totalUnread');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        Logger.log('🔢 최종 배지 숫자: $totalUnread');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return totalUnread;
       } catch (e) {
-        print('❌ getTotalUnreadCount 오류: $e');
-        print('  - 스택 트레이스: ${e.toString()}');
+        Logger.error('❌ getTotalUnreadCount 오류: $e');
+        Logger.log('  - 스택 트레이스: ${e.toString()}');
         return 0;
       }
     }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지
@@ -1437,7 +1438,7 @@ class DMService {
           final count = snapshot.docs.length;
           
           if (DMFeatureFlags.enableDebugLogs) {
-            print('🔄 배지 스트림 업데이트: $conversationId - $count개');
+            Logger.log('🔄 배지 스트림 업데이트: $conversationId - $count개');
           }
           
           return count;

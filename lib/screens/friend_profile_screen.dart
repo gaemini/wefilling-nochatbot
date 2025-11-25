@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'review_detail_screen.dart';
 import 'dm_chat_screen.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/logger.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -64,7 +65,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         });
       }
     } catch (e) {
-      print('사용자 데이터 로드 오류: $e');
+      Logger.error('사용자 데이터 로드 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -551,7 +552,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(widget.userId)) {
-        print('❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
+        Logger.log('❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -582,7 +583,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         );
       }
     } catch (e) {
-      print('❌ DM 열기 오류: $e');
+      Logger.error('❌ DM 열기 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

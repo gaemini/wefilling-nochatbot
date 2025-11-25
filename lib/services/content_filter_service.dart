@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../utils/logger.dart';
 
 class ContentFilterService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -40,7 +41,7 @@ class ContentFilterService {
 
       return _blockedUserIds!;
     } catch (e) {
-      print('차단 목록 조회 실패: $e');
+      Logger.error('차단 목록 조회 실패: $e');
       return {};
     }
   }

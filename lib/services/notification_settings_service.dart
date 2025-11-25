@@ -4,6 +4,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/logger.dart';
 
 // 알림 설정 키 상수
 class NotificationSettingKeys {
@@ -75,7 +76,7 @@ class NotificationSettingsService {
         return settings;
       }
     } catch (e) {
-      print('알림 설정 로드 오류: $e');
+      Logger.error('알림 설정 로드 오류: $e');
       return _defaultSettings;
     }
   }
@@ -117,13 +118,13 @@ class NotificationSettingsService {
             await fcm.unsubscribeFromTopic('ads');
           }
         } catch (e) {
-          print('FCM 토픽 처리 오류: $e');
+          Logger.error('FCM 토픽 처리 오류: $e');
         }
       }
 
       return true;
     } catch (e) {
-      print('알림 설정 업데이트 오류: $e');
+      Logger.error('알림 설정 업데이트 오류: $e');
       return false;
     }
   }
@@ -158,10 +159,10 @@ class _FCMServiceShim {
   Future<void> subscribeToTopic(String topic) async {
     // 지연 import로 실제 FCMService 사용
     // ignore: avoid_print
-    print('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
+    Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
   Future<void> unsubscribeFromTopic(String topic) async {
     // ignore: avoid_print
-    print('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
+    Logger.log('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
 }

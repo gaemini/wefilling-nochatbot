@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../models/meetup.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class EditMeetupScreen extends StatefulWidget {
   final Meetup meetup;
@@ -139,7 +140,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
       return downloadUrl;
     } catch (e) {
-      print('이미지 업로드 오류: $e');
+      Logger.error('이미지 업로드 오류: $e');
       return _existingImageUrl;
     }
   }

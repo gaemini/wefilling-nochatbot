@@ -12,6 +12,7 @@ import 'storage_service.dart';
 import 'notification_service.dart';
 import 'auth_service.dart';
 import 'notification_settings_service.dart';
+import '../utils/logger.dart';
 
 /// 리뷰 합의 기능을 위한 알림 키
 class ReviewNotificationKeys {
@@ -36,13 +37,13 @@ class ReviewImageAdapter {
         // 성공 시 리뷰 전용 경로로 변환
         // 기존 posts/ 경로를 reviews/{meetupId}/ 경로로 변경
         final reviewImageUrl = _convertToReviewPath(uploadedUrl, meetupId, reviewId);
-        print('리뷰 이미지 업로드 성공: $reviewImageUrl');
+        Logger.log('리뷰 이미지 업로드 성공: $reviewImageUrl');
         return reviewImageUrl;
       }
       
       return null;
     } catch (e) {
-      print('리뷰 이미지 업로드 오류: $e');
+      Logger.error('리뷰 이미지 업로드 오류: $e');
       return null;
     }
   }
@@ -56,7 +57,7 @@ class ReviewImageAdapter {
     try {
       if (imageFiles.isEmpty) return [];
 
-      print('리뷰 이미지 업로드 시작: ${imageFiles.length}개 파일');
+      Logger.log('리뷰 이미지 업로드 시작: ${imageFiles.length}개 파일');
 
       // 병렬 업로드 (기존 PostService 패턴 재사용)
       final futures = imageFiles.map(
@@ -71,11 +72,11 @@ class ReviewImageAdapter {
       // null이 아닌 URL만 반환
       final successUrls = results.where((url) => url != null).cast<String>().toList();
       
-      print('리뷰 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
+      Logger.log('리뷰 이미지 업로드 완료: ${successUrls.length}개 (요청: ${imageFiles.length}개)');
       return successUrls;
 
     } catch (e) {
-      print('리뷰 이미지 다중 업로드 오류: $e');
+      Logger.error('리뷰 이미지 다중 업로드 오류: $e');
       return [];
     }
   }
@@ -84,7 +85,7 @@ class ReviewImageAdapter {
   String _convertToReviewPath(String originalUrl, String meetupId, String reviewId) {
     // 실제로는 같은 Storage 위치를 사용하되, 메타데이터나 로깅에서 구분
     // 향후 필요시 실제 경로 변경 로직 추가 가능
-    print('리뷰 이미지 경로 변환: meetup=$meetupId, review=$reviewId');
+    Logger.log('리뷰 이미지 경로 변환: meetup=$meetupId, review=$reviewId');
     return originalUrl;
   }
 
@@ -93,10 +94,10 @@ class ReviewImageAdapter {
     try {
       // TODO: 실제 Firebase Storage에서 이미지 삭제 로직 구현
       // 현재는 로깅만 수행
-      print('이미지 롤백 요청: $imageUrl');
+      Logger.log('이미지 롤백 요청: $imageUrl');
       return true;
     } catch (e) {
-      print('이미지 롤백 오류: $e');
+      Logger.error('이미지 롤백 오류: $e');
       return false;
     }
   }
@@ -126,7 +127,7 @@ class ReviewNotificationAdapter {
         actorName: requesterName,
       );
     } catch (e) {
-      print('리뷰 요청 알림 발송 오류: $e');
+      Logger.error('리뷰 요청 알림 발송 오류: $e');
       return false;
     }
   }
@@ -149,7 +150,7 @@ class ReviewNotificationAdapter {
         actorName: reviewerName,
       );
     } catch (e) {
-      print('리뷰 수락 알림 발송 오류: $e');
+      Logger.error('리뷰 수락 알림 발송 오류: $e');
       return false;
     }
   }
@@ -172,7 +173,7 @@ class ReviewNotificationAdapter {
         actorName: reviewerName,
       );
     } catch (e) {
-      print('리뷰 거절 알림 발송 오류: $e');
+      Logger.error('리뷰 거절 알림 발송 오류: $e');
       return false;
     }
   }
@@ -200,7 +201,7 @@ class ReviewNotificationAdapter {
       
       return allSuccess;
     } catch (e) {
-      print('리뷰 완료 알림 발송 오류: $e');
+      Logger.error('리뷰 완료 알림 발송 오류: $e');
       return false;
     }
   }
@@ -210,7 +211,7 @@ class ReviewNotificationAdapter {
     try {
       return await _settingsService.isNotificationEnabled(notificationType);
     } catch (e) {
-      print('리뷰 알림 설정 확인 오류: $e');
+      Logger.error('리뷰 알림 설정 확인 오류: $e');
       return true; // 기본값으로 활성화
     }
   }
@@ -230,7 +231,7 @@ class ReviewUserAdapter {
     try {
       return await _authService.getUserProfile();
     } catch (e) {
-      print('현재 사용자 프로필 조회 오류: $e');
+      Logger.error('현재 사용자 프로필 조회 오류: $e');
       return null;
     }
   }
@@ -244,7 +245,7 @@ class ReviewUserAdapter {
       }
       return null;
     } catch (e) {
-      print('사용자 프로필 조회 오류 ($userId): $e');
+      Logger.error('사용자 프로필 조회 오류 ($userId): $e');
       return null;
     }
   }
@@ -278,7 +279,7 @@ class ReviewUserAdapter {
       
       return profiles;
     } catch (e) {
-      print('다중 사용자 프로필 조회 오류: $e');
+      Logger.error('다중 사용자 프로필 조회 오류: $e');
       return {};
     }
   }
@@ -300,7 +301,7 @@ class ReviewUserAdapter {
       
       return participants.contains(user.uid);
     } catch (e) {
-      print('모임 참여자 확인 오류: $e');
+      Logger.error('모임 참여자 확인 오류: $e');
       return false;
     }
   }
@@ -319,7 +320,7 @@ class ReviewMeetupAdapter {
       }
       return null;
     } catch (e) {
-      print('모임 정보 조회 오류 ($meetupId): $e');
+      Logger.error('모임 정보 조회 오류 ($meetupId): $e');
       return null;
     }
   }
@@ -345,10 +346,10 @@ class ReviewMeetupAdapter {
         });
       });
 
-      print('모임 참여자 수 증가 완료: $meetupId');
+      Logger.log('모임 참여자 수 증가 완료: $meetupId');
       return true;
     } catch (e) {
-      print('모임 참여자 수 증가 오류 ($meetupId): $e');
+      Logger.error('모임 참여자 수 증가 오류 ($meetupId): $e');
       return false;
     }
   }
@@ -365,7 +366,7 @@ class ReviewMeetupAdapter {
       
       return meetupDate.isBefore(now);
     } catch (e) {
-      print('모임 완료 상태 확인 오류 ($meetupId): $e');
+      Logger.error('모임 완료 상태 확인 오류 ($meetupId): $e');
       return false;
     }
   }

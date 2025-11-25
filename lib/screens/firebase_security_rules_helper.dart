@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../utils/logger.dart';
 
 class FirebaseSecurityRulesHelper extends StatelessWidget {
   final String projectId;
@@ -156,7 +157,7 @@ service firebase.storage {
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     } else {
-      print('Could not launch $url');
+      Logger.log('Could not launch $url');
     }
   }
 

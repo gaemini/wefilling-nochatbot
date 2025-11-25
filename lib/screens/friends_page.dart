@@ -6,6 +6,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/user_profile.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
@@ -16,6 +17,7 @@ import '../design/tokens.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/logger.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -36,6 +38,11 @@ class _FriendsPageState extends State<FriendsPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // AuthProvider 연결
+      final authProvider = context.read<AuthProvider>();
+      final relationshipProvider = context.read<RelationshipProvider>();
+      relationshipProvider.setAuthProvider(authProvider);
+      
       _initializeData();
     });
   }
@@ -216,7 +223,7 @@ class _FriendsPageState extends State<FriendsPage> {
         AppLocalizations.of(context)!.cannotLoadProfile,
         Colors.red,
       );
-      print('프로필 이동 오류: $e');
+      Logger.error('프로필 이동 오류: $e');
     }
   }
 
@@ -400,7 +407,7 @@ class _FriendsPageState extends State<FriendsPage> {
         _showSnackBar(AppLocalizations.of(context)!.groupAssignmentFailed, Colors.red);
       }
     } catch (e) {
-      print('그룹 배정 오류: $e');
+      Logger.error('그룹 배정 오류: $e');
       _showSnackBar(AppLocalizations.of(context)!.errorOccurred, Colors.red);
     }
   }

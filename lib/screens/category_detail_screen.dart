@@ -10,6 +10,7 @@ import '../ui/widgets/empty_state.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/logger.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -43,24 +44,24 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       final List<UserProfile> friends = [];
       final List<String> missingUserIds = [];
 
-      print('🔍 카테고리 친구 로드: ${widget.category.name}');
-      print('  - category.friendIds: ${widget.category.friendIds.length}개');
+      Logger.log('🔍 카테고리 친구 로드: ${widget.category.name}');
+      Logger.log('  - category.friendIds: ${widget.category.friendIds.length}개');
 
       // 카테고리에 속한 친구들의 정보 가져오기
       for (final friendId in widget.category.friendIds) {
         final doc = await _firestore.collection('users').doc(friendId).get();
         if (doc.exists) {
           friends.add(UserProfile.fromFirestore(doc));
-          print('  ✅ 로드 성공: $friendId');
+          Logger.log('  ✅ 로드 성공: $friendId');
         } else {
           missingUserIds.add(friendId);
-          print('  ❌ 사용자 문서 없음: $friendId');
+          Logger.log('  ❌ 사용자 문서 없음: $friendId');
         }
       }
 
-      print('📊 로드 결과:');
-      print('  - 성공: ${friends.length}명');
-      print('  - 실패: ${missingUserIds.length}명');
+      Logger.log('📊 로드 결과:');
+      Logger.log('  - 성공: ${friends.length}명');
+      Logger.error('  - 실패: ${missingUserIds.length}명');
 
       if (mounted) {
         setState(() {
@@ -69,7 +70,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         });
       }
     } catch (e) {
-      print('❌ 친구 목록 로드 오류: $e');
+      Logger.error('❌ 친구 목록 로드 오류: $e');
       if (mounted) {
         setState(() {
           _isLoading = false;

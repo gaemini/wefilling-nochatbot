@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
+import '../providers/auth_provider.dart';
 import '../models/friend_request.dart';
 import '../models/user_profile.dart';
 import '../design/tokens.dart';
@@ -27,6 +28,11 @@ class _RequestsPageState extends State<RequestsPage>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // AuthProvider 연결
+      final authProvider = context.read<AuthProvider>();
+      final relationshipProvider = context.read<RelationshipProvider>();
+      relationshipProvider.setAuthProvider(authProvider);
+      
       _initializeData();
     });
   }

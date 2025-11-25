@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../config/app_config.dart';
 
 class AccountDeletionService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -19,9 +20,7 @@ class AccountDeletionService {
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
       
       // 플랫폼별 clientId 분기 (iOS/macOS만)
-      final clientId = (Platform.isIOS || Platform.isMacOS)
-          ? '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com'
-          : null;
+      final clientId = AppConfig.getGoogleClientId();
       await googleSignIn.initialize(clientId: clientId);
       
       // 기존 로그인 세션 초기화

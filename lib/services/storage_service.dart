@@ -1,11 +1,12 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
-import 'dart:typed_data';
-import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import '../utils/logger.dart';
+import '../utils/logger.dart';
 
 class StorageService {
   final FirebaseStorage _storage = FirebaseStorage.instance;
@@ -17,7 +18,7 @@ class StorageService {
       // 이미지 압축
       final compressedFile = await _compressImage(imageFile);
       if (compressedFile == null) {
-        print('이미지 압축 실패');
+        Logger.error('이미지 압축 실패');
         return null;
       }
 
@@ -26,8 +27,8 @@ class StorageService {
       final String folderPath = 'posts';
       final String fullPath = '$folderPath/$fileName';
 
-      print('이미지 업로드 시작: $fullPath');
-      print('Firebase Storage 버킷: ${_storage.bucket}');
+      Logger.log('이미지 업로드 시작: $fullPath');
+      Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       // 이미지 파일 경로 설정 (posts 폴더 아래에 저장)
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
@@ -47,60 +48,49 @@ class StorageService {
       // 업로드 진행 상태 모니터링 (선택사항)
       uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
         final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-        print('업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
+        Logger.log('업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
       });
 
-      // 타임아웃 처리
-      bool isCompleted = false;
-
-      // 업로드 작업 처리
-      final uploadFuture = uploadTask.whenComplete(() {
-        isCompleted = true;
-        print('업로드 완료: $fullPath');
-      });
-
-      // 타임아웃 처리
-      await Future.any([
-        uploadFuture,
-        Future.delayed(const Duration(seconds: 180), () {
-          if (!isCompleted) {
-            print('이미지 업로드 타임아웃 발생: $fullPath');
-          }
-        }),
-      ]);
-
-      // 업로드가 완료되지 않았으면 null 반환
-      if (!isCompleted) {
-        print('업로드 실패 (타임아웃): $fullPath');
+      // 타임아웃 처리 개선 - 타임아웃 시 업로드 작업 취소
+      TaskSnapshot taskSnapshot;
+      try {
+        taskSnapshot = await uploadTask.timeout(
+          const Duration(seconds: 180),
+          onTimeout: () {
+            // 타임아웃 발생 시 업로드 작업 취소
+            uploadTask.cancel();
+            throw TimeoutException('이미지 업로드 타임아웃', const Duration(seconds: 180));
+          },
+        );
+        Logger.log('업로드 완료: $fullPath');
+      } on TimeoutException catch (e) {
+        Logger.error('업로드 타임아웃', e);
         return null;
       }
 
-      // 업로드 완료 대기
-      final TaskSnapshot taskSnapshot = await uploadTask;
-
       // 이미지 URL 반환 - Firebase가 자동으로 생성하는 다운로드 URL 사용
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      print('다운로드 URL 획득: $downloadUrl');
+      Logger.log('다운로드 URL 획득: $downloadUrl');
 
       // 임시 파일 삭제
       if (compressedFile.path != imageFile.path) {
         try {
           await compressedFile.delete();
         } catch (e) {
-          print('임시 파일 삭제 실패: $e');
+          Logger.error('임시 파일 삭제 실패: $e');
         }
       }
 
       return downloadUrl;
     } catch (e) {
-      print('이미지 업로드 오류: $e');
+      Logger.error('이미지 업로드 오류: $e');
 
       // 오류 상세 정보 수집
       String errorDetails = '';
       if (e is FirebaseException) {
         errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
       }
-      print('Firebase 오류 상세: $errorDetails');
+      Logger.error('Firebase 오류 상세: $errorDetails');
 
       return null;
     }
@@ -111,7 +101,7 @@ class StorageService {
     try {
       // 이미지 정보 확인
       final fileSize = await file.length();
-      print('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
+      Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
 
       // 파일 확장자 확인
       final ext = path.extension(file.path).toLowerCase();
@@ -145,30 +135,30 @@ class StorageService {
       );
 
       if (result == null) {
-        print('이미지 압축 실패, 원본 사용');
+        Logger.error('이미지 압축 실패, 원본 사용');
         return file;
       }
 
       final compressedSize = await File(result.path).length();
-      print('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
+      Logger.log('압축 후 이미지 크기: ${(compressedSize / 1024).round()}KB');
 
       // XFile을 File로 변환하여 반환
       return File(result.path);
     } catch (e) {
-      print('이미지 압축 오류: $e');
+      Logger.error('이미지 압축 오류: $e');
       return file; // 압축 실패 시 원본 반환
     }
   }
 
   // Firebase Storage URL 형식을 올바르게 수정하는 정적 메서드
   static String correctFirebaseStorageUrl(String imageUrl) {
-    print('🔧 URL 수정 시작: $imageUrl');
+    Logger.log('🔧 URL 수정 시작: $imageUrl');
 
     // 이미 올바른 Firebase Storage URL이면 그대로 반환
     if (imageUrl.contains('firebasestorage.googleapis.com') &&
         imageUrl.contains('alt=media') &&
         imageUrl.contains('token=')) {
-      print('✅ 이미 올바른 URL 형식, 변경 없음');
+      Logger.log('✅ 이미 올바른 URL 형식, 변경 없음');
       return imageUrl;
     }
 
@@ -180,7 +170,7 @@ class StorageService {
         'storage.googleapis.com/firebasestorage/',
         'firebasestorage.googleapis.com/',
       );
-      print('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
+      Logger.log('🔧 URL 형식 수정됨 (storage->firebasestorage): $correctedUrl');
     }
 
     // 잘못된 .firebase.app을 올바른 .firebasestorage.app으로 변경
@@ -190,7 +180,7 @@ class StorageService {
         '.firebase.app',
         '.firebasestorage.app',
       );
-      print(
+      Logger.log(
         '🔧 URL 도메인 수정됨 (.firebase.app -> .firebasestorage.app): $correctedUrl',
       );
     }
@@ -202,10 +192,10 @@ class StorageService {
       } else {
         correctedUrl = '$correctedUrl?alt=media';
       }
-      print('🔧 alt=media 파라미터 추가: $correctedUrl');
+      Logger.log('🔧 alt=media 파라미터 추가: $correctedUrl');
     }
 
-    print('✅ URL 수정 완료: $correctedUrl');
+    Logger.log('✅ URL 수정 완료: $correctedUrl');
     return correctedUrl;
   }
 
@@ -221,14 +211,14 @@ class StorageService {
         cleanUrl = imageUrl.replaceAll('&alt=media', '');
       }
 
-      print('이미지 삭제 - 정제된 URL: $cleanUrl');
+      Logger.log('이미지 삭제 - 정제된 URL: $cleanUrl');
       final Reference ref = _storage.refFromURL(cleanUrl);
 
       // 이미지 삭제
       await ref.delete();
       return true;
     } catch (e) {
-      print('이미지 삭제 오류: $e');
+      Logger.error('이미지 삭제 오류: $e');
       return false;
     }
   }

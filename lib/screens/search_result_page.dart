@@ -11,6 +11,7 @@ import '../ui/widgets/app_icon_button.dart';
 import 'meetup_detail_screen.dart';
 import 'post_detail_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class SearchResultPage extends StatefulWidget {
   final String boardType; // 'meeting' 또는 'info'
@@ -67,7 +68,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
   }
 
   Future<void> _performSearch(String query) async {
-    print('🔍 검색 시작: "$query", 타입: ${widget.boardType}');
+    Logger.log('🔍 검색 시작: "$query", 타입: ${widget.boardType}');
     setState(() {
       _isLoading = true;
       _hasSearched = true;
@@ -76,18 +77,18 @@ class _SearchResultPageState extends State<SearchResultPage> {
     try {
       if (widget.boardType == 'meeting') {
         // 모임 검색
-        print('🔍 모임 검색 실행...');
+        Logger.log('🔍 모임 검색 실행...');
         final meetups = await _meetupService.searchMeetupsAsync(query);
-        print('🔍 모임 검색 결과: ${meetups.length}개');
+        Logger.log('🔍 모임 검색 결과: ${meetups.length}개');
         setState(() {
           _searchResults = meetups;
           _isLoading = false;
         });
       } else {
         // 정보게시판 검색 - 카테고리 필터 제거하고 전체 검색
-        print('🔍 게시글 검색 실행...');
+        Logger.log('🔍 게시글 검색 실행...');
         final posts = await _postService.searchPosts(query); // category 파라미터 제거
-        print('🔍 게시글 검색 결과: ${posts.length}개');
+        Logger.log('🔍 게시글 검색 결과: ${posts.length}개');
         setState(() {
           _searchResults = posts;
           _isLoading = false;
@@ -98,7 +99,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
         _searchResults.clear();
         _isLoading = false;
       });
-      print('🔍 검색 오류: $e');
+      Logger.error('🔍 검색 오류: $e');
     }
   }
 

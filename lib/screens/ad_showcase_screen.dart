@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
+import '../utils/logger.dart';
 
 class AdShowcaseScreen extends StatelessWidget {
   const AdShowcaseScreen({super.key});
@@ -21,7 +22,7 @@ class AdShowcaseScreen extends StatelessWidget {
         );
       }
     } catch (e) {
-      print('URL 열기 실패: $e');
+      Logger.error('URL 열기 실패: $e');
     }
   }
 

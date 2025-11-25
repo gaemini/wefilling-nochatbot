@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../services/post_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -111,14 +112,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final user = authProvider.user;
     
     if (user == null) {
-      print('❌ 사용자가 로그인되지 않았습니다.');
+      Logger.log('❌ 사용자가 로그인되지 않았습니다.');
       return;
     }
 
     try {
-      print('🔍 카테고리 조회 시작');
-      print('👤 사용자 UID: ${user.uid}');
-      print('📍 경로: friend_categories (where userId == ${user.uid})');
+      Logger.log('🔍 카테고리 조회 시작');
+      Logger.log('👤 사용자 UID: ${user.uid}');
+      Logger.log('📍 경로: friend_categories (where userId == ${user.uid})');
       
       // Firestore에서 사용자의 친구 카테고리 목록 가져오기
       // 실제로는 friend_categories 컬렉션에 저장되어 있음
@@ -127,17 +128,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           .where('userId', isEqualTo: user.uid)
           .get();
 
-      print('📊 조회된 카테고리 개수: ${categoriesSnapshot.docs.length}');
+      Logger.log('📊 조회된 카테고리 개수: ${categoriesSnapshot.docs.length}');
       
       if (categoriesSnapshot.docs.isNotEmpty) {
-        print('✅ 카테고리 목록:');
+        Logger.log('✅ 카테고리 목록:');
         for (var doc in categoriesSnapshot.docs) {
-          print('  - ID: ${doc.id}, 데이터: ${doc.data()}');
+          Logger.log('  - ID: ${doc.id}, 데이터: ${doc.data()}');
         }
       }
 
       if (categoriesSnapshot.docs.isEmpty) {
-        print('⚠️ 카테고리가 비어있습니다.');
+        Logger.log('⚠️ 카테고리가 비어있습니다.');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -210,8 +211,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         });
       }
     } catch (e, stackTrace) {
-      print('❌ 카테고리 로드 오류: $e');
-      print('스택 트레이스: $stackTrace');
+      Logger.error('❌ 카테고리 로드 오류: $e');
+      Logger.log('스택 트레이스: $stackTrace');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -289,7 +290,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           throw Exception("게시글 등록 실패");
         }
       } catch (e) {
-        print('게시글 작성 오류: $e');
+        Logger.error('게시글 작성 오류: $e');
         if (mounted) {
           setState(() {
             _isSubmitting = false;

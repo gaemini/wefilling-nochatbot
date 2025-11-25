@@ -12,6 +12,7 @@ import '../ui/widgets/empty_state.dart';
 import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class FriendCategoriesScreen extends StatefulWidget {
   const FriendCategoriesScreen({super.key});
@@ -48,7 +49,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.unregisterStreamCleanup(_cleanupCallback);
     } catch (e) {
-      print('AuthProvider 콜백 제거 오류: $e');
+      Logger.error('AuthProvider 콜백 제거 오류: $e');
     }
     
     // 서비스 정리
@@ -637,7 +638,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         }
       }
     } catch (e) {
-      print('기본 카테고리 생성 UI 오류: $e');
+      Logger.error('기본 카테고리 생성 UI 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(

@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/profile_grid_adapter_service.dart';
 import '../services/feature_flag_service.dart';
+import '../utils/logger.dart';
 
 enum PostDisplayMode { grid, list, tagged }
 
@@ -97,7 +98,7 @@ class _PostGridState extends State<PostGrid> {
         _hasMoreData = false;
       });
     } catch (e) {
-      print('추가 포스트 로드 오류: $e');
+      Logger.error('추가 포스트 로드 오류: $e');
     } finally {
       setState(() {
         _isLoading = false;

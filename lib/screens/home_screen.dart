@@ -19,6 +19,7 @@ import '../services/preload_service.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -96,7 +97,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   @override
   void dispose() {
-    print('🔄 MeetupHomePage dispose 시작');
+    Logger.log('🔄 MeetupHomePage dispose 시작');
 
     // 검색 관련 정리
     _searchController.removeListener(_onSearchChanged);
@@ -125,18 +126,18 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     _participationStatusCache.clear();
     _participationCacheTime.clear();
 
-    print('✅ MeetupHomePage dispose 완료');
+    Logger.log('✅ MeetupHomePage dispose 완료');
     super.dispose();
   }
 
   // 알림에서 전달받은 모임 표시
   Future<void> _showMeetupFromNotification(String meetupId) async {
     try {
-      print('🔔 알림에서 모임 로드: $meetupId');
+      Logger.log('🔔 알림에서 모임 로드: $meetupId');
       final meetup = await _meetupService.getMeetupById(meetupId);
       
       if (meetup != null && mounted) {
-        print('✅ 모임 로드 성공, 다이얼로그 표시');
+        Logger.log('✅ 모임 로드 성공, 다이얼로그 표시');
         showDialog(
           context: context,
           builder: (dialogContext) => MeetupDetailScreen(
@@ -153,10 +154,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           ),
         );
       } else {
-        print('❌ 모임을 찾을 수 없음: $meetupId');
+        Logger.log('❌ 모임을 찾을 수 없음: $meetupId');
       }
     } catch (e) {
-      print('❌ 알림 모임 로드 오류: $e');
+      Logger.error('❌ 알림 모임 로드 오류: $e');
     }
   }
 
@@ -303,7 +304,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         preloadAdditionalContent();
       });
     } catch (e) {
-      print('모임 로드 오류: $e');
+      Logger.error('모임 로드 오류: $e');
       _filteredMeetups = [];
     } finally {
       if (mounted) {
@@ -1101,7 +1102,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   setState(() {});
       }
     }).catchError((e) {
-      print('참여 상태 로드 오류: $e');
+      Logger.error('참여 상태 로드 오류: $e');
     });
   }
 
@@ -1170,7 +1171,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           _updateParticipationCache(meetup.id, false);
         });
       }
-      print('모임 참여 오류: $e');
+      Logger.error('모임 참여 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1232,7 +1233,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           _updateParticipationCache(meetup.id, true);
         });
       }
-      print('모임 나가기 오류: $e');
+      Logger.error('모임 나가기 오류: $e');
 
       String errorMessage = '모임 나가기에 실패했습니다';
       if (e.toString().contains('permission-denied')) {

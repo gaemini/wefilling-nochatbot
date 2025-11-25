@@ -26,6 +26,7 @@ import '../utils/country_flag_helper.dart';
 import 'login_screen.dart';
 import 'review_detail_screen.dart';
 import '../services/relationship_service.dart';
+import '../utils/logger.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -1303,7 +1304,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                               );
                             }
                           } catch (e) {
-                            print('UI 레이어 로그아웃 오류: $e');
+                            Logger.error('UI 레이어 로그아웃 오류: $e');
                             // AuthProvider에서 이미 상태 초기화가 완료되므로 로그인 화면으로 이동
                             if (context.mounted) {
                               Navigator.pop(context); // 다이얼로그 닫기

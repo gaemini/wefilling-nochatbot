@@ -5,6 +5,7 @@
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import '../utils/logger.dart';
 
 class FeatureFlagService {
   static final FeatureFlagService _instance = FeatureFlagService._internal();
@@ -44,9 +45,9 @@ class FeatureFlagService {
       await _fetchRemoteConfig();
       
       _isInitialized = true;
-      print('🚩 FeatureFlagService 초기화 완료');
+      Logger.log('🚩 FeatureFlagService 초기화 완료');
     } catch (e) {
-      print('⚠️ FeatureFlagService 초기화 오류: $e');
+      Logger.error('⚠️ FeatureFlagService 초기화 오류: $e');
       // 초기화 실패 시에도 로컬 설정은 사용할 수 있도록 함
       _isInitialized = true;
     }
@@ -55,7 +56,7 @@ class FeatureFlagService {
   /// Feature Flag 상태 확인
   bool isFeatureEnabled(String featureKey) {
     if (!_isInitialized) {
-      print('⚠️ FeatureFlagService가 초기화되지 않음. 기본값(false) 반환');
+      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음. 기본값(false) 반환');
       return false;
     }
 
@@ -63,24 +64,24 @@ class FeatureFlagService {
       // 1. 환경변수 확인 (개발/테스트용)
       final envValue = _getEnvironmentValue(featureKey);
       if (envValue != null) {
-        print('🚩 환경변수에서 $featureKey = $envValue');
+        Logger.log('🚩 환경변수에서 $featureKey = $envValue');
         return envValue;
       }
 
       // 2. SharedPreferences 확인 (로컬 오버라이드)
       final localValue = _prefs.getBool('local_$featureKey');
       if (localValue != null) {
-        print('🚩 로컬 설정에서 $featureKey = $localValue');
+        Logger.log('🚩 로컬 설정에서 $featureKey = $localValue');
         return localValue;
       }
 
       // 3. Firebase Remote Config 확인
       final remoteValue = _remoteConfig.getBool(featureKey);
-      print('🚩 Remote Config에서 $featureKey = $remoteValue');
+      Logger.log('🚩 Remote Config에서 $featureKey = $remoteValue');
       return remoteValue;
 
     } catch (e) {
-      print('⚠️ Feature Flag 확인 오류 ($featureKey): $e');
+      Logger.error('⚠️ Feature Flag 확인 오류 ($featureKey): $e');
       return false; // 안전한 기본값
     }
   }
@@ -88,15 +89,15 @@ class FeatureFlagService {
   /// 로컬에서 Feature Flag 오버라이드 (개발/테스트용)
   Future<void> setLocalOverride(String featureKey, bool value) async {
     if (!_isInitialized) {
-      print('⚠️ FeatureFlagService가 초기화되지 않음');
+      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
       return;
     }
 
     try {
       await _prefs.setBool('local_$featureKey', value);
-      print('🚩 로컬 오버라이드 설정: $featureKey = $value');
+      Logger.log('🚩 로컬 오버라이드 설정: $featureKey = $value');
     } catch (e) {
-      print('⚠️ 로컬 오버라이드 설정 오류: $e');
+      Logger.error('⚠️ 로컬 오버라이드 설정 오류: $e');
     }
   }
 
@@ -106,9 +107,9 @@ class FeatureFlagService {
 
     try {
       await _prefs.remove('local_$featureKey');
-      print('🚩 로컬 오버라이드 제거: $featureKey');
+      Logger.log('🚩 로컬 오버라이드 제거: $featureKey');
     } catch (e) {
-      print('⚠️ 로컬 오버라이드 제거 오류: $e');
+      Logger.error('⚠️ 로컬 오버라이드 제거 오류: $e');
     }
   }
 
@@ -116,9 +117,9 @@ class FeatureFlagService {
   Future<void> _fetchRemoteConfig() async {
     try {
       await _remoteConfig.fetchAndActivate();
-      print('🚩 Remote Config 업데이트 완료');
+      Logger.log('🚩 Remote Config 업데이트 완료');
     } catch (e) {
-      print('⚠️ Remote Config 가져오기 오류: $e');
+      Logger.error('⚠️ Remote Config 가져오기 오류: $e');
       // 실패해도 캐시된 값 사용
     }
   }
@@ -137,13 +138,13 @@ class FeatureFlagService {
   /// 모든 Feature Flag 상태 출력 (디버그용)
   void debugPrintAllFlags() {
     if (!_isInitialized) {
-      print('⚠️ FeatureFlagService가 초기화되지 않음');
+      Logger.log('⚠️ FeatureFlagService가 초기화되지 않음');
       return;
     }
 
-    print('🚩 === Feature Flags 상태 ===');
-    print('🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
-    print('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
-    print('🚩 ========================');
+    Logger.log('🚩 === Feature Flags 상태 ===');
+    Logger.log('🚩 FEATURE_PROFILE_GRID: ${isFeatureEnabled(FEATURE_PROFILE_GRID)}');
+    Logger.log('🚩 FEATURE_REVIEW_CONSENSUS: ${isReviewConsensusEnabled}');
+    Logger.log('🚩 ========================');
   }
 }

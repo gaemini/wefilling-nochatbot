@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
+import '../utils/logger.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -29,7 +30,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   @override
   void initState() {
     super.initState();
-    print('📢 AdBannerWidget 초기화: ${widget.widgetId ?? "기본"}');
+    Logger.log('📢 AdBannerWidget 초기화: ${widget.widgetId ?? "기본"}');
     _loadBanners();
   }
 

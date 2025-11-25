@@ -21,6 +21,7 @@ import '../ui/widgets/enhanced_comment_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../utils/logger.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -130,15 +131,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       // post.userId가 올바른 Firebase UID인지 확인
-      print('🔍 DM 대상 확인 (상세페이지):');
-      print('  - post.id: ${_currentPost.id}');
-      print('  - post.userId: ${_currentPost.userId}');
-      print('  - post.isAnonymous: ${_currentPost.isAnonymous}');
-      print('  - currentUser.uid: ${currentUser.uid}');
+      Logger.log('🔍 DM 대상 확인 (상세페이지):');
+      Logger.log('  - post.id: ${_currentPost.id}');
+      Logger.log('  - post.userId: ${_currentPost.userId}');
+      Logger.log('  - post.isAnonymous: ${_currentPost.isAnonymous}');
+      Logger.log('  - currentUser.uid: ${currentUser.uid}');
       
       // 본인에게 DM 전송 체크 (익명 포함)
       if (_currentPost.userId == currentUser.uid) {
-        print('❌ 본인 게시글에는 DM 불가');
+        Logger.log('❌ 본인 게시글에는 DM 불가');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -154,7 +155,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(_currentPost.userId)) {
-        print('❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
+        Logger.log('❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -169,7 +170,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (_currentPost.userId == 'deleted' || _currentPost.userId.isEmpty) {
-        print('❌ 탈퇴했거나 삭제된 사용자');
+        Logger.log('❌ 탈퇴했거나 삭제된 사용자');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -189,7 +190,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         isOtherUserAnonymous: _currentPost.isAnonymous,
       );
       
-      print('✅ DM conversation ID 생성: $conversationId');
+      Logger.log('✅ DM conversation ID 생성: $conversationId');
 
       if (mounted) {
         Navigator.push(
@@ -203,8 +204,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
     } catch (e) {
-      print('❌ DM 열기 오류: $e');
-      print('오류 타입: ${e.runtimeType}');
+      Logger.error('❌ DM 열기 오류: $e');
+      Logger.error('오류 타입: ${e.runtimeType}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -317,7 +318,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     } catch (e) {
-      print('게시글 새로고침 오류: $e');
+      Logger.error('게시글 새로고침 오류: $e');
     }
   }
 
@@ -393,7 +394,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _refreshPost();
       }
     } catch (e) {
-      print('좋아요 토글 오류: $e');
+      Logger.error('좋아요 토글 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -520,12 +521,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 댓글 작성 전 상태 로깅
     final authUser = FirebaseAuth.instance.currentUser;
-    print('💬 댓글 작성 시작');
-    print(
+    Logger.log('💬 댓글 작성 시작');
+    Logger.log(
       '💬 Auth 상태 (작성 전): ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
     );
-    print('💬 Timestamp (작성 전): ${DateTime.now()}');
-    print('💬 대댓글 모드: $_isReplyMode');
+    Logger.log('💬 Timestamp (작성 전): ${DateTime.now()}');
+    Logger.log('💬 대댓글 모드: $_isReplyMode');
 
     setState(() {
       _isSubmittingComment = true;
@@ -543,21 +544,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
         );
-        print('💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
+        Logger.log('💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content);
-        print('💬 일반 댓글 작성 완료');
+        Logger.log('💬 일반 댓글 작성 완료');
       }
 
       // 댓글 작성 후 상태 로깅
       final authUserAfter = FirebaseAuth.instance.currentUser;
-      print('💬 댓글 작성 완료');
-      print(
+      Logger.log('💬 댓글 작성 완료');
+      Logger.log(
         '💬 Auth 상태 (작성 후): ${authUserAfter != null ? "Authenticated (${authUserAfter.uid})" : "Not Authenticated"}',
       );
-      print('💬 Timestamp (작성 후): ${DateTime.now()}');
-      print('💬 댓글 작성 성공: $success');
+      Logger.log('💬 Timestamp (작성 후): ${DateTime.now()}');
+      Logger.log('💬 댓글 작성 성공: $success');
 
       if (success && mounted) {
         _commentController.clear();
@@ -571,16 +572,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
 
         // 게시글 정보 새로고침 (댓글 수 업데이트)
-        print('💬 게시글 새로고침 시작');
+        Logger.log('💬 게시글 새로고침 시작');
         await _refreshPost();
-        print('💬 게시글 새로고침 완료');
+        Logger.log('💬 게시글 새로고침 완료');
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
       }
     } catch (e) {
-      print('❌ 댓글 작성 오류: $e');
+      Logger.error('❌ 댓글 작성 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -672,12 +673,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 디버그용: 이미지 URL 로깅
   void _logImageUrls() {
-    print('📋 게시글 ID: ${_currentPost.id}');
-    print('📋 이미지 URL 개수: ${_currentPost.imageUrls.length}');
+    Logger.log('📋 게시글 ID: ${_currentPost.id}');
+    Logger.log('📋 이미지 URL 개수: ${_currentPost.imageUrls.length}');
     for (int i = 0; i < _currentPost.imageUrls.length; i++) {
-      print('📋 원본 이미지 URL $i: ${_currentPost.imageUrls[i]}');
+      Logger.log('📋 원본 이미지 URL $i: ${_currentPost.imageUrls[i]}');
     }
-    print('✅ URL 변환 없이 원본 그대로 사용');
+    Logger.log('✅ URL 변환 없이 원본 그대로 사용');
   }
   
   /// 익명 게시글의 댓글 작성자 표시명 생성
@@ -706,13 +707,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 재시도 로직
   void _retryImageLoad(String imageUrl) {
     if (_imageRetrying[imageUrl] == true) {
-      print('🔄 이미 재시도 중인 이미지: $imageUrl');
+      Logger.log('🔄 이미 재시도 중인 이미지: $imageUrl');
       return;
     }
 
     final currentRetryCount = _imageRetryCount[imageUrl] ?? 0;
     if (currentRetryCount >= _maxRetryCount) {
-      print('❌ 최대 재시도 횟수 초과: $imageUrl (${currentRetryCount}회)');
+      Logger.log('❌ 최대 재시도 횟수 초과: $imageUrl (${currentRetryCount}회)');
       return;
     }
 
@@ -721,7 +722,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _imageRetryCount[imageUrl] = currentRetryCount + 1;
     });
 
-    print(
+    Logger.log(
       '🔄 이미지 재시도 시작: $imageUrl (${currentRetryCount + 1}/${_maxRetryCount}회)',
     );
 
@@ -733,7 +734,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _imageRetrying[imageUrl] = false;
         });
-        print('🔄 이미지 재시도 실행: $imageUrl');
+        Logger.log('🔄 이미지 재시도 실행: $imageUrl');
       }
     });
   }
@@ -741,7 +742,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 성공 처리
   void _onImageLoadSuccess(String imageUrl) {
     if (_imageRetryCount.containsKey(imageUrl)) {
-      print('✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
+      Logger.log('✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
       setState(() {
         _imageRetryCount.remove(imageUrl);
         _imageRetrying.remove(imageUrl);
@@ -789,14 +790,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       },
       loadingBuilder: (context, child, loadingProgress) {
         final authUser = FirebaseAuth.instance.currentUser;
-        print('📸 이미지 로딩 시도: $imageUrl');
-        print(
+        Logger.log('📸 이미지 로딩 시도: $imageUrl');
+        Logger.log(
           '📸 Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
         );
-        print('📸 Timestamp: ${DateTime.now()}');
+        Logger.log('📸 Timestamp: ${DateTime.now()}');
 
         if (loadingProgress != null) {
-          print(
+          Logger.log(
             '📸 로딩 진행률: ${loadingProgress.cumulativeBytesLoaded} / ${loadingProgress.expectedTotalBytes ?? 'unknown'}',
           );
         }
@@ -820,16 +821,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       },
       errorBuilder: (context, error, stackTrace) {
         final authUser = FirebaseAuth.instance.currentUser;
-        print('❌ 이미지 로드 오류: $imageUrl');
-        print('❌ Error: $error');
-        print(
+        Logger.error('❌ 이미지 로드 오류: $imageUrl');
+        Logger.error('❌ Error: $error');
+        Logger.log(
           '❌ Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
         );
-        print('❌ Timestamp: ${DateTime.now()}');
+        Logger.log('❌ Timestamp: ${DateTime.now()}');
 
         // 403 오류이고 재시도 가능한 경우 자동 재시도
         if (error.toString().contains('403') && retryCount < _maxRetryCount) {
-          print('🔄 403 오류 감지, 자동 재시도 시작: $imageUrl');
+          Logger.error('🔄 403 오류 감지, 자동 재시도 시작: $imageUrl');
           // 비동기적으로 재시도 실행
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _retryImageLoad(imageUrl);
@@ -895,7 +896,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       _imageRetryCount[imageUrl] = 0;
                       _imageRetrying[imageUrl] = false;
                     });
-                    print('🔄 수동 재시도: $imageUrl');
+                    Logger.log('🔄 수동 재시도: $imageUrl');
                   },
                   icon: Icon(Icons.refresh, size: 16),
                   label: Text(AppLocalizations.of(context)!.retryAction, style: const TextStyle(fontSize: 12)),

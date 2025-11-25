@@ -12,6 +12,7 @@ import '../widgets/country_flag_circle.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/logger.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -79,8 +80,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _updateTimeOptions();
       
       // 디버깅 출력 추가
-      print('초기 시간 옵션: $_timeOptions');
-      print('초기 선택된 시간: $_selectedTime');
+      Logger.log('초기 시간 옵션: $_timeOptions');
+      Logger.log('초기 선택된 시간: $_selectedTime');
     }
   }
 
@@ -123,9 +124,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     }
 
     // 디버깅 출력
-    print('현재 시간: ${now.hour}:${now.minute}');
-    print('선택된 날짜: ${selectedDate.day}일 (오늘? $isToday)');
-    print('생성된 시간 옵션: $newOptions');
+    Logger.log('현재 시간: ${now.hour}:${now.minute}');
+    Logger.log('선택된 날짜: ${selectedDate.day}일 (오늘? $isToday)');
+    Logger.log('생성된 시간 옵션: $newOptions');
 
     // 상태 업데이트
     setState(() {

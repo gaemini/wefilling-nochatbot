@@ -12,6 +12,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'review_comments_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../utils/logger.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -50,7 +51,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
 
   Future<void> _loadParticipants() async {
     try {
-      print('🔍 참여자 로드 시작: meetupId=${widget.review.meetupId}');
+      Logger.log('🔍 참여자 로드 시작: meetupId=${widget.review.meetupId}');
 
       // 항상 meetup_participants(approved) 기준으로 참여자 로드하고,
       // 호스트 ID는 meetup_reviews 또는 meetups에서 가져와 결합한다.
@@ -66,10 +67,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               .get();
           if (reviewDoc.exists) {
             hostId = (reviewDoc.data() ?? const {})['authorId'] as String?;
-            print('📝 meetup_reviews에서 호스트 확인: $hostId');
+            Logger.log('📝 meetup_reviews에서 호스트 확인: $hostId');
           }
         } catch (e) {
-          print('⚠️ meetup_reviews 조회 실패(무시하고 계속): $e');
+          Logger.error('⚠️ meetup_reviews 조회 실패(무시하고 계속): $e');
         }
       }
 
@@ -82,10 +83,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               .get();
           if (meetupDoc.exists) {
             hostId = (meetupDoc.data() ?? const {})['userId'] as String?;
-            print('📋 meetups에서 호스트 확인: $hostId');
+            Logger.log('📋 meetups에서 호스트 확인: $hostId');
           }
         } catch (e) {
-          print('⚠️ meetups 조회 실패(무시하고 계속): $e');
+          Logger.error('⚠️ meetups 조회 실패(무시하고 계속): $e');
         }
       }
 
@@ -119,10 +120,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         setState(() {
           _participants = participantsList;
         });
-        print('✅ 참여자 ${_participants.length}명 로드 완료 (호스트 포함)');
+        Logger.log('✅ 참여자 ${_participants.length}명 로드 완료 (호스트 포함)');
       }
     } catch (e) {
-      print('❌ 참여자 로드 오류: $e');
+      Logger.error('❌ 참여자 로드 오류: $e');
     }
   }
   
@@ -130,20 +131,20 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
     final authorId = reviewData['authorId'] as String;
     final approvedParticipants = List<String>.from(reviewData['approvedParticipants'] ?? []);
     
-    print('👥 호스트: $authorId');
-    print('👥 수락한 참여자: ${approvedParticipants.length}명');
-    print('📋 수락한 참여자 ID 목록: $approvedParticipants');
+    Logger.log('👥 호스트: $authorId');
+    Logger.log('👥 수락한 참여자: ${approvedParticipants.length}명');
+    Logger.log('📋 수락한 참여자 ID 목록: $approvedParticipants');
     
     // 모든 참여자 ID (호스트 + 수락한 참여자)
     final allParticipantIds = [authorId, ...approvedParticipants];
-    print('📋 전체 참여자 ID 목록 (${allParticipantIds.length}명): $allParticipantIds');
+    Logger.log('📋 전체 참여자 ID 목록 (${allParticipantIds.length}명): $allParticipantIds');
     
     // 각 참여자의 정보 가져오기
     final participantsList = <Map<String, dynamic>>[];
     
     for (int i = 0; i < allParticipantIds.length; i++) {
       final userId = allParticipantIds[i];
-      print('🔄 [${i + 1}/${allParticipantIds.length}] 참여자 처리 중: $userId');
+      Logger.log('🔄 [${i + 1}/${allParticipantIds.length}] 참여자 처리 중: $userId');
       await _addParticipantInfo(participantsList, userId, userId == authorId);
     }
     
@@ -151,25 +152,25 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       setState(() {
         _participants = participantsList;
       });
-      print('✅ 최종 참여자 ${_participants.length}명 로드 완료');
-      print('📋 최종 참여자 목록: ${_participants.map((p) => p['nickname']).toList()}');
+      Logger.log('✅ 최종 참여자 ${_participants.length}명 로드 완료');
+      Logger.log('📋 최종 참여자 목록: ${_participants.map((p) => p['nickname']).toList()}');
     }
   }
   
   Future<void> _addParticipantInfo(List<Map<String, dynamic>> list, String userId, bool isHost) async {
     try {
-      print('🔍 참여자 정보 조회 시작: userId=$userId');
+      Logger.log('🔍 참여자 정보 조회 시작: userId=$userId');
       
       final userDoc = await _firestore.collection('users').doc(userId).get();
       
       if (!userDoc.exists) {
-        print('❌ 사용자 문서 없음: $userId');
+        Logger.log('❌ 사용자 문서 없음: $userId');
         return;
       }
       
       final userData = userDoc.data();
       if (userData == null) {
-        print('❌ 사용자 데이터 null: $userId');
+        Logger.log('❌ 사용자 데이터 null: $userId');
         return;
       }
       
@@ -178,7 +179,7 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       final displayName = userData['displayName'];
       final finalName = nickname ?? displayName ?? '익명';
       
-      print('📋 사용자 정보: nickname=$nickname, displayName=$displayName, final=$finalName');
+      Logger.log('📋 사용자 정보: nickname=$nickname, displayName=$displayName, final=$finalName');
       
       final participantInfo = {
         'userId': userId,
@@ -188,12 +189,12 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       };
       
       list.add(participantInfo);
-      print('✅ 참여자 추가 완료: $finalName (${isHost ? "호스트" : "참여자"}) - 현재 총 ${list.length}명');
+      Logger.log('✅ 참여자 추가 완료: $finalName (${isHost ? "호스트" : "참여자"}) - 현재 총 ${list.length}명');
       
     } catch (e, stackTrace) {
-      print('❌ 참여자 정보 조회 오류: $userId');
-      print('   에러: $e');
-      print('   스택: $stackTrace');
+      Logger.error('❌ 참여자 정보 조회 오류: $userId');
+      Logger.error('   에러: $e');
+      Logger.log('   스택: $stackTrace');
     }
   }
 

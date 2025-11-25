@@ -3,6 +3,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/ad_banner.dart';
+import '../utils/logger.dart';
 
 class AdBannerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -20,7 +21,7 @@ class AdBannerService {
             try {
               return AdBanner.fromFirestore(doc);
             } catch (e) {
-              print('❌ 배너 파싱 실패: ${doc.id} - $e');
+              Logger.error('❌ 배너 파싱 실패: ${doc.id} - $e');
               return null;
             }
           })
@@ -48,7 +49,7 @@ class AdBannerService {
             try {
               return AdBanner.fromFirestore(doc);
             } catch (e) {
-              print('❌ 배너 파싱 실패: ${doc.id} - $e');
+              Logger.error('❌ 배너 파싱 실패: ${doc.id} - $e');
               return null;
             }
           })
@@ -61,7 +62,7 @@ class AdBannerService {
       
       return banners;
     } catch (e) {
-      print('❌ 광고 배너 가져오기 오류: $e');
+      Logger.error('❌ 광고 배너 가져오기 오류: $e');
       return [];
     }
   }
@@ -79,7 +80,7 @@ class AdBannerService {
       }
       return null;
     } catch (e) {
-      print('❌ 광고 배너 가져오기 오류: $e');
+      Logger.error('❌ 광고 배너 가져오기 오류: $e');
       return null;
     }
   }
@@ -90,10 +91,10 @@ class AdBannerService {
       final docRef = await _firestore
           .collection(_collectionName)
           .add(banner.toJson());
-      print('✅ 광고 배너 추가 완료: ${docRef.id}');
+      Logger.log('✅ 광고 배너 추가 완료: ${docRef.id}');
       return docRef.id;
     } catch (e) {
-      print('❌ 광고 배너 추가 오류: $e');
+      Logger.error('❌ 광고 배너 추가 오류: $e');
       return null;
     }
   }
@@ -108,10 +109,10 @@ class AdBannerService {
         ...updates,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      print('✅ 광고 배너 수정 완료: $bannerId');
+      Logger.log('✅ 광고 배너 수정 완료: $bannerId');
       return true;
     } catch (e) {
-      print('❌ 광고 배너 수정 오류: $e');
+      Logger.error('❌ 광고 배너 수정 오류: $e');
       return false;
     }
   }
@@ -123,10 +124,10 @@ class AdBannerService {
           .collection(_collectionName)
           .doc(bannerId)
           .delete();
-      print('✅ 광고 배너 삭제 완료: $bannerId');
+      Logger.log('✅ 광고 배너 삭제 완료: $bannerId');
       return true;
     } catch (e) {
-      print('❌ 광고 배너 삭제 오류: $e');
+      Logger.error('❌ 광고 배너 삭제 오류: $e');
       return false;
     }
   }
@@ -144,7 +145,7 @@ class AdBannerService {
   /// 초기 샘플 광고 데이터 생성
   Future<void> initializeSampleBanners() async {
     try {
-      print('🔄 광고 배너 초기화 시작...');
+      Logger.log('🔄 광고 배너 초기화 시작...');
 
       // 샘플 광고 데이터
       final sampleBanners = [
@@ -201,12 +202,12 @@ class AdBannerService {
             .collection(_collectionName)
             .doc(banner.id)
             .set(banner.toJson(), SetOptions(merge: false)); // 기존 데이터 덮어쓰기
-        print('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
+        Logger.log('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
       }
 
-      print('✅ 총 ${sampleBanners.length}개 광고 배너 업데이트 완료!');
+      Logger.log('✅ 총 ${sampleBanners.length}개 광고 배너 업데이트 완료!');
     } catch (e) {
-      print('❌ 초기 광고 배너 생성 오류: $e');
+      Logger.error('❌ 초기 광고 배너 생성 오류: $e');
     }
   }
 }

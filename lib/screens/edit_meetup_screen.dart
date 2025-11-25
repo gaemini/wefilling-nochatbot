@@ -34,6 +34,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   String _selectedCategory = 'etc'; // 영어 키로 저장
   int _selectedMaxParticipants = 3;
   bool _isLoading = false;
+  bool _isInitialized = false;
   
   // 이미지 관련
   File? _selectedImage;
@@ -47,20 +48,22 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeFields();
+    _initializeFieldsWithoutContext();
   }
 
-  void _initializeFields() {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_isInitialized) {
+      _initializeFieldsWithContext();
+      _isInitialized = true;
+    }
+  }
+
+  void _initializeFieldsWithoutContext() {
     _titleController.text = widget.meetup.title;
     _descriptionController.text = widget.meetup.description;
     _locationController.text = widget.meetup.location;
-    
-    // 시간 필드 다국어 처리
-    String timeText = widget.meetup.time;
-    if (timeText == '미정') {
-      timeText = AppLocalizations.of(context)!.undecided;
-    }
-    _timeController.text = timeText;
     _selectedMaxParticipants = widget.meetup.maxParticipants;
     _selectedDate = widget.meetup.date;
     _existingImageUrl = widget.meetup.thumbnailImageUrl;
@@ -83,6 +86,15 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     } else {
       _selectedCategory = 'etc';
     }
+  }
+
+  void _initializeFieldsWithContext() {
+    // 시간 필드 다국어 처리 (context가 필요한 부분)
+    String timeText = widget.meetup.time;
+    if (timeText == '미정') {
+      timeText = AppLocalizations.of(context)!.undecided;
+    }
+    _timeController.text = timeText;
   }
 
   Future<void> _pickImage() async {
@@ -447,7 +459,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 ),
               ),
               
-              const SizedBox(height: 24),
+              // 하단 여백 (갤럭시 네비게이션 바 고려)
+              SizedBox(height: 24 + MediaQuery.of(context).padding.bottom),
             ],
           ),
         ),

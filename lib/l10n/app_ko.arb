@@ -6,6 +6,7 @@
   "logoutConfirm": "정말 로그아웃하시겠습니까?",
   "logoutSuccess": "로그아웃되었습니다",
   "logoutError": "로그아웃 중 오류가 발생했습니다.\n다시 시도해주세요.",
+  "offlineLogout": "오프라인 상태에서 로그아웃되었습니다",
   "email": "이메일",
   "password": "비밀번호",
   "confirmPassword": "비밀번호 확인",

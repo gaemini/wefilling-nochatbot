@@ -6,6 +6,7 @@
   "logoutConfirm": "Are you sure you want to logout?",
   "logoutSuccess": "Logged out successfully",
   "logoutError": "An error occurred during logout.\nPlease try again.",
+  "offlineLogout": "Logged out in offline mode",
   "email": "Email",
   "password": "Password",
   "confirmPassword": "Confirm Password",

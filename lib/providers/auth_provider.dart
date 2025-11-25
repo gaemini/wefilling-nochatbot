@@ -4,6 +4,7 @@
 // 다른 화면에서 인증 정보 접근 가능하게 함
 
 import 'dart:io' show Platform;
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -24,6 +25,9 @@ class AuthProvider with ChangeNotifier {
   
   // 최근 로그인 시도에서 회원가입 필요 여부를 저장 (UI 알림 용도)
   bool _signupRequired = false;
+  
+  // 로그아웃 진행 상태 추적
+  String? _logoutStatus;
   
   // 스트림 정리를 위한 콜백 리스트
   final List<VoidCallback> _streamCleanupCallbacks = [];
@@ -95,6 +99,9 @@ class AuthProvider with ChangeNotifier {
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
+  
+  // 로그아웃 진행 상태
+  String? get logoutStatus => _logoutStatus;
   
   // 최근 로그인 시도에서 회원가입 필요 플래그를 소모하고 반환
   bool consumeSignupRequiredFlag() {
@@ -1092,53 +1099,103 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
       
-      // FCM 토큰 삭제 (로그아웃 시)
-      if (_user != null) {
-        try {
-          await FCMService().deleteFCMToken(_user!.uid);
-          print('✅ FCM 토큰 삭제 완료');
-        } catch (e) {
-          print('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
+      // 전체 로그아웃 프로세스에 10초 타임아웃 설정
+      try {
+        await Future.any([
+          _performSignOut(),
+          Future.delayed(const Duration(seconds: 10)).then((_) {
+            print('! 로그아웃 타임아웃 (10초) - 강제 로그아웃 진행');
+            throw TimeoutException('로그아웃 타임아웃', const Duration(seconds: 10));
+          }),
+        ]);
+        print('✅ 로그아웃 완료');
+      } catch (e) {
+        if (e is TimeoutException) {
+          print('⚠️ 로그아웃 타임아웃 발생 - 로컬 로그아웃 진행');
+        } else {
+          print('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
         }
       }
       
-      // 먼저 모든 스트림 정리
-      _cleanupAllStreams();
-      
-      // Google Sign-In에서 로그아웃
-      try {
-        await _googleSignIn.signOut();
-        print('Google Sign-In 로그아웃 완료');
-      } catch (e) {
-        print('Google Sign-In 로그아웃 오류: $e');
-        // Google 로그아웃 실패해도 계속 진행
-      }
-      
-      // Firebase Auth에서 로그아웃
-      try {
-        await _auth.signOut();
-        print('Firebase Auth 로그아웃 완료');
-      } catch (e) {
-        print('Firebase Auth 로그아웃 오류: $e');
-        // Firebase 로그아웃 실패해도 계속 진행
-      }
-      
-      // 상태 초기화
-      _user = null;
-      _userData = null;
-      _isLoading = false;
-      
-      print('로그아웃 완료');
-      notifyListeners();
-      
     } catch (e) {
       print('로그아웃 전체 오류: $e');
-      // 오류가 발생해도 상태는 초기화
+    } finally {
+      // 어떤 경우든 상태는 초기화 (로컬 로그아웃)
       _user = null;
       _userData = null;
       _isLoading = false;
+      _logoutStatus = null;
+      print('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
-      rethrow; // 에러를 다시 던져서 UI에서 처리할 수 있도록
     }
+  }
+
+  // 실제 로그아웃 작업 수행
+  Future<void> _performSignOut() async {
+    print('🔄 로그아웃 작업 시작');
+    
+    // FCM 토큰 삭제 (3초 타임아웃)
+    if (_user != null) {
+      try {
+        _logoutStatus = 'FCM 토큰 정리 중...';
+        notifyListeners();
+        
+        await FCMService().deleteFCMToken(_user!.uid).timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            print('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
+          },
+        );
+        print('✅ FCM 토큰 삭제 완료');
+      } catch (e) {
+        print('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
+      }
+    }
+    
+    // 먼저 모든 스트림 정리
+    try {
+      _logoutStatus = '데이터 연결 정리 중...';
+      notifyListeners();
+      
+      _cleanupAllStreams();
+      print('✅ 스트림 정리 완료');
+    } catch (e) {
+      print('⚠️ 스트림 정리 실패 (계속 진행): $e');
+    }
+    
+    // Google Sign-In에서 로그아웃 (3초 타임아웃)
+    try {
+      _logoutStatus = 'Google 계정 로그아웃 중...';
+      notifyListeners();
+      
+      await _googleSignIn.signOut().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          print('⚠️ Google Sign-In 로그아웃 타임아웃 (3초) - 계속 진행');
+        },
+      );
+      print('✅ Google Sign-In 로그아웃 완료');
+    } catch (e) {
+      print('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
+    }
+    
+    // Firebase Auth에서 로그아웃 (3초 타임아웃)
+    try {
+      _logoutStatus = '인증 세션 종료 중...';
+      notifyListeners();
+      
+      await _auth.signOut().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {
+          print('⚠️ Firebase Auth 로그아웃 타임아웃 (3초) - 계속 진행');
+        },
+      );
+      print('✅ Firebase Auth 로그아웃 완료');
+    } catch (e) {
+      print('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
+    }
+    
+    _logoutStatus = '로그아웃 완료';
+    print('🔄 로그아웃 작업 완료');
   }
 }

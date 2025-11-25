@@ -13,7 +13,9 @@ import '../main.dart';
 import '../l10n/app_localizations.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({Key? key}) : super(key: key);
+  final bool showLogoutSuccess;
+  
+  const LoginScreen({Key? key, this.showLogoutSuccess = false}) : super(key: key);
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -52,9 +54,41 @@ class _LoginScreenState extends State<LoginScreen>
 
     _animationController.forward();
 
-    // 화면 진입 시, 직전 로그인 시도에서 회원가입 필요 플래그가 있었는지 확인하여 즉시 안내 표시
+    // 화면 진입 시 처리
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      
+      // 로그아웃 성공 메시지 표시
+      if (widget.showLogoutSuccess) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(
+                  Icons.check_circle_outline,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  AppLocalizations.of(context)!.logoutSuccess,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green.shade600,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            margin: const EdgeInsets.all(16),
+          ),
+        );
+      }
+      
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       if (authProvider.consumeSignupRequiredFlag()) {
         // 동일한 다이얼로그를 재사용

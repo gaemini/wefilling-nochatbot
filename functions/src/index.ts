@@ -2554,6 +2554,88 @@ export const onReviewRequestUpdated = functions.firestore
   });
 
 /**
+ * meetup_reviews 업데이트 시 연관된 사용자 프로필 posts 업데이트
+ */
+export const onMeetupReviewUpdated = functions.firestore
+  .document('meetup_reviews/{reviewId}')
+  .onUpdate(async (change, context) => {
+    try {
+      const reviewId = context.params.reviewId;
+      const before = change.before.data();
+      const after = change.after.data();
+      
+      console.log(`📝 모임 후기 업데이트 감지: ${reviewId}`);
+      
+      // 업데이트된 필드 확인
+      const updatedFields: string[] = [];
+      if (before.content !== after.content) updatedFields.push('content');
+      if (JSON.stringify(before.imageUrls) !== JSON.stringify(after.imageUrls)) updatedFields.push('imageUrls');
+      if (before.imageUrl !== after.imageUrl) updatedFields.push('imageUrl');
+      
+      if (updatedFields.length === 0) {
+        console.log('⏭️ 프로필 업데이트가 필요한 필드 변경 없음');
+        return null;
+      }
+      
+      console.log(`📋 업데이트된 필드: ${updatedFields.join(', ')}`);
+      
+      // 업데이트할 사용자 목록 (작성자 + 승인된 참여자)
+      const authorId = after.authorId;
+      const approvedParticipants = after.approvedParticipants || [];
+      const allUserIds = [authorId, ...approvedParticipants];
+      
+      console.log(`📤 프로필 업데이트 대상: ${allUserIds.length}명`);
+      
+      // 각 사용자의 프로필 posts 업데이트
+      const batch = db.batch();
+      let updateCount = 0;
+      
+      for (const userId of allUserIds) {
+        try {
+          const postRef = db.collection('users').doc(userId).collection('posts').doc(reviewId);
+          const postDoc = await postRef.get();
+          
+          if (postDoc.exists) {
+            const updateData: any = {
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            };
+            
+            if (updatedFields.includes('content')) {
+              updateData.content = after.content;
+            }
+            if (updatedFields.includes('imageUrls')) {
+              updateData.imageUrls = after.imageUrls;
+            }
+            if (updatedFields.includes('imageUrl')) {
+              updateData.imageUrl = after.imageUrl;
+            }
+            
+            batch.update(postRef, updateData);
+            updateCount++;
+            console.log(`✅ 프로필 업데이트 예약: userId=${userId}`);
+          } else {
+            console.log(`⚠️ 프로필 후기 없음: userId=${userId}`);
+          }
+        } catch (error) {
+          console.error(`❌ 프로필 업데이트 실패: userId=${userId}, error:`, error);
+        }
+      }
+      
+      if (updateCount > 0) {
+        await batch.commit();
+        console.log(`✅ ${updateCount}개 프로필 후기 업데이트 완료`);
+      } else {
+        console.log('⏭️ 업데이트할 프로필 후기 없음');
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('onMeetupReviewUpdated 오류:', error);
+      return null;
+    }
+  });
+
+/**
  * meetup_reviews 삭제 시 연관된 reviews 문서 일괄 삭제
  */
 export const onMeetupReviewDeleted = functions.firestore

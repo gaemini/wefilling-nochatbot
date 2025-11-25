@@ -22,6 +22,7 @@ import 'create_meetup_review_screen.dart';
 import 'review_approval_screen.dart';
 import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../ui/widgets/fullscreen_image_viewer.dart';
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -770,54 +771,16 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             ? _buildDefaultImage(displayImageUrl, imageHeight)
                 : GestureDetector(
                     onTap: () {
-                      // 이미지 뷰어로 이동 (전체 화면)
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (context) => Scaffold(
-                            backgroundColor: Colors.black,
-                            body: SafeArea(
-                              child: Stack(
-                                children: [
-                                  // 전체 화면 이미지
-                                  Center(
-                                    child: InteractiveViewer(
-                                      minScale: 0.5,
-                                      maxScale: 4.0,
-                                      child: Image.network(
-                                        displayImageUrl,
-                                        fit: BoxFit.contain,
-                                        width: double.infinity,
-                                      ),
-                                    ),
-                                  ),
-                                  // 닫기 버튼
-                                  Positioned(
-                                    top: 16,
-                                    right: 16,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.5),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          Icons.close,
-                                          color: Colors.white,
-                                          size: 28,
-                                        ),
-                                        onPressed: () => Navigator.pop(context),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
+                      // 전체화면 이미지 뷰어 열기
+                      showFullscreenImageViewer(
+                        context,
+                        imageUrls: [displayImageUrl],
+                        initialIndex: 0,
+                        heroTag: 'meetup_image',
                       );
                     },
                     child: Hero(
-                      tag: 'meetup_image_${_currentMeetup.id}',
+                      tag: 'meetup_image',
                       child: _buildNetworkImage(displayImageUrl, imageHeight),
                     ),
                   ),
@@ -2298,13 +2261,21 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       return;
     }
 
+    // imageUrls 배열로 가져오기 (하위 호환성을 위해 imageUrl도 확인)
+    List<String> imageUrls = [];
+    if (reviewData['imageUrls'] != null && reviewData['imageUrls'] is List) {
+      imageUrls = List<String>.from(reviewData['imageUrls']);
+    } else if (reviewData['imageUrl'] != null && reviewData['imageUrl'].toString().isNotEmpty) {
+      imageUrls = [reviewData['imageUrl'].toString()];
+    }
+
     final result = await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CreateMeetupReviewScreen(
           meetup: _currentMeetup,
           existingReviewId: _currentMeetup.reviewId!,
-          existingImageUrl: reviewData['imageUrl'],
+          existingImageUrls: imageUrls,
           existingContent: reviewData['content'],
         ),
       ),

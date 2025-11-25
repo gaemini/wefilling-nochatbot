@@ -34,205 +34,205 @@ import 'services/language_service.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  debugDefaultTargetPlatformOverride = TargetPlatform.android;
+void main() {
+  runZonedGuarded(
+    () async {
+      WidgetsFlutterBinding.ensureInitialized();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
-  // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark, // 라이트모드용
-      systemNavigationBarColor: Colors.transparent,
-      systemNavigationBarIconBrightness: Brightness.dark, // 라이트모드용
-      systemNavigationBarDividerColor: Colors.transparent,
-    ),
-  );
-
-  // Edge-to-edge 모드 활성화
-  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-  // 화면 회전 제한 (세로 방향만 허용)
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
-
-  // Firebase 중복 초기화 방지
-  try {
-    await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform);
-    if (kDebugMode) {
-      debugPrint('🔥 Firebase 초기화 완료');
-    }
-  } catch (e) {
-    if (e.toString().contains('duplicate-app')) {
-      if (kDebugMode) {
-        debugPrint('🔥 Firebase는 이미 초기화되어 있습니다.');
-      }
-    } else {
-      if (kDebugMode) {
-        debugPrint('🔥 Firebase 초기화 중 오류: $e');
-      }
-      rethrow;
-    }
-  }
-
-  // Crashlytics 설정
-  try {
-    await FirebaseCrashlytics.instance
-        .setCrashlyticsCollectionEnabled(!kDebugMode);
-
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
-
-    PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      return true;
-    };
-
-    if (kDebugMode) {
-      debugPrint('🐞 Crashlytics 초기화 완료 (debug mode: $kDebugMode)');
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      debugPrint('⚠️ Crashlytics 초기화 실패: $e');
-    }
-  }
-
-  // Firebase Performance 모니터링은 제거됨
-
-  // FCM 백그라운드 메시지 핸들러 등록
-  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-  // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
-  // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
-  try {
-    if (kDebugMode) {
-      debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
-      debugPrint('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
-      debugPrint(
-          '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
-    }
-
-    // Firebase Auth 상태 변화 로깅
-    FirebaseAuth.instance.authStateChanges().listen((User? user) {
-      if (kDebugMode) {
-        debugPrint(
-          '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
-        );
-        debugPrint('🔐 User ID: ${user?.uid ?? "null"}');
-        debugPrint('🔐 Timestamp: ${DateTime.now()}');
-      }
-    });
-
-    if (kDebugMode) {
-      debugPrint('🔐 인증 초기화 대기 중...');
-    }
-
-    // 인증 상태를 최대 5초간 기다림
-    User? currentUser;
-    int attempts = 0;
-    while (attempts < 10) {
-      // 0.5초씩 10번 = 5초
-      currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser != null) {
-        if (kDebugMode) {
-          debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
-        }
-        break;
-      }
-      await Future.delayed(Duration(milliseconds: 500));
-      attempts++;
-      if (kDebugMode) {
-        debugPrint('🔐 인증 대기 중... (${attempts}/10)');
-      }
-    }
-
-    if (kDebugMode) {
-      debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
-    }
-
-    // Firestore 설정 개선 (연결 안정성 향상)
-    try {
-      if (kDebugMode) {
-        debugPrint('🗃️ Firestore 설정 시작');
-      }
-      final firestore = FirebaseFirestore.instance;
-
-      // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
-
-      // Firestore 설정 조정
-      firestore.settings = const Settings(
-        persistenceEnabled: true,
-        cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+      // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
+      SystemChrome.setSystemUIOverlayStyle(
+        const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark, // 라이트모드용
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: Brightness.dark, // 라이트모드용
+          systemNavigationBarDividerColor: Colors.transparent,
+        ),
       );
 
-      if (kDebugMode) {
-        debugPrint('✅ Firestore 설정 완료');
+      // Edge-to-edge 모드 활성화
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+
+      // 화면 회전 제한 (세로 방향만 허용)
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+
+      // Firebase 중복 초기화 방지
+      try {
+        await Firebase.initializeApp(
+            options: DefaultFirebaseOptions.currentPlatform);
+        if (kDebugMode) {
+          debugPrint('🔥 Firebase 초기화 완료');
+        }
+      } catch (e) {
+        if (e.toString().contains('duplicate-app')) {
+          if (kDebugMode) {
+            debugPrint('🔥 Firebase는 이미 초기화되어 있습니다.');
+          }
+        } else {
+          if (kDebugMode) {
+            debugPrint('🔥 Firebase 초기화 중 오류: $e');
+          }
+          rethrow;
+        }
       }
 
-      // 광고 배너 초기화
+      // Crashlytics 설정
+      try {
+        await FirebaseCrashlytics.instance
+            .setCrashlyticsCollectionEnabled(!kDebugMode);
+
+        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+
+        PlatformDispatcher.instance.onError = (error, stack) {
+          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+          return true;
+        };
+
+        if (kDebugMode) {
+          debugPrint('🐞 Crashlytics 초기화 완료 (debug mode: $kDebugMode)');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ Crashlytics 초기화 실패: $e');
+        }
+      }
+
+      // Firebase Performance 모니터링은 제거됨
+
+      // FCM 백그라운드 메시지 핸들러 등록
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+      // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
+      // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
       try {
         if (kDebugMode) {
-          debugPrint('📢 광고 배너 초기화 시작');
+          debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
+          debugPrint('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
+          debugPrint(
+              '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
         }
-        final adBannerService = AdBannerService();
-        await adBannerService.initializeSampleBanners();
+
+        // Firebase Auth 상태 변화 로깅
+        FirebaseAuth.instance.authStateChanges().listen((User? user) {
+          if (kDebugMode) {
+            debugPrint(
+              '🔐 Auth State Changed: ${user != null ? "Authenticated" : "Not Authenticated"}',
+            );
+            debugPrint('🔐 User ID: ${user?.uid ?? "null"}');
+            debugPrint('🔐 Timestamp: ${DateTime.now()}');
+          }
+        });
+
         if (kDebugMode) {
-          debugPrint('✅ 광고 배너 초기화 완료');
+          debugPrint('🔐 인증 초기화 대기 중...');
         }
-      } catch (adError) {
+
+        // 인증 상태를 최대 5초간 기다림
+        User? currentUser;
+        int attempts = 0;
+        while (attempts < 10) {
+          // 0.5초씩 10번 = 5초
+          currentUser = FirebaseAuth.instance.currentUser;
+          if (currentUser != null) {
+            if (kDebugMode) {
+              debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
+            }
+            break;
+          }
+          await Future.delayed(Duration(milliseconds: 500));
+          attempts++;
+          if (kDebugMode) {
+            debugPrint('🔐 인증 대기 중... (${attempts}/10)');
+          }
+        }
+
         if (kDebugMode) {
-          debugPrint('❌ 광고 배너 초기화 오류: $adError');
+          debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
+        }
+
+        // Firestore 설정 개선 (연결 안정성 향상)
+        try {
+          if (kDebugMode) {
+            debugPrint('🗃️ Firestore 설정 시작');
+          }
+          final firestore = FirebaseFirestore.instance;
+
+          // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
+
+          // Firestore 설정 조정
+          firestore.settings = const Settings(
+            persistenceEnabled: true,
+            cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+          );
+
+          if (kDebugMode) {
+            debugPrint('✅ Firestore 설정 완료');
+          }
+
+          // 광고 배너 초기화
+          try {
+            if (kDebugMode) {
+              debugPrint('📢 광고 배너 초기화 시작');
+            }
+            final adBannerService = AdBannerService();
+            await adBannerService.initializeSampleBanners();
+            if (kDebugMode) {
+              debugPrint('✅ 광고 배너 초기화 완료');
+            }
+          } catch (adError) {
+            if (kDebugMode) {
+              debugPrint('❌ 광고 배너 초기화 오류: $adError');
+            }
+          }
+        } catch (firestoreError) {
+          if (kDebugMode) {
+            debugPrint('❌ Firestore 설정 중 오류: $firestoreError');
+          }
+        }
+
+        // Firebase Storage 접근 테스트
+        try {
+          if (kDebugMode) {
+            debugPrint('🗄️ Storage 접근 테스트 시작');
+          }
+          final storageRef = FirebaseStorage.instance.ref();
+          await storageRef.listAll();
+          if (kDebugMode) {
+            debugPrint('✅ Firebase Storage 접근 테스트: 성공');
+          }
+        } catch (storageError) {
+          if (kDebugMode) {
+            debugPrint('❌ Firebase Storage 접근 테스트 실패: $storageError');
+            if (storageError.toString().contains('403')) {
+              debugPrint('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
+              debugPrint('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
+            }
+          }
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('❌ Firebase 초기화 중 오류: $e');
         }
       }
-    } catch (firestoreError) {
-      if (kDebugMode) {
-        debugPrint('❌ Firestore 설정 중 오류: $firestoreError');
-      }
-    }
 
-    // Firebase Storage 접근 테스트
-    try {
-      if (kDebugMode) {
-        debugPrint('🗄️ Storage 접근 테스트 시작');
-      }
-      final storageRef = FirebaseStorage.instance.ref();
-      await storageRef.listAll();
-      if (kDebugMode) {
-        debugPrint('✅ Firebase Storage 접근 테스트: 성공');
-      }
-    } catch (storageError) {
-      if (kDebugMode) {
-        debugPrint('❌ Firebase Storage 접근 테스트 실패: $storageError');
-        if (storageError.toString().contains('403')) {
-          debugPrint('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
-          debugPrint('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
+      // FeatureFlagService 초기화
+      try {
+        await FeatureFlagService().init();
+        if (kDebugMode) {
+          debugPrint('🚩 FeatureFlagService 초기화 완료');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
         }
       }
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      debugPrint('❌ Firebase 초기화 중 오류: $e');
-    }
-  }
 
-  // FeatureFlagService 초기화
-  try {
-    await FeatureFlagService().init();
-    if (kDebugMode) {
-      debugPrint('🚩 FeatureFlagService 초기화 완료');
-    }
-  } catch (e) {
-    if (kDebugMode) {
-      debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
-    }
-  }
+      // Firebase Performance trace 종료 코드 제거됨
 
-  // Firebase Performance trace 종료 코드 제거됨
-
-  runZonedGuarded(
-    () {
       runApp(
         MultiProvider(
           providers: [

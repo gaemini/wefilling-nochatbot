@@ -231,19 +231,29 @@ class FCMService {
   // FCM 토큰 삭제 (로그아웃 시)
   Future<void> deleteFCMToken(String userId) async {
     try {
-      // FCM 토큰 삭제
-      await _messaging.deleteToken();
-      print('✅ FCM 토큰 삭제 완료');
-
-      // Firestore에서도 토큰 제거
-      await _firestore.collection('users').doc(userId).update({
-        'fcmToken': FieldValue.delete(),
-        'fcmTokenUpdatedAt': FieldValue.delete(),
-      });
-      print('✅ Firestore에서 FCM 토큰 제거 완료');
+      // 5초 타임아웃 설정 (네트워크 불안정 시 무한 대기 방지)
+      await Future.wait([
+        // FCM 토큰 삭제
+        _messaging.deleteToken().then((_) {
+          print('✅ FCM 토큰 삭제 완료');
+        }),
+        // Firestore에서도 토큰 제거
+        _firestore.collection('users').doc(userId).update({
+          'fcmToken': FieldValue.delete(),
+          'fcmTokenUpdatedAt': FieldValue.delete(),
+        }).then((_) {
+          print('✅ Firestore에서 FCM 토큰 제거 완료');
+        }),
+      ]).timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          print('⚠️ FCM 토큰 삭제 타임아웃 (5초) - 로그아웃 계속 진행');
+          return [];
+        },
+      );
     } catch (e) {
-      print('❌ FCM 토큰 삭제 실패: $e');
-      rethrow;
+      print('❌ FCM 토큰 삭제 실패 (계속 진행): $e');
+      // 예외를 다시 던지지 않음 - 로그아웃은 계속 진행되어야 함
     }
   }
 

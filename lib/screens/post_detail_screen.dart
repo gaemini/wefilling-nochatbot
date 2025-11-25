@@ -20,6 +20,7 @@ import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
+import '../ui/widgets/fullscreen_image_viewer.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -1110,48 +1111,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               final imageUrl = _currentPost.imageUrls[index];
                               return GestureDetector(
                                 onTap: () {
-                                  showDialog(
-                                    context: context,
-                                    barrierColor: Colors.black87,
-                                    builder: (context) => Dialog(
-                                      backgroundColor: Colors.black,
-                                      insetPadding: EdgeInsets.zero,
-                                      child: Stack(
-                                        children: [
-                                          Center(
-                                            child: InteractiveViewer(
-                                              panEnabled: true,
-                                              boundaryMargin: const EdgeInsets.all(20),
-                                              minScale: 0.5,
-                                              maxScale: 3.0,
-                                              child: _buildRetryableImage(
-                                                imageUrl,
-                                                fit: BoxFit.contain,
-                                                isFullScreen: true,
-                                              ),
-                                            ),
-                                          ),
-                                          Positioned(
-                                            top: 50,
-                                            right: 20,
-                                            child: IconButton(
-                                              onPressed: () => Navigator.pop(context),
-                                              icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
+                                  // 전체화면 이미지 뷰어 열기
+                                  showFullscreenImageViewer(
+                                    context,
+                                    imageUrls: _currentPost.imageUrls,
+                                    initialIndex: index,
+                                    heroTag: 'post_image_$index',
                                   );
                                 },
-                                child: Container(
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  color: Colors.black,
-                                  child: _buildRetryableImage(
-                                    imageUrl,
-                                    fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
-                                    isFullScreen: false,
+                                child: Hero(
+                                  tag: 'post_image_$index',
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: double.infinity,
+                                    color: Colors.black,
+                                    child: _buildRetryableImage(
+                                      imageUrl,
+                                      fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
+                                      isFullScreen: false,
+                                    ),
                                   ),
                                 ),
                               );

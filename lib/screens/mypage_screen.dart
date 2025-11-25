@@ -4,6 +4,7 @@
 // 기존 기능 유지 + 새로운 탭 구조
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'profile_edit_screen.dart';
 import 'user_meetups_screens.dart';
 import 'package:provider/provider.dart';
@@ -1061,6 +1062,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   color: const Color(0xFFE5E7EB),
                 ),
                 _buildMenuItem(context, AppLocalizations.of(context)!.logout, Icons.logout_rounded, () async {
+                  // 햅틱 피드백 - 중요한 액션임을 알림
+                  HapticFeedback.lightImpact();
                   Navigator.pop(context);
                   // 로그아웃 확인 다이얼로그 표시
                   _showLogoutConfirmDialog(context, authProvider);
@@ -1117,73 +1120,227 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   }
 
   void _showLogoutConfirmDialog(BuildContext context, AuthProvider authProvider) {
+    // 햅틱 피드백 - 중요한 액션임을 알림
+    HapticFeedback.mediumImpact();
+    
     showDialog(
       context: context,
+      barrierDismissible: false, // 로딩 중에는 외부 터치로 닫기 방지
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(AppLocalizations.of(context)!.logout ?? ""),
-          content: Text(AppLocalizations.of(context)!.logoutConfirm ?? ""),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: BrandColors.error,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                Navigator.pop(context);
-                
-                // 로딩 인디케이터 표시
-                if (context.mounted) {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => const Center(
-                      child: CircularProgressIndicator(),
+        return Consumer<AuthProvider>(
+          builder: (context, authProvider, _) {
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeInOut,
+              child: AlertDialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                title: Row(
+                  children: [
+                    Icon(
+                      Icons.logout_rounded,
+                      color: BrandColors.error,
+                      size: 24,
                     ),
-                  );
-                }
-                
-                try {
-                  await authProvider.signOut();
-                  
-                  // 로딩 다이얼로그 닫기 후 로그인 화면으로 이동(스택 초기화)
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    Navigator.of(context).pushAndRemoveUntil(
-                      MaterialPageRoute(builder: (_) => const LoginScreen()),
-                      (route) => false,
-                    );
-                  }
-                } catch (e) {
-                  // 로딩 다이얼로그 닫기
-                  if (context.mounted) {
-                    Navigator.pop(context);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(AppLocalizations.of(context)!.logoutError ?? ""),
-                        backgroundColor: BrandColors.error,
-                        duration: const Duration(seconds: 3),
-                        action: SnackBarAction(
-                          label: AppLocalizations.of(context)!.retry,
-                          textColor: Colors.white,
-                          onPressed: () {
-                            // 재시도 로직
-                            _showLogoutConfirmDialog(context, authProvider);
-                          },
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      AppLocalizations.of(context)!.logout ?? "",
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                content: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, animation) {
+                    return FadeTransition(
+                      opacity: animation,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, 0.1),
+                          end: Offset.zero,
+                        ).animate(animation),
+                        child: child,
                       ),
                     );
-                  }
-                  print('로그아웃 UI 오류: $e');
-                }
-              },
-              child: Text(AppLocalizations.of(context)!.logout ?? ""),
-            ),
-          ],
+                  },
+                  child: authProvider.isLoading 
+                    ? Column(
+                        key: const ValueKey('loading'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              children: [
+                                const SizedBox(
+                                  width: 32,
+                                  height: 32,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 3,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  authProvider.logoutStatus ?? '로그아웃 중입니다...',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey.shade700,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '잠시만 기다려주세요',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      )
+                    : Column(
+                        key: const ValueKey('confirm'),
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade400,
+                            size: 48,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            AppLocalizations.of(context)!.logoutConfirm ?? "",
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                ),
+                actions: authProvider.isLoading 
+                  ? [] // 로딩 중에는 버튼 숨김
+                  : [
+                      TextButton(
+                        onPressed: () {
+                          HapticFeedback.lightImpact();
+                          Navigator.pop(context);
+                        },
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        ),
+                        child: Text(
+                          AppLocalizations.of(context)!.cancel ?? "",
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: BrandColors.error,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 2,
+                        ),
+                        onPressed: () async {
+                          // 강한 햅틱 피드백 - 중요한 액션 실행
+                          HapticFeedback.heavyImpact();
+                          
+                          try {
+                            // AuthProvider에서 로그아웃 처리 (타임아웃 포함)
+                            await authProvider.signOut();
+                            
+                            // 로그아웃 완료 후 다이얼로그 닫고 로그인 화면으로 이동
+                            if (context.mounted) {
+                              Navigator.pop(context); // 다이얼로그 닫기
+                              
+                              // 성공 햅틱 피드백
+                              HapticFeedback.lightImpact();
+                              
+                              // 부드러운 화면 전환 애니메이션
+                              Navigator.of(context).pushAndRemoveUntil(
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(showLogoutSuccess: true),
+                                  transitionDuration: const Duration(milliseconds: 600),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    return FadeTransition(
+                                      opacity: CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeInOut,
+                                      ),
+                                      child: SlideTransition(
+                                        position: Tween<Offset>(
+                                          begin: const Offset(0, 0.1),
+                                          end: Offset.zero,
+                                        ).animate(CurvedAnimation(
+                                          parent: animation,
+                                          curve: Curves.easeOutCubic,
+                                        )),
+                                        child: child,
+                                      ),
+                                    );
+                                  },
+                                ),
+                                (route) => false,
+                              );
+                            }
+                          } catch (e) {
+                            print('UI 레이어 로그아웃 오류: $e');
+                            // AuthProvider에서 이미 상태 초기화가 완료되므로 로그인 화면으로 이동
+                            if (context.mounted) {
+                              Navigator.pop(context); // 다이얼로그 닫기
+                              Navigator.of(context).pushAndRemoveUntil(
+                                PageRouteBuilder(
+                                  pageBuilder: (context, animation, secondaryAnimation) => const LoginScreen(showLogoutSuccess: true),
+                                  transitionDuration: const Duration(milliseconds: 600),
+                                  transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                                    return FadeTransition(
+                                      opacity: animation,
+                                      child: child,
+                                    );
+                                  },
+                                ),
+                                (route) => false,
+                              );
+                            }
+                          }
+                        },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.logout_rounded, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              AppLocalizations.of(context)!.logout ?? "",
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+              ),
+            );
+          },
         );
       },
     );

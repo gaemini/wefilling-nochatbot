@@ -12,6 +12,7 @@ import '../services/friend_category_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
+import '../design/tokens.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
@@ -636,18 +637,19 @@ class _FriendsPageState extends State<FriendsPage> {
         final friend = _filteredFriends[index];
 
         return Container(
-          margin: const EdgeInsets.only(bottom: 6),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+            borderRadius: DesignTokens.radiusM,
+            border: Border.all(color: BrandColors.neutral200, width: 1),
+            boxShadow: DesignTokens.shadowLight,
           ),
           child: InkWell(
             onTap: () => _navigateToProfile(friend),
             onLongPress: () => _showFriendOptions(friend),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: DesignTokens.radiusM,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+              padding: DesignTokens.paddingS,
               child: Row(
                 children: [
                   // 프로필 이미지
@@ -656,7 +658,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     height: 44,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: const Color(0xFFE5E7EB),
+                      color: BrandColors.neutral200,
                     ),
                     child: friend.hasProfileImage
                         ? ClipOval(
@@ -665,17 +667,17 @@ class _FriendsPageState extends State<FriendsPage> {
                               width: 44,
                               height: 44,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.person_outline,
                                 size: 22,
-                                color: Color(0xFF6B7280),
+                                color: BrandColors.textTertiary,
                               ),
                             ),
                           )
-                        : const Icon(
-                            Icons.person,
+                        : Icon(
+                            Icons.person_outline,
                             size: 24,
-                            color: Color(0xFF6B7280),
+                            color: BrandColors.textTertiary,
                           ),
                   ),
 
@@ -689,11 +691,8 @@ class _FriendsPageState extends State<FriendsPage> {
                       children: [
                         Text(
                           friend.displayNameOrNickname,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
+                          style: TypographyStyles.titleMedium.copyWith(
                             fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF111827),
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -704,11 +703,8 @@ class _FriendsPageState extends State<FriendsPage> {
                           const SizedBox(height: 1),
                           Text(
                             friend.displayName,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w400,
-                              color: Color(0xFF6B7280),
+                            style: TypographyStyles.bodySmall.copyWith(
+                              color: BrandColors.textSecondary,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -755,7 +751,10 @@ class _FriendsPageState extends State<FriendsPage> {
                   
                   // 메뉴 버튼 (맨 오른쪽 상단에 배치)
                   IconButton(
-                    icon: const Icon(Icons.more_vert, color: Color(0xFF6B7280)),
+                    icon: Icon(
+                      Icons.more_vert,
+                      color: BrandColors.textTertiary,
+                    ),
                     iconSize: 20,
                     padding: const EdgeInsets.all(6),
                     constraints: const BoxConstraints(

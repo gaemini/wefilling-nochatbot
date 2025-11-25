@@ -144,8 +144,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        borderRadius: DesignTokens.radiusM,
+        border: Border.all(color: BrandColors.neutral200, width: 1),
+        boxShadow: DesignTokens.shadowLight,
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -168,12 +169,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ),
         title: Text(
           category.name,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontWeight: FontWeight.w700, // 더 두껍게 (600 → 700)
-            fontSize: 16, // 크기 증가 (15 → 16)
-            color: Color(0xFF111827),
-          ),
+          style: TypographyStyles.titleMedium,
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6), // 간격 증가 (4 → 6)
@@ -183,11 +179,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               final count = snapshot.data ?? category.friendIds.length;
               return Text(
                 AppLocalizations.of(context)!.friendsInGroup(count),
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  color: Color(0xFF6B7280), // 적당한 회색 (grey-500)
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500, // 중간 굵기 (600 → 500)
+                style: TypographyStyles.bodySmall.copyWith(
+                  color: BrandColors.textSecondary,
                 ),
               );
             },

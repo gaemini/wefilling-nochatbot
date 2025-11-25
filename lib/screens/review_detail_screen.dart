@@ -1,7 +1,6 @@
 // lib/screens/review_detail_screen.dart
 // 후기 상세 화면 - 좋아요, 댓글 기능 포함
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/review_post.dart';
 import '../design/tokens.dart';
@@ -12,6 +11,7 @@ import '../services/meetup_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'review_comments_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../ui/widgets/fullscreen_image_viewer.dart';
 
 class ReviewDetailScreen extends StatefulWidget {
   final ReviewPost review;
@@ -35,48 +35,18 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
   int _currentImageIndex = 0; // 현재 이미지 인덱스
   final PageController _pageController = PageController();
   
-  // 이미지 페이지 인디케이터 표시 상태
-  bool _showPageIndicator = false;
-  Timer? _indicatorTimer;
-
   @override
   void initState() {
     super.initState();
     _loadParticipants();
-    
-    // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
-    if (widget.review.imageUrls.length > 1) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showPageIndicatorTemporarily();
-      });
-    }
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    _indicatorTimer?.cancel(); // Timer 정리
     super.dispose();
   }
   
-  // 페이지 인디케이터를 표시하고 1초 후 자동으로 숨김
-  void _showPageIndicatorTemporarily() {
-    setState(() {
-      _showPageIndicator = true;
-    });
-    
-    // 기존 타이머가 있으면 취소
-    _indicatorTimer?.cancel();
-    
-    // 1초 후 숨김
-    _indicatorTimer = Timer(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          _showPageIndicator = false;
-        });
-      }
-    });
-  }
 
   Future<void> _loadParticipants() async {
     try {
@@ -238,6 +208,14 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
         stream: _reviewService.getReviewStream(widget.review.id, widget.review.authorId),
         initialData: widget.review,
         builder: (context, snapshot) {
+          // 로딩 중
+          if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+          
+          // 데이터 없음
           if (!snapshot.hasData || snapshot.data == null) {
             return Center(
               child: Text(
@@ -383,96 +361,84 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
               setState(() {
                 _currentImageIndex = index;
               });
-              // 페이지 변경 시 인디케이터 표시
-              _showPageIndicatorTemporarily();
             },
             itemBuilder: (context, index) {
               return GestureDetector(
                 onTap: () {
-                  // 터치 시 인디케이터 표시
-                  if (review.imageUrls.length > 1) {
-                    _showPageIndicatorTemporarily();
-                  } else {
-                    // 이미지가 1장일 때는 전체 화면으로 보기
-                    showDialog(
-                      context: context,
-                      builder: (context) => Dialog(
-                        insetPadding: const EdgeInsets.all(8),
-                        child: InteractiveViewer(
-                          panEnabled: true,
-                          boundaryMargin: const EdgeInsets.all(20),
-                          minScale: 0.5,
-                          maxScale: 3.0,
-                          child: Image.network(
-                            review.imageUrls[index],
-                            fit: BoxFit.contain,
-                          ),
-                        ),
-                      ),
-                    );
-                  }
-                },
-                onLongPress: () {
-                  // 롱프레스 시 전체 화면으로 보기
-                  showDialog(
-                    context: context,
-                    builder: (context) => Dialog(
-                      insetPadding: const EdgeInsets.all(8),
-                      child: InteractiveViewer(
-                        panEnabled: true,
-                        boundaryMargin: const EdgeInsets.all(20),
-                        minScale: 0.5,
-                        maxScale: 3.0,
-                        child: Image.network(
-                          review.imageUrls[index],
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                    ),
+                  // 전체화면 이미지 뷰어 열기
+                  showFullscreenImageViewer(
+                    context,
+                    imageUrls: review.imageUrls,
+                    initialIndex: index,
+                    heroTag: 'review_image_$index',
                   );
                 },
-                child: Image.network(
-                  review.imageUrls[index],
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      color: BrandColors.neutral100,
-                      child: Center(
-                        child: Icon(
-                          Icons.broken_image_rounded,
-                          color: BrandColors.textTertiary,
-                          size: 64,
+                child: Hero(
+                  tag: 'review_image_$index',
+                  child: Image.network(
+                    review.imageUrls[index],
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Container(
+                        color: BrandColors.neutral100,
+                        child: Center(
+                          child: Icon(
+                            Icons.broken_image_rounded,
+                            color: BrandColors.textTertiary,
+                            size: 64,
+                          ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
               );
             },
           ),
         ),
         
-        // 이미지 인디케이터 (2장 이상이고 표시 상태일 때만 표시)
-        if (review.imageUrls.length > 1 && _showPageIndicator)
+        // 이미지 개수 인디케이터 (2장 이상일 때 항상 표시)
+        if (review.imageUrls.length > 1)
           Positioned(
             bottom: 16,
             right: 16,
-            child: AnimatedOpacity(
-              opacity: _showPageIndicator ? 1.0 : 0.0,
-              duration: const Duration(milliseconds: 200),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(16),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.7),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Text(
+                '${_currentImageIndex + 1}/${review.imageUrls.length}',
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
                 ),
-                child: Text(
-                  '${_currentImageIndex + 1}/${review.imageUrls.length}',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        
+        // 도트 인디케이터 (2장 이상일 때 표시)
+        if (review.imageUrls.length > 1)
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                review.imageUrls.length,
+                (index) => Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 3),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _currentImageIndex == index
+                        ? Colors.white
+                        : Colors.white.withOpacity(0.4),
                   ),
                 ),
               ),

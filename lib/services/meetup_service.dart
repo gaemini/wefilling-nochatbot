@@ -1434,17 +1434,16 @@ class MeetupService {
       });
       print('✅ meetup_reviews 업데이트 완료');
 
-      // 2. 모든 참여자 프로필의 후기도 업데이트 (주최자 + 수락한 참여자)
-      print('✏️ 2단계: 프로필 후기 업데이트...');
-      final allUserIds = [authorId, ...approvedParticipants];
-      print('📋 업데이트 대상 사용자: ${allUserIds.length}명');
+      // 2. 본인 프로필의 후기 업데이트 (다른 사용자는 Cloud Function에서 처리)
+      print('✏️ 2단계: 본인 프로필 후기 업데이트...');
+      final currentUser = _auth.currentUser;
       
-      for (final userId in allUserIds) {
+      if (currentUser != null) {
         try {
-          // users/{userId}/posts/{reviewId} 문서가 존재하는지 확인
+          // 본인 프로필의 후기만 직접 업데이트
           final postDoc = await _firestore
               .collection('users')
-              .doc(userId)
+              .doc(currentUser.uid)
               .collection('posts')
               .doc(reviewId)
               .get();
@@ -1452,7 +1451,7 @@ class MeetupService {
           if (postDoc.exists) {
             await _firestore
                 .collection('users')
-                .doc(userId)
+                .doc(currentUser.uid)
                 .collection('posts')
                 .doc(reviewId)
                 .update({
@@ -1461,14 +1460,18 @@ class MeetupService {
               'content': content,
               'updatedAt': FieldValue.serverTimestamp(),
             });
-            print('✅ 프로필 후기 업데이트: userId=$userId');
+            print('✅ 본인 프로필 후기 업데이트 완료');
           } else {
-            print('⚠️ 프로필 후기 없음 (건너뜀): userId=$userId');
+            print('⚠️ 본인 프로필에 후기 없음');
           }
         } catch (e) {
-          print('⚠️ 프로필 후기 업데이트 실패 (계속 진행): userId=$userId, error=$e');
+          print('⚠️ 본인 프로필 후기 업데이트 실패: $e');
         }
       }
+      
+      // 다른 참여자들의 프로필은 Cloud Function(onMeetupReviewUpdated)에서 자동 처리됨
+      print('💡 다른 참여자 프로필은 Cloud Function에서 자동 업데이트됩니다');
+      print('📋 총 대상자: ${[authorId, ...approvedParticipants].length}명 (본인 포함)');
 
       print('✅ 모임 후기 수정 완료: $reviewId');
       return true;
@@ -1800,7 +1803,8 @@ class MeetupService {
         'authorId': userId,
         'meetupId': fullReviewData['meetupId'],
         'meetupTitle': fullReviewData['meetupTitle'],
-        'imageUrl': fullReviewData['imageUrl'],
+        'imageUrls': fullReviewData['imageUrls'] ?? [], // 여러 이미지 지원
+        'imageUrl': fullReviewData['imageUrl'], // 하위 호환성
         'content': fullReviewData['content'],
         'reviewId': reviewId,
         'createdAt': fullReviewData['createdAt'] ?? FieldValue.serverTimestamp(),

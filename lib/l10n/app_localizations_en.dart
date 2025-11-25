@@ -28,6 +28,9 @@ class AppLocalizationsEn extends AppLocalizations {
       'An error occurred during logout.\nPlease try again.';
 
   @override
+  String get offlineLogout => 'Logged out in offline mode';
+
+  @override
   String get email => 'Email';
 
   @override

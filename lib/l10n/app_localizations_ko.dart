@@ -27,6 +27,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get logoutError => '로그아웃 중 오류가 발생했습니다.\n다시 시도해주세요.';
 
   @override
+  String get offlineLogout => '오프라인 상태에서 로그아웃되었습니다';
+
+  @override
   String get email => '이메일';
 
   @override

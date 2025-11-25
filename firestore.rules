@@ -53,14 +53,20 @@ service cloud.firestore {
         
         // 수정: 
         // 1) 본인: isHidden, updatedAt 필드 변경 가능
-        // 2) 모든 인증된 사용자: likedBy, likeCount 필드 변경 가능 (좋아요 기능)
-        // 3) 모든 인증된 사용자: commentCount 필드 변경 가능 (댓글 수 업데이트)
+        // 2) 본인: 후기 수정 시 imageUrls, imageUrl, content, updatedAt 필드 변경 가능
+        // 3) 모든 인증된 사용자: likedBy, likeCount 필드 변경 가능 (좋아요 기능)
+        // 4) 모든 인증된 사용자: commentCount 필드 변경 가능 (댓글 수 업데이트)
         allow update: if 
           request.auth != null &&
           (
             // 본인: 숨김 처리
             (request.auth.uid == userId &&
              request.resource.data.diff(resource.data).affectedKeys().hasOnly(['isHidden', 'updatedAt'])) ||
+            
+            // 본인: 후기 수정 (모임 후기인 경우)
+            (request.auth.uid == userId &&
+             resource.data.type == 'meetup_review' &&
+             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['imageUrls', 'imageUrl', 'content', 'updatedAt'])) ||
             
             // 모든 사용자: 좋아요 토글
             request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likeCount']) ||

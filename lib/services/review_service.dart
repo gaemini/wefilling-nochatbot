@@ -60,7 +60,7 @@ class ReviewService {
               authorProfileImage: authorProfileImage,
               meetupId: data['meetupId'] ?? '',
               meetupTitle: data['meetupTitle'] ?? '모임',
-              imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
+              imageUrls: List<String>.from(data['imageUrls'] ?? (data['imageUrl'] != null ? [data['imageUrl']] : [])),
               content: data['content'] ?? '',
               category: '모임', // 모임 후기는 항상 '모임' 카테고리
               rating: 5, // 기본 평점
@@ -454,7 +454,7 @@ class ReviewService {
           authorProfileImage: authorProfileImage,
           meetupId: data['meetupId'] ?? '',
           meetupTitle: data['meetupTitle'] ?? '모임',
-          imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
+          imageUrls: List<String>.from(data['imageUrls'] ?? (data['imageUrl'] != null ? [data['imageUrl']] : [])),
           content: data['content'] ?? '',
           category: '모임',
           rating: 5,

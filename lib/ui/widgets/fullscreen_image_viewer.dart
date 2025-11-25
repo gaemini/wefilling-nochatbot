@@ -98,11 +98,11 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
             },
           ),
 
-          // 닫기 버튼
-          SafeArea(
-            child: Positioned(
-              top: 16,
-              right: 16,
+          // 닫기 버튼 (왼쪽 상단)
+          Positioned(
+            top: 16,
+            left: 16,
+            child: SafeArea(
               child: Container(
                 decoration: BoxDecoration(
                   color: Colors.black54,
@@ -120,27 +120,24 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
             ),
           ),
           
-          // 페이지 인디케이터 (이미지가 2장 이상일 때만)
+          // 페이지 인디케이터 (이미지가 2장 이상일 때만) - 오른쪽 상단
           if (widget.imageUrls.length > 1)
-            SafeArea(
-              child: Positioned(
-                bottom: 32,
-                left: 0,
-                right: 0,
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Text(
-                      '${_currentIndex + 1} / ${widget.imageUrls.length}',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
+            Positioned(
+              top: 16,
+              right: 16,
+              child: SafeArea(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    '${_currentIndex + 1} / ${widget.imageUrls.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),

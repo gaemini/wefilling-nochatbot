@@ -18,8 +18,10 @@ import '../ui/widgets/skeletons.dart';
 import '../services/preload_service.dart';
 import 'create_meetup_screen.dart';
 import 'meetup_detail_screen.dart';
+import 'review_approval_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -1051,33 +1053,64 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     // 🔧 모임이 완료된 경우 처리
     if (meetup.isCompleted) {
       if (isParticipating) {
-        // 참여 중인 사용자에게는 "마감" 상태 표시
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.grey[200],
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey[300]!),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.check_circle, size: 12, color: Colors.grey[600]),
-              const SizedBox(width: 4),
-              Text(
-                AppLocalizations.of(context)!.closedStatus,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey[600],
-                ),
+        // 참여 중인 사용자: 후기가 있으면 "후기 확인하기", 없으면 "마감"
+        if (meetup.hasReview == true) {
+          return GestureDetector(
+            onTap: () => _viewAndRespondToReview(meetup),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.green[300]!),
               ),
-            ],
-          ),
-        );
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.rate_review, size: 12, color: Colors.green[700]),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppLocalizations.of(context)!.checkReview,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green[700],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        } else {
+          // 후기가 없으면 "마감" 상태 표시
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, size: 12, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  AppLocalizations.of(context)!.closedStatus,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
       } else {
-        // 참여하지 않은 사용자에게도 "마감" 상태 표시
+        // 참여하지 않은 사용자에게는 "마감" 상태 표시
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
@@ -1177,6 +1210,111 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   void _updateParticipationCache(String meetupId, bool isParticipating) {
     _participationStatusCache[meetupId] = isParticipating;
     _participationCacheTime[meetupId] = DateTime.now();
+  }
+
+  /// 후기 확인 및 수락 화면으로 이동
+  Future<void> _viewAndRespondToReview(Meetup meetup) async {
+    try {
+      final meetupService = MeetupService();
+      String? reviewId = meetup.reviewId;
+
+      // 최신 meetups 문서로 보강 (reviewId/hasReview 누락 대비)
+      if (reviewId == null || meetup.hasReview == false) {
+        final fresh = await meetupService.getMeetupById(meetup.id);
+        if (fresh != null) {
+          reviewId = fresh.reviewId;
+        }
+      }
+
+      if (reviewId == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound ?? "")),
+          );
+        }
+        return;
+      }
+
+      final reviewData = await meetupService.getMeetupReview(reviewId);
+      if (reviewData == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed ?? "")),
+          );
+        }
+        return;
+      }
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      // 수신자용 요청 조회
+      final reqQuery = await FirebaseFirestore.instance
+          .collection('review_requests')
+          .where('recipientId', isEqualTo: user.uid)
+          .where('metadata.reviewId', isEqualTo: reviewId)
+          .limit(1)
+          .get();
+
+      String requestId;
+      if (reqQuery.docs.isEmpty) {
+        // 없으면 생성 (알림 누락 대비)
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+        final recipientName = userDoc.data()?['nickname'] ?? userDoc.data()?['displayName'] ?? 'User';
+        final requesterId = meetup.userId ?? '';
+        final requesterName = reviewData['authorName'] ?? meetup.hostNickname ?? meetup.host;
+
+        final newReq = await FirebaseFirestore.instance.collection('review_requests').add({
+          'meetupId': meetup.id,
+          'requesterId': requesterId,
+          'requesterName': requesterName,
+          'recipientId': user.uid,
+          'recipientName': recipientName,
+          'meetupTitle': meetup.title,
+          'message': reviewData['content'] ?? '',
+          'imageUrls': [reviewData['imageUrl'] ?? ''],
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+          'respondedAt': null,
+          'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
+          'metadata': {'reviewId': reviewId},
+        });
+        requestId = newReq.id;
+      } else {
+        requestId = reqQuery.docs.first.id;
+      }
+
+      if (!mounted) return;
+      // 이미지 URL 목록 가져오기 (여러 이미지 지원)
+      final List<String> imageUrls = [];
+      if (reviewData['imageUrls'] != null && reviewData['imageUrls'] is List) {
+        imageUrls.addAll((reviewData['imageUrls'] as List).map((e) => e.toString()));
+      } else if (reviewData['imageUrl'] != null && reviewData['imageUrl'].toString().isNotEmpty) {
+        imageUrls.add(reviewData['imageUrl'].toString());
+      }
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ReviewApprovalScreen(
+            requestId: requestId,
+            reviewId: reviewId!,
+            meetupTitle: meetup.title,
+            imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
+            imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
+            content: reviewData['content'] ?? '',
+            authorName: reviewData['authorName'] ?? '익명',
+          ),
+        ),
+      );
+    } catch (e) {
+      Logger.error('후기 확인 이동 오류: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        );
+      }
+    }
   }
 
   // 모임 참여하기

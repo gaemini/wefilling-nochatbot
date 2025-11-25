@@ -1745,6 +1745,14 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       }
 
       if (!mounted) return;
+      // 이미지 URL 목록 가져오기 (여러 이미지 지원)
+      final List<String> imageUrls = [];
+      if (reviewData['imageUrls'] != null && reviewData['imageUrls'] is List) {
+        imageUrls.addAll((reviewData['imageUrls'] as List).map((e) => e.toString()));
+      } else if (reviewData['imageUrl'] != null && reviewData['imageUrl'].toString().isNotEmpty) {
+        imageUrls.add(reviewData['imageUrl'].toString());
+      }
+
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -1752,7 +1760,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             requestId: requestId,
             reviewId: reviewId!,
             meetupTitle: currentMeetup.title,
-            imageUrl: reviewData['imageUrl'] ?? '',
+            imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
+            imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
             content: reviewData['content'] ?? '',
             authorName: reviewData['authorName'] ?? '익명',
           ),

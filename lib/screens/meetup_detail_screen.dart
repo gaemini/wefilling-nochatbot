@@ -1245,7 +1245,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             Icon(Icons.check_circle_outline, size: 20),
             const SizedBox(width: 8),
             Text(
-              AppLocalizations.of(context)!.reviewAccept,
+              AppLocalizations.of(context)!.checkReview,
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 16,
@@ -1765,14 +1765,39 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         }
       }
 
-      if (mounted && requestId != null) {
-        // 다이얼로그로 후기 표시
-        await _showReviewApprovalDialog(
-          requestId: requestId,
-          imageUrl: imageUrl,
-          content: content,
-          authorName: authorName,
-          currentStatus: status,
+      if (mounted && requestId != null && _currentMeetup.reviewId != null) {
+        // 후기 데이터 가져오기
+        final reviewData = await _meetupService.getMeetupReview(_currentMeetup.reviewId!);
+        
+        // 이미지 URL 목록 가져오기 (여러 이미지 지원)
+        final List<String> imageUrls = [];
+        if (reviewData != null) {
+          if (reviewData['imageUrls'] != null && reviewData['imageUrls'] is List) {
+            imageUrls.addAll((reviewData['imageUrls'] as List).map((e) => e.toString()));
+          } else if (reviewData['imageUrl'] != null && reviewData['imageUrl'].toString().isNotEmpty) {
+            imageUrls.add(reviewData['imageUrl'].toString());
+          }
+        }
+        
+        // imageUrl 변수도 확인
+        if (imageUrls.isEmpty && imageUrl.isNotEmpty) {
+          imageUrls.add(imageUrl);
+        }
+
+        // ReviewApprovalScreen으로 이동 (전체 페이지)
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ReviewApprovalScreen(
+              requestId: requestId!, // null 체크 후이므로 안전
+              reviewId: _currentMeetup.reviewId!,
+              meetupTitle: _currentMeetup.title,
+              imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
+              imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
+              content: content,
+              authorName: authorName,
+            ),
+          ),
         );
       }
     } catch (e) {

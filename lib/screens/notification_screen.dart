@@ -306,6 +306,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
         return;
       }
 
+      // 이미지 URL 목록 가져오기 (여러 이미지 지원)
+      final List<String> imageUrls = [];
+      if (notification.data?['imageUrls'] != null && notification.data?['imageUrls'] is List) {
+        imageUrls.addAll((notification.data?['imageUrls'] as List).map((e) => e.toString()));
+      } else if (imageUrl != null && imageUrl.isNotEmpty) {
+        imageUrls.add(imageUrl);
+      }
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -313,7 +321,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
             requestId: requestId,
             reviewId: reviewId,
             meetupTitle: meetupTitle ?? '',
-            imageUrl: imageUrl ?? '',
+            imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
+            imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
             content: content ?? '',
             authorName: authorName ?? '익명',
           ),

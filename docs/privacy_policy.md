@@ -1,8 +1,8 @@
-# 위필링 개인정보 처리방침 (Wefilling Privacy Policy)
+# Wefilling 개인정보 처리방침 (Wefilling Privacy Policy)
 
-_Last updated: 2025-11-12_
+_Last updated: 2025-11-25_
 
-위필링(이하 “회사”)은 개인정보보호법 등 관련 법령을 준수하며, 이용자의 개인정보를 안전하게 보호하고 있습니다. 본 문서는 앱 내 안내 화면과 동일한 내용을 담고 있으며, App Store 제출용 웹 페이지 제작 시 바로 활용할 수 있도록 정리된 버전입니다. English translation is provided in parallel for international reviewers.
+Wefilling 서비스를 운영하는 Christopher Watson(이하 "회사")은 개인정보보호법 등 관련 법령을 준수하며, 이용자의 개인정보를 안전하게 보호하고 있습니다. 본 문서는 앱 내 안내 화면과 동일한 내용을 담고 있으며, App Store 제출용 웹 페이지 제작 시 바로 활용할 수 있도록 정리된 버전입니다. English translation is provided in parallel for international reviewers.
 
 ---
 
@@ -27,7 +27,7 @@ We retain personal data only for the duration required by law or user consent (e
 
 ## 3. 개인정보의 제3자 제공 (Third-Party Provision)
 
-회사는 정보주체의 동의 또는 법령에 근거한 경우에만 개인정보를 제3자에게 제공합니다. 현재 위필링은 개인정보를 제3자에게 제공하지 않습니다.
+회사는 정보주체의 동의 또는 법령에 근거한 경우에만 개인정보를 제3자에게 제공합니다. 현재 Wefilling은 개인정보를 제3자에게 제공하지 않습니다.
 
 Wefilling does not share personal data with third parties except with user consent or when required by law.
 
@@ -45,7 +45,7 @@ All outsourcing agreements include confidentiality, security, and oversight obli
 - 개인정보 열람, 정정, 삭제, 처리 정지 요구
 - 가입 해지 및 동의 철회
 
-Requests can be submitted via 이메일(support@wefilling.com). The company will respond without undue delay. If needed, verification procedures may be required to protect user privacy.
+Requests can be submitted via 이메일(wefilling@gmail.com). The company will respond without undue delay. If needed, verification procedures may be required to protect user privacy.
 
 ## 6. 처리하는 개인정보 항목 (Data We Collect)
 
@@ -67,10 +67,10 @@ Requests can be submitted via 이메일(support@wefilling.com). The company will
 
 ## 9. 개인정보 보호책임자 (Privacy Officer)
 
-- 성명/부서: 위필링 개발팀
-- 이메일: support@wefilling.com
+- 성명: Christopher Watson
+- 이메일: wefilling@gmail.com
 
-Privacy inquiries: Wefilling Development Team (support@wefilling.com)
+Privacy inquiries: Christopher Watson (wefilling@gmail.com)
 
 ## 10. 권익침해 구제방법 (Remedies)
 
@@ -84,7 +84,7 @@ For international users, contact the above Korean authorities or your local data
 
 ## 11. 부칙 (Addendum)
 
-본 개인정보 처리방침은 **2025년 11월 12일**부터 적용됩니다. 변경사항 발생 시 앱 공지사항 및 웹 페이지를 통해 사전 안내합니다.
+본 개인정보 처리방침은 **2025년 11월 25일**부터 적용됩니다. 변경사항 발생 시 앱 공지사항 및 웹 페이지를 통해 사전 안내합니다.
 
 ---
 
@@ -93,10 +93,9 @@ For international users, contact the above Korean authorities or your local data
 1. **호스팅**: GitHub Pages, Netlify, Vercel 등 HTTPS 지원 플랫폼에 본 문서를 업로드합니다.  
 2. **URL 확보**: 게시 후 고정 URL을 앱 내 `privacy_policy_screen.dart`와 App Store Connect(Privacy Policy URL 입력란)에 등록합니다.  
 3. **다국어 대응**: 필요 시 영문 단독 페이지를 작성하거나 본 문서의 영문 단락을 강조합니다.  
-4. **변경 기록**: 추후 개정 시 상단 “Last updated” 날짜를 갱신하고, 변경 이력을 별도 섹션으로 관리합니다.
+4. **변경 기록**: 추후 개정 시 상단 "Last updated" 날짜를 갱신하고, 변경 이력을 별도 섹션으로 관리합니다.
 
 ---
 
-문의: support@wefilling.com  
-Copyright © 2025 Wefilling
-
+문의: wefilling@gmail.com  
+Copyright © 2025 Christopher Watson / Wefilling

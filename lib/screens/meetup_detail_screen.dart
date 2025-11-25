@@ -954,7 +954,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 Icon(Icons.report_outlined, size: 18, color: Colors.red[600]),
                 const SizedBox(width: 12),
                 Text(
-                  '신고하기',
+                  AppLocalizations.of(context)!.reportAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
@@ -971,7 +971,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 Icon(Icons.block, size: 18, color: Colors.red[600]),
                 const SizedBox(width: 12),
                 Text(
-                  '차단하기',
+                  AppLocalizations.of(context)!.blockAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,

@@ -1048,6 +1048,63 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     final isParticipating = cachedStatus;
 
+    // 🔧 모임이 완료된 경우 처리
+    if (meetup.isCompleted) {
+      if (isParticipating) {
+        // 참여 중인 사용자에게는 "마감" 상태 표시
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle, size: 12, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                AppLocalizations.of(context)!.closedStatus,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        // 참여하지 않은 사용자에게도 "마감" 상태 표시
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.grey[200],
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey[300]!),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.check_circle, size: 12, color: Colors.grey[600]),
+              const SizedBox(width: 4),
+              Text(
+                AppLocalizations.of(context)!.closedStatus,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+
     // 마감된 모임이지만 이미 참여 중이면 나가기 버튼 표시
     if (meetup.currentParticipants >= meetup.maxParticipants &&
         !isParticipating) {

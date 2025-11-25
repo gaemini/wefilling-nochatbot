@@ -14,11 +14,13 @@ import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'dart:io';
 import '../utils/logger.dart';
+import 'participation_cache_service.dart';
 
 class MeetupService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
+  final ParticipationCacheService _cacheService = ParticipationCacheService();
   
   // Firestore 인스턴스 getter 추가
   FirebaseFirestore get firestore => _firestore;
@@ -583,6 +585,9 @@ class MeetupService {
 
       Logger.log('✅ 모임 참여 성공: $meetupId');
 
+      // 🔧 캐시 무효화 (참여 상태 변경됨)
+      _cacheService.invalidateCache(meetupId, user.uid);
+
       // 정원이 다 찬 경우 알림 발송
       final newCurrentParticipants = currentParticipants + 1;
       if (newCurrentParticipants >= maxParticipants) {
@@ -646,6 +651,9 @@ class MeetupService {
 
       // 동기화 검증 (선택적)
       await _validateParticipantCount(meetupId);
+
+      // 🔧 캐시 무효화 (참여 상태 변경됨)
+      _cacheService.invalidateCache(meetupId, user.uid);
 
       Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       return true;
@@ -1085,6 +1093,9 @@ class MeetupService {
         }
       });
 
+      // 🔧 캐시 무효화 (참여 상태 변경됨)
+      _cacheService.invalidateCache(meetupId, user.uid);
+
       Logger.log('✅ 모임 참여 취소 성공: $meetupId');
       return true;
     } catch (e) {
@@ -1248,36 +1259,63 @@ class MeetupService {
 
   /// 모임 완료 처리
   Future<bool> markMeetupAsCompleted(String meetupId) async {
+    Logger.log('🚀 [SERVICE] 모임 완료 처리 시작: $meetupId');
+    
     try {
       final user = _auth.currentUser;
       if (user == null) {
-        Logger.log('❌ 사용자 인증 필요');
+        Logger.error('❌ [SERVICE] 사용자 인증 필요');
         return false;
       }
+      Logger.log('👤 [SERVICE] 현재 사용자: ${user.uid}');
 
       // 모임 존재 및 권한 확인
+      Logger.log('📡 [SERVICE] Firestore에서 모임 문서 조회 중...');
       final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      
       if (!meetupDoc.exists) {
-        Logger.log('❌ 모임을 찾을 수 없음');
+        Logger.error('❌ [SERVICE] 모임을 찾을 수 없음: $meetupId');
+        return false;
+      }
+      Logger.log('✅ [SERVICE] 모임 문서 존재 확인');
+
+      final meetupData = meetupDoc.data()!;
+      final hostUserId = meetupData['userId'];
+      Logger.log('🔍 [SERVICE] 권한 확인 - 호스트: $hostUserId, 현재 사용자: ${user.uid}');
+      
+      if (hostUserId != user.uid) {
+        Logger.error('❌ [SERVICE] 권한 없음 - 모임장만 완료 처리 가능');
         return false;
       }
 
-      final meetupData = meetupDoc.data()!;
-      if (meetupData['userId'] != user.uid) {
-        Logger.log('❌ 모임장만 완료 처리 가능');
-        return false;
+      // 현재 상태 확인
+      final currentCompleted = meetupData['isCompleted'] ?? false;
+      Logger.log('📋 [SERVICE] 현재 완료 상태: $currentCompleted');
+      
+      if (currentCompleted) {
+        Logger.log('⚠️ [SERVICE] 이미 완료된 모임');
+        return true; // 이미 완료된 경우 성공으로 처리
       }
 
       // 모임 완료 상태로 업데이트
+      Logger.log('📡 [SERVICE] Firestore 업데이트 실행 중...');
       await _firestore.collection('meetups').doc(meetupId).update({
         'isCompleted': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      Logger.log('✅ 모임 완료 처리 성공: $meetupId');
+      Logger.log('✅ [SERVICE] 모임 완료 처리 성공: $meetupId');
+      
+      // 업데이트 확인
+      Logger.log('🔍 [SERVICE] 업데이트 결과 확인 중...');
+      final updatedDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      final updatedData = updatedDoc.data();
+      Logger.log('📋 [SERVICE] 업데이트 후 상태: isCompleted=${updatedData?['isCompleted']}');
+      
       return true;
     } catch (e) {
-      Logger.error('❌ 모임 완료 처리 오류: $e');
+      Logger.error('❌ [SERVICE] 모임 완료 처리 오류: $e');
+      Logger.error('📍 [SERVICE] 스택 트레이스: ${StackTrace.current}');
       return false;
     }
   }
@@ -1888,37 +1926,56 @@ class MeetupService {
 
   // 실시간 모임 데이터 스트림
   Stream<Meetup?> getMeetupStream(String meetupId) {
+    Logger.log('📡 [STREAM] getMeetupStream 시작: $meetupId');
+    
     return _firestore
         .collection('meetups')
         .doc(meetupId)
         .snapshots()
         .map((snapshot) {
+      Logger.log('🔄 [STREAM] 스냅샷 수신 - exists: ${snapshot.exists}, metadata: ${snapshot.metadata}');
+      
       if (snapshot.exists && snapshot.data() != null) {
         final data = snapshot.data()!;
         data['id'] = snapshot.id;
-        return Meetup.fromJson(data);
+        
+        final meetup = Meetup.fromJson(data);
+        Logger.log('📋 [STREAM] 모임 데이터 파싱 완료: isCompleted=${meetup.isCompleted}, hasReview=${meetup.hasReview}');
+        Logger.log('🔍 [STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
+        
+        return meetup;
       }
+      
+      Logger.log('⚠️ [STREAM] 모임 데이터 없음 또는 삭제됨');
       return null;
     });
   }
 
   // 실시간 참여자 목록 스트림
   Stream<List<MeetupParticipant>> getParticipantsStream(String meetupId) {
+    Logger.log('👥 [PARTICIPANTS_STREAM] 참여자 스트림 시작: $meetupId');
+    
     return _firestore
         .collection('meetup_participants')
         .where('meetupId', isEqualTo: meetupId)
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
         .map((snapshot) {
+      Logger.log('🔄 [PARTICIPANTS_STREAM] 스냅샷 수신 - 문서 수: ${snapshot.docs.length}');
+      Logger.log('🔍 [PARTICIPANTS_STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
+      
       final participants = snapshot.docs.map((doc) {
         final data = doc.data();
         data['id'] = doc.id;
-        return MeetupParticipant.fromJson(data);
+        final participant = MeetupParticipant.fromJson(data);
+        Logger.log('  - 참여자: ${participant.userName} (${participant.userId})');
+        return participant;
       }).toList();
       
       // 클라이언트 측에서 정렬
       participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
       
+      Logger.log('✅ [PARTICIPANTS_STREAM] 참여자 목록 반환: ${participants.length}명');
       return participants;
     });
   }

@@ -296,12 +296,32 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     return StreamBuilder<Meetup?>(
       stream: _meetupService.getMeetupStream(widget.meetupId),
       builder: (context, snapshot) {
+        // 🔍 진단: StreamBuilder 상태 로그
+        Logger.log('🔄 [MEETUP_DETAIL] StreamBuilder 상태: ${snapshot.connectionState}');
+        Logger.log('📊 [MEETUP_DETAIL] hasData: ${snapshot.hasData}, hasError: ${snapshot.hasError}');
+        
+        if (snapshot.hasError) {
+          Logger.error('❌ [MEETUP_DETAIL] StreamBuilder 오류: ${snapshot.error}');
+        }
+        
         // 스트림에서 데이터를 받으면 _currentMeetup 업데이트
         if (snapshot.hasData && snapshot.data != null) {
-          _currentMeetup = snapshot.data!;
-          // 호스트 및 참여자 상태 업데이트
-          _checkIfUserIsHost();
-          _checkIfUserIsParticipant();
+          final newMeetup = snapshot.data!;
+          Logger.log('📝 [MEETUP_DETAIL] 모임 데이터 업데이트: isCompleted=${newMeetup.isCompleted}, hasReview=${newMeetup.hasReview}');
+          
+          // 상태 변경이 있을 때만 업데이트
+          if (_currentMeetup.isCompleted != newMeetup.isCompleted || 
+              _currentMeetup.hasReview != newMeetup.hasReview ||
+              _currentMeetup.currentParticipants != newMeetup.currentParticipants) {
+            Logger.log('🔄 [MEETUP_DETAIL] 상태 변경 감지 - 업데이트 실행');
+            _currentMeetup = newMeetup;
+            // 호스트 및 참여자 상태 업데이트
+            _checkIfUserIsHost();
+            _checkIfUserIsParticipant();
+          } else {
+            Logger.log('✅ [MEETUP_DETAIL] 상태 변경 없음 - 업데이트 스킵');
+            _currentMeetup = newMeetup;
+          }
         }
 
     final currentLang = Localizations.localeOf(context).languageCode;
@@ -513,9 +533,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 padding: const EdgeInsets.all(24),
                 child: _isHost 
                     ? _buildNewHostActionButton() 
-                    : (_currentMeetup.hasReview 
-                        ? _buildNewParticipantActionButton()
-                        : _buildLeaveButton()),
+                    : _buildParticipantButton(), // 🔧 새로운 메서드로 변경
               ),
             // 참여하지 않은 사용자를 위한 참여 버튼
             if (!_isHost && !_isParticipant && !_currentMeetup.isFull() && !_currentMeetup.isCompleted)
@@ -1235,6 +1253,60 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 참여자용 버튼 (모임 상태에 따라 다른 버튼 표시)
+  Widget _buildParticipantButton() {
+    // 🔧 모임이 완료된 경우
+    if (_currentMeetup.isCompleted) {
+      if (_currentMeetup.hasReview) {
+        // 후기가 있으면 후기 수락 버튼
+        return _buildNewParticipantActionButton();
+      } else {
+        // 후기가 없으면 "마감" 상태 표시
+        return _buildCompletedStatusButton();
+      }
+    }
+    
+    // 모임이 완료되지 않은 경우 기존 나가기 버튼
+    return _buildLeaveButton();
+  }
+
+  /// 모임 완료 상태 표시 버튼 (회색, 비활성화)
+  Widget _buildCompletedStatusButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[300], // 회색 배경
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[400]!, width: 1),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.check_circle_outline,
+                size: 20,
+                color: Colors.grey[600],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                AppLocalizations.of(context)!.closedStatus,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2191,14 +2263,19 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임 완료 처리
   Future<void> _markMeetupAsCompleted() async {
+    Logger.log('🚀 [MEETUP_COMPLETE] 모임 완료 처리 시작: ${widget.meetupId}');
+    
     setState(() {
       _isLoading = true;
     });
 
     try {
+      Logger.log('📡 [MEETUP_COMPLETE] MeetupService.markMeetupAsCompleted 호출');
       final success = await _meetupService.markMeetupAsCompleted(widget.meetupId);
+      Logger.log('📋 [MEETUP_COMPLETE] 완료 처리 결과: $success');
 
       if (success && mounted) {
+        Logger.log('✅ [MEETUP_COMPLETE] 성공 - UI 상태 업데이트');
         setState(() {
           _currentMeetup = _currentMeetup.copyWith(isCompleted: true);
           _isLoading = false;
@@ -2207,6 +2284,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           SnackBar(content: Text(AppLocalizations.of(context)!.meetupMarkedCompleted ?? "")),
         );
       } else if (mounted) {
+        Logger.error('❌ [MEETUP_COMPLETE] 실패 - 로딩 상태 해제');
         setState(() {
           _isLoading = false;
         });
@@ -2215,7 +2293,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         );
       }
     } catch (e) {
-      Logger.error('❌ 모임 완료 처리 오류: $e');
+      Logger.error('❌ [MEETUP_COMPLETE] 모임 완료 처리 오류: $e');
+      Logger.error('📍 [MEETUP_COMPLETE] 스택 트레이스: ${StackTrace.current}');
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -2509,11 +2588,20 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     return StreamBuilder<List<MeetupParticipant>>(
       stream: _meetupService.getParticipantsStream(widget.meetupId),
       builder: (context, snapshot) {
+        // 🔍 진단: 참여자 StreamBuilder 상태 로그
+        Logger.log('👥 [PARTICIPANTS] StreamBuilder 상태: ${snapshot.connectionState}');
+        Logger.log('📊 [PARTICIPANTS] hasData: ${snapshot.hasData}, 데이터 수: ${snapshot.data?.length ?? 0}');
+        
         List<MeetupParticipant> participants = [];
         bool isLoading = !snapshot.hasData;
         
+        if (snapshot.hasError) {
+          Logger.error('❌ [PARTICIPANTS] StreamBuilder 오류: ${snapshot.error}');
+        }
+        
         if (snapshot.hasData) {
           participants = snapshot.data!;
+          Logger.log('✅ [PARTICIPANTS] 참여자 데이터 로드 완료: ${participants.length}명');
           
           // 호스트를 참여자 목록 맨 앞에 포함
           final hostId = _currentMeetup.userId;

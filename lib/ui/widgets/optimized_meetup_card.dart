@@ -12,12 +12,14 @@ import '../../models/meetup_participant.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
 import '../../services/meetup_service.dart';
+import '../../services/participation_cache_service.dart';
 import '../dialogs/report_dialog.dart';
 import '../dialogs/block_dialog.dart';
 import '../../screens/edit_meetup_screen.dart';
 import '../../screens/review_approval_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/logger.dart';
+import 'dart:async';
 
 /// 최적화된 모임 카드
 class OptimizedMeetupCard extends StatefulWidget {
@@ -43,23 +45,111 @@ class OptimizedMeetupCard extends StatefulWidget {
 class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   late Meetup currentMeetup;
   bool isParticipating = false;
-  bool isCheckingParticipation = true;
+  bool isCheckingParticipation = false; // 🔧 초기값을 false로 변경 (로딩 표시 안함)
+  Timer? _timeoutTimer;
+  final ParticipationCacheService _cacheService = ParticipationCacheService();
 
   @override
   void initState() {
     super.initState();
     currentMeetup = widget.meetup;
-    _checkParticipationStatus();
+    
+    // 🚀 조용한 참여 상태 확인 시작 (로딩 표시 없이)
+    _checkParticipationStatusQuietly();
   }
 
-  /// 현재 사용자의 참여 상태 확인 (meetup_participants 컬렉션 기반)
-  Future<void> _checkParticipationStatus() async {
+  @override
+  void dispose() {
+    _timeoutTimer?.cancel(); // 타이머 정리
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(OptimizedMeetupCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // 모임 데이터가 변경되었는지 확인
+    if (oldWidget.meetup.id == widget.meetup.id) {
+      // 중요 필드가 변경되었는지 체크
+      if (oldWidget.meetup.isCompleted != widget.meetup.isCompleted ||
+          oldWidget.meetup.hasReview != widget.meetup.hasReview ||
+          oldWidget.meetup.reviewId != widget.meetup.reviewId ||
+          oldWidget.meetup.currentParticipants != widget.meetup.currentParticipants) {
+        
+        setState(() {
+          currentMeetup = widget.meetup;
+        });
+        
+        // 🔧 참여 상태도 조용히 재확인 (로딩 표시 없이)
+        _checkParticipationStatusQuietly();
+      }
+    }
+  }
+
+  /// 🚀 조용한 참여 상태 확인 (로딩 인디케이터 없이)
+  Future<void> _checkParticipationStatusQuietly() async {
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    Logger.log('🔍 [CARD_CHECK] 참여 상태 확인 시작: ${widget.meetup.id}');
+
+    // 🚀 캐시 먼저 확인
+    final cached = _cacheService.getCachedParticipation(
+      widget.meetup.id, 
+      user.uid
+    );
+    
+    if (cached != null) {
+      // 캐시된 데이터 즉시 사용
+      if (mounted) {
+        setState(() {
+          isParticipating = cached;
+        });
+        Logger.log('⚡ [CARD_CHECK] 캐시 사용: ${widget.meetup.id} -> $cached');
+      }
+      return;
+    }
+
+    // 캐시가 없으면 서버에서 조회 (타임아웃 800ms)
+    try {
+      _timeoutTimer = Timer(const Duration(milliseconds: 800), () {
+        Logger.log('⏰ [CARD_CHECK] 타임아웃: ${widget.meetup.id}');
+      });
+
+      final result = await Future.any([
+        _actualCheckParticipation(),
+        Future.delayed(const Duration(milliseconds: 800), () => false),
+      ]);
+
+      _timeoutTimer?.cancel();
+
+      if (mounted) {
+        setState(() {
+          isParticipating = result;
+        });
+        
+        // 🔧 결과를 캐시에 저장
+        _cacheService.setCachedParticipation(
+          widget.meetup.id,
+          user.uid,
+          result
+        );
+        
+        Logger.log('✅ [CARD_CHECK] 서버 조회 완료: ${widget.meetup.id} -> $result');
+      }
+    } catch (e) {
+      Logger.log('❌ [CARD_CHECK] 참여 상태 확인 실패: $e');
+      _timeoutTimer?.cancel();
+    }
+  }
+
+  /// 실제 참여 상태 확인 로직 (기존 로직 개선)
+  Future<bool> _actualCheckParticipation() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
-      setState(() {
-        isCheckingParticipation = false;
-      });
-      return;
+      return false;
     }
 
     try {
@@ -68,24 +158,18 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       final participantDoc = await FirebaseFirestore.instance
           .collection('meetup_participants')
           .doc(participantId)
-          .get();
+          .get()
+          .timeout(const Duration(milliseconds: 800)); // 🔧 타임아웃 단축
       
-      if (mounted) {
-        setState(() {
-          // 문서가 존재하고 status가 'approved'이면 참여 중
-          isParticipating = participantDoc.exists && 
-                           (participantDoc.data()?['status'] == 'approved' ||
-                            participantDoc.data()?['status'] == ParticipantStatus.approved);
-          isCheckingParticipation = false;
-        });
-      }
+      // 문서가 존재하고 status가 'approved'이면 참여 중
+      final isParticipating = participantDoc.exists && 
+                             (participantDoc.data()?['status'] == 'approved' ||
+                              participantDoc.data()?['status'] == ParticipantStatus.approved);
+      
+      return isParticipating;
     } catch (e) {
       Logger.error('참여 상태 확인 오류: $e');
-      if (mounted) {
-        setState(() {
-          isCheckingParticipation = false;
-        });
-      }
+      return false; // 오류 시 기본값 반환
     }
   }
 
@@ -366,8 +450,61 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     final max = currentMeetup.maxParticipants;
     final isOpen = current < max;
     
-    // 참여 중: 참가자 수 배지 표시
+    // 참여 중: 모임 완료 상태에 따라 다른 버튼 표시
     if (isParticipating) {
+      // 🔧 모임이 완료된 경우
+      if (currentMeetup.isCompleted) {
+        if (currentMeetup.hasReview == true) {
+          // 후기가 있으면 후기 확인 버튼
+          return ElevatedButton(
+            onPressed: () => _viewAndRespondToReview(currentMeetup),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green[600],
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              minimumSize: const Size(100, 40),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            child: Text(
+              AppLocalizations.of(context)!.checkReview,
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        } else {
+          // 후기가 없으면 "마감" 상태 표시
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, size: 16, color: Colors.grey[600]),
+                const SizedBox(width: 6),
+                Text(
+                  AppLocalizations.of(context)!.closedStatus,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+      
+      // 모임이 완료되지 않은 경우 기존 로직
       if (currentMeetup.hasReview == true) {
         return ElevatedButton(
           onPressed: () => _viewAndRespondToReview(currentMeetup),
@@ -390,6 +527,33 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           ),
         );
       } else {
+        // 🔧 모임이 완료된 경우 마감 표시
+        if (currentMeetup.isCompleted) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey[300]!),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle, size: 14, color: Colors.grey[600]),
+                const SizedBox(width: 4),
+                Text(
+                  AppLocalizations.of(context)!.closedStatus,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+        
         // 참여 중이지만 후기가 없는 경우 - 나가기 버튼 표시
         return ElevatedButton(
           onPressed: () => _leaveMeetup(currentMeetup),
@@ -412,6 +576,33 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
                           ),
         );
       }
+    }
+    
+    // 🔧 모임이 완료된 경우 마감 표시
+    if (currentMeetup.isCompleted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 14, color: Colors.grey[600]),
+            const SizedBox(width: 4),
+            Text(
+              '마감',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      );
     }
     
     // 마감된 모임: 배지 표시
@@ -569,6 +760,33 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             color: Colors.grey[700],
             letterSpacing: 0.3,
           ),
+        ),
+      );
+    }
+
+    // 🔧 모임이 완료된 경우 마감 표시
+    if (currentMeetup.isCompleted) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle, size: 14, color: Colors.grey[600]),
+            const SizedBox(width: 4),
+            Text(
+              '마감',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -1357,8 +1575,35 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     final max = currentMeetup.maxParticipants;
     final isOpen = current < max;
 
-    // 참여 중인 경우: 후기 존재 시 "후기 확인 및 수락" 버튼, 아니면 참여취소 버튼
+    // 참여 중인 경우: 모임 완료 상태에 따라 다른 버튼 표시
     if (isParticipating) {
+      // 🔧 모임이 완료된 경우
+      if (currentMeetup.isCompleted) {
+        if (currentMeetup.hasReview == true) {
+          // 후기가 있으면 후기 확인 버튼
+          return SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: () => _viewAndRespondToReview(currentMeetup),
+              icon: const Icon(Icons.rate_review, size: 18),
+              label: Text(AppLocalizations.of(context)!.viewAndRespondToReview ?? ""),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green[600],
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          );
+        } else {
+          // 후기가 없으면 "마감" 상태 표시
+          return _buildCompletedStatusCard();
+        }
+      }
+      
+      // 모임이 완료되지 않은 경우 기존 로직
       if (currentMeetup.hasReview == true) {
         return SizedBox(
           width: double.infinity,
@@ -1396,7 +1641,13 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       }
     }
 
-    // 마감된 모임은 버튼 표시 안함
+    // 🔧 모임이 완료되었거나 마감된 경우 처리
+    if (currentMeetup.isCompleted) {
+      // 모임이 완료된 경우 "마감" 상태 표시
+      return _buildCompletedStatusCard();
+    }
+    
+    // 정원이 찬 경우 버튼 표시 안함
     if (!isOpen) return const SizedBox.shrink();
 
     // 참여하기 버튼
@@ -1700,6 +1951,38 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 모임 완료 상태 표시 카드 (회색, 비활성화)
+  Widget _buildCompletedStatusCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey[300]!, width: 1),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.check_circle_outline,
+            size: 18,
+            color: Colors.grey[600],
+          ),
+          const SizedBox(width: 6),
+          Text(
+            AppLocalizations.of(context)!.closedStatus,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
       ),
     );
   }

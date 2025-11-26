@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../../services/report_service.dart';
+import '../../services/content_filter_service.dart';
 
 // 사용자 차단 확인 다이얼로그
 class BlockUserDialog extends StatefulWidget {
@@ -115,16 +116,30 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
       final success = await ReportService.blockUser(widget.userId);
 
       if (success) {
+        // 캐시 즉시 갱신
+        ContentFilterService.refreshCache();
+        
         if (mounted) {
-          Navigator.pop(context, true); // 성공 시 true 반환
+          Navigator.pop(context, {
+            'success': true,
+            'blockedUserId': widget.userId,
+          });
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${widget.userName}님을 차단했습니다.'),
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('${widget.userName}님을 차단했습니다.'),
+                ],
+              ),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
               action: SnackBarAction(
-                label: '확인',
+                label: '실행 취소',
                 textColor: Colors.white,
-                onPressed: () {},
+                onPressed: () => _undoBlock(),
               ),
             ),
           );
@@ -153,6 +168,21 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         setState(() {
           isBlocking = false;
         });
+      }
+    }
+  }
+
+  Future<void> _undoBlock() async {
+    final success = await ReportService.unblockUser(widget.userId);
+    if (success) {
+      ContentFilterService.refreshCache();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('차단을 취소했습니다.'),
+            backgroundColor: Colors.blue,
+          ),
+        );
       }
     }
   }

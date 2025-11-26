@@ -1018,7 +1018,12 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             context,
             userId: _currentMeetup.userId!,
             userName: _currentMeetup.hostNickname!,
-          );
+          ).then((result) {
+            if (result != null && result is Map && result['success'] == true) {
+              // 차단 성공 시 이전 화면으로
+              Navigator.pop(context);
+            }
+          });
         }
         break;
     }

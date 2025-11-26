@@ -9,6 +9,7 @@ import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
 import '../services/relationship_service.dart';
 import '../services/friend_category_service.dart';
+import '../services/content_filter_service.dart';
 import '../utils/logger.dart';
 import 'auth_provider.dart';
 
@@ -75,10 +76,18 @@ class RelationshipProvider with ChangeNotifier {
       }
 
       final results = await _relationshipService.searchUsers(query);
-      _searchResults = results;
+      
+      // 양방향 차단 필터링
+      final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+      final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+      
+      _searchResults = results.where((user) =>
+        !blockedUserIds.contains(user.uid) &&
+        !blockedByUserIds.contains(user.uid)
+      ).toList();
 
       // 검색 결과의 관계 상태 조회
-      await _updateRelationshipStatuses(results.map((u) => u.uid).toList());
+      await _updateRelationshipStatuses(_searchResults.map((u) => u.uid).toList());
     } catch (e) {
       _setError('사용자 검색 중 오류가 발생했습니다: $e');
     } finally {
@@ -283,6 +292,9 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.blockUser(targetUid);
       if (success) {
+        // 캐시 즉시 갱신
+        ContentFilterService.refreshCache();
+        
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
         // 검색 결과에서 제거
@@ -311,6 +323,9 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.unblockUser(targetUid);
       if (success) {
+        // 캐시 즉시 갱신
+        ContentFilterService.refreshCache();
+        
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
         // 검색 결과에 해당 사용자 다시 추가

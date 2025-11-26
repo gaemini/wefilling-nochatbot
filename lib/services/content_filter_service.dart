@@ -13,6 +13,7 @@ class ContentFilterService {
   
   // 차단된 사용자 목록 캐시 (성능 향상을 위해)
   static Set<String>? _blockedUserIds;
+  static Set<String>? _blockedByUserIds;
   static DateTime? _lastCacheUpdate;
   static const Duration _cacheExpiry = Duration(minutes: 5);
 
@@ -46,9 +47,40 @@ class ContentFilterService {
     }
   }
 
+  /// 나를 차단한 사용자 목록을 가져오고 캐시합니다
+  static Future<Set<String>> _getBlockedByUserIds() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return {};
+
+    // 캐시가 유효한 경우 캐시된 데이터 사용
+    if (_blockedByUserIds != null && 
+        _lastCacheUpdate != null &&
+        DateTime.now().difference(_lastCacheUpdate!) < _cacheExpiry) {
+      return _blockedByUserIds!;
+    }
+
+    try {
+      final querySnapshot = await _firestore
+          .collection('blocks')
+          .where('blocked', isEqualTo: currentUser.uid)
+          .where('isImplicit', isEqualTo: true)
+          .get();
+
+      _blockedByUserIds = querySnapshot.docs
+          .map((doc) => doc.data()['blocker'] as String)
+          .toSet();
+
+      return _blockedByUserIds!;
+    } catch (e) {
+      Logger.error('차단당한 목록 조회 실패: $e');
+      return {};
+    }
+  }
+
   /// 캐시를 강제로 새로고침합니다
   static void refreshCache() {
     _blockedUserIds = null;
+    _blockedByUserIds = null;
     _lastCacheUpdate = null;
   }
 
@@ -57,25 +89,42 @@ class ContentFilterService {
     return await _getBlockedUserIds();
   }
 
+  /// 나를 차단한 사용자 ID 목록을 가져옵니다 (public 메서드)
+  static Future<Set<String>> getBlockedByUserIds() async {
+    return await _getBlockedByUserIds();
+  }
+
+  /// 특정 사용자가 나를 차단했는지 확인합니다
+  static Future<bool> isBlockedByUser(String userId) async {
+    final blockedByUserIds = await _getBlockedByUserIds();
+    return blockedByUserIds.contains(userId);
+  }
+
   /// 게시물 목록에서 차단된 사용자의 게시물을 필터링합니다
   static Future<List<Post>> filterPosts(List<Post> posts) async {
     final blockedUserIds = await _getBlockedUserIds();
-    if (blockedUserIds.isEmpty) return posts;
+    final blockedByUserIds = await _getBlockedByUserIds();
+    
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return posts;
 
     return posts.where((post) => 
       post.userId != null && 
-      !blockedUserIds.contains(post.userId)
+      !blockedUserIds.contains(post.userId) &&
+      !blockedByUserIds.contains(post.userId)
     ).toList();
   }
 
   /// 모임 목록에서 차단된 사용자의 모임을 필터링합니다
   static Future<List<Meetup>> filterMeetups(List<Meetup> meetups) async {
     final blockedUserIds = await _getBlockedUserIds();
-    if (blockedUserIds.isEmpty) return meetups;
+    final blockedByUserIds = await _getBlockedByUserIds();
+    
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return meetups;
 
     return meetups.where((meetup) => 
       meetup.userId != null && 
-      !blockedUserIds.contains(meetup.userId)
+      !blockedUserIds.contains(meetup.userId) &&
+      !blockedByUserIds.contains(meetup.userId)
     ).toList();
   }
 
@@ -90,11 +139,14 @@ class ContentFilterService {
     List<Map<String, dynamic>> users
   ) async {
     final blockedUserIds = await _getBlockedUserIds();
-    if (blockedUserIds.isEmpty) return users;
+    final blockedByUserIds = await _getBlockedByUserIds();
+    
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return users;
 
     return users.where((user) => 
       user['uid'] != null && 
-      !blockedUserIds.contains(user['uid'])
+      !blockedUserIds.contains(user['uid']) &&
+      !blockedByUserIds.contains(user['uid'])
     ).toList();
   }
 
@@ -120,11 +172,14 @@ class ContentFilterService {
     List<Map<String, dynamic>> comments
   ) async {
     final blockedUserIds = await _getBlockedUserIds();
-    if (blockedUserIds.isEmpty) return comments;
+    final blockedByUserIds = await _getBlockedByUserIds();
+    
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return comments;
 
     return comments.where((comment) => 
       comment['userId'] != null && 
-      !blockedUserIds.contains(comment['userId'])
+      !blockedUserIds.contains(comment['userId']) &&
+      !blockedByUserIds.contains(comment['userId'])
     ).toList();
   }
 
@@ -160,11 +215,15 @@ class ContentFilterService {
     List<Map<String, dynamic>> notifications
   ) async {
     final blockedUserIds = await _getBlockedUserIds();
-    if (blockedUserIds.isEmpty) return notifications;
+    final blockedByUserIds = await _getBlockedByUserIds();
+    
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return notifications;
 
     return notifications.where((notification) {
       final fromUserId = notification['fromUserId'];
-      return fromUserId == null || !blockedUserIds.contains(fromUserId);
+      return fromUserId == null || 
+             (!blockedUserIds.contains(fromUserId) && 
+              !blockedByUserIds.contains(fromUserId));
     }).toList();
   }
 }

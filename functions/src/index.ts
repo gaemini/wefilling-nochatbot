@@ -1554,14 +1554,25 @@ export const blockUser = functions.https.onCall(async (data, context) => {
 
     // 트랜잭션으로 사용자 차단
     const result = await db.runTransaction(async (transaction) => {
-      const blockId = `${blockerUid}_${targetUid}`;
-      
-      // 차단 관계 생성
+      // 1. A → B 차단 관계 생성 (실제 차단)
       transaction.set(
-        db.collection('blocks').doc(blockId),
+        db.collection('blocks').doc(`${blockerUid}_${targetUid}`),
         {
           blocker: blockerUid,
           blocked: targetUid,
+          mutualBlock: true,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }
+      );
+
+      // 2. B → A 차단 효과 생성 (암묵적 차단)
+      transaction.set(
+        db.collection('blocks').doc(`${targetUid}_${blockerUid}`),
+        {
+          blocker: targetUid,
+          blocked: blockerUid,
+          isImplicit: true,
+          mutualBlock: true,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }
       );
@@ -1659,6 +1670,22 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         }
       }
 
+      // 모든 친구 카테고리에서 제거
+      const categoriesSnapshot = await db.collection('friend_categories')
+        .where('userId', '==', blockerUid)
+        .get();
+      
+      for (const categoryDoc of categoriesSnapshot.docs) {
+        const categoryData = categoryDoc.data();
+        const friendIds = categoryData.friendIds || [];
+        if (friendIds.includes(targetUid)) {
+          transaction.update(categoryDoc.ref, {
+            friendIds: admin.firestore.FieldValue.arrayRemove(targetUid),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+
       return { success: true };
     });
 
@@ -1699,18 +1726,24 @@ export const unblockUser = functions.https.onCall(async (data, context) => {
       );
     }
 
-    // 차단 관계 삭제
-    const blockId = `${blockerUid}_${targetUid}`;
-    const blockDoc = await db.collection('blocks').doc(blockId).get();
+    // 양방향 차단 관계 모두 삭제
+    await db.runTransaction(async (transaction) => {
+      // A → B 차단 삭제
+      const blockId = `${blockerUid}_${targetUid}`;
+      const blockDoc = await transaction.get(db.collection('blocks').doc(blockId));
 
-    if (!blockDoc.exists) {
-      throw new functions.https.HttpsError(
-        'not-found',
-        '차단 관계를 찾을 수 없습니다.'
-      );
-    }
+      if (!blockDoc.exists) {
+        throw new functions.https.HttpsError(
+          'not-found',
+          '차단 관계를 찾을 수 없습니다.'
+        );
+      }
 
-    await db.collection('blocks').doc(blockId).delete();
+      transaction.delete(db.collection('blocks').doc(blockId));
+      
+      // B → A 암묵적 차단 삭제
+      transaction.delete(db.collection('blocks').doc(`${targetUid}_${blockerUid}`));
+    });
 
     return { success: true };
   } catch (error) {

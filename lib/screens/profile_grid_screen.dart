@@ -18,6 +18,7 @@ import '../services/feature_flag_service.dart';
 import '../services/post_service.dart';
 import '../services/profile_grid_adapter_service.dart';
 import '../services/relationship_service.dart';
+import '../services/content_filter_service.dart';
 import '../widgets/highlight_reels.dart';
 import '../widgets/post_grid.dart';
 import '../widgets/profile_action_buttons.dart';
@@ -55,6 +56,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
   bool _isLoading = true;
   bool _isOwnProfile = false;
+  bool _showBlockedProfile = false;
   RelationshipStatus _relationshipStatus = RelationshipStatus.none;
   bool _isFollowActionInProgress = false;
   bool _isMessageOpening = false;
@@ -68,7 +70,23 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _checkFeatureFlag();
+    _checkBlockStatus();
     _loadProfileData();
+  }
+
+  /// 차단 상태 확인
+  Future<void> _checkBlockStatus() async {
+    if (widget.userId == null) return; // 자신의 프로필은 확인 안 함
+    
+    final isBlocked = await ContentFilterService.isUserBlocked(widget.userId!);
+    final isBlockedBy = await ContentFilterService.isBlockedByUser(widget.userId!);
+    
+    if (isBlocked || isBlockedBy) {
+      setState(() {
+        _showBlockedProfile = true;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
@@ -276,6 +294,28 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     );
   }
 
+  Widget _buildBlockedProfileView() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.person_off, size: 80, color: Colors.grey),
+          SizedBox(height: 24),
+          Text(
+            '사용자를 찾을 수 없습니다',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          ),
+          SizedBox(height: 8),
+          Text(
+            '이 계정은 사용할 수 없거나\n존재하지 않을 수 있습니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Feature Flag 재확인
@@ -289,6 +329,14 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
             style: TextStyle(color: Colors.grey),
           ),
         ),
+      );
+    }
+
+    // 차단된 프로필 뷰
+    if (_showBlockedProfile) {
+      return Scaffold(
+        appBar: AppBar(title: Text('프로필')),
+        body: _buildBlockedProfileView(),
       );
     }
 

@@ -54,7 +54,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   String _friendFilter = 'all';
   bool _showFriendFilter = false;
   List<Meetup> _filteredMeetups = [];
-  bool _isLoading = false;
   bool _isRefreshing = false; // 수동 새로고침 상태
 
   // 캐시 관련 변수
@@ -64,7 +63,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 참여 상태 캐시 (깜빡임 방지)
   final Map<String, bool> _participationStatusCache = {};
   final Map<String, DateTime> _participationCacheTime = {};
-  static const Duration _cacheValidDuration = Duration(seconds: 30);
+  static const Duration _cacheValidDuration = Duration(minutes: 5); // 5분으로 연장
 
   // Stream 구독 관리
   final Map<String, StreamSubscription?> _participationSubscriptions = {};
@@ -225,10 +224,6 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 모임 목록 로딩 - Firebase에서 실시간 데이터 가져오기
   Future<void> _loadMeetups() async {
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
       List<Meetup> allMeetups = [];
       
@@ -309,11 +304,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       Logger.error('모임 로드 오류: $e');
       _filteredMeetups = [];
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      // 로딩 완료
     }
   }
 
@@ -659,7 +650,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       child: StreamBuilder<List<Meetup>>(
                         stream: _meetupService.getMeetupsByDay(_tabController.index),
                         builder: (context, snapshot) {
-                          // 🔑 핵심: 초기 로딩만 스켈레톤 표시, 새로고침 시에는 이전 데이터 유지
+                          // 초기 로딩만 스켈레톤 표시, 새로고침 시에는 이전 데이터 유지
                           if (snapshot.connectionState ==
                                   ConnectionState.waiting &&
                               !snapshot.hasData) {
@@ -689,36 +680,86 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                   height:
                                       MediaQuery.of(context).size.height * 0.5,
                                   child: Center(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        Icon(
-                                          Icons.error_outline,
-                                          size: 48,
-                                          color: Colors.red[300],
-                                        ),
-                                        const SizedBox(height: 16),
-                                        Text('오류가 발생했습니다: ${snapshot.error}'),
-                                        const SizedBox(height: 8),
-                                        TextButton(
-                                          onPressed: () {
-                                            setState(() {}); // 새로고침
-                                          },
-                                          child: const Text(
-                                            '다시 시도',
-                                            style: TextStyle(
-                                              fontFamily: 'Pretendard',
-                                              fontSize: 14,
-                                              color: Color(0xFF5865F2),
+                                    child: TweenAnimationBuilder<double>(
+                                      tween: Tween(begin: 0.0, end: 1.0),
+                                      duration: const Duration(milliseconds: 400),
+                                      curve: Curves.easeOut,
+                                      builder: (context, value, child) {
+                                        return Opacity(
+                                          opacity: value,
+                                          child: Transform.translate(
+                                            offset: Offset(0, 20 * (1 - value)),
+                                            child: Column(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Container(
+                                                  width: 80,
+                                                  height: 80,
+                                                  decoration: BoxDecoration(
+                                                    color: Colors.red[50],
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.error_outline,
+                                                    size: 40,
+                                                    color: Colors.red[400],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 24),
+                                                Text(
+                                                  '모임을 불러오는 중 문제가 발생했어요',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Pretendard',
+                                                    fontSize: 16,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Colors.grey[800],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  '잠시 후 다시 시도해주세요',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Pretendard',
+                                                    fontSize: 14,
+                                                    color: Colors.grey[600],
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 24),
+                                                ElevatedButton.icon(
+                                                  onPressed: () {
+                                                    setState(() {}); // 새로고침
+                                                  },
+                                                  icon: const Icon(Icons.refresh, size: 18),
+                                                  label: const Text(
+                                                    '다시 시도',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Pretendard',
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor: const Color(0xFF5865F2),
+                                                    foregroundColor: Colors.white,
+                                                    padding: const EdgeInsets.symmetric(
+                                                      horizontal: 24,
+                                                      vertical: 12,
+                                                    ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(8),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
-                                        ),
-                                      ],
-                      ),
-            ),
-          ),
-        ],
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
                             );
                           }
 
@@ -777,14 +818,19 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     
     // 참여 상태 확인
     final cachedStatus = _getCachedParticipationStatus(meetup.id);
-    final isLoadingStatus = cachedStatus == null && 
+    final shouldLoad = cachedStatus == null && 
         currentUser != null && 
         meetup.userId != currentUser.uid;
     
     // 캐시가 없으면 백그라운드에서 로드
-    if (isLoadingStatus && !_participationSubscriptions.containsKey(meetup.id)) {
+    if (shouldLoad && !_participationSubscriptions.containsKey(meetup.id)) {
       _loadParticipationStatus(meetup.id);
     }
+    
+    // 로딩 표시는 구독이 진행 중일 때만 (타임아웃 전까지만)
+    final isLoadingStatus = shouldLoad && 
+        _participationSubscriptions.containsKey(meetup.id) &&
+        _participationSubscriptions[meetup.id] == null;
 
     return GestureDetector(
       onTap: () => _navigateToMeetupDetail(meetup),
@@ -955,38 +1001,51 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             ),
           ),
           
-          // 🔑 로딩 오버레이
+          // 로딩 오버레이
           if (isLoadingStatus)
             Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.8),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Center(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(begin: 0.0, end: 1.0),
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                builder: (context, value, child) {
+                  return Opacity(
+                    opacity: value,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.85 * value),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(
+                        child: Transform.scale(
+                          scale: value,
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1 * value),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                              ),
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    child: const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
                       ),
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
         ],
@@ -1050,7 +1109,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     final isParticipating = cachedStatus;
 
-    // 🔧 모임이 완료된 경우 처리
+    // 모임이 완료된 경우 처리
     if (meetup.isCompleted) {
       if (isParticipating) {
         // 참여 중인 사용자: 후기가 있으면 "후기 확인하기", 없으면 "마감"
@@ -1183,17 +1242,37 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
     _participationSubscriptions[meetupId] = null; // 플래그 설정
 
-    _meetupService.getUserParticipationStatus(meetupId).then((participant) {
-      if (mounted) {
-        final isParticipating =
-            participant?.status == ParticipantStatus.approved;
-        _updateParticipationCache(meetupId, isParticipating);
-        // 상태가 변경되었으면 UI 업데이트
-                  setState(() {});
-      }
-    }).catchError((e) {
-      Logger.error('참여 상태 로드 오류: $e');
-    });
+    // 타임아웃 500ms
+    _meetupService.getUserParticipationStatus(meetupId)
+      .timeout(
+        const Duration(milliseconds: 500),
+        onTimeout: () {
+          Logger.log('⏰ 참여 상태 확인 타임아웃: $meetupId (500ms)');
+          // 타임아웃 시 즉시 캐시 업데이트하여 로딩 종료
+          if (mounted) {
+            _updateParticipationCache(meetupId, false);
+            setState(() {});
+          }
+          return null;
+        },
+      )
+      .then((participant) {
+        if (mounted) {
+          final isParticipating =
+              participant?.status == ParticipantStatus.approved;
+          _updateParticipationCache(meetupId, isParticipating);
+          // 상태가 변경되었으면 UI 업데이트
+          setState(() {});
+          Logger.log('✅ 참여 상태 로드 완료: $meetupId -> $isParticipating');
+        }
+      }).catchError((e) {
+        Logger.error('❌ 참여 상태 로드 오류: $e');
+        // 에러 발생 시 캐시 업데이트
+        if (mounted) {
+          _updateParticipationCache(meetupId, false);
+          setState(() {});
+        }
+      });
   }
 
   // 캐시된 참여 상태 조회

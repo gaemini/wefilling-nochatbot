@@ -45,7 +45,9 @@ class OptimizedMeetupCard extends StatefulWidget {
 class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
   late Meetup currentMeetup;
   bool isParticipating = false;
-  bool isCheckingParticipation = false; // 🔧 초기값을 false로 변경 (로딩 표시 안함)
+  bool isCheckingParticipation = false;
+  bool isJoining = false; // 참여하기 버튼 로딩 상태
+  bool isLeaving = false; // 나가기 버튼 로딩 상태
   Timer? _timeoutTimer;
   final ParticipationCacheService _cacheService = ParticipationCacheService();
 
@@ -76,12 +78,19 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           oldWidget.meetup.reviewId != widget.meetup.reviewId ||
           oldWidget.meetup.currentParticipants != widget.meetup.currentParticipants) {
         
-        setState(() {
-          currentMeetup = widget.meetup;
-        });
+        // 즉시 UI 업데이트
+        if (mounted) {
+          setState(() {
+            currentMeetup = widget.meetup;
+            // 로딩 상태 명시적으로 false로 설정
+            isCheckingParticipation = false;
+          });
+        }
         
-        // 🔧 참여 상태도 조용히 재확인 (로딩 표시 없이)
-        _checkParticipationStatusQuietly();
+        // 후기 관련 변경이 아닌 경우만 참여 상태 재확인
+        if (oldWidget.meetup.hasReview == widget.meetup.hasReview) {
+          _checkParticipationStatusQuietly();
+        }
       }
     }
   }
@@ -106,6 +115,8 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (mounted) {
         setState(() {
           isParticipating = cached;
+          // 로딩 상태 명시적으로 false로 설정
+          isCheckingParticipation = false;
         });
         Logger.log('⚡ [CARD_CHECK] 캐시 사용: ${widget.meetup.id} -> $cached');
       }
@@ -128,9 +139,11 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       if (mounted) {
         setState(() {
           isParticipating = result;
+          // 로딩 상태 명시적으로 false로 설정
+          isCheckingParticipation = false;
         });
         
-        // 🔧 결과를 캐시에 저장
+        // 결과를 캐시에 저장
         _cacheService.setCachedParticipation(
           widget.meetup.id,
           user.uid,
@@ -142,6 +155,12 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     } catch (e) {
       Logger.log('❌ [CARD_CHECK] 참여 상태 확인 실패: $e');
       _timeoutTimer?.cancel();
+      // 에러 발생 시에도 로딩 상태 해제
+      if (mounted) {
+        setState(() {
+          isCheckingParticipation = false;
+        });
+      }
     }
   }
 
@@ -159,7 +178,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           .collection('meetup_participants')
           .doc(participantId)
           .get()
-          .timeout(const Duration(milliseconds: 800)); // 🔧 타임아웃 단축
+          .timeout(const Duration(milliseconds: 800));
       
       // 문서가 존재하고 status가 'approved'이면 참여 중
       final isParticipating = participantDoc.exists && 
@@ -527,7 +546,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           ),
         );
       } else {
-        // 🔧 모임이 완료된 경우 마감 표시
+        // 모임이 완료된 경우 마감 표시
         if (currentMeetup.isCompleted) {
           return Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -556,7 +575,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         
         // 참여 중이지만 후기가 없는 경우 - 나가기 버튼 표시
         return ElevatedButton(
-          onPressed: () => _leaveMeetup(currentMeetup),
+          onPressed: isLeaving ? null : () => _leaveMeetup(currentMeetup),
           style: ElevatedButton.styleFrom(
             backgroundColor: Colors.orange[600],
             foregroundColor: Colors.white,
@@ -567,18 +586,27 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
               borderRadius: BorderRadius.circular(6),
             ),
           ),
-          child: Text(
-            AppLocalizations.of(context)!.leaveMeetup,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-                              ),
-                          ),
+          child: isLeaving
+              ? SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  AppLocalizations.of(context)!.leaveMeetup,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
         );
       }
     }
     
-    // 🔧 모임이 완료된 경우 마감 표시
+    // 모임이 완료된 경우 마감 표시
     if (currentMeetup.isCompleted) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -764,7 +792,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       );
     }
 
-    // 🔧 모임이 완료된 경우 마감 표시
+      // 모임이 완료된 경우 마감 표시
     if (currentMeetup.isCompleted) {
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -1625,8 +1653,17 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
         return SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: () => _leaveMeetup(currentMeetup),
-            icon: const Icon(Icons.exit_to_app, size: 18),
+            onPressed: isLeaving ? null : () => _leaveMeetup(currentMeetup),
+            icon: isLeaving
+                ? SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.exit_to_app, size: 18),
             label: Text(AppLocalizations.of(context)!.leaveMeetup ?? ""),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange[600],
@@ -1641,7 +1678,7 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
       }
     }
 
-    // 🔧 모임이 완료되었거나 마감된 경우 처리
+    // 모임이 완료되었거나 마감된 경우 처리
     if (currentMeetup.isCompleted) {
       // 모임이 완료된 경우 "마감" 상태 표시
       return _buildCompletedStatusCard();
@@ -1654,8 +1691,17 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton.icon(
-        onPressed: () => _joinMeetup(currentMeetup),
-        icon: const Icon(Icons.group_add, size: 18),
+        onPressed: isJoining ? null : () => _joinMeetup(currentMeetup),
+        icon: isJoining
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Icon(Icons.group_add, size: 18),
         label: Text(AppLocalizations.of(context)!.joinMeetup ?? ""),
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
@@ -1767,6 +1813,19 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
           ),
         ),
       );
+      
+      // 후기 확인 화면에서 돌아온 후 최신 모임 정보 다시 가져오기
+      if (mounted) {
+        final fresh = await meetupService.getMeetupById(currentMeetup.id);
+        if (fresh != null && mounted) {
+          setState(() {
+            this.currentMeetup = fresh;
+            // 로딩 상태 명시적으로 false로 설정
+            isCheckingParticipation = false;
+          });
+          Logger.log('✅ 후기 확인 후 모임 정보 갱신 완료');
+        }
+      }
     } catch (e) {
       Logger.error('후기 확인 이동 오류: $e');
       if (mounted) {
@@ -1779,33 +1838,61 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
 
   /// 모임 참여하기
   Future<void> _joinMeetup(Meetup currentMeetup) async {
+    // 이미 처리 중이면 무시
+    if (isJoining) return;
+    
+    setState(() {
+      isJoining = true;
+    });
+
     try {
       final meetupService = MeetupService();
       final success = await meetupService.joinMeetup(currentMeetup.id);
 
       if (success) {
         // 참여 성공 시 UI 업데이트
-        setState(() {
-          this.currentMeetup = this.currentMeetup.copyWith(
-            currentParticipants: this.currentMeetup.currentParticipants + 1,
-          );
-          isParticipating = true; // 참여 상태 업데이트
-        });
-
         if (mounted) {
+          setState(() {
+            this.currentMeetup = this.currentMeetup.copyWith(
+              currentParticipants: this.currentMeetup.currentParticipants + 1,
+            );
+            isParticipating = true; // 참여 상태 업데이트
+            isJoining = false;
+          });
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoined ?? ""),
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(AppLocalizations.of(context)!.meetupJoined ?? ""),
+                ],
+              ),
               backgroundColor: Colors.green,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
             ),
           );
         }
       } else {
         if (mounted) {
+          setState(() {
+            isJoining = false;
+          });
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoinFailed ?? ""),
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(AppLocalizations.of(context)!.meetupJoinFailed ?? ""),
+                ],
+              ),
               backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
             ),
           );
         }
@@ -1813,10 +1900,26 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     } catch (e) {
       Logger.error('모임 참여 오류: $e');
       if (mounted) {
+        setState(() {
+          isJoining = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${AppLocalizations.of(context)!.error}: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}',
+                  ),
+                ),
+              ],
+            ),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 3),
           ),
         );
       }
@@ -1825,33 +1928,89 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
 
   /// 모임 참여취소
   Future<void> _leaveMeetup(Meetup currentMeetup) async {
+    // 이미 처리 중이면 무시
+    if (isLeaving) return;
+    
+    // 확인 다이얼로그 표시
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('모임 나가기'),
+        content: Text('정말 이 모임에서 나가시겠습니까?'),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('취소'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.orange[600],
+              foregroundColor: Colors.white,
+            ),
+            child: Text('나가기'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      isLeaving = true;
+    });
+
     try {
       final meetupService = MeetupService();
       final success = await meetupService.leaveMeetup(currentMeetup.id);
 
       if (success) {
         // 참여취소 성공 시 UI 업데이트
-        setState(() {
-          this.currentMeetup = this.currentMeetup.copyWith(
-            currentParticipants: this.currentMeetup.currentParticipants - 1,
-          );
-          isParticipating = false; // 참여 상태 업데이트
-        });
-
         if (mounted) {
+          setState(() {
+            this.currentMeetup = this.currentMeetup.copyWith(
+              currentParticipants: this.currentMeetup.currentParticipants - 1,
+            );
+            isParticipating = false; // 참여 상태 업데이트
+            isLeaving = false;
+          });
+
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetup ?? ""),
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text('모임에서 나갔습니다'),
+                ],
+              ),
               backgroundColor: Colors.orange,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 2),
             ),
           );
         }
       } else {
         if (mounted) {
+          setState(() {
+            isLeaving = false;
+          });
+          
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? ""),
+              content: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.white),
+                  SizedBox(width: 8),
+                  Text(AppLocalizations.of(context)!.leaveMeetupFailed ?? ""),
+                ],
+              ),
               backgroundColor: Colors.red,
+              behavior: SnackBarBehavior.floating,
+              duration: Duration(seconds: 3),
             ),
           );
         }
@@ -1859,10 +2018,26 @@ class _OptimizedMeetupCardState extends State<OptimizedMeetupCard> {
     } catch (e) {
       Logger.error('모임 참여취소 오류: $e');
       if (mounted) {
+        setState(() {
+          isLeaving = false;
+        });
+        
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            content: Row(
+              children: [
+                Icon(Icons.error_outline, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${AppLocalizations.of(context)!.error}: ${e.toString().length > 50 ? e.toString().substring(0, 50) + "..." : e.toString()}',
+                  ),
+                ),
+              ],
+            ),
             backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 3),
           ),
         );
       }

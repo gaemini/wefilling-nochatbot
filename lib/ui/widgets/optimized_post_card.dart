@@ -411,8 +411,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 좋아요 수
         if (post.likes > 0) ...[
           Icon(
-            IconStyles.favorite,
-            size: 16,
+            IconStyles.favoriteFilled,
+            size: 24,
             color: BrandColors.error,
           ),
           const SizedBox(width: 4),

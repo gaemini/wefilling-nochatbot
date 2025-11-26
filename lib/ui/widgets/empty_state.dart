@@ -209,19 +209,32 @@ class AppEmptyState extends StatelessWidget {
       return illustration!;
     }
 
-      // 일관된 디자인의 아이콘 컨테이너
-    return Container(
-      width: 120,
-      height: 120,
-      decoration: BoxDecoration(
-        color: BrandColors.primary.withOpacity(0.1),
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: BrandColors.primary.withOpacity(0.2),
-          width: 2,
-        ),
-      ),
-      child: Icon(icon, size: 48, color: BrandColors.primary),
+      // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutBack,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: Opacity(
+            opacity: value,
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: BrandColors.primary.withOpacity(0.1),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: BrandColors.primary.withOpacity(0.2),
+                  width: 2,
+                ),
+              ),
+              child: Icon(icon, size: 48, color: BrandColors.primary),
+            ),
+          ),
+        );
+      },
     );
   }
 

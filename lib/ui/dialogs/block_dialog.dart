@@ -298,12 +298,12 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
 }
 
 // 차단하기 다이얼로그 표시 함수
-Future<bool?> showBlockUserDialog(
+Future<Map<String, dynamic>?> showBlockUserDialog(
   BuildContext context, {
   required String userId,
   required String userName,
 }) {
-  return showDialog<bool>(
+  return showDialog<Map<String, dynamic>>(
     context: context,
     builder: (context) => BlockUserDialog(
       userId: userId,

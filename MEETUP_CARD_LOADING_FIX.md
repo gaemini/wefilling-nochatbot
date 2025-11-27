@@ -197,3 +197,6 @@ Future<void> _checkParticipationStatusQuietly() async {
 **수정자**: AI Assistant  
 **테스트 상태**: ✅ 린트 에러 없음
 
+
+
+

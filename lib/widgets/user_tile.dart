@@ -27,14 +27,14 @@ class UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 6),
-      elevation: 2,
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 0,
       color: Colors.white,
       child: InkWell(
         onTap: onTilePressed,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+          padding: const EdgeInsets.all(20),
           child: Row(
             children: [
               // 프로필 이미지
@@ -169,14 +169,14 @@ class UserTile extends StatelessWidget {
         foregroundColor: Color(buttonStyle['textColor'] as int),
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        minimumSize: const Size(80, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        minimumSize: const Size(90, 40),
       ),
       child: Text(
         relationshipStatus.actionButtonText,
         style: const TextStyle(
           fontFamily: 'Pretendard',
-          fontSize: 12,
+          fontSize: 13,
           fontWeight: FontWeight.w600,
         ),
       ),

@@ -100,3 +100,6 @@
 **상세 보고서**: `MEETUP_LOADING_IMPROVEMENTS.md` 참조  
 **작성일**: 2025-11-26
 
+
+
+

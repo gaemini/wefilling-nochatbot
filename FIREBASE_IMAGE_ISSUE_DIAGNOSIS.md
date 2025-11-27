@@ -234,3 +234,6 @@ errorBuilder: (context, error, stackTrace) {
 **작성일**: 2025-11-26
 **우선순위**: 🚨 긴급
 
+
+
+

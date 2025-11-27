@@ -320,15 +320,13 @@ class _RequestsPageState extends State<RequestsPage>
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
-        border: Border.all(color: BrandColors.neutral200, width: 1),
-        boxShadow: DesignTokens.shadowLight,
       ),
       child: Padding(
-        padding: DesignTokens.paddingS,
+        padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             // 프로필 이미지
@@ -430,15 +428,13 @@ class _RequestsPageState extends State<RequestsPage>
   /// 보낸 요청 타일
   Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
-        border: Border.all(color: BrandColors.neutral200, width: 1),
-        boxShadow: DesignTokens.shadowLight,
       ),
       child: Padding(
-        padding: DesignTokens.paddingS,
+        padding: const EdgeInsets.all(20),
         child: Row(
           children: [
             // 프로필 이미지

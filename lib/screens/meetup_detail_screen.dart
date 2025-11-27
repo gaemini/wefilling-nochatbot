@@ -999,7 +999,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   }
 
   /// 일반 사용자 메뉴 액션 처리
-  void _handleUserMenuAction(String action) {
+  Future<void> _handleUserMenuAction(String action) async {
     switch (action) {
       case 'report':
         if (_currentMeetup.userId != null) {
@@ -1014,16 +1014,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         break;
       case 'block':
         if (_currentMeetup.userId != null && _currentMeetup.hostNickname != null) {
-          showBlockUserDialog(
+          final result = await showBlockUserDialog(
             context,
             userId: _currentMeetup.userId!,
             userName: _currentMeetup.hostNickname!,
-          ).then((result) {
-            if (result != null && result is Map && result['success'] == true) {
+          );
+          if (result != null && result is Map<String, dynamic>) {
+            if (result['success'] == true) {
               // 차단 성공 시 이전 화면으로
               Navigator.pop(context);
             }
-          });
+          }
         }
         break;
     }

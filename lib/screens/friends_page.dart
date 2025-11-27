@@ -644,19 +644,17 @@ class _FriendsPageState extends State<FriendsPage> {
         final friend = _filteredFriends[index];
 
         return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: DesignTokens.radiusM,
-            border: Border.all(color: BrandColors.neutral200, width: 1),
-            boxShadow: DesignTokens.shadowLight,
           ),
           child: InkWell(
             onTap: () => _navigateToProfile(friend),
             onLongPress: () => _showFriendOptions(friend),
             borderRadius: DesignTokens.radiusM,
             child: Padding(
-              padding: DesignTokens.paddingS,
+              padding: const EdgeInsets.all(20),
               child: Row(
                 children: [
                   // 프로필 이미지

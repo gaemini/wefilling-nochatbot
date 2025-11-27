@@ -142,15 +142,24 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     final icon = _parseIcon(category.iconName);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
-        border: Border.all(color: BrandColors.neutral200, width: 1),
-        boxShadow: DesignTokens.shadowLight,
+        border: Border.all(
+          color: const Color(0xFFF3F4F6),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         leading: Container(
           width: 46,
           height: 46,

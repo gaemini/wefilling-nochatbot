@@ -88,33 +88,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       backgroundColor: Colors.white,
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                _buildProfileHeader(),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.grid_on_rounded, size: 20, color: Color(0xFF5865F2)),
-                      const SizedBox(width: 8),
-                      Text(
-                        AppLocalizations.of(context)!.participatedReviews,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF5865F2),
-                          fontSize: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Divider(height: 1, color: Color(0xFFE5E7EB)),
-                Expanded(
-                  child: _buildReviewGrid(),
-                ),
+          : CustomScrollView(
+              slivers: [
+                SliverToBoxAdapter(child: _buildProfileHeader()),
+                const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
+                const SliverToBoxAdapter(child: Divider(height: 1, color: Color(0xFFE5E7EB))),
+                _buildReviewGridSliver(),
               ],
             ),
     );
@@ -311,6 +291,28 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     );
   }
 
+  Widget _buildParticipatedReviewsHeader() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.grid_on_rounded, size: 20, color: Color(0xFF5865F2)),
+          const SizedBox(width: 8),
+          Text(
+            AppLocalizations.of(context)!.participatedReviews,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF5865F2),
+              fontSize: 16,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildStatItem(
     String label,
     String userId, {
@@ -361,26 +363,30 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     );
   }
 
-  Widget _buildReviewGrid() {
+  Widget _buildReviewGridSliver() {
     return StreamBuilder<List<ReviewPost>>(
       stream: _reviewService.getUserReviewsStream(widget.userId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const SliverFillRemaining(
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
 
         if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.cannotLoadReviews,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
+          return SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.error_outline, size: 48, color: Colors.grey[400]),
+                  const SizedBox(height: 16),
+                  Text(
+                    AppLocalizations.of(context)!.cannotLoadReviews,
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                ],
+              ),
             ),
           );
         }
@@ -388,57 +394,63 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         final reviews = snapshot.data ?? [];
 
         if (reviews.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    shape: BoxShape.circle,
+          return SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.photo_library_outlined,
+                      size: 32,
+                      color: Colors.grey[400],
+                    ),
                   ),
-                  child: Icon(
-                    Icons.photo_library_outlined,
-                    size: 32,
-                    color: Colors.grey[400],
+                  const SizedBox(height: 16),
+                  Text(
+                    AppLocalizations.of(context)!.noReviewsYet,
+                    style: AppTheme.bodyMedium.copyWith(
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                      fontSize: 16,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.noReviewsYet,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                    fontSize: 16,
+                  const SizedBox(height: 6),
+                  Text(
+                    AppLocalizations.of(context)!.joinMeetupAndWriteReview,
+                    style: AppTheme.bodySmall.copyWith(
+                      color: Colors.grey[500],
+                      fontSize: 13,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
-                  style: AppTheme.bodySmall.copyWith(
-                    color: Colors.grey[500],
-                    fontSize: 13,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         }
 
-        return GridView.builder(
+        return SliverPadding(
           padding: const EdgeInsets.all(4),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
-            childAspectRatio: 1,
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 2,
+              mainAxisSpacing: 2,
+              childAspectRatio: 1,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final review = reviews[index];
+                return _buildReviewGridItem(review);
+              },
+              childCount: reviews.length,
+            ),
           ),
-          itemCount: reviews.length,
-          itemBuilder: (context, index) {
-            final review = reviews[index];
-            return _buildReviewGridItem(review);
-          },
         );
       },
     );

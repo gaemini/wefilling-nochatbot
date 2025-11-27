@@ -229,3 +229,6 @@ void _loadParticipationStatus(String meetupId) {
 **테스트 상태**: ✅ 린트 에러 없음  
 **이슈**: 홈 화면 모임 카드 로딩 무한 표시
 
+
+
+

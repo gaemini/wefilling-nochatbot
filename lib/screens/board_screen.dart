@@ -209,7 +209,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_today'),
@@ -235,7 +235,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_today'),
@@ -261,7 +261,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_today'),
@@ -293,7 +293,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           },
           child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: todayPosts.length + 1, // AdBanner + 게시글들
             itemBuilder: (context, index) {
           // 첫 번째는 AdBanner
@@ -368,7 +368,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_all'),
@@ -394,7 +394,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_all'),
@@ -420,7 +420,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_all'),
@@ -467,6 +467,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           },
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _calculateAllItemCount(groupedPosts),
         itemBuilder: (context, index) {
           if (index == 0) {

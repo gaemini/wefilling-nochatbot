@@ -116,7 +116,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
 
     return Container(
       height: 140, // 88 → 140으로 증가
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Stack(
         children: [
           // 현재 배너만 표시

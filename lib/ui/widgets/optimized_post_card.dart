@@ -194,7 +194,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     // 그림자 로직 제거 - 색상으로만 구분
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white, // 모든 게시글 흰색 배경
         borderRadius: BorderRadius.circular(AppTheme.radiusL),

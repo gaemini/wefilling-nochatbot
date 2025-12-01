@@ -76,6 +76,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 안드로이드 하단 네비게이션 바 높이 감지
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -95,6 +98,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
                 const SliverToBoxAdapter(child: Divider(height: 1, color: Color(0xFFE5E7EB))),
                 _buildReviewGridSliver(),
+                // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                SliverToBoxAdapter(
+                  child: SizedBox(height: bottomPadding > 0 ? bottomPadding + 16 : 16),
+                ),
               ],
             ),
     );

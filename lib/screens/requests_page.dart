@@ -235,8 +235,14 @@ class _RequestsPageState extends State<RequestsPage>
           );
         }
 
+        // 안드로이드 하단 네비게이션 바 높이 감지
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+
         return ListView.builder(
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.only(
+            top: 8,
+            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+          ),
           itemCount: provider.incomingRequests.length,
           itemBuilder: (context, index) {
             final request = provider.incomingRequests[index];
@@ -286,8 +292,14 @@ class _RequestsPageState extends State<RequestsPage>
           );
         }
 
+        // 안드로이드 하단 네비게이션 바 높이 감지
+        final bottomPadding = MediaQuery.of(context).padding.bottom;
+
         return ListView.builder(
-          padding: const EdgeInsets.all(8),
+          padding: EdgeInsets.only(
+            top: 8,
+            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+          ),
           itemCount: provider.outgoingRequests.length,
           itemBuilder: (context, index) {
             final request = provider.outgoingRequests[index];
@@ -320,13 +332,13 @@ class _RequestsPageState extends State<RequestsPage>
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             // 프로필 이미지
@@ -358,7 +370,7 @@ class _RequestsPageState extends State<RequestsPage>
                     ),
             ),
 
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
 
             // 사용자 정보
             Expanded(
@@ -428,13 +440,13 @@ class _RequestsPageState extends State<RequestsPage>
   /// 보낸 요청 타일
   Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
             // 프로필 이미지

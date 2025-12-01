@@ -637,14 +637,20 @@ class _FriendsPageState extends State<FriendsPage> {
 
   /// 친구 목록 위젯
   Widget _buildFriendsList() {
+    // 안드로이드 하단 네비게이션 바 높이 감지
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      padding: EdgeInsets.only(
+        top: 8, 
+        bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+      ),
       itemCount: _filteredFriends.length,
       itemBuilder: (context, index) {
         final friend = _filteredFriends[index];
 
         return Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: DesignTokens.radiusM,
@@ -654,7 +660,7 @@ class _FriendsPageState extends State<FriendsPage> {
             onLongPress: () => _showFriendOptions(friend),
             borderRadius: DesignTokens.radiusM,
             child: Padding(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   // 프로필 이미지
@@ -686,7 +692,7 @@ class _FriendsPageState extends State<FriendsPage> {
                           ),
                   ),
 
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
 
                   // 사용자 정보
                   Expanded(
@@ -705,7 +711,7 @@ class _FriendsPageState extends State<FriendsPage> {
                         if (friend.nickname != null &&
                             friend.nickname != friend.displayName &&
                             friend.nickname!.isNotEmpty) ...[
-                          const SizedBox(height: 1),
+                          const SizedBox(height: 2),
                           Text(
                             friend.displayName,
                             style: TypographyStyles.bodySmall.copyWith(

@@ -116,8 +116,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             );
           }
 
+          // 안드로이드 하단 네비게이션 바 높이 감지
+          final bottomPadding = MediaQuery.of(context).padding.bottom;
+          
           return ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: EdgeInsets.only(
+              top: 8,
+              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+            ),
             itemCount: categories.length,
             itemBuilder: (context, index) {
               final category = categories[index];
@@ -142,7 +148,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     final icon = _parseIcon(category.iconName);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: DesignTokens.radiusM,
@@ -159,7 +165,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
           width: 46,
           height: 46,

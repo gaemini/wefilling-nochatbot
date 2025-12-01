@@ -27,19 +27,19 @@ class UserTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       elevation: 0,
       color: Colors.white,
       child: InkWell(
         onTap: onTilePressed,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               // 프로필 이미지
               _buildProfileImage(),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
 
               // 사용자 정보
               Expanded(child: _buildUserInfo(context)),

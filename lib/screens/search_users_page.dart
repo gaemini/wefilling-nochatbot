@@ -348,8 +348,14 @@ class _SearchUsersPageState extends State<SearchUsersPage> {
 
   /// 검색 결과 목록
   Widget _buildSearchResults(RelationshipProvider provider) {
+    // 안드로이드 하단 네비게이션 바 높이 감지
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    
     return ListView.builder(
-      padding: const EdgeInsets.only(top: 8),
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+      ),
       itemCount: provider.searchResults.length,
       itemBuilder: (context, index) {
         final user = provider.searchResults[index];

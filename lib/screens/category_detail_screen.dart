@@ -153,12 +153,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     
                     // 친구 목록
                     Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
-                        itemCount: _friends.length,
-                        itemBuilder: (context, index) {
-                          final friend = _friends[index];
-                          return _buildFriendCard(friend, color);
+                      child: Builder(
+                        builder: (context) {
+                          // 안드로이드 하단 네비게이션 바 높이 감지
+                          final bottomPadding = MediaQuery.of(context).padding.bottom;
+                          
+                          return ListView.builder(
+                            padding: EdgeInsets.only(
+                              top: 8,
+                              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+                            ),
+                            itemCount: _friends.length,
+                            itemBuilder: (context, index) {
+                              final friend = _friends[index];
+                              return _buildFriendCard(friend, color);
+                            },
+                          );
                         },
                       ),
                     ),

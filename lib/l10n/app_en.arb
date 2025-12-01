@@ -1018,5 +1018,7 @@
   "pleaseEnterTime": "Please enter time",
   "pleaseEnterLocation": "Please enter location",
   "anonymousDescription": "Connect with anonymous authors from the board.",
-  "friendSelection": "Friend Selection"
+  "friendSelection": "Friend Selection",
+  "noFriendsInCategory": "No friends yet",
+  "addFriendsToCategory": "Add friends to this category"
 }

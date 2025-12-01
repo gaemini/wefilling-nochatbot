@@ -81,8 +81,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final color = _parseColor(widget.category.color);
-    final icon = _parseIcon(widget.category.iconName);
+    // 색상 안전하게 파싱 (null 체크 포함)
+    final color = _parseColor(widget.category.color ?? '#6366F1');
+    // 아이콘 안전하게 파싱 (null 체크 포함)
+    final icon = _parseIcon(widget.category.iconName ?? 'group');
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -100,7 +102,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: _safeColorWithOpacity(color, 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
@@ -128,10 +130,31 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF5865F2)))
           : _friends.isEmpty
-              ? AppEmptyState(
-                  icon: Icons.people_outline,
-                  title: '친구가 없습니다',
-                  description: '이 카테고리에 친구를 추가해보세요',
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 48.0),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.noFriendsInCategory,
+                          style: TypographyStyles.headlineMedium.copyWith(
+                            color: BrandColors.textPrimary,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: DesignTokens.s12),
+                        Text(
+                          AppLocalizations.of(context)!.addFriendsToCategory,
+                          style: TypographyStyles.bodyLarge.copyWith(
+                            color: BrandColors.textSecondary,
+                            height: 1.5,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
                 )
               : Column(
                   children: [
@@ -297,10 +320,10 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   vertical: 4,
                 ),
                 decoration: BoxDecoration(
-                  color: categoryColor.withOpacity(0.1),
+                  color: _safeColorWithOpacity(categoryColor, 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: categoryColor.withOpacity(0.3),
+                    color: _safeColorWithOpacity(categoryColor, 0.3),
                     width: 1,
                   ),
                 ),
@@ -336,17 +359,51 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     );
   }
 
+  /// 색상 문자열을 Color 객체로 파싱 (안전한 fallback 포함)
   Color _parseColor(String colorString) {
+    // null 또는 빈 문자열 체크
+    if (colorString.isEmpty) {
+      Logger.error('⚠️ 빈 색상 문자열 감지, 기본 색상 사용');
+      return const Color(0xFF6366F1); // 명시적인 기본 색상
+    }
+
+    // '#' 접두사 확인
+    if (!colorString.startsWith('#')) {
+      Logger.error('⚠️ 잘못된 색상 포맷: $colorString (# 없음)');
+      return const Color(0xFF6366F1);
+    }
+
+    // Hex 색상 포맷 검증 (#RRGGBB)
+    final hexPattern = RegExp(r'^#[0-9A-Fa-f]{6}$');
+    if (!hexPattern.hasMatch(colorString)) {
+      Logger.error('⚠️ 잘못된 Hex 색상 포맷: $colorString');
+      return const Color(0xFF6366F1);
+    }
+
     try {
-      return Color(
-        int.parse(colorString.replaceFirst('#', '0xFF')),
-      );
+      final colorValue = int.parse(colorString.replaceFirst('#', '0xFF'));
+      return Color(colorValue);
     } catch (e) {
-      return BrandColors.primary;
+      Logger.error('❌ 색상 파싱 실패: $colorString - $e');
+      return const Color(0xFF6366F1); // 안전한 fallback
     }
   }
 
+  /// 안전하게 opacity를 적용하는 헬퍼 메서드
+  Color _safeColorWithOpacity(Color color, double opacity) {
+    // opacity 값을 0.0~1.0 범위로 제한
+    final clampedOpacity = opacity.clamp(0.0, 1.0);
+    return color.withOpacity(clampedOpacity);
+  }
+
+  /// 아이콘 이름을 IconData로 파싱 (안전한 fallback 포함)
   IconData _parseIcon(String iconName) {
+    // 빈 문자열 체크
+    if (iconName.isEmpty) {
+      Logger.error('⚠️ 빈 아이콘 이름 감지, 기본 아이콘 사용');
+      return Icons.group;
+    }
+
     final iconMap = {
       'school': Icons.school,
       'groups': Icons.groups,
@@ -369,8 +426,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       'group': Icons.group,
     };
 
-    return iconMap[iconName] ?? Icons.people;
+    final icon = iconMap[iconName];
+    if (icon == null) {
+      Logger.error('⚠️ 알 수 없는 아이콘 이름: $iconName, 기본 아이콘 사용');
+    }
+    return icon ?? Icons.group;
   }
 }
+
 
 

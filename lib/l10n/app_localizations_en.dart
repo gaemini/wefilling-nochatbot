@@ -2262,4 +2262,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get friendSelection => 'Friend Selection';
+
+  @override
+  String get noFriendsInCategory => 'No friends yet';
+
+  @override
+  String get addFriendsToCategory => 'Add friends to this category';
 }

@@ -2200,4 +2200,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get friendSelection => '친구 선택';
+
+  @override
+  String get noFriendsInCategory => '친구가 없습니다';
+
+  @override
+  String get addFriendsToCategory => '이 카테고리에 친구를 추가해보세요';
 }

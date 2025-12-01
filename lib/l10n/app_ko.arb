@@ -1017,5 +1017,7 @@
   "pleaseEnterTime": "시간을 입력해주세요",
   "pleaseEnterLocation": "장소를 입력해주세요",
   "anonymousDescription": "게시판에 올라온 익명의 작성자와 소통해보세요.",
-  "friendSelection": "친구 선택"
+  "friendSelection": "친구 선택",
+  "noFriendsInCategory": "친구가 없습니다",
+  "addFriendsToCategory": "이 카테고리에 친구를 추가해보세요"
 }

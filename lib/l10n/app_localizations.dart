@@ -4237,6 +4237,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'친구 선택'**
   String get friendSelection;
+
+  /// No description provided for @noFriendsInCategory.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구가 없습니다'**
+  String get noFriendsInCategory;
+
+  /// No description provided for @addFriendsToCategory.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 카테고리에 친구를 추가해보세요'**
+  String get addFriendsToCategory;
 }
 
 class _AppLocalizationsDelegate

@@ -144,8 +144,10 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   }
 
   Widget _buildCategoryCard(FriendCategory category) {
-    final color = _parseColor(category.color);
-    final icon = _parseIcon(category.iconName);
+    // 색상 안전하게 파싱 (null 체크 포함)
+    final color = _parseColor(category.color ?? '#6366F1');
+    // 아이콘 안전하게 파싱 (null 체크 포함)
+    final icon = _parseIcon(category.iconName ?? 'group');
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -158,7 +160,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
+            color: _safeColorWithOpacity(Colors.black, 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -170,10 +172,10 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           width: 46,
           height: 46,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: _safeColorWithOpacity(color, 0.1),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
-              color: color.withOpacity(0.3),
+              color: _safeColorWithOpacity(color, 0.3),
               width: 1,
             ),
           ),
@@ -518,7 +520,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 height: 48,
                 decoration: BoxDecoration(
                   color: isSelected 
-                      ? const Color(0xFF5865F2).withOpacity(0.1) 
+                      ? _safeColorWithOpacity(const Color(0xFF5865F2), 0.1)
                       : const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
@@ -665,15 +667,51 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     }
   }
 
+  /// 색상 문자열을 Color 객체로 파싱 (안전한 fallback 포함)
   Color _parseColor(String hexColor) {
+    // null 또는 빈 문자열 체크
+    if (hexColor.isEmpty) {
+      Logger.error('⚠️ 빈 색상 문자열 감지, 기본 색상 사용');
+      return const Color(0xFF6366F1); // 명시적인 기본 색상
+    }
+
+    // '#' 접두사 확인
+    if (!hexColor.startsWith('#')) {
+      Logger.error('⚠️ 잘못된 색상 포맷: $hexColor (# 없음)');
+      return const Color(0xFF6366F1);
+    }
+
+    // Hex 색상 포맷 검증 (#RRGGBB)
+    final hexPattern = RegExp(r'^#[0-9A-Fa-f]{6}$');
+    if (!hexPattern.hasMatch(hexColor)) {
+      Logger.error('⚠️ 잘못된 Hex 색상 포맷: $hexColor');
+      return const Color(0xFF6366F1);
+    }
+
     try {
-      return Color(int.parse(hexColor.replaceFirst('#', '0xFF')));
+      final colorValue = int.parse(hexColor.replaceFirst('#', '0xFF'));
+      return Color(colorValue);
     } catch (e) {
-      return BrandColors.primary;
+      Logger.error('❌ 색상 파싱 실패: $hexColor - $e');
+      return const Color(0xFF6366F1); // 안전한 fallback
     }
   }
 
+  /// 안전하게 opacity를 적용하는 헬퍼 메서드
+  Color _safeColorWithOpacity(Color color, double opacity) {
+    // opacity 값을 0.0~1.0 범위로 제한
+    final clampedOpacity = opacity.clamp(0.0, 1.0);
+    return color.withOpacity(clampedOpacity);
+  }
+
+  /// 아이콘 이름을 IconData로 파싱 (안전한 fallback 포함)
   IconData _parseIcon(String iconName) {
+    // 빈 문자열 체크
+    if (iconName.isEmpty) {
+      Logger.error('⚠️ 빈 아이콘 이름 감지, 기본 아이콘 사용');
+      return Icons.group;
+    }
+
     switch (iconName) {
       case 'school':
         return Icons.school;
@@ -689,8 +727,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         return Icons.book;
       case 'home':
         return Icons.home;
+      case 'group':
+        return Icons.group;
       default:
+        Logger.error('⚠️ 알 수 없는 아이콘 이름: $iconName, 기본 아이콘 사용');
         return Icons.group;
     }
   }
 }
+

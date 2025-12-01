@@ -1081,7 +1081,7 @@ class DMService {
       final participantNames = Map<String, String>.from(convData['participantNames']);
       
       final senderName = isAnonymous[currentUser.uid] == true 
-          ? 'Anonymous' // TODO: 다국어 지원 필요
+          ? 'Anonymous' // Note: 다국어 지원은 v1.1에서 추가 예정
           : participantNames[currentUser.uid];
 
       // 모든 상대방에게 알림 전송

@@ -23,8 +23,9 @@ import 'search_result_page.dart';
 import 'ad_showcase_screen.dart';
 import 'dm_list_screen.dart';
 
-import '../utils/firebase_debug_helper.dart';
-import 'firebase_security_rules_helper.dart';
+// 프로덕션 배포: 디버그 헬퍼 제거
+// import '../utils/firebase_debug_helper.dart';
+// import 'firebase_security_rules_helper.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -113,7 +114,8 @@ class _MainScreenState extends State<MainScreen> {
     const MyPageScreen(),
     const FriendsMainPage(),
   ];
-  final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
+  // 프로덕션 배포: 디버그 헬퍼 제거
+  // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
   void _onItemTapped(int index) {
     setState(() {
@@ -207,6 +209,8 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // 프로덕션 배포: 디버그 함수 비활성화
+  /* 
   Future<void> _testFirebaseStorage() async {
     try {
       Logger.log('=========== Firebase Storage 진단 시작 ===========');
@@ -334,6 +338,7 @@ service firebase.storage {
           ),
     );
   }
+  */
 
   void _showSignupRequiredBanner() {
     showModalBottomSheet(

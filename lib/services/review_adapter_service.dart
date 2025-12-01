@@ -92,8 +92,8 @@ class ReviewImageAdapter {
   /// 업로드 실패 시 롤백 (Storage에서 이미지 삭제)
   Future<bool> rollbackImageUpload(String imageUrl) async {
     try {
-      // TODO: 실제 Firebase Storage에서 이미지 삭제 로직 구현
-      // 현재는 로깅만 수행
+      // Note: 이미지 롤백 기능은 현재 미구현 (v1.1에서 추가 예정)
+      // 현재는 로깅만 수행하며, 실제 Storage 삭제는 수동으로 처리
       Logger.log('이미지 롤백 요청: $imageUrl');
       return true;
     } catch (e) {

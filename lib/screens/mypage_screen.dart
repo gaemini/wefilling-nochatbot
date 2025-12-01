@@ -1191,19 +1191,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  authProvider.logoutStatus ?? '로그아웃 중입니다...',
+                                  '로그아웃 중...',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.grey.shade700,
                                     fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '잠시만 기다려주세요',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade500,
                                   ),
                                 ),
                               ],

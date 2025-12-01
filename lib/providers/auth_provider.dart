@@ -1148,12 +1148,9 @@ class AuthProvider with ChangeNotifier {
   Future<void> _performSignOut() async {
     Logger.log('🔄 로그아웃 작업 시작');
     
-    // FCM 토큰 삭제 (3초 타임아웃)
+    // FCM 토큰 삭제 (3초 타임아웃) - UI 메시지 표시 안 함
     if (_user != null) {
       try {
-        _logoutStatus = 'FCM 토큰 정리 중...';
-        notifyListeners();
-        
         await FCMService().deleteFCMToken(_user!.uid).timeout(
           const Duration(seconds: 3),
           onTimeout: () {
@@ -1166,22 +1163,16 @@ class AuthProvider with ChangeNotifier {
       }
     }
     
-    // 먼저 모든 스트림 정리
+    // 먼저 모든 스트림 정리 - UI 메시지 표시 안 함
     try {
-      _logoutStatus = '데이터 연결 정리 중...';
-      notifyListeners();
-      
       _cleanupAllStreams();
       Logger.log('✅ 스트림 정리 완료');
     } catch (e) {
       Logger.error('⚠️ 스트림 정리 실패 (계속 진행): $e');
     }
     
-    // Google Sign-In에서 로그아웃 (3초 타임아웃)
+    // Google Sign-In에서 로그아웃 (3초 타임아웃) - UI 메시지 표시 안 함
     try {
-      _logoutStatus = 'Google 계정 로그아웃 중...';
-      notifyListeners();
-      
       await _googleSignIn.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
@@ -1193,11 +1184,8 @@ class AuthProvider with ChangeNotifier {
       Logger.error('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
     }
     
-    // Firebase Auth에서 로그아웃 (3초 타임아웃)
+    // Firebase Auth에서 로그아웃 (3초 타임아웃) - UI 메시지 표시 안 함
     try {
-      _logoutStatus = '인증 세션 종료 중...';
-      notifyListeners();
-      
       await _auth.signOut().timeout(
         const Duration(seconds: 3),
         onTimeout: () {
@@ -1209,7 +1197,6 @@ class AuthProvider with ChangeNotifier {
       Logger.error('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
     }
     
-    _logoutStatus = '로그아웃 완료';
     Logger.log('🔄 로그아웃 작업 완료');
   }
 }

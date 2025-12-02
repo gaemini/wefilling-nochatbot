@@ -1019,5 +1019,10 @@
   "anonymousDescription": "게시판에 올라온 익명의 작성자와 소통해보세요.",
   "friendSelection": "친구 선택",
   "noFriendsInCategory": "친구가 없습니다",
-  "addFriendsToCategory": "이 카테고리에 친구를 추가해보세요"
+  "addFriendsToCategory": "이 카테고리에 친구를 추가해보세요",
+  "registrationRequired": "회원가입 필요",
+  "chooseLoginMethod": "로그인 방법을 선택해주세요",
+  "accountSelection": "계정 선택",
+  "continueWithWefillingAccount": "Wefilling 계정으로 계속",
+  "addAnotherAccount": "다른 계정 추가"
 }

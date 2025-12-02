@@ -2969,7 +2969,7 @@ abstract class AppLocalizations {
   /// No description provided for @chooseLoginMethod.
   ///
   /// In ko, this message translates to:
-  /// **'로그인 방법 선택'**
+  /// **'로그인 방법을 선택해주세요'**
   String get chooseLoginMethod;
 
   /// No description provided for @hanyangEmailAlreadyUsed.
@@ -4249,6 +4249,30 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'이 카테고리에 친구를 추가해보세요'**
   String get addFriendsToCategory;
+
+  /// No description provided for @registrationRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'회원가입 필요'**
+  String get registrationRequired;
+
+  /// No description provided for @accountSelection.
+  ///
+  /// In ko, this message translates to:
+  /// **'계정 선택'**
+  String get accountSelection;
+
+  /// No description provided for @continueWithWefillingAccount.
+  ///
+  /// In ko, this message translates to:
+  /// **'Wefilling 계정으로 계속'**
+  String get continueWithWefillingAccount;
+
+  /// No description provided for @addAnotherAccount.
+  ///
+  /// In ko, this message translates to:
+  /// **'다른 계정 추가'**
+  String get addAnotherAccount;
 }
 
 class _AppLocalizationsDelegate

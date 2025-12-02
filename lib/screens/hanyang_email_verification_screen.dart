@@ -172,7 +172,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('로그인 방법을 선택해주세요'),
+                Text(AppLocalizations.of(context)!.chooseLoginMethod),
                 const SizedBox(height: 16),
               ],
             ),
@@ -193,7 +193,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   children: [
                     const Icon(Icons.apple, size: 20),
                     const SizedBox(width: 8),
-                    Text('Apple로 계속하기'),
+                    Text(AppLocalizations.of(context)!.continueWithApple),
                   ],
                 ),
               ),

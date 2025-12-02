@@ -1548,7 +1548,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueWithApple => 'Continue with Apple';
 
   @override
-  String get chooseLoginMethod => 'Choose Login Method';
+  String get chooseLoginMethod => 'Please choose a login method';
 
   @override
   String get hanyangEmailAlreadyUsed =>
@@ -2268,4 +2268,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addFriendsToCategory => 'Add friends to this category';
+
+  @override
+  String get registrationRequired => 'Registration required';
+
+  @override
+  String get accountSelection => 'Account Selection';
+
+  @override
+  String get continueWithWefillingAccount => 'Continue with Wefilling account';
+
+  @override
+  String get addAnotherAccount => 'Add another account';
 }

@@ -1020,5 +1020,10 @@
   "anonymousDescription": "Connect with anonymous authors from the board.",
   "friendSelection": "Friend Selection",
   "noFriendsInCategory": "No friends yet",
-  "addFriendsToCategory": "Add friends to this category"
+  "addFriendsToCategory": "Add friends to this category",
+  "registrationRequired": "Registration required",
+  "chooseLoginMethod": "Please choose a login method",
+  "accountSelection": "Account Selection",
+  "continueWithWefillingAccount": "Continue with Wefilling account",
+  "addAnotherAccount": "Add another account"
 }

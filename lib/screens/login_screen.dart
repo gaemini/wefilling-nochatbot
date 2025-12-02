@@ -108,9 +108,9 @@ class _LoginScreenState extends State<LoginScreen>
                   size: 28,
                 ),
                 const SizedBox(width: 12),
-                const Text(
-                  '회원가입 필요',
-                  style: TextStyle(
+                Text(
+                  AppLocalizations.of(context)!.registrationRequired,
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                   ),
@@ -168,7 +168,7 @@ class _LoginScreenState extends State<LoginScreen>
                   Navigator.of(dialogContext).pop();
                 },
                 child: Text(
-                  '확인',
+                  AppLocalizations.of(context)!.confirm,
                   style: TextStyle(
                     color: Colors.grey.shade700,
                     fontSize: 16,
@@ -342,9 +342,9 @@ class _LoginScreenState extends State<LoginScreen>
                                               color: Colors.black,
                                             ),
                                             const SizedBox(width: 12),
-                                            const Text(
-                                              'Apple로 로그인',
-                                              style: TextStyle(
+                                            Text(
+                                              AppLocalizations.of(context)!.appleLogin,
+                                              style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w500,
                                                 color: Colors.black87,
@@ -725,9 +725,9 @@ class _LoginScreenState extends State<LoginScreen>
                       size: 28,
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      '회원가입 필요',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.registrationRequired,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -785,7 +785,7 @@ class _LoginScreenState extends State<LoginScreen>
                       Navigator.of(dialogContext).pop();
                     },
                     child: Text(
-                      '닫기',
+                      AppLocalizations.of(context)!.close,
                       style: TextStyle(
                         color: Colors.grey.shade600,
                         fontSize: 16,
@@ -901,9 +901,9 @@ class _LoginScreenState extends State<LoginScreen>
                       size: 28,
                     ),
                     const SizedBox(width: 12),
-                    const Text(
-                      '회원가입 필요',
-                      style: TextStyle(
+                    Text(
+                      AppLocalizations.of(context)!.registrationRequired,
+                      style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
@@ -961,7 +961,7 @@ class _LoginScreenState extends State<LoginScreen>
                       Navigator.of(dialogContext).pop();
                     },
                     child: Text(
-                      '닫기',
+                      AppLocalizations.of(context)!.close,
                       style: TextStyle(
                         color: Colors.grey.shade600,
                         fontSize: 16,

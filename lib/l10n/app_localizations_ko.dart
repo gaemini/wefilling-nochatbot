@@ -1517,7 +1517,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get continueWithApple => 'Apple로 계속하기';
 
   @override
-  String get chooseLoginMethod => '로그인 방법 선택';
+  String get chooseLoginMethod => '로그인 방법을 선택해주세요';
 
   @override
   String get hanyangEmailAlreadyUsed => '이미 사용된 한양메일입니다. 다른 메일을 사용해주세요.';
@@ -2207,4 +2207,16 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get addFriendsToCategory => '이 카테고리에 친구를 추가해보세요';
+
+  @override
+  String get registrationRequired => '회원가입 필요';
+
+  @override
+  String get accountSelection => '계정 선택';
+
+  @override
+  String get continueWithWefillingAccount => 'Wefilling 계정으로 계속';
+
+  @override
+  String get addAnotherAccount => '다른 계정 추가';
 }

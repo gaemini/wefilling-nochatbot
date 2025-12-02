@@ -5,12 +5,15 @@
 // 게시글 조회 및 필터링 기능
 
 import 'dart:io';
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 import 'content_filter_service.dart';
+import 'cache/post_cache_manager.dart';
+import 'cache/cache_feature_flags.dart';
 import '../utils/logger.dart';
 
 class PostService {
@@ -18,6 +21,7 @@ class PostService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
   final StorageService _storageService = StorageService();
+  final PostCacheManager _cache = PostCacheManager();
 
   // 이미지를 포함한 게시글 추가
   Future<bool> addPost(
@@ -149,6 +153,12 @@ class PostService {
       // Firestore에 저장
       final docRef = await _firestore.collection('posts').add(postData);
       Logger.log('게시글 저장 완료: ${docRef.id}');
+
+      // 캐시 무효화 (새 게시글이 추가되었으므로 목록 캐시 삭제)
+      if (CacheFeatureFlags.isPostCacheEnabled) {
+        _cache.invalidate();
+        Logger.log('💾 게시글 캐시 무효화 (새 게시글 추가)');
+      }
 
       return true;
     } catch (e) {
@@ -440,10 +450,34 @@ class PostService {
       }
 
       Logger.log('게시글 삭제 성공: $postId');
+      
+      // 캐시 무효화 (게시글이 삭제되었으므로 캐시 삭제)
+      if (CacheFeatureFlags.isPostCacheEnabled) {
+        _cache.invalidate(key: postId);
+        Logger.log('💾 게시글 캐시 무효화 (게시글 삭제)');
+      }
+      
       return true;
     } catch (e) {
       Logger.error('게시글 삭제 오류: $e');
       return false;
+    }
+  }
+
+  // 캐시된 게시글 가져오기 (초기 로딩용)
+  /// 캐시에서 게시글 목록을 가져옵니다.
+  /// 캐시가 없으면 빈 리스트를 반환합니다.
+  /// UI는 이 데이터를 먼저 표시하고, Stream을 통해 최신 데이터로 업데이트합니다.
+  Future<List<Post>> getCachedPosts({String visibility = 'public'}) async {
+    if (!CacheFeatureFlags.isPostCacheEnabled) {
+      return [];
+    }
+    
+    try {
+      return await _cache.getPosts(visibility: visibility);
+    } catch (e) {
+      Logger.error('캐시된 게시글 가져오기 실패: $e');
+      return [];
     }
   }
 
@@ -558,12 +592,25 @@ class PostService {
         }).toList();
         
         Logger.log('✅ [getPostsStream] 필터링 후 게시글 수: ${visiblePosts.length} (전체: ${posts.length})');
+        
+        // 캐시 업데이트 (백그라운드, 실패해도 무시)
+        if (CacheFeatureFlags.isPostCacheEnabled) {
+          unawaited(_cache.savePosts(visiblePosts, visibility: 'public'));
+        }
+        
         return visiblePosts;
       }
       
       // 로그인하지 않은 경우 전체 공개만
       Logger.log('⚠️  [getPostsStream] 로그인하지 않음 - 전체 공개만 표시');
-      return nonBlockedPosts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
+      final publicPosts = nonBlockedPosts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
+      
+      // 캐시 업데이트 (백그라운드, 실패해도 무시)
+      if (CacheFeatureFlags.isPostCacheEnabled) {
+        unawaited(_cache.savePosts(publicPosts, visibility: 'public'));
+      }
+      
+      return publicPosts;
     });
   }
 

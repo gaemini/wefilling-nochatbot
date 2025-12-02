@@ -931,7 +931,7 @@
   "date": "Date",
   "save": "Save",
   "host": "Host",
-  "publicMeeting": "Public Meeting",
+  "publicMeeting": "Public",
   "participantCount": "{current}/{max} people",
   "leaveChatRoom": "Leave Chat Room",
   "bioPlaceholder": "Enter a brief introduction (optional)",

@@ -31,6 +31,7 @@ import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
 import 'services/ad_banner_service.dart';
 import 'services/language_service.dart';
+import 'services/cache/cache_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 
@@ -103,6 +104,18 @@ void main() {
       }
 
       // Firebase Performance 모니터링은 제거됨
+
+      // 캐시 시스템 초기화
+      try {
+        await CacheManager.initialize();
+        if (kDebugMode) {
+          debugPrint('💾 캐시 시스템 초기화 완료');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
+        }
+      }
 
       // FCM 백그라운드 메시지 핸들러 등록
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);

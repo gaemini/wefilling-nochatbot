@@ -92,12 +92,13 @@ class Comment {
   // Firestore에 저장할 데이터 맵 생성
   Map<String, dynamic> toMap() {
     return {
+      'id': id,
       'postId': postId,
       'userId': userId,
       'authorNickname': authorNickname,
       'authorPhotoUrl': authorPhotoUrl,
       'content': content,
-      'createdAt': FieldValue.serverTimestamp(),
+      'createdAt': createdAt.millisecondsSinceEpoch,
       'parentCommentId': parentCommentId,
       'depth': depth,
       'replyToUserId': replyToUserId,
@@ -105,6 +106,27 @@ class Comment {
       'likeCount': likeCount,
       'likedBy': likedBy,
     };
+  }
+
+  // Map에서 Comment 객체 생성 (캐싱용)
+  factory Comment.fromMap(Map<String, dynamic> map, String id) {
+    return Comment(
+      id: id,
+      postId: map['postId'] ?? '',
+      userId: map['userId'] ?? '',
+      authorNickname: map['authorNickname'] ?? '익명',
+      authorPhotoUrl: map['authorPhotoUrl'] ?? '',
+      content: map['content'] ?? '',
+      createdAt: map['createdAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
+          : DateTime.now(),
+      parentCommentId: map['parentCommentId'],
+      depth: map['depth'] ?? 0,
+      replyToUserId: map['replyToUserId'],
+      replyToUserNickname: map['replyToUserNickname'],
+      likeCount: map['likeCount'] ?? 0,
+      likedBy: List<String>.from(map['likedBy'] ?? []),
+    );
   }
 
   // 본문 번역 메서드

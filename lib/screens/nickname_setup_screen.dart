@@ -25,10 +25,15 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   // 폼 제출
   void _submitForm() async {
     if (_formKey.currentState?.validate() ?? false) {
+      // 🔥 context를 미리 저장 (비동기 작업 전)
+      if (!mounted) return;
+      final navigator = Navigator.of(context);
+      final messenger = ScaffoldMessenger.of(context);
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
       try {
         // 로딩 표시
+        if (!mounted) return;
         setState(() {
           _isLoading = true;
         });
@@ -39,39 +44,54 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           nationality: _selectedNationality,
         );
 
+        // 🔥 mounted 체크 후 처리
+        if (!mounted) return;
+
         // 성공 여부에 따른 처리
-        if (success && context.mounted) {
+        if (success) {
           // 성공 메시지
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             const SnackBar(
               content: Text('프로필이 설정되었습니다.'),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
             ),
           );
 
           // 메인 화면으로 이동
-          Navigator.of(context).pushReplacement(
+          navigator.pushReplacement(
             MaterialPageRoute(builder: (_) => const MainScreen()),
           );
-        } else if (context.mounted) {
+        } else {
           // 실패 메시지
-          ScaffoldMessenger.of(context).showSnackBar(
+          messenger.showSnackBar(
             const SnackBar(
-              content: Text('프로필 설정에 실패했습니다. 다시 시도해주세요.'),
+              content: Text('프로필 설정에 실패했습니다.\n로그인 화면으로 돌아가 다시 시도해주세요.'),
               backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
             ),
           );
+          
+          // 🔥 실패 시 로그인 화면으로 복귀
+          await Future.delayed(const Duration(seconds: 3));
+          if (!mounted) return;
+          navigator.pushReplacementNamed('/login');
         }
       } catch (e) {
         // 오류 처리
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('오류가 발생했습니다: $e'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
+        if (!mounted) return;
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('오류가 발생했습니다: $e\n로그인 화면으로 돌아가주세요.'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        
+        // 🔥 오류 시 로그인 화면으로 복귀
+        await Future.delayed(const Duration(seconds: 3));
+        if (!mounted) return;
+        navigator.pushReplacementNamed('/login');
       } finally {
         // 로딩 표시 제거
         if (mounted) {

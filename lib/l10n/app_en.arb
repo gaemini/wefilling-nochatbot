@@ -640,7 +640,7 @@
   "continueWithApple": "Continue with Apple",
   "chooseLoginMethod": "Choose Login Method",
   "hanyangEmailAlreadyUsed": "This Hanyang email is already in use. Please use another email.",
-  "signupRequired": "Registration required. Please click 'Sign Up' first.",
+  "signupRequired": "Registration required.\n\nIf you are a new user or have a deleted account, please click 'Sign Up' and complete Hanyang email verification.",
   "meetupNotifications": "Meetup Notifications",
   "postNotifications": "Post Notifications",
   "generalSettings": "General Settings",

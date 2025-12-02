@@ -200,7 +200,7 @@ class AuthProvider with ChangeNotifier {
             .get();
 
         if (!docSnapshot.exists) {
-          // 신규 사용자 - 회원가입 필요
+          // 신규 사용자 또는 탈퇴한 사용자 - 회원가입 필요
           if (skipEmailVerifiedCheck) {
             // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
             Logger.log('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
@@ -209,7 +209,7 @@ class AuthProvider with ChangeNotifier {
             return true; // 로그인 허용 (completeEmailVerification 실행 예정)
           }
           
-          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
+          Logger.log('❌ 사용자 문서 없음: 신규 사용자이거나 탈퇴한 계정입니다. 회원가입이 필요합니다.');
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
@@ -246,7 +246,25 @@ class AuthProvider with ChangeNotifier {
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin, displayName 동기화)
-        await _updateExistingUserDocument();
+        final docExists = await _updateExistingUserDocument();
+        
+        // 🔥 문서가 없으면 탈퇴한 계정으로 간주
+        if (!docExists) {
+          Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+          
+          // 회원가입 필요 플래그 설정
+          _signupRequired = true;
+          
+          // Firebase 로그아웃
+          await _auth.signOut();
+          _user = null;
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+          
+          return false; // 로그인 거부
+        }
+        
         await _loadUserData();
         
         // FCM 초기화 (알림 기능)
@@ -441,8 +459,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 기존 사용자 문서 업데이트 (lastLogin, displayName 동기화)
-  Future<void> _updateExistingUserDocument() async {
-    if (_user == null) return;
+  Future<bool> _updateExistingUserDocument() async {
+    if (_user == null) return false;
 
     try {
       final docRef = _firestore.collection('users').doc(_user!.uid);
@@ -465,9 +483,15 @@ class AuthProvider with ChangeNotifier {
           // 마지막 로그인 시간만 업데이트
           await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
         }
+        return true; // 문서 존재함
+      } else {
+        // 🔥 문서가 없음 - 탈퇴한 계정
+        Logger.error('⚠️ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
+        return false; // 문서 없음
       }
     } catch (e) {
       Logger.error('사용자 문서 업데이트 오류: $e');
+      return false;
     }
   }
 
@@ -524,7 +548,11 @@ class AuthProvider with ChangeNotifier {
 
       while (retryCount < maxRetries) {
         try {
-          // Firestore users 컬렉션 업데이트
+          // 🔥 문서 존재 여부 확인
+          final docRef = _firestore.collection('users').doc(_user!.uid);
+          final docSnapshot = await docRef.get();
+          
+          // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
             'nickname': nickname,
             'displayName': nickname, // displayName을 nickname과 동기화
@@ -541,9 +569,32 @@ class AuthProvider with ChangeNotifier {
             updateData['photoURL'] = photoURL;
           }
           
-          Logger.log("Firestore 업데이트 시작...");
-          await _firestore.collection('users').doc(_user!.uid).update(updateData);
-          Logger.log("✅ Firestore 업데이트 완료 (displayName과 nickname 동기화)");
+          Logger.log("📝 Firestore 업데이트 시작...");
+          
+          // 🔥 문서가 없으면 생성, 있으면 업데이트
+          if (!docSnapshot.exists) {
+            Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
+            // 문서 생성 (회원가입 시와 동일한 구조)
+            await docRef.set({
+              'uid': _user!.uid,
+              'email': _user!.email ?? '',
+              'displayName': nickname,
+              'photoURL': photoURL ?? _user!.photoURL ?? '',
+              'nickname': nickname,
+              'nationality': nationality,
+              'emailVerified': true, // 로그인 성공했으므로 true
+              'hanyangEmail': _user!.email ?? '', // 기본값 설정
+              'createdAt': FieldValue.serverTimestamp(),
+              'lastLogin': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              if (bio != null) 'bio': bio,
+            });
+            Logger.log("✅ 사용자 문서 생성 완료");
+          } else {
+            // 기존 문서 업데이트
+            await docRef.update(updateData);
+            Logger.log("✅ Firestore 업데이트 완료 (displayName과 nickname 동기화)");
+          }
           
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
           if (photoURL != null) {

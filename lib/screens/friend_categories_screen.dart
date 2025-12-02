@@ -735,10 +735,3 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     }
   }
 }
-
-
-<<<<<<< HEAD
-
-
-=======
->>>>>>> bdbc1d877f45b82141ba0a6815b2dacff0507604

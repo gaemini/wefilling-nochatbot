@@ -54,14 +54,21 @@ class _DMListScreenState extends State<DMListScreen> {
       backgroundColor: Colors.white,
       appBar: _buildAppBar(),
       body: _buildBody(),
-      floatingActionButton: _filter == DMFilter.friends
-          ? FloatingActionButton(
-              onPressed: _showFriendSelectionSheet,
-              backgroundColor: const Color(0xFF5865F2),
-              child: const Icon(Icons.add, color: Colors.white),
-            )
-          : null,
+      floatingActionButton: _buildFloatingActionButtons(),
     );
+  }
+
+  /// FloatingActionButton 빌드
+  Widget? _buildFloatingActionButtons() {
+    if (_filter == DMFilter.friends) {
+      return FloatingActionButton(
+        onPressed: _showFriendSelectionSheet,
+        backgroundColor: const Color(0xFF5865F2),
+        child: const Icon(Icons.add, color: Colors.white),
+      );
+    }
+    
+    return null;
   }
 
   /// AppBar 빌드
@@ -281,46 +288,83 @@ class _DMListScreenState extends State<DMListScreen> {
     );
   }
 
-  /// 대화방 카드 빌드
+  /// 대화방 카드 빌드 (실시간 조회)
   Widget _buildConversationCard(Conversation conversation) {
-    final otherUserName = conversation.getOtherUserName(_currentUser!.uid);
-    final otherUserPhoto = conversation.getOtherUserPhoto(_currentUser!.uid);
+    final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
       context,
       conversation.lastMessageTime,
     );
 
-    // 제목 결정: 익명 글 DM이면 "제목: 게시글 제목" 형식, 그 외엔 기존 표시
-    final dmTitle = conversation.dmTitle;
-    final displayName = (dmTitle != null && dmTitle.isNotEmpty)
-        ? '제목: $dmTitle'
-        : (isAnonymous 
-            ? 'Anonymous' : otherUserName);
-
-    // 🔥 핵심 변경: 실시간 배지 업데이트 (StreamBuilder)
-    // 카카오톡처럼 읽음 처리 즉시 배지 사라짐
-    return StreamBuilder<int>(
-      stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
-      initialData: 0, // 초기값 0
+    // 🔥 실시간 조회: 항상 최신 사용자 정보 가져오기
+    return FutureBuilder<Map<String, String>>(
+      future: _getLatestParticipantInfo(otherUserId, isAnonymous),
+      initialData: {
+        'name': conversation.getOtherUserName(_currentUser!.uid),
+        'photo': conversation.getOtherUserPhoto(_currentUser!.uid),
+      },
       builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+        final otherUserName = snapshot.data?['name'] ?? 'User';
+        final otherUserPhoto = snapshot.data?['photo'] ?? '';
         
-        // 디버그 로그
-        if (unreadCount > 0) {
-          Logger.log('🔴 실시간 배지 표시: ${conversation.id} - $unreadCount개');
-        }
+        // 제목 결정: 익명 글 DM이면 "제목: 게시글 제목" 형식, 그 외엔 기존 표시
+        final dmTitle = conversation.dmTitle;
+        final displayName = (dmTitle != null && dmTitle.isNotEmpty)
+            ? '제목: $dmTitle'
+            : (isAnonymous ? 'Anonymous' : otherUserName);
 
-        return _buildConversationCardContent(
-          conversation: conversation,
-          displayName: displayName,
-          otherUserPhoto: otherUserPhoto,
-          isAnonymous: isAnonymous,
-          timeString: timeString,
-          unreadCount: unreadCount,
+        // 🔥 실시간 배지 업데이트 (StreamBuilder)
+        return StreamBuilder<int>(
+          stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
+          initialData: 0,
+          builder: (context, badgeSnapshot) {
+            final unreadCount = badgeSnapshot.data ?? 0;
+
+            return _buildConversationCardContent(
+              conversation: conversation,
+              displayName: displayName,
+              otherUserPhoto: otherUserPhoto,
+              isAnonymous: isAnonymous,
+              timeString: timeString,
+              unreadCount: unreadCount,
+            );
+          },
         );
       },
     );
+  }
+
+  /// 최신 참여자 정보 가져오기 (실시간 조회)
+  Future<Map<String, String>> _getLatestParticipantInfo(
+    String otherUserId,
+    bool isAnonymous,
+  ) async {
+    // 익명이면 바로 반환
+    if (isAnonymous) {
+      return {'name': '익명', 'photo': ''};
+    }
+    
+    try {
+      // 항상 서버에서 최신 정보 조회
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(otherUserId)
+          .get(const GetOptions(source: Source.server));
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        return {
+          'name': data['nickname'] ?? data['displayName'] ?? 'User',
+          'photo': data['photoURL'] ?? '',
+        };
+      }
+    } catch (e) {
+      Logger.error('⚠️ 사용자 정보 조회 실패: $e');
+    }
+    
+    // 실패 시 기본값
+    return {'name': 'User', 'photo': ''};
   }
 
   /// 대화방 카드 콘텐츠 빌드 (FutureBuilder 내부용)
@@ -854,5 +898,6 @@ class _DMListScreenState extends State<DMListScreen> {
       }
     }
   }
+
 }
 

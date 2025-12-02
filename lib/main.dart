@@ -164,14 +164,15 @@ void main() {
 
           // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
 
-          // Firestore 설정 조정
+          // 🔥 하이브리드 동기화: Firestore 설정 조정
+          // Android 캐시 문제 해결을 위해 무제한 → 100MB 제한
           firestore.settings = const Settings(
             persistenceEnabled: true,
-            cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+            cacheSizeBytes: 100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
           );
 
           if (kDebugMode) {
-            debugPrint('✅ Firestore 설정 완료');
+            debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
           }
 
           // 광고 배너 초기화

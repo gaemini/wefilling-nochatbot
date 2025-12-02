@@ -466,19 +466,28 @@ class DMService {
       }
       
       // 필수 데이터로 대화방 생성 (participants는 반드시 포함)
+      final currentUserName = isOtherUserAnonymous
+          ? '익명'
+          : (currentUserData['nickname']?.toString() ?? 
+             currentUserData['name']?.toString() ?? 
+             'User');
+      final otherUserName = isOtherUserAnonymous 
+          ? '익명' 
+          : (otherUserData['nickname']?.toString() ?? 
+             otherUserData['name']?.toString() ?? 
+             'User');
+      
       final Map<String, dynamic> conversationData = {
         'participants': [currentUser.uid, otherUserId],
+        
+        // 🔥 하이브리드 동기화: 메타데이터 추가
+        'displayTitle': '$currentUserName ↔ $otherUserName',
+        'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
+        'participantNamesVersion': 1,
+        
         'participantNames': {
-          currentUser.uid: isOtherUserAnonymous
-              ? '익명'  // 상대방이 익명이면 나도 익명으로 표시
-              : (currentUserData['nickname']?.toString() ?? 
-                          currentUserData['name']?.toString() ?? 
-                 'User'),
-          otherUserId: isOtherUserAnonymous 
-              ? '익명' 
-              : (otherUserData['nickname']?.toString() ?? 
-                 otherUserData['name']?.toString() ?? 
-                 'User'),
+          currentUser.uid: currentUserName,
+          otherUserId: otherUserName,
         },
         'participantPhotos': {
           currentUser.uid: isOtherUserAnonymous
@@ -661,12 +670,32 @@ class DMService {
       Logger.log('  - 현재 사용자: ${currentUser.uid}');
       Logger.log('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');
       
+      // 🔥 하이브리드 동기화: 캐시 소스 로깅
+      int cacheCount = 0;
+      int serverCount = 0;
+      
       for (var doc in snapshot.docs) {
         final data = doc.data();
-        Logger.log('  - ID: ${doc.id}');
+        final isFromCache = doc.metadata.isFromCache;
+        
+        if (isFromCache) {
+          cacheCount++;
+          Logger.log('  📦 [캐시] ${doc.id}');
+        } else {
+          serverCount++;
+          Logger.log('  🌐 [서버] ${doc.id}');
+        }
+        
         Logger.log('    participants: ${data['participants']}');
         Logger.log('    lastMessage: ${data['lastMessage']}');
+        
+        // displayTitle이 있으면 로깅
+        if (data['displayTitle'] != null) {
+          Logger.log('    displayTitle: ${data['displayTitle']}');
+        }
       }
+      
+      Logger.log('  📊 소스 통계: 캐시 ${cacheCount}개 / 서버 ${serverCount}개');
       
       final conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
@@ -934,11 +963,20 @@ class DMService {
             ? (otherUserDoc.data()?['photoURL'] ?? '')
             : '';
         
+        final currentUserName = parsed.anonymous ? '익명' : (currentUserDoc.data()?['nickname'] ?? currentUserDoc.data()?['name'] ?? 'Unknown');
+        final otherUserName = parsed.anonymous ? '익명' : otherUserNickname;
+        
         final initData = {
           'participants': [currentUser.uid, otherUserId],
+          
+          // 🔥 하이브리드 동기화: 메타데이터 추가
+          'displayTitle': '$currentUserName ↔ $otherUserName',
+          'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
+          'participantNamesVersion': 1,
+          
           'participantNames': {
-            currentUser.uid: parsed.anonymous ? '익명' : (currentUserDoc.data()?['nickname'] ?? currentUserDoc.data()?['name'] ?? 'Unknown'),
-            otherUserId: parsed.anonymous ? '익명' : otherUserNickname,
+            currentUser.uid: currentUserName,
+            otherUserId: otherUserName,
           },
           'participantPhotos': {
             currentUser.uid: parsed.anonymous ? '' : (currentUserDoc.data()?['photoURL'] ?? ''),

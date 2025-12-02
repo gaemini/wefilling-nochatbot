@@ -23,6 +23,11 @@ class Conversation {
   final List<String> archivedBy; // 이 대화방을 보관(삭제)한 사용자 uid 목록
   final Map<String, DateTime?> userLeftAt; // 각 사용자가 언제 나갔는지 기록
   final Map<String, DateTime?> rejoinedAt; // 각 사용자가 언제 다시 들어왔는지 기록
+  
+  // 🔥 하이브리드 동기화: 메타데이터 필드
+  final String? displayTitle; // Firebase Console용 표시 제목
+  final DateTime? participantNamesUpdatedAt; // participantNames 마지막 업데이트 시간
+  final int participantNamesVersion; // 버전 관리
 
   Conversation({
     required this.id,
@@ -41,6 +46,9 @@ class Conversation {
     this.archivedBy = const [],
     this.userLeftAt = const {},
     this.rejoinedAt = const {},
+    this.displayTitle,
+    this.participantNamesUpdatedAt,
+    this.participantNamesVersion = 1,
   });
 
   /// Firestore 문서에서 Conversation 객체 생성
@@ -82,6 +90,12 @@ class Conversation {
       archivedBy: (data['archivedBy'] as List?)?.map((e) => e.toString()).toList() ?? const [],
       userLeftAt: userLeftAt,
       rejoinedAt: rejoinedAt,
+      // 🔥 하이브리드 동기화: 메타데이터 파싱
+      displayTitle: data['displayTitle'],
+      participantNamesUpdatedAt: data['participantNamesUpdatedAt'] != null 
+          ? (data['participantNamesUpdatedAt'] as Timestamp).toDate() 
+          : null,
+      participantNamesVersion: data['participantNamesVersion'] ?? 1,
     );
   }
 
@@ -211,6 +225,16 @@ class Conversation {
     }
     
     return DateTime.now(); // 아직 다시 들어오지 않았으면 현재 시점부터 (실제로는 메시지 없음)
+  }
+
+  /// 🔥 하이브리드 동기화: participantNames 데이터가 오래되었는지 확인
+  bool isParticipantNamesStale({Duration threshold = const Duration(days: 7)}) {
+    if (participantNamesUpdatedAt == null) {
+      return true; // 업데이트 시간이 없으면 오래된 것으로 간주
+    }
+    
+    final daysSince = DateTime.now().difference(participantNamesUpdatedAt!);
+    return daysSince > threshold;
   }
 
   @override

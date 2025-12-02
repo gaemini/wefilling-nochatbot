@@ -569,6 +569,9 @@ class AuthProvider with ChangeNotifier {
           final finalPhotoURL = photoURL ?? oldPhotoURL ?? '';
           await _updateAllUserContent(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null, nationality);
           
+          // 🔥 하이브리드 동기화: DM 대화방 업데이트
+          await _updateAllConversationsForUser(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null);
+          
           await _loadUserData();
           return true;
         } catch (e) {
@@ -963,6 +966,83 @@ class AuthProvider with ChangeNotifier {
       Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       // 오류가 발생해도 프로필 업데이트는 성공으로 처리
       // (사용자 경험을 위해)
+    }
+  }
+
+  // 🔥 하이브리드 동기화: 사용자의 모든 대화방에서 participantNames 업데이트
+  Future<void> _updateAllConversationsForUser(String nickname, String? photoURL) async {
+    if (_user == null) return;
+    
+    try {
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🔄 대화방 participantNames 업데이트 시작');
+      Logger.log('  - 사용자: ${_user!.uid}');
+      Logger.log('  - 새 닉네임: $nickname');
+      Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
+      
+      // 내가 참여한 모든 대화방 조회
+      final conversations = await _firestore
+          .collection('conversations')
+          .where('participants', arrayContains: _user!.uid)
+          .get();
+      
+      Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
+      
+      if (conversations.docs.isEmpty) {
+        Logger.log('  - 업데이트할 대화방 없음');
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        return;
+      }
+      
+      int updated = 0;
+      final batch = _firestore.batch();
+      
+      for (var doc in conversations.docs) {
+        try {
+          final data = doc.data();
+          final participants = List<String>.from(data['participants'] ?? []);
+          final otherUserId = participants.firstWhere(
+            (id) => id != _user!.uid,
+            orElse: () => '',
+          );
+          
+          if (otherUserId.isEmpty) continue;
+          
+          // 상대방 이름 가져오기 (displayTitle 업데이트용)
+          final otherUserName = data['participantNames']?[otherUserId] ?? 'User';
+          
+          // participantNames 업데이트
+          batch.update(doc.reference, {
+            'participantNames.${_user!.uid}': nickname,
+            'participantPhotos.${_user!.uid}': photoURL ?? '',
+            'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
+            'displayTitle': '$nickname ↔ $otherUserName',
+          });
+          
+          updated++;
+          
+          // Firestore 배치 제한 (500개)
+          if (updated % 500 == 0) {
+            await batch.commit();
+            Logger.log('  - 중간 커밋: $updated개');
+          }
+        } catch (e) {
+          Logger.error('  - 대화방 업데이트 실패 (건너뜀): ${doc.id} - $e');
+          continue;
+        }
+      }
+      
+      // 최종 커밋
+      if (updated % 500 != 0) {
+        await batch.commit();
+      }
+      
+      Logger.log('✅ 대화방 업데이트 완료: $updated개');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      
+    } catch (e) {
+      Logger.error('❌ 대화방 업데이트 실패: $e');
+      // 실패해도 프로필 업데이트는 완료된 상태이므로 계속 진행
     }
   }
 

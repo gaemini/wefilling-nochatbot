@@ -38,3 +38,4 @@ class CachedPost extends HiveObject {
   }
 }
 
+

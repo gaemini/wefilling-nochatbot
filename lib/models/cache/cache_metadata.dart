@@ -37,3 +37,4 @@ class CacheMetadata extends HiveObject {
   Duration get age => DateTime.now().difference(cachedAt);
 }
 
+

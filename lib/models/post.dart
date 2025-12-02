@@ -162,4 +162,52 @@ class Post {
       allowedUserIds: allowedUserIds ?? this.allowedUserIds,
     );
   }
+
+  // Map으로 변환 (캐싱용)
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'content': content,
+      'authorNickname': author,
+      'authorNationality': authorNationality,
+      'authorPhotoURL': authorPhotoURL,
+      'category': category,
+      'createdAt': createdAt.millisecondsSinceEpoch,
+      'userId': userId,
+      'commentCount': commentCount,
+      'likes': likes,
+      'likedBy': likedBy,
+      'imageUrls': imageUrls,
+      'visibility': visibility,
+      'isAnonymous': isAnonymous,
+      'visibleToCategoryIds': visibleToCategoryIds,
+      'allowedUserIds': allowedUserIds,
+    };
+  }
+
+  // Map에서 Post 객체 생성 (캐싱용)
+  factory Post.fromMap(Map<String, dynamic> map, String id) {
+    return Post(
+      id: id,
+      title: map['title'] ?? '',
+      content: map['content'] ?? '',
+      author: map['authorNickname'] ?? '익명',
+      authorNationality: map['authorNationality'] ?? '',
+      authorPhotoURL: map['authorPhotoURL'] ?? '',
+      category: map['category'] ?? '일반',
+      createdAt: map['createdAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
+          : DateTime.now(),
+      userId: map['userId'] ?? '',
+      commentCount: map['commentCount'] ?? 0,
+      likes: map['likes'] ?? 0,
+      likedBy: List<String>.from(map['likedBy'] ?? []),
+      imageUrls: List<String>.from(map['imageUrls'] ?? []),
+      visibility: map['visibility'] ?? 'public',
+      isAnonymous: map['isAnonymous'] ?? false,
+      visibleToCategoryIds: List<String>.from(map['visibleToCategoryIds'] ?? []),
+      allowedUserIds: List<String>.from(map['allowedUserIds'] ?? []),
+    );
+  }
 }

@@ -3,17 +3,21 @@
 // 게시글에 댓글 추가 및 삭제
 // 댓글 수 관리
 
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
+import 'cache/comment_cache_manager.dart';
+import 'cache/cache_feature_flags.dart';
 import '../utils/logger.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
+  final CommentCacheManager _cache = CommentCacheManager();
 
   // 댓글 추가 (원댓글 또는 대댓글)
   Future<bool> addComment(
@@ -57,6 +61,12 @@ class CommentService {
 
       // Firestore에 저장
       await _firestore.collection('comments').add(commentData);
+
+      // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
+      if (CacheFeatureFlags.isCommentCacheEnabled) {
+        _cache.invalidatePostComments(postId);
+        Logger.log('💾 댓글 캐시 무효화 (새 댓글 추가)');
+      }
 
       // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
       String? targetAuthorId;
@@ -164,6 +174,23 @@ class CommentService {
     }
   }
 
+  // 캐시된 댓글 가져오기 (초기 로딩용)
+  /// 캐시에서 댓글 목록을 가져옵니다.
+  /// 캐시가 없으면 빈 리스트를 반환합니다.
+  /// UI는 이 데이터를 먼저 표시하고, Stream을 통해 최신 데이터로 업데이트합니다.
+  Future<List<Comment>> getCachedComments(String postId) async {
+    if (!CacheFeatureFlags.isCommentCacheEnabled) {
+      return [];
+    }
+    
+    try {
+      return await _cache.getComments(postId);
+    } catch (e) {
+      Logger.error('캐시된 댓글 가져오기 실패: $e');
+      return [];
+    }
+  }
+
   // 게시글의 모든 댓글 가져오기
   Stream<List<Comment>> getCommentsByPostId(String postId) {
     try {
@@ -190,6 +217,11 @@ class CommentService {
 
             // 클라이언트 측에서 정렬 수행
             comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+            // 캐시 업데이트 (백그라운드, 실패해도 무시)
+            if (CacheFeatureFlags.isCommentCacheEnabled) {
+              unawaited(_cache.saveComments(postId, comments));
+            }
 
             return comments;
           });
@@ -232,6 +264,12 @@ class CommentService {
 
       // 게시글 문서의 댓글 수 업데이트
       await _updateCommentCount(postId);
+
+      // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
+      if (CacheFeatureFlags.isCommentCacheEnabled) {
+        _cache.invalidatePostComments(postId);
+        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제)');
+      }
 
       return true;
     } catch (e) {
@@ -359,6 +397,12 @@ class CommentService {
 
       // 게시글 댓글 수 업데이트
       await _updateCommentCount(postId);
+
+      // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
+      if (CacheFeatureFlags.isCommentCacheEnabled) {
+        _cache.invalidatePostComments(postId);
+        Logger.log('💾 댓글 캐시 무효화 (댓글 및 대댓글 삭제)');
+      }
 
       return true;
     } catch (e) {

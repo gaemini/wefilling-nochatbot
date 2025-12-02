@@ -354,7 +354,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get visibilityScope => '공개 범위';
 
   @override
-  String get publicPost => '전구 공개';
+  String get publicPost => '전체 공개';
 
   @override
   String get categorySpecific => '카테고리별';
@@ -2133,7 +2133,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get optional => '(선택)';
 
   @override
-  String get publicMeeting => '전구 공개';
+  String get publicMeeting => '전체 공개';
 
   @override
   String participantCount(String current, String total) {

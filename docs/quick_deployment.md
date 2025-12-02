@@ -416,9 +416,10 @@ flutter run
 ## 📞 도움이 필요하신가요?
 
 ### 참고 문서
-- [APP_STORE_COMPLIANCE_CHECKLIST.md](APP_STORE_COMPLIANCE_CHECKLIST.md) - 상세 체크리스트
-- [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) - 법적 문서 배포 가이드
-- [KEYSTORE_SETUP_GUIDE.md](KEYSTORE_SETUP_GUIDE.md) - Android 앱 서명
+- [DEPLOYMENT_CHECKLIST.md](../DEPLOYMENT_CHECKLIST.md) - 상세 배포 준비 체크리스트
+- [DEPLOYMENT_SUMMARY.md](../DEPLOYMENT_SUMMARY.md) - 빠른 배포 준비 요약
+- [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) - 법적 문서 배포 가이드
+- [keystore_setup.md](keystore_setup.md) - Android 앱 서명
 
 ### 공식 문서
 - [Google Play Console 도움말](https://support.google.com/googleplay/android-developer)

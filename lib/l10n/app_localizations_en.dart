@@ -2194,7 +2194,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get optional => '(Optional)';
 
   @override
-  String get publicMeeting => 'Public Meeting';
+  String get publicMeeting => 'Public';
 
   @override
   String participantCount(String current, String total) {

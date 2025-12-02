@@ -791,7 +791,7 @@ abstract class AppLocalizations {
   /// No description provided for @publicPost.
   ///
   /// In ko, this message translates to:
-  /// **'전구 공개'**
+  /// **'전체 공개'**
   String get publicPost;
 
   /// No description provided for @categorySpecific.
@@ -4115,7 +4115,7 @@ abstract class AppLocalizations {
   /// No description provided for @publicMeeting.
   ///
   /// In ko, this message translates to:
-  /// **'전구 공개'**
+  /// **'전체 공개'**
   String get publicMeeting;
 
   /// No description provided for @participantCount.

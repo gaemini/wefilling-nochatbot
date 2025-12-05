@@ -9,6 +9,8 @@ import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
 import '../providers/auth_provider.dart';
 import '../widgets/country_flag_circle.dart';
+import '../widgets/friend_category_selector.dart';
+import '../widgets/date_selector.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../l10n/app_localizations.dart';
@@ -343,89 +345,16 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                     const SizedBox(height: 12),
                     // 개선된 요일 선택 칩
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: List.generate(weekDates.length, (index) {
-                        final bool isSelected = index == _selectedDayIndex;
-                        final DateTime date = weekDates[index];
-                        // 로케일에 따라 요일 이름 선택
-                        final locale = Localizations.localeOf(context).languageCode;
-                        final String weekday = locale == 'ko'
-                            ? ['월', '화', '수', '목', '금', '토', '일'][date.weekday - 1]
-                            : _weekdayNames[date.weekday - 1];
-
-                        return Expanded(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  _selectedDayIndex = index;
-                                });
-                                _updateTimeOptions();
-                              },
-                              borderRadius: BorderRadius.circular(12),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                height: 64, // 높이 약간 증가
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? const Color(0xFF4A90E2) // 프라이머리 컬러
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected 
-                                        ? const Color(0xFF4A90E2)
-                                        : const Color(0xFFE1E6EE),
-                                    width: 1,
-                                  ),
-                                  boxShadow: isSelected ? [
-                                    BoxShadow(
-                                      color: const Color(0xFF4A90E2).withOpacity(0.2),
-                                      blurRadius: 8,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ] : null,
-                                ),
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      weekday,
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? Colors.white
-                                            : (date.weekday == 7 // 일요일 체크
-                                                ? Colors.red
-                                                : date.weekday == 6 // 토요일 체크
-                                                    ? Colors.blue
-                                                    : const Color(0xFF666666)),
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '${date.day}',
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? Colors.white
-                                            : (date.weekday == 7 // 일요일 체크
-                                                ? Colors.red
-                                                : date.weekday == 6 // 토요일 체크
-                                                    ? Colors.blue
-                                                    : const Color(0xFF1A1A1A)),
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      }),
+                    DateSelector(
+                      weekDates: weekDates,
+                      selectedDayIndex: _selectedDayIndex,
+                      onDateSelected: (index) {
+                        setState(() {
+                          _selectedDayIndex = index;
+                        });
+                        _updateTimeOptions();
+                      },
+                      weekdayNames: _weekdayNames,
                     ),
                   ],
                 ),
@@ -816,85 +745,15 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               ],
                             ),
                             const SizedBox(height: 8),
-                            if (_friendCategories.isEmpty)
-                              const Text(
-                                '친구 그룹이 없습니다. 친구 관리에서 그룹을 만들어보세요.',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF999999),
-                                ),
-                              )
-                            else
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: _friendCategories.map((category) {
-                                  final isSelected = _selectedCategoryIds.contains(category.id);
-                                  return InkWell(
-                                    onTap: () {
-                                      setState(() {
-                                        if (isSelected) {
-                                          _selectedCategoryIds.remove(category.id);
-                                        } else {
-                                          _selectedCategoryIds.add(category.id);
-                                        }
-                                      });
-                                    },
-                                    borderRadius: BorderRadius.circular(24),
-                                    child: AnimatedContainer(
-                                      duration: const Duration(milliseconds: 200),
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: isSelected ? const Color(0xFF4A90E2) : Colors.white,
-                                        borderRadius: BorderRadius.circular(24),
-                                        border: Border.all(
-                                          color: isSelected 
-                                              ? const Color(0xFF4A90E2) 
-                                              : const Color(0xFFE1E6EE),
-                                          width: 1.2,
-                                        ),
-                                        boxShadow: isSelected ? [
-                                          BoxShadow(
-                                            color: const Color(0xFF4A90E2).withOpacity(0.3),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 3),
-                                          ),
-                                        ] : null,
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          if (isSelected) ...[
-                                            const Icon(
-                                              Icons.check_rounded,
-                                              size: 16,
-                                              color: Colors.white,
-                                            ),
-                                            const SizedBox(width: 6),
-                                          ],
-                                          Text(
-                                            category.name,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                              color: isSelected ? Colors.white : const Color(0xFF333333),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '(${category.friendIds.length}${AppLocalizations.of(context)!.people ?? ''})',
-                                            style: TextStyle(
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w400,
-                                              color: isSelected ? Colors.white.withOpacity(0.9) : const Color(0xFF999999),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
+                            FriendCategorySelector(
+                              categories: _friendCategories,
+                              selectedCategoryIds: _selectedCategoryIds,
+                              onSelectionChanged: (newSelection) {
+                                setState(() {
+                                  _selectedCategoryIds = newSelection;
+                                });
+                              },
+                            ),
                             
                             // 선택된 그룹이 없을 때 경고 메시지
                             if (_selectedCategoryIds.isEmpty && _friendCategories.isNotEmpty) ...[

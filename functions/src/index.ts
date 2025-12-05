@@ -1973,7 +1973,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       const participantStatus = { ...(data.participantStatus || {}) };
       
       // 탈퇴한 사용자의 표시를 일괄 업데이트
-      participantNames[uid] = 'Deleted Account';
+      participantNames[uid] = 'DELETED_ACCOUNT';
       participantPhotos[uid] = '';
       participantStatus[uid] = 'deleted';
       
@@ -2169,13 +2169,13 @@ export const fixDeletedAccountsInConversations = functions.https.onRequest(async
           deletedUserIds.add(uid);
           
           // 이미 올바르게 설정되어 있으면 스킵
-          if (participantNames[uid] === 'Deleted Account' && 
+          if (participantNames[uid] === 'DELETED_ACCOUNT' && 
               participantStatus[uid] === 'deleted') {
             continue;
           }
           
           // 탈퇴한 사용자 정보 업데이트
-          participantNames[uid] = 'Deleted Account';
+          participantNames[uid] = 'DELETED_ACCOUNT';
           participantPhotos[uid] = '';
           participantStatus[uid] = 'deleted';
           needsUpdate = true;

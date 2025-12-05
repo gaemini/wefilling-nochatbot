@@ -166,9 +166,10 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       if (!userDoc.exists) {
         Logger.log('❌ 사용자 문서 없음 (탈퇴한 사용자): $userId');
         // 탈퇴한 사용자 정보 추가
+        final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
         final participantInfo = {
           'userId': userId,
-          'nickname': 'Deleted Account',
+          'nickname': deletedLabel,
           'photoURL': '',
           'isHost': isHost,
         };

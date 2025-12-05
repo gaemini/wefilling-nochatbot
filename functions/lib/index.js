@@ -1557,7 +1557,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
             const participantPhotos = Object.assign({}, (data.participantPhotos || {}));
             const participantStatus = Object.assign({}, (data.participantStatus || {}));
             // 탈퇴한 사용자의 표시를 일괄 업데이트
-            participantNames[uid] = 'Deleted Account';
+            participantNames[uid] = 'DELETED_ACCOUNT';
             participantPhotos[uid] = '';
             participantStatus[uid] = 'deleted';
             batch.update(doc.ref, {
@@ -1734,12 +1734,12 @@ exports.fixDeletedAccountsInConversations = functions.https.onRequest(async (req
                 if (!activeUserIds.has(uid)) {
                     deletedUserIds.add(uid);
                     // 이미 올바르게 설정되어 있으면 스킵
-                    if (participantNames[uid] === 'Deleted Account' &&
+                    if (participantNames[uid] === 'DELETED_ACCOUNT' &&
                         participantStatus[uid] === 'deleted') {
                         continue;
                     }
                     // 탈퇴한 사용자 정보 업데이트
-                    participantNames[uid] = 'Deleted Account';
+                    participantNames[uid] = 'DELETED_ACCOUNT';
                     participantPhotos[uid] = '';
                     participantStatus[uid] = 'deleted';
                     needsUpdate = true;

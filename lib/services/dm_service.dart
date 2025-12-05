@@ -445,8 +445,8 @@ class DMService {
       if (otherUserData == null) {
         Logger.log('⚠️ 상대방 사용자 정보 없음 - 탈퇴한 계정으로 처리');
         otherUserData = {
-          'nickname': isOtherUserAnonymous ? '익명' : 'Deleted Account',
-          'name': isOtherUserAnonymous ? '익명' : 'Deleted Account',
+          'nickname': isOtherUserAnonymous ? '익명' : 'DELETED_ACCOUNT',
+          'name': isOtherUserAnonymous ? '익명' : 'DELETED_ACCOUNT',
           'photoURL': '',
         };
       }

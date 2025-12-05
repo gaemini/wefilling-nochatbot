@@ -327,11 +327,11 @@ class _DMListScreenState extends State<DMListScreen> {
     final isCachedDeleted = !isAnonymous && (
         cachedStatus == 'deleted' ||
         cachedName.isEmpty ||
-        cachedName == 'Deleted Account' ||
+        cachedName == 'DELETED_ACCOUNT' ||
         cachedName == deletedLabel
     );
     
-    final initialName = isCachedDeleted ? deletedLabel : cachedName;
+    final initialName = isCachedDeleted ? deletedLabel : (cachedName == 'DELETED_ACCOUNT' ? deletedLabel : cachedName);
     final initialPhoto = isCachedDeleted
         ? ''
         : conversation.getOtherUserPhoto(_currentUser!.uid);
@@ -344,7 +344,8 @@ class _DMListScreenState extends State<DMListScreen> {
         'photo': initialPhoto,
       },
       builder: (context, snapshot) {
-        final otherUserName = snapshot.data?['name'] ?? initialName;
+        final rawName = snapshot.data?['name'] ?? initialName;
+        final otherUserName = rawName == 'DELETED_ACCOUNT' ? deletedLabel : rawName;
         final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
         
         final displayName = isAnonymous ? 'Anonymous' : otherUserName;
@@ -375,6 +376,8 @@ class _DMListScreenState extends State<DMListScreen> {
     String otherUserId,
     bool isAnonymous,
   ) async {
+    final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
+    
     // 익명이면 아무 정보도 반환하지 않음 (빈 문자열)
     if (isAnonymous) {
       return {'name': '', 'photo': ''};
@@ -396,12 +399,12 @@ class _DMListScreenState extends State<DMListScreen> {
       } else {
         // 탈퇴한 사용자 처리
         Logger.log('⚠️ 탈퇴한 사용자: $otherUserId');
-        return {'name': 'Deleted Account', 'photo': ''};
+        return {'name': deletedLabel, 'photo': ''};
       }
     } catch (e) {
       Logger.error('⚠️ 사용자 정보 조회 실패: $e');
       // 오류 발생 시에도 탈퇴한 사용자로 간주
-      return {'name': 'Deleted Account', 'photo': ''};
+      return {'name': deletedLabel, 'photo': ''};
     }
   }
 

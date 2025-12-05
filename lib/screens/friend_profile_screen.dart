@@ -67,9 +67,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         // 탈퇴한 사용자 처리
         Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
         setState(() {
+          final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
           _userData = {
-            'nickname': 'Deleted Account',
-            'displayName': 'Deleted Account',
+            'nickname': deletedLabel,
+            'displayName': deletedLabel,
             'photoURL': '',
             'bio': '',
           };

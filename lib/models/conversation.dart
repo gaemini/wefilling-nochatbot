@@ -157,12 +157,12 @@ class Conversation {
       return '익명'; // 익명 표시 (UI에서 로컬라이제이션 처리)
     }
     
-    // participantStatus가 삭제인 경우 즉시 Deleted Account 반환
+    // participantStatus가 삭제인 경우 즉시 삭제된 계정 표시 반환
     if (participantStatus[otherUserId] == 'deleted') {
-      return 'Deleted Account';
+      return 'DELETED_ACCOUNT'; // UI에서 로컬라이제이션 처리
     }
     
-    return participantNames[otherUserId] ?? 'Deleted Account';
+    return participantNames[otherUserId] ?? 'DELETED_ACCOUNT'; // UI에서 로컬라이제이션 처리
   }
 
   /// 상대방 프로필 사진 URL 가져오기

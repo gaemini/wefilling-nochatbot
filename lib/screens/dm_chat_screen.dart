@@ -320,9 +320,23 @@ class _DMChatScreenState extends State<DMChatScreen> {
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
-    final isAnonymous = _conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false;
+    final isAnonymous = widget.conversationId.startsWith('anon_') || 
+        (_conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false);
     final dmTitle = _conversation?.dmTitle ?? _preloadedDmTitle; // 미리 로드된 제목 사용
     
+    // ⏳ 로딩 상태: 데이터가 준비되지 않았을 때
+    if (_conversation == null && dmTitle == null) {
+      return AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(''), // 로딩 중에는 빈 제목 또는 스피너
+      );
+    }
+
     // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
     if (dmTitle != null && dmTitle.isNotEmpty) {
       final primaryTitle = '제목: $dmTitle';

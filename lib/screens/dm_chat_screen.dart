@@ -53,11 +53,37 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Conversation? _conversation;
   bool _isLoading = false;
   bool _isLeaving = false; // 나가기 진행 중 플래그
+  String? _preloadedDmTitle; // 미리 로드된 게시글 제목
 
   @override
   void initState() {
     super.initState();
+    _preloadDmTitleIfAnonymous(); // 익명이면 제목 미리 로드
     _initConversationState();
+  }
+  
+  /// 익명 대화방이면 게시글 제목을 미리 로드
+  Future<void> _preloadDmTitleIfAnonymous() async {
+    // conversationId에서 익명 여부와 postId 추출
+    if (widget.conversationId.startsWith('anon_')) {
+      final parts = widget.conversationId.split('_');
+      if (parts.length >= 4) {
+        final postId = parts.sublist(3).join('_'); // postId 추출
+        try {
+          final postDoc = await FirebaseFirestore.instance
+              .collection('posts')
+              .doc(postId)
+              .get();
+          if (postDoc.exists && mounted) {
+            setState(() {
+              _preloadedDmTitle = postDoc.data()?['title'] as String?;
+            });
+          }
+        } catch (e) {
+          Logger.error('게시글 제목 미리 로드 실패: $e');
+        }
+      }
+    }
   }
   Future<void> _initConversationState() async {
     try {
@@ -295,35 +321,134 @@ class _DMChatScreenState extends State<DMChatScreen> {
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
     final isAnonymous = _conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false;
-    final dmTitle = _conversation?.dmTitle;
+    final dmTitle = _conversation?.dmTitle ?? _preloadedDmTitle; // 미리 로드된 제목 사용
     
-    // 실시간으로 사용자 정보 조회 (탈퇴한 사용자 감지)
+    // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
+    if (dmTitle != null && dmTitle.isNotEmpty) {
+      final primaryTitle = '제목: $dmTitle';
+      final secondaryTitle = AppLocalizations.of(context)!.author ?? "";
+
+      String _formatHeaderDate() {
+        final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
+        if (date == null) return '';
+        return DateFormat('yyyy.MM.dd').format(date);
+      }
+
+      return AppBar(
+        elevation: 0,
+        backgroundColor: Colors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black87),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: Colors.grey[200],
+              child: const Icon(Icons.person, size: 20),  // 익명이므로 기본 아이콘
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    primaryTitle,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    secondaryTitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Text(
+              _formatHeaderDate(),
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.black54,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.black87),
+            onSelected: (value) {
+              if (value == 'leave') {
+                _confirmLeaveConversation();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'leave',
+                child: Row(
+                  children: [
+                    const Icon(Icons.exit_to_app, size: 20),
+                    const SizedBox(width: 8),
+                    Text(AppLocalizations.of(context)!.leaveChatRoom ?? "채팅방 나가기"),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+    
+    // 초기 표시 값을 캐시 상태에 따라 조건부로 설정
+    final cachedStatus = _conversation?.participantStatus[otherUserId];
+    final cachedName = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
+    final cachedPhoto = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
+    final deletedLabel = AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
+    
+    // 익명이 아닐 때만 탈퇴 계정 체크
+    final isCachedDeleted = !isAnonymous && (
+        cachedStatus == 'deleted' ||
+        cachedName.isEmpty ||
+        cachedName == 'Deleted Account' ||
+        cachedName == deletedLabel
+    );
+    
+    final initialName = isCachedDeleted ? deletedLabel : cachedName;
+    final initialPhoto = isCachedDeleted ? '' : cachedPhoto;
+
+    // 실시간으로 사용자 정보 조회 (일반 DM만)
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: FutureBuilder<Map<String, String>>(
         future: _getLatestUserInfo(otherUserId, isAnonymous),
         initialData: {
-          'name': _conversation?.getOtherUserName(_currentUser!.uid) ?? '',
-          'photo': _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '',
+          'name': initialName,
+          'photo': initialPhoto,
         },
         builder: (context, snapshot) {
-          final otherUserName = snapshot.data?['name'] ?? '';
-          final otherUserPhoto = snapshot.data?['photo'] ?? '';
+          final otherUserName = snapshot.data?['name'] ?? initialName;
+          final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
           
-          final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-              ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
-              : (isAnonymous 
-                  ? 'Anonymous' : otherUserName);
-          final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-              ? (AppLocalizations.of(context)!.author ?? "") : null;
+    final primaryTitle = isAnonymous ? 'Anonymous' : otherUserName;
+    final secondaryTitle = null;
 
-          String _formatHeaderDate() {
-            final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
-            if (date == null) return '';
-            return DateFormat('yyyy.MM.dd').format(date);
-          }
+    String _formatHeaderDate() {
+      final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
+      if (date == null) return '';
+      return DateFormat('yyyy.MM.dd').format(date);
+    }
 
-          return AppBar(
+    return AppBar(
       elevation: 0,
       backgroundColor: Colors.white,
       leading: IconButton(
@@ -425,7 +550,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           },
         ),
       ],
-          );
+    );
         },
       ),
     );
@@ -436,9 +561,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
     String otherUserId,
     bool isAnonymous,
   ) async {
-    // 익명이면 바로 반환
+    // 익명이면 아무 정보도 반환하지 않음 (빈 문자열)
     if (isAnonymous) {
-      return {'name': '익명', 'photo': ''};
+      return {'name': '', 'photo': ''};
     }
     
     try {

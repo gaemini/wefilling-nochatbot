@@ -296,23 +296,58 @@ class _DMListScreenState extends State<DMListScreen> {
       context,
       conversation.lastMessageTime,
     );
+    final dmTitle = conversation.dmTitle;
 
-    // 🔥 실시간 조회: 항상 최신 사용자 정보 가져오기
+    // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
+    if (dmTitle != null && dmTitle.isNotEmpty) {
+      return StreamBuilder<int>(
+        stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
+        initialData: 0,
+        builder: (context, badgeSnapshot) {
+          final unreadCount = badgeSnapshot.data ?? 0;
+
+          return _buildConversationCardContent(
+            conversation: conversation,
+            displayName: '제목: $dmTitle',  // 게시글 제목만 표시
+            otherUserPhoto: '',  // 익명이므로 사진 없음
+            isAnonymous: isAnonymous,
+            timeString: timeString,
+            unreadCount: unreadCount,
+          );
+        },
+      );
+    }
+
+    // 초기 표시 값을 캐시 상태에 따라 조건부로 설정
+    final cachedStatus = conversation.participantStatus[otherUserId];
+    final cachedName = conversation.getOtherUserName(_currentUser!.uid);
+    final deletedLabel = AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
+    
+    // 익명이 아닐 때만 탈퇴 계정 체크
+    final isCachedDeleted = !isAnonymous && (
+        cachedStatus == 'deleted' ||
+        cachedName.isEmpty ||
+        cachedName == 'Deleted Account' ||
+        cachedName == deletedLabel
+    );
+    
+    final initialName = isCachedDeleted ? deletedLabel : cachedName;
+    final initialPhoto = isCachedDeleted
+        ? ''
+        : conversation.getOtherUserPhoto(_currentUser!.uid);
+
+    // 🔥 실시간 조회: 최신 사용자 정보 가져오기 (일반 DM만)
     return FutureBuilder<Map<String, String>>(
       future: _getLatestParticipantInfo(otherUserId, isAnonymous),
       initialData: {
-        'name': conversation.getOtherUserName(_currentUser!.uid),
-        'photo': conversation.getOtherUserPhoto(_currentUser!.uid),
+        'name': initialName,
+        'photo': initialPhoto,
       },
       builder: (context, snapshot) {
-        final otherUserName = snapshot.data?['name'] ?? 'User';
-        final otherUserPhoto = snapshot.data?['photo'] ?? '';
+        final otherUserName = snapshot.data?['name'] ?? initialName;
+        final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
         
-        // 제목 결정: 익명 글 DM이면 "제목: 게시글 제목" 형식, 그 외엔 기존 표시
-        final dmTitle = conversation.dmTitle;
-        final displayName = (dmTitle != null && dmTitle.isNotEmpty)
-            ? '제목: $dmTitle'
-            : (isAnonymous ? 'Anonymous' : otherUserName);
+        final displayName = isAnonymous ? 'Anonymous' : otherUserName;
 
         // 🔥 실시간 배지 업데이트 (StreamBuilder)
         return StreamBuilder<int>(
@@ -340,9 +375,9 @@ class _DMListScreenState extends State<DMListScreen> {
     String otherUserId,
     bool isAnonymous,
   ) async {
-    // 익명이면 바로 반환
+    // 익명이면 아무 정보도 반환하지 않음 (빈 문자열)
     if (isAnonymous) {
-      return {'name': '익명', 'photo': ''};
+      return {'name': '', 'photo': ''};
     }
     
     try {

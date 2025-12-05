@@ -10,6 +10,7 @@ class Conversation {
   final List<String> participants;
   final Map<String, String> participantNames;
   final Map<String, String> participantPhotos;
+  final Map<String, String> participantStatus; // e.g., {'uid': 'deleted'}
   final Map<String, bool> isAnonymous;
   final String lastMessage;
   final DateTime lastMessageTime;
@@ -34,6 +35,7 @@ class Conversation {
     required this.participants,
     required this.participantNames,
     required this.participantPhotos,
+    this.participantStatus = const {},
     required this.isAnonymous,
     required this.lastMessage,
     required this.lastMessageTime,
@@ -78,6 +80,7 @@ class Conversation {
       participants: List<String>.from(data['participants'] ?? []),
       participantNames: Map<String, String>.from(data['participantNames'] ?? {}),
       participantPhotos: Map<String, String>.from(data['participantPhotos'] ?? {}),
+      participantStatus: Map<String, String>.from(data['participantStatus'] ?? {}),
       isAnonymous: Map<String, bool>.from(data['isAnonymous'] ?? {}),
       lastMessage: data['lastMessage'] ?? '',
       lastMessageTime: (data['lastMessageTime'] as Timestamp).toDate(),
@@ -121,6 +124,7 @@ class Conversation {
       'participants': participants,
       'participantNames': participantNames,
       'participantPhotos': participantPhotos,
+      if (participantStatus.isNotEmpty) 'participantStatus': participantStatus,
       'isAnonymous': isAnonymous,
       'lastMessage': lastMessage,
       'lastMessageTime': Timestamp.fromDate(lastMessageTime),
@@ -151,6 +155,11 @@ class Conversation {
     // 상대방이 익명인 경우
     if (isAnonymous[otherUserId] == true) {
       return '익명'; // 익명 표시 (UI에서 로컬라이제이션 처리)
+    }
+    
+    // participantStatus가 삭제인 경우 즉시 Deleted Account 반환
+    if (participantStatus[otherUserId] == 'deleted') {
+      return 'Deleted Account';
     }
     
     return participantNames[otherUserId] ?? 'Deleted Account';

@@ -4,7 +4,7 @@
 // 친구요청 관련 함수들을 export
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onMeetupReviewDeleted = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationCreated = exports.deleteAccountImmediately = exports.reportUser = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = void 0;
+exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationCreated = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.reportUser = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -1250,11 +1250,19 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
         }
         // 트랜잭션으로 사용자 차단
         const result = await db.runTransaction(async (transaction) => {
-            const blockId = `${blockerUid}_${targetUid}`;
-            // 차단 관계 생성
-            transaction.set(db.collection('blocks').doc(blockId), {
+            // 1. A → B 차단 관계 생성 (실제 차단)
+            transaction.set(db.collection('blocks').doc(`${blockerUid}_${targetUid}`), {
                 blocker: blockerUid,
                 blocked: targetUid,
+                mutualBlock: true,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            // 2. B → A 차단 효과 생성 (암묵적 차단)
+            transaction.set(db.collection('blocks').doc(`${targetUid}_${blockerUid}`), {
+                blocker: targetUid,
+                blocked: blockerUid,
+                isImplicit: true,
+                mutualBlock: true,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             // 기존 친구 관계가 있다면 삭제
@@ -1320,6 +1328,20 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
                     });
                 }
             }
+            // 모든 친구 카테고리에서 제거
+            const categoriesSnapshot = await db.collection('friend_categories')
+                .where('userId', '==', blockerUid)
+                .get();
+            for (const categoryDoc of categoriesSnapshot.docs) {
+                const categoryData = categoryDoc.data();
+                const friendIds = categoryData.friendIds || [];
+                if (friendIds.includes(targetUid)) {
+                    transaction.update(categoryDoc.ref, {
+                        friendIds: admin.firestore.FieldValue.arrayRemove(targetUid),
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
+            }
             return { success: true };
         });
         return result;
@@ -1345,13 +1367,18 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
         if (!targetUid || typeof targetUid !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 사용자 ID입니다.');
         }
-        // 차단 관계 삭제
-        const blockId = `${blockerUid}_${targetUid}`;
-        const blockDoc = await db.collection('blocks').doc(blockId).get();
-        if (!blockDoc.exists) {
-            throw new functions.https.HttpsError('not-found', '차단 관계를 찾을 수 없습니다.');
-        }
-        await db.collection('blocks').doc(blockId).delete();
+        // 양방향 차단 관계 모두 삭제
+        await db.runTransaction(async (transaction) => {
+            // A → B 차단 삭제
+            const blockId = `${blockerUid}_${targetUid}`;
+            const blockDoc = await transaction.get(db.collection('blocks').doc(blockId));
+            if (!blockDoc.exists) {
+                throw new functions.https.HttpsError('not-found', '차단 관계를 찾을 수 없습니다.');
+            }
+            transaction.delete(db.collection('blocks').doc(blockId));
+            // B → A 암묵적 차단 삭제
+            transaction.delete(db.collection('blocks').doc(`${targetUid}_${blockerUid}`));
+        });
         return { success: true };
     }
     catch (error) {
@@ -1519,10 +1546,31 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         const emailVer = await db.collection('email_verifications').doc(context.auth.token.email || 'unknown').get();
         if (emailVer.exists)
             batch.delete(emailVer.ref);
-        // 1-7. 사용자 문서 삭제
+        // 1-7. DM 대화방의 participantNames 업데이트 (탈퇴한 사용자 표시)
+        const conversationsSnap = await db.collection('conversations')
+            .where('participants', 'array-contains', uid)
+            .get();
+        console.log(`💬 대화방 업데이트: ${conversationsSnap.size}개 발견`);
+        conversationsSnap.forEach((doc) => {
+            const data = doc.data();
+            const participantNames = Object.assign({}, (data.participantNames || {}));
+            const participantPhotos = Object.assign({}, (data.participantPhotos || {}));
+            const participantStatus = Object.assign({}, (data.participantStatus || {}));
+            // 탈퇴한 사용자의 표시를 일괄 업데이트
+            participantNames[uid] = 'Deleted Account';
+            participantPhotos[uid] = '';
+            participantStatus[uid] = 'deleted';
+            batch.update(doc.ref, {
+                participantNames,
+                participantPhotos,
+                participantStatus,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        });
+        // 1-8. 사용자 문서 삭제
         batch.delete(db.collection('users').doc(uid));
         await batch.commit();
-        // 1-8. 한양메일 claim 해제 (released)
+        // 1-9. 한양메일 claim 해제 (released)
         try {
             if (userInfo.hanyangEmail && userInfo.hanyangEmail.includes('@')) {
                 const email = userInfo.hanyangEmail.toLowerCase().trim();
@@ -1636,6 +1684,123 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         if (error instanceof functions.https.HttpsError)
             throw error;
         throw new functions.https.HttpsError('internal', '계정 삭제 중 오류가 발생했습니다.');
+    }
+});
+// 일회성: 탈퇴 계정이 포함된 기존 대화방 데이터 정정 (관리자 전용)
+// HTTP 함수: /fixDeletedAccountsInConversations?secret=YOUR_SECRET_KEY
+exports.fixDeletedAccountsInConversations = functions.https.onRequest(async (req, res) => {
+    // 보안: 비밀 키 확인
+    const SECRET_KEY = 'wefilling_fix_deleted_2025'; // 변경 가능
+    const providedSecret = req.query.secret || req.body.secret;
+    if (providedSecret !== SECRET_KEY) {
+        res.status(403).send('❌ Unauthorized: Invalid secret key');
+        return;
+    }
+    console.log('🔧 대화방 탈퇴 계정 데이터 정정 시작');
+    try {
+        // 모든 conversations 문서 가져오기
+        const conversationsSnapshot = await db.collection('conversations').get();
+        const totalConversations = conversationsSnapshot.docs.length;
+        console.log(`📊 총 ${totalConversations}개 대화방 찾음`);
+        if (totalConversations === 0) {
+            res.status(200).send('ℹ️ 업데이트할 대화방이 없습니다.');
+            return;
+        }
+        // 모든 활성 사용자 UID 수집 (한 번만 조회)
+        const usersSnapshot = await db.collection('users').get();
+        const activeUserIds = new Set();
+        usersSnapshot.docs.forEach(doc => {
+            activeUserIds.add(doc.id);
+        });
+        console.log(`👥 활성 사용자: ${activeUserIds.size}명`);
+        // 배치 처리 (Firestore 배치는 최대 500개)
+        const batches = [];
+        let currentBatch = db.batch();
+        let operationCount = 0;
+        let batchCount = 0;
+        let updatedCount = 0;
+        let skippedCount = 0;
+        const deletedUserIds = new Set();
+        for (const convDoc of conversationsSnapshot.docs) {
+            const convData = convDoc.data();
+            const participants = convData.participants || [];
+            const participantNames = Object.assign({}, (convData.participantNames || {}));
+            const participantPhotos = Object.assign({}, (convData.participantPhotos || {}));
+            const participantStatus = Object.assign({}, (convData.participantStatus || {}));
+            let needsUpdate = false;
+            // 각 participant 확인
+            for (const uid of participants) {
+                // 활성 사용자가 아니면 탈퇴한 것으로 간주
+                if (!activeUserIds.has(uid)) {
+                    deletedUserIds.add(uid);
+                    // 이미 올바르게 설정되어 있으면 스킵
+                    if (participantNames[uid] === 'Deleted Account' &&
+                        participantStatus[uid] === 'deleted') {
+                        continue;
+                    }
+                    // 탈퇴한 사용자 정보 업데이트
+                    participantNames[uid] = 'Deleted Account';
+                    participantPhotos[uid] = '';
+                    participantStatus[uid] = 'deleted';
+                    needsUpdate = true;
+                }
+            }
+            // 업데이트가 필요한 경우에만 배치에 추가
+            if (needsUpdate) {
+                currentBatch.update(convDoc.ref, {
+                    participantNames,
+                    participantPhotos,
+                    participantStatus,
+                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                });
+                operationCount++;
+                updatedCount++;
+                // 배치가 500개에 도달하면 커밋하고 새 배치 시작
+                if (operationCount >= 500) {
+                    batches.push(currentBatch);
+                    currentBatch = db.batch();
+                    operationCount = 0;
+                    batchCount++;
+                    console.log(`📦 배치 ${batchCount} 준비 완료 (500개)`);
+                }
+            }
+            else {
+                skippedCount++;
+            }
+        }
+        // 마지막 배치 추가
+        if (operationCount > 0) {
+            batches.push(currentBatch);
+            batchCount++;
+            console.log(`📦 마지막 배치 준비 완료 (${operationCount}개)`);
+        }
+        // 모든 배치 실행
+        console.log(`🚀 총 ${batches.length}개 배치 실행 시작...`);
+        for (let i = 0; i < batches.length; i++) {
+            await batches[i].commit();
+            console.log(`✅ 배치 ${i + 1}/${batches.length} 완료`);
+        }
+        const result = {
+            success: true,
+            totalConversations,
+            updatedConversations: updatedCount,
+            skippedConversations: skippedCount,
+            deletedUserIds: Array.from(deletedUserIds),
+            deletedUserCount: deletedUserIds.size,
+            batches: batchCount,
+        };
+        console.log('✅ 대화방 탈퇴 계정 데이터 정정 완료');
+        console.log(`   - 업데이트된 대화방: ${updatedCount}개`);
+        console.log(`   - 스킵된 대화방: ${skippedCount}개`);
+        console.log(`   - 발견된 탈퇴 계정: ${deletedUserIds.size}개`);
+        res.status(200).json(result);
+    }
+    catch (error) {
+        console.error('❌ 대화방 탈퇴 계정 데이터 정정 오류:', error);
+        res.status(500).json({
+            success: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
     }
 });
 // 알림 생성 시 푸시 알림 전송
@@ -2079,6 +2244,81 @@ exports.onReviewRequestUpdated = functions.firestore
     }
     catch (error) {
         console.error('onReviewRequestUpdated 오류:', error);
+        return null;
+    }
+});
+/**
+ * meetup_reviews 업데이트 시 연관된 사용자 프로필 posts 업데이트
+ */
+exports.onMeetupReviewUpdated = functions.firestore
+    .document('meetup_reviews/{reviewId}')
+    .onUpdate(async (change, context) => {
+    try {
+        const reviewId = context.params.reviewId;
+        const before = change.before.data();
+        const after = change.after.data();
+        console.log(`📝 모임 후기 업데이트 감지: ${reviewId}`);
+        // 업데이트된 필드 확인
+        const updatedFields = [];
+        if (before.content !== after.content)
+            updatedFields.push('content');
+        if (JSON.stringify(before.imageUrls) !== JSON.stringify(after.imageUrls))
+            updatedFields.push('imageUrls');
+        if (before.imageUrl !== after.imageUrl)
+            updatedFields.push('imageUrl');
+        if (updatedFields.length === 0) {
+            console.log('⏭️ 프로필 업데이트가 필요한 필드 변경 없음');
+            return null;
+        }
+        console.log(`📋 업데이트된 필드: ${updatedFields.join(', ')}`);
+        // 업데이트할 사용자 목록 (작성자 + 승인된 참여자)
+        const authorId = after.authorId;
+        const approvedParticipants = after.approvedParticipants || [];
+        const allUserIds = [authorId, ...approvedParticipants];
+        console.log(`📤 프로필 업데이트 대상: ${allUserIds.length}명`);
+        // 각 사용자의 프로필 posts 업데이트
+        const batch = db.batch();
+        let updateCount = 0;
+        for (const userId of allUserIds) {
+            try {
+                const postRef = db.collection('users').doc(userId).collection('posts').doc(reviewId);
+                const postDoc = await postRef.get();
+                if (postDoc.exists) {
+                    const updateData = {
+                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+                    };
+                    if (updatedFields.includes('content')) {
+                        updateData.content = after.content;
+                    }
+                    if (updatedFields.includes('imageUrls')) {
+                        updateData.imageUrls = after.imageUrls;
+                    }
+                    if (updatedFields.includes('imageUrl')) {
+                        updateData.imageUrl = after.imageUrl;
+                    }
+                    batch.update(postRef, updateData);
+                    updateCount++;
+                    console.log(`✅ 프로필 업데이트 예약: userId=${userId}`);
+                }
+                else {
+                    console.log(`⚠️ 프로필 후기 없음: userId=${userId}`);
+                }
+            }
+            catch (error) {
+                console.error(`❌ 프로필 업데이트 실패: userId=${userId}, error:`, error);
+            }
+        }
+        if (updateCount > 0) {
+            await batch.commit();
+            console.log(`✅ ${updateCount}개 프로필 후기 업데이트 완료`);
+        }
+        else {
+            console.log('⏭️ 업데이트할 프로필 후기 없음');
+        }
+        return null;
+    }
+    catch (error) {
+        console.error('onMeetupReviewUpdated 오류:', error);
         return null;
     }
 });

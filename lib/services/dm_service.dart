@@ -666,6 +666,18 @@ class DMService {
         .limit(50)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
+      // 캐시 전용 스냅샷은 건너뛰어 초기 깜빡임을 줄임
+      final isCacheOnly = snapshot.metadata.isFromCache &&
+          snapshot.docs.isNotEmpty &&
+          snapshot.docs.every((d) => d.metadata.isFromCache);
+      if (isCacheOnly) {
+        Logger.log('⚠️ getMyConversations: 캐시 전용 스냅샷 건너뜀');
+        if (_conversationCache.isNotEmpty) {
+          return _conversationCache.values.toList();
+        }
+        return <Conversation>[];
+      }
+
       Logger.log('📋 getMyConversations 호출:');
       Logger.log('  - 현재 사용자: ${currentUser.uid}');
       Logger.log('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');

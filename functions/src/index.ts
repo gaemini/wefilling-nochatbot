@@ -1959,12 +1959,38 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     const emailVer = await db.collection('email_verifications').doc(context.auth.token.email || 'unknown').get();
     if (emailVer.exists) batch.delete(emailVer.ref);
 
-    // 1-7. 사용자 문서 삭제
+    // 1-7. DM 대화방의 participantNames 업데이트 (탈퇴한 사용자 표시)
+    const conversationsSnap = await db.collection('conversations')
+      .where('participants', 'array-contains', uid)
+      .get();
+    
+    console.log(`💬 대화방 업데이트: ${conversationsSnap.size}개 발견`);
+    
+    conversationsSnap.forEach((doc) => {
+      const data = doc.data();
+      const participantNames = { ...(data.participantNames || {}) };
+      const participantPhotos = { ...(data.participantPhotos || {}) };
+      const participantStatus = { ...(data.participantStatus || {}) };
+      
+      // 탈퇴한 사용자의 표시를 일괄 업데이트
+      participantNames[uid] = 'Deleted Account';
+      participantPhotos[uid] = '';
+      participantStatus[uid] = 'deleted';
+      
+      batch.update(doc.ref, {
+        participantNames,
+        participantPhotos,
+        participantStatus,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+
+    // 1-8. 사용자 문서 삭제
     batch.delete(db.collection('users').doc(uid));
 
     await batch.commit();
 
-    // 1-8. 한양메일 claim 해제 (released)
+    // 1-9. 한양메일 claim 해제 (released)
     try {
       if (userInfo.hanyangEmail && userInfo.hanyangEmail.includes('@')) {
         const email = userInfo.hanyangEmail.toLowerCase().trim();
@@ -2080,6 +2106,143 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     console.error('❌ 계정 삭제 오류:', error);
     if (error instanceof functions.https.HttpsError) throw error;
     throw new functions.https.HttpsError('internal', '계정 삭제 중 오류가 발생했습니다.');
+  }
+});
+
+// 일회성: 탈퇴 계정이 포함된 기존 대화방 데이터 정정 (관리자 전용)
+// HTTP 함수: /fixDeletedAccountsInConversations?secret=YOUR_SECRET_KEY
+export const fixDeletedAccountsInConversations = functions.https.onRequest(async (req, res) => {
+  // 보안: 비밀 키 확인
+  const SECRET_KEY = 'wefilling_fix_deleted_2025'; // 변경 가능
+  const providedSecret = req.query.secret || req.body.secret;
+  
+  if (providedSecret !== SECRET_KEY) {
+    res.status(403).send('❌ Unauthorized: Invalid secret key');
+    return;
+  }
+  
+  console.log('🔧 대화방 탈퇴 계정 데이터 정정 시작');
+  
+  try {
+    // 모든 conversations 문서 가져오기
+    const conversationsSnapshot = await db.collection('conversations').get();
+    const totalConversations = conversationsSnapshot.docs.length;
+    
+    console.log(`📊 총 ${totalConversations}개 대화방 찾음`);
+    
+    if (totalConversations === 0) {
+      res.status(200).send('ℹ️ 업데이트할 대화방이 없습니다.');
+      return;
+    }
+    
+    // 모든 활성 사용자 UID 수집 (한 번만 조회)
+    const usersSnapshot = await db.collection('users').get();
+    const activeUserIds = new Set<string>();
+    usersSnapshot.docs.forEach(doc => {
+      activeUserIds.add(doc.id);
+    });
+    console.log(`👥 활성 사용자: ${activeUserIds.size}명`);
+    
+    // 배치 처리 (Firestore 배치는 최대 500개)
+    const batches: admin.firestore.WriteBatch[] = [];
+    let currentBatch = db.batch();
+    let operationCount = 0;
+    let batchCount = 0;
+    
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const deletedUserIds = new Set<string>();
+    
+    for (const convDoc of conversationsSnapshot.docs) {
+      const convData = convDoc.data();
+      const participants = convData.participants as string[] || [];
+      const participantNames = { ...(convData.participantNames || {}) };
+      const participantPhotos = { ...(convData.participantPhotos || {}) };
+      const participantStatus = { ...(convData.participantStatus || {}) };
+      
+      let needsUpdate = false;
+      
+      // 각 participant 확인
+      for (const uid of participants) {
+        // 활성 사용자가 아니면 탈퇴한 것으로 간주
+        if (!activeUserIds.has(uid)) {
+          deletedUserIds.add(uid);
+          
+          // 이미 올바르게 설정되어 있으면 스킵
+          if (participantNames[uid] === 'Deleted Account' && 
+              participantStatus[uid] === 'deleted') {
+            continue;
+          }
+          
+          // 탈퇴한 사용자 정보 업데이트
+          participantNames[uid] = 'Deleted Account';
+          participantPhotos[uid] = '';
+          participantStatus[uid] = 'deleted';
+          needsUpdate = true;
+        }
+      }
+      
+      // 업데이트가 필요한 경우에만 배치에 추가
+      if (needsUpdate) {
+        currentBatch.update(convDoc.ref, {
+          participantNames,
+          participantPhotos,
+          participantStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        
+        operationCount++;
+        updatedCount++;
+        
+        // 배치가 500개에 도달하면 커밋하고 새 배치 시작
+        if (operationCount >= 500) {
+          batches.push(currentBatch);
+          currentBatch = db.batch();
+          operationCount = 0;
+          batchCount++;
+          console.log(`📦 배치 ${batchCount} 준비 완료 (500개)`);
+        }
+      } else {
+        skippedCount++;
+      }
+    }
+    
+    // 마지막 배치 추가
+    if (operationCount > 0) {
+      batches.push(currentBatch);
+      batchCount++;
+      console.log(`📦 마지막 배치 준비 완료 (${operationCount}개)`);
+    }
+    
+    // 모든 배치 실행
+    console.log(`🚀 총 ${batches.length}개 배치 실행 시작...`);
+    for (let i = 0; i < batches.length; i++) {
+      await batches[i].commit();
+      console.log(`✅ 배치 ${i + 1}/${batches.length} 완료`);
+    }
+    
+    const result = {
+      success: true,
+      totalConversations,
+      updatedConversations: updatedCount,
+      skippedConversations: skippedCount,
+      deletedUserIds: Array.from(deletedUserIds),
+      deletedUserCount: deletedUserIds.size,
+      batches: batchCount,
+    };
+    
+    console.log('✅ 대화방 탈퇴 계정 데이터 정정 완료');
+    console.log(`   - 업데이트된 대화방: ${updatedCount}개`);
+    console.log(`   - 스킵된 대화방: ${skippedCount}개`);
+    console.log(`   - 발견된 탈퇴 계정: ${deletedUserIds.size}개`);
+    
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('❌ 대화방 탈퇴 계정 데이터 정정 오류:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error instanceof Error ? error.message : String(error) 
+    });
   }
 });
 

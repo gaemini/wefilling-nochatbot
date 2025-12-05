@@ -317,11 +317,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
   }
 
+  bool get _isAnonymous {
+    return widget.conversationId.startsWith('anon_') || 
+        (_conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false);
+  }
+
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
-    final isAnonymous = widget.conversationId.startsWith('anon_') || 
-        (_conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false);
     final dmTitle = _conversation?.dmTitle ?? _preloadedDmTitle; // 미리 로드된 제목 사용
     
     // ⏳ 로딩 상태: 데이터가 준비되지 않았을 때
@@ -333,7 +336,29 @@ class _DMChatScreenState extends State<DMChatScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(''), // 로딩 중에는 빈 제목 또는 스피너
+        title: Row(
+          children: [
+            // 프로필 스켈레톤
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                shape: BoxShape.circle,
+              ),
+            ),
+            const SizedBox(width: 12),
+            // 이름 스켈레톤
+            Container(
+              width: 120,
+              height: 16,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
@@ -430,7 +455,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final deletedLabel = AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
     
     // 익명이 아닐 때만 탈퇴 계정 체크
-    final isCachedDeleted = !isAnonymous && (
+    final isCachedDeleted = !_isAnonymous && (
         cachedStatus == 'deleted' ||
         cachedName.isEmpty ||
         cachedName == 'Deleted Account' ||
@@ -444,7 +469,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: FutureBuilder<Map<String, String>>(
-        future: _getLatestUserInfo(otherUserId, isAnonymous),
+        future: _getLatestUserInfo(otherUserId, _isAnonymous),
         initialData: {
           'name': initialName,
           'photo': initialPhoto,
@@ -453,8 +478,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
           final otherUserName = snapshot.data?['name'] ?? initialName;
           final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
           
-    final primaryTitle = isAnonymous ? 'Anonymous' : otherUserName;
-    final secondaryTitle = null;
+          final primaryTitle = _isAnonymous ? 'Anonymous' : otherUserName;
+          final secondaryTitle = null;
 
     String _formatHeaderDate() {
       final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
@@ -462,25 +487,25 @@ class _DMChatScreenState extends State<DMChatScreen> {
       return DateFormat('yyyy.MM.dd').format(date);
     }
 
-    return AppBar(
-      elevation: 0,
-      backgroundColor: Colors.white,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Colors.black87),
-        onPressed: () => Navigator.pop(context),
-      ),
-      title: Row(
-        children: [
-          CircleAvatar(
-            radius: 18,
-            backgroundColor: Colors.grey[200],
-            backgroundImage: !isAnonymous && otherUserPhoto.isNotEmpty
-                ? NetworkImage(otherUserPhoto)
-                : null,
-            child: (!isAnonymous && otherUserPhoto.isNotEmpty)
-                ? null
-                : const Icon(Icons.person, size: 20),
-          ),
+          return AppBar(
+            elevation: 0,
+            backgroundColor: Colors.white,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back, color: Colors.black87),
+              onPressed: () => Navigator.pop(context),
+            ),
+            title: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: Colors.grey[200],
+                  backgroundImage: !_isAnonymous && otherUserPhoto.isNotEmpty
+                      ? NetworkImage(otherUserPhoto)
+                      : null,
+                  child: (!_isAnonymous && otherUserPhoto.isNotEmpty)
+                      ? null
+                      : const Icon(Icons.person, size: 20),
+                ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(

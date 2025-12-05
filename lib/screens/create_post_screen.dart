@@ -1,12 +1,15 @@
 // 모임 생성 화면
 // 모임 정보 입력 및 저장
 
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../services/post_service.dart';
+import '../models/friend_category.dart';
+import '../services/friend_category_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -27,6 +30,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentFocusNode = FocusNode();
   final List<File> _selectedImages = [];
   final PostService _postService = PostService();
+  
+  // 친구 카테고리 관련
+  final _friendCategoryService = FriendCategoryService();
+  List<FriendCategory> _friendCategories = [];
+  StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
 
   bool _isSubmitting = false;
   bool _canSubmit = false;
@@ -46,6 +54,21 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentFocusNode.addListener(() {
       setState(() {}); // 포커스 상태가 변경되면 화면 갱신
     });
+    
+    // 친구 카테고리 로드
+    _loadFriendCategories();
+  }
+
+  // 친구 카테고리 로드
+  void _loadFriendCategories() {
+    _categoriesSubscription?.cancel();
+    _categoriesSubscription = _friendCategoryService.getCategoriesStream().listen((categories) {
+      if (mounted) {
+        setState(() {
+          _friendCategories = categories;
+        });
+      }
+    });
   }
 
   // 제목과 본문이 모두 입력되었는지 확인
@@ -63,6 +86,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _titleController.dispose();
     _contentController.dispose();
     _contentFocusNode.dispose();
+    _categoriesSubscription?.cancel();
+    _friendCategoryService.dispose();
     super.dispose();
   }
 
@@ -100,128 +125,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    }
-  }
-
-  // 카테고리 선택 다이얼로그
-  Future<void> _selectCategories() async {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final user = authProvider.user;
-    
-    if (user == null) {
-      Logger.log('❌ 사용자가 로그인되지 않았습니다.');
-      return;
-    }
-
-    try {
-      Logger.log('🔍 카테고리 조회 시작');
-      Logger.log('👤 사용자 UID: ${user.uid}');
-      Logger.log('📍 경로: friend_categories (where userId == ${user.uid})');
-      
-      // Firestore에서 사용자의 친구 카테고리 목록 가져오기
-      // 실제로는 friend_categories 컬렉션에 저장되어 있음
-      final categoriesSnapshot = await FirebaseFirestore.instance
-          .collection('friend_categories')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      Logger.log('📊 조회된 카테고리 개수: ${categoriesSnapshot.docs.length}');
-      
-      if (categoriesSnapshot.docs.isNotEmpty) {
-        Logger.log('✅ 카테고리 목록:');
-        for (var doc in categoriesSnapshot.docs) {
-          Logger.log('  - ID: ${doc.id}, 데이터: ${doc.data()}');
-        }
-      }
-
-      if (categoriesSnapshot.docs.isEmpty) {
-        Logger.log('⚠️ 카테고리가 비어있습니다.');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('생성된 친구 카테고리가 없습니다. 먼저 카테고리를 생성해주세요.'),
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-        return;
-      }
-
-      final categories = categoriesSnapshot.docs.map((doc) {
-        return {
-          'id': doc.id,
-          'name': doc.data()['name'] ?? '이름 없음',
-        };
-      }).toList();
-
-      // 다중 선택 다이얼로그 표시
-      final selected = await showDialog<List<String>>(
-        context: context,
-        builder: (context) {
-          // 임시로 선택된 카테고리 저장
-          List<String> tempSelected = List.from(_selectedCategoryIds);
-
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                title: Text(AppLocalizations.of(context)!.selectCategoriesToShare ?? ""),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: categories.map((category) {
-                      final isSelected = tempSelected.contains(category['id']);
-                      return CheckboxListTile(
-                        title: Text(category['name']!),
-                        value: isSelected,
-                        onChanged: (value) {
-                          setDialogState(() {
-                            if (value == true) {
-                              tempSelected.add(category['id']!);
-                            } else {
-                              tempSelected.remove(category['id']);
-                            }
-                          });
-                        },
-                      );
-                    }).toList(),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, tempSelected),
-                    child: Text(AppLocalizations.of(context)!.confirm ?? ""),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-
-      if (selected != null) {
-        setState(() {
-          _selectedCategoryIds = selected;
-        });
-      }
-    } catch (e, stackTrace) {
-      Logger.error('❌ 카테고리 로드 오류: $e');
-      Logger.log('스택 트레이스: $stackTrace');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('카테고리를 불러오는 중 오류가 발생했습니다: $e'),
-            duration: const Duration(seconds: 5),
-            action: SnackBarAction(
-              label: '확인',
-              onPressed: () {},
-            ),
           ),
         );
       }
@@ -645,6 +548,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                               border: Border.all(color: const Color(0xFFD1D5DB)),
                             ),
                             child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 const Icon(Icons.info_outline, size: 16, color: Color(0xFF10B981)),
                                 const SizedBox(width: 8),
@@ -663,30 +567,106 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             ),
                           ),
                           const SizedBox(height: 12),
-                          ElevatedButton.icon(
-                            onPressed: _selectCategories,
-                            icon: const Icon(Icons.category, size: 18),
-                            label: Text(
-                              _selectedCategoryIds.isEmpty
-                                  ? (AppLocalizations.of(context)!.selectCategoryRequired ?? "") : '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontWeight: FontWeight.w600,
+                          
+                          if (_friendCategories.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Text(
+                                '친구 그룹이 없습니다. 친구 관리에서 그룹을 만들어보세요.',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 14,
+                                  fontFamily: 'Pretendard',
+                                ),
                               ),
+                            )
+                          else
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: _friendCategories.map((category) {
+                                final isSelected = _selectedCategoryIds.contains(category.id);
+                                return InkWell(
+                                  onTap: () {
+                                    setState(() {
+                                      if (isSelected) {
+                                        _selectedCategoryIds.remove(category.id);
+                                      } else {
+                                        _selectedCategoryIds.add(category.id);
+                                      }
+                                    });
+                                  },
+                                  borderRadius: BorderRadius.circular(24),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 200),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? const Color(0xFF4A90E2) : Colors.white,
+                                      borderRadius: BorderRadius.circular(24),
+                                      border: Border.all(
+                                        color: isSelected 
+                                            ? const Color(0xFF4A90E2) 
+                                            : const Color(0xFFE1E6EE),
+                                        width: 1.2,
+                                      ),
+                                      boxShadow: isSelected ? [
+                                        BoxShadow(
+                                          color: const Color(0xFF4A90E2).withOpacity(0.3),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 3),
+                                        ),
+                                      ] : null,
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        if (isSelected) ...[
+                                          const Icon(
+                                            Icons.check_rounded,
+                                            size: 16,
+                                            color: Colors.white,
+                                          ),
+                                          const SizedBox(width: 6),
+                                        ],
+                                        Text(
+                                          category.name,
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            fontFamily: 'Pretendard',
+                                            fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                            color: isSelected ? Colors.white : const Color(0xFF333333),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '(${category.friendIds.length}${AppLocalizations.of(context)!.people ?? ''})',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontFamily: 'Pretendard',
+                                            fontWeight: FontWeight.w400,
+                                            color: isSelected ? Colors.white.withOpacity(0.9) : const Color(0xFF999999),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              backgroundColor: _selectedCategoryIds.isEmpty 
-                                  ? const Color(0xFFFFF3E0)
-                                  : const Color(0xFF5865F2),
-                              foregroundColor: _selectedCategoryIds.isEmpty
-                                  ? const Color(0xFFFF8A65)
-                                  : Colors.white,
-                            ),
-                          ),
+
+                          if (_selectedCategoryIds.isEmpty && _friendCategories.isNotEmpty)
+                             Padding(
+                               padding: const EdgeInsets.only(top: 8.0),
+                               child: Text(
+                                 AppLocalizations.of(context)!.selectCategoryRequired ?? "카테고리를 선택해주세요.",
+                                 style: const TextStyle(
+                                   color: Colors.red,
+                                   fontSize: 12,
+                                   fontWeight: FontWeight.w500,
+                                   fontFamily: 'Pretendard',
+                                 ),
+                               ),
+                             ),
                         ],
                       ),
                   ],

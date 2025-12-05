@@ -343,22 +343,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                     const SizedBox(height: 12),
                     // 개선된 요일 선택 칩
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Row(
-                        children: List.generate(weekDates.length, (index) {
-                          final bool isSelected = index == _selectedDayIndex;
-                          final DateTime date = weekDates[index];
-                          // 로케일에 따라 요일 이름 선택
-                          final locale = Localizations.localeOf(context).languageCode;
-                          final String weekday = locale == 'ko'
-                              ? ['월', '화', '수', '목', '금', '토', '일'][date.weekday - 1]
-                              : _weekdayNames[date.weekday - 1];
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: List.generate(weekDates.length, (index) {
+                        final bool isSelected = index == _selectedDayIndex;
+                        final DateTime date = weekDates[index];
+                        // 로케일에 따라 요일 이름 선택
+                        final locale = Localizations.localeOf(context).languageCode;
+                        final String weekday = locale == 'ko'
+                            ? ['월', '화', '수', '목', '금', '토', '일'][date.weekday - 1]
+                            : _weekdayNames[date.weekday - 1];
 
-                          return Padding(
-                            padding: const EdgeInsets.only(right: 10), // 칩 간격 10dp
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
                             child: InkWell(
                               onTap: () {
                                 setState(() {
@@ -366,16 +364,15 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 });
                                 _updateTimeOptions();
                               },
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(12),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 150),
-                                height: 52, // 터치 타겟 확보
-                                width: 64, // 적절한 칩 너비
+                                height: 64, // 높이 약간 증가
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? const Color(0xFF4A90E2) // 프라이머리 컬러
                                       : Colors.white,
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: isSelected 
                                         ? const Color(0xFF4A90E2)
@@ -404,10 +401,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                     ? Colors.blue
                                                     : const Color(0xFF666666)),
                                         fontWeight: FontWeight.w600,
-                                        fontSize: 14,
+                                        fontSize: 12,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 4),
                                     Text(
                                       '${date.day}',
                                       style: TextStyle(
@@ -418,7 +415,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                                 : date.weekday == 6 // 토요일 체크
                                                     ? Colors.blue
                                                     : const Color(0xFF1A1A1A)),
-                                        fontSize: 18,
+                                        fontSize: 16,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
@@ -426,9 +423,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 ),
                               ),
                             ),
-                          );
-                        }),
-                      ),
+                          ),
+                        );
+                      }),
                     ),
                   ],
                 ),
@@ -829,31 +826,72 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               )
                             else
                               Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
+                                spacing: 10,
+                                runSpacing: 10,
                                 children: _friendCategories.map((category) {
                                   final isSelected = _selectedCategoryIds.contains(category.id);
-                                  return FilterChip(
-                                    label: Text(
-                                      '${category.name} (${category.friendIds.length}명)',
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: isSelected ? Colors.white : const Color(0xFF666666),
-                                      ),
-                                    ),
-                                    selected: isSelected,
-                                    onSelected: (selected) {
+                                  return InkWell(
+                                    onTap: () {
                                       setState(() {
-                                        if (selected) {
-                                          _selectedCategoryIds.add(category.id);
-                                        } else {
+                                        if (isSelected) {
                                           _selectedCategoryIds.remove(category.id);
+                                        } else {
+                                          _selectedCategoryIds.add(category.id);
                                         }
                                       });
                                     },
-                                    selectedColor: const Color(0xFF4A90E2),
-                                    backgroundColor: Colors.white,
-                                    checkmarkColor: Colors.white,
+                                    borderRadius: BorderRadius.circular(24),
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: isSelected ? const Color(0xFF4A90E2) : Colors.white,
+                                        borderRadius: BorderRadius.circular(24),
+                                        border: Border.all(
+                                          color: isSelected 
+                                              ? const Color(0xFF4A90E2) 
+                                              : const Color(0xFFE1E6EE),
+                                          width: 1.2,
+                                        ),
+                                        boxShadow: isSelected ? [
+                                          BoxShadow(
+                                            color: const Color(0xFF4A90E2).withOpacity(0.3),
+                                            blurRadius: 6,
+                                            offset: const Offset(0, 3),
+                                          ),
+                                        ] : null,
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (isSelected) ...[
+                                            const Icon(
+                                              Icons.check_rounded,
+                                              size: 16,
+                                              color: Colors.white,
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
+                                          Text(
+                                            category.name,
+                                            style: TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                                              color: isSelected ? Colors.white : const Color(0xFF333333),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 4),
+                                          Text(
+                                            '(${category.friendIds.length}${AppLocalizations.of(context)!.people ?? ''})',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w400,
+                                              color: isSelected ? Colors.white.withOpacity(0.9) : const Color(0xFF999999),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   );
                                 }).toList(),
                               ),

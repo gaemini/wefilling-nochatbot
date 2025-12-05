@@ -31,6 +31,10 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   bool _isSearching = false;
   late TabController _tabController;
   
+  // 스크롤 위치 복원을 위한 ScrollController들
+  final ScrollController _todayScrollController = ScrollController();
+  final ScrollController _allScrollController = ScrollController();
+  
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
     try {
@@ -59,6 +63,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     _tabController.dispose();
     _searchController.removeListener(_onSearchChanged);
     _searchController.dispose();
+    _todayScrollController.dispose();
+    _allScrollController.dispose();
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
   }
@@ -208,6 +214,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -234,6 +241,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -260,6 +268,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -292,6 +301,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
           },
           child: ListView.builder(
+            controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: todayPosts.length + 1, // AdBanner + 게시글들
@@ -367,6 +377,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -393,6 +404,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -419,6 +431,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
       },
       child: ListView(
+        controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         children: [
@@ -466,6 +479,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
           },
       child: ListView.builder(
+        controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _calculateAllItemCount(groupedPosts),
@@ -526,14 +540,36 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
+    // 현재 활성 탭의 ScrollController 선택
+    final currentController = _tabController.index == 0 
+        ? _todayScrollController 
+        : _allScrollController;
+    
+    // 현재 스크롤 위치 저장
+    double savedOffset = 0.0;
+    if (currentController.hasClients) {
+      savedOffset = currentController.offset;
+    }
+
     await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
 
-    // 상세 화면에서 돌아왔을 때 목록 새로고침 (조회수, 좋아요 등 업데이트 반영)
+    // 상세 화면에서 돌아왔을 때 목록 새로고침 및 위치 복원
     if (mounted) {
       setState(() {}); 
+      
+      // 위젯 리빌드 후 스크롤 위치 복원
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (currentController.hasClients) {
+          currentController.animateTo(
+            savedOffset,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     }
   }
 

@@ -798,6 +798,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Icon(
                                   Icons.info_outline,
@@ -805,12 +806,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   color: Colors.orange[600],
                                 ),
                                 const SizedBox(width: 6),
-                                Text(
-                                  AppLocalizations.of(context)!.selectFriendGroupsForMeetup,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF666666),
+                                Expanded(
+                                  child: Text(
+                                    AppLocalizations.of(context)!.selectFriendGroupsForMeetup,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF666666),
+                                    ),
                                   ),
                                 ),
                               ],

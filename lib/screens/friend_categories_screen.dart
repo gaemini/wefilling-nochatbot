@@ -24,7 +24,6 @@ class FriendCategoriesScreen extends StatefulWidget {
 class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   final FriendCategoryService _categoryService = FriendCategoryService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _isInitialized = false;
   late VoidCallback _cleanupCallback;
 
   @override
@@ -98,14 +97,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           final categories = snapshot.data ?? [];
 
           if (categories.isEmpty) {
-            // 첫 번째 로딩이고 카테고리가 없으면 기본 카테고리 생성
-            if (!_isInitialized) {
-              _isInitialized = true;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                _createDefaultCategoriesIfNeeded();
-              });
-            }
-            
             return AppEmptyState(
               icon: IconStyles.group,
               title: AppLocalizations.of(context)!.createFirstCategory,

@@ -546,20 +546,6 @@ class _RequestsPageState extends State<RequestsPage>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: BrandColors.neutral100,
-                borderRadius: DesignTokens.radiusL,
-              ),
-              child: Icon(
-                icon,
-                size: 40,
-                color: BrandColors.textTertiary,
-              ),
-            ),
-            const SizedBox(height: 24),
             Text(
               title,
               style: TypographyStyles.headlineMedium.copyWith(

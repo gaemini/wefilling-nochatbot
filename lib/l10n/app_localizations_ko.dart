@@ -1054,11 +1054,11 @@ class AppLocalizationsKo extends AppLocalizations {
   String get categoryNameHint => '예: 대학 친구';
 
   @override
-  String get createFirstCategory => '카테고리를 만들어보세요';
+  String get createFirstCategory => '카테고리로 친구 관리하기';
 
   @override
   String get createFirstCategoryDescription =>
-      '친구들을 카테고리별로 정리하면\n더 체계적으로 관리할 수 있어요';
+      '카테고리를 만들어 친구들을 그룹으로 관리해보세요.\n학교, 직장, 취미 등 다양한 그룹을 만들 수 있습니다.';
 
   @override
   String get editAction => '수정';

@@ -1075,11 +1075,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get categoryNameHint => 'e.g., University Friends';
 
   @override
-  String get createFirstCategory => 'Create Your First Category';
+  String get createFirstCategory => 'Manage Friends with Categories';
 
   @override
   String get createFirstCategoryDescription =>
-      'Organize your friends by categories\nfor better management';
+      'Create categories to organize your friends into groups.\nYou can create various groups for school, work, hobbies, etc.';
 
   @override
   String get editAction => 'Edit';

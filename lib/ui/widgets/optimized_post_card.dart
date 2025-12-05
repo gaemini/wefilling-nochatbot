@@ -132,7 +132,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           children: [
             Icon(
               Icons.group_outlined,
-              size: 15, // 통일된 크기
+              size: DesignTokens.iconSmall,
               color: const Color(0xFFFF8A65), // 주황색
             ),
             const SizedBox(width: 6),
@@ -163,7 +163,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           children: [
             Icon(
               Icons.person_outline,
-              size: 15, // 통일된 크기
+              size: DesignTokens.iconSmall,
               color: const Color(0xFF5C6BC0), // 익명 강조색
             ),
             const SizedBox(width: 6),
@@ -412,7 +412,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         if (post.likes > 0) ...[
           Icon(
             IconStyles.favoriteFilled,
-            size: 24,
+            size: DesignTokens.icon,
             color: BrandColors.error,
           ),
           const SizedBox(width: 4),
@@ -429,7 +429,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         if (post.commentCount > 0) ...[
           Icon(
             Icons.chat_bubble_outline,
-            size: 16,
+            size: DesignTokens.iconSmall,
             color: BrandColors.neutral500,
           ),
           const SizedBox(width: 4),
@@ -439,7 +439,22 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               color: colorScheme.onSurfaceVariant,
             ),
           ),
+          const SizedBox(width: 16),
         ],
+        
+        // 조회수
+        Icon(
+          Icons.remove_red_eye_outlined,
+          size: DesignTokens.icon,
+          color: BrandColors.neutral500,
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '${post.viewCount}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
         
         const Spacer(),
         

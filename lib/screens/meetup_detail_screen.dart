@@ -552,10 +552,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   // 새로운 심플한 정보 행 위젯
   Widget _buildSimpleInfoRow(IconData icon, String content) {
-    // URL인지 확인
-    bool isUrl = Uri.tryParse(content) != null && 
-                 (content.startsWith('http://') || content.startsWith('https://'));
-    
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -566,46 +562,36 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: isUrl 
-            ? GestureDetector(
-                onTap: () async {
-                  final uri = Uri.parse(content);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  } else {
-                    // URL을 열 수 없는 경우 스낵바로 알림
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('링크를 열 수 없습니다: $content'),
-                          backgroundColor: Colors.red[600],
-                        ),
-                      );
-                    }
-                  }
-                },
-                child: Text(
-                  content,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF5865F2), // 링크 색상 (WeFilling 블루)
-                    height: 1.4,
-                    decoration: TextDecoration.underline,
-                  ),
-                ),
-              )
-            : Text(
-                content,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF1E293B),
-                  height: 1.4,
-                ),
-              ),
+          child: Linkify(
+            onOpen: (link) async {
+              final uri = Uri.parse(link.url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('링크를 열 수 없습니다: ${link.url}'),
+                      backgroundColor: Colors.red[600],
+                    ),
+                  );
+                }
+              }
+            },
+            text: content,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF1E293B),
+              height: 1.4,
+            ),
+            linkStyle: const TextStyle(
+              color: Color(0xFF5865F2),
+              decoration: TextDecoration.underline,
+            ),
+            options: const LinkifyOptions(humanize: false),
+          ),
         ),
       ],
     );

@@ -151,46 +151,7 @@ class MeetupService {
         .snapshots()
         .map((snapshot) {
           return snapshot.docs.map((doc) {
-            final data = doc.data();
-
-            // Timestamp에서 DateTime으로 변환
-            DateTime meetupDate;
-            if (data['date'] is Timestamp) {
-              meetupDate = (data['date'] as Timestamp).toDate();
-            } else {
-              // 기본값으로 현재 날짜 사용
-              meetupDate = startOfDay;
-            }
-
-            return Meetup(
-              id: doc.id, // ID를 문자열로 직접 사용
-              title: data['title'] ?? '',
-              description: data['description'] ?? '',
-              location: data['location'] ?? '',
-              time: data['time'] ?? '',
-              maxParticipants: data['maxParticipants'] ?? 0,
-              currentParticipants: data['currentParticipants'] ?? 1,
-              host: data['hostNickname'] ?? '익명',
-              hostNationality:
-                  data['hostNickname'] == 'dev99'
-                      ? '한국'
-                      : (data['hostNationality'] ??
-                          ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-              hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
-              imageUrl:
-                  data['thumbnailImageUrl'] ?? '',
-              thumbnailContent: data['thumbnailContent'] ?? '',
-              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-              date: meetupDate,
-              category: data['category'] ?? '기타', // 카테고리 필드 추가
-              userId: data['userId'], // 모임 주최자 ID 추가
-              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-              visibility: data['visibility'] ?? 'public', // 공개 범위 추가
-              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []), // 특정 카테고리 공개 추가
-              isCompleted: data['isCompleted'] ?? false,
-              hasReview: data['hasReview'] ?? false,
-              reviewId: data['reviewId'],
-            );
+            return _createMeetupFromData(doc.id, doc.data());
           }).toList();
         });
   }
@@ -250,40 +211,65 @@ class MeetupService {
   List<Meetup> _convertToMeetups(QuerySnapshot snapshot) {
     return snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
-
-      // Timestamp에서 DateTime으로 변환
-      DateTime meetupDate;
-      if (data['date'] is Timestamp) {
-        meetupDate = (data['date'] as Timestamp).toDate();
-      } else {
-        meetupDate = DateTime.now();
-      }
-
-      return Meetup(
-        id: doc.id,
-        title: data['title'] ?? '',
-        description: data['description'] ?? '',
-        location: data['location'] ?? '',
-        time: data['time'] ?? '',
-        maxParticipants: data['maxParticipants'] ?? 0,
-        currentParticipants: data['currentParticipants'] ?? 1,
-        host: data['hostNickname'] ?? '익명',
-        hostNationality:
-            data['hostNickname'] == 'dev99'
-                ? '한국'
-                : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-        imageUrl: data['thumbnailImageUrl'] ?? '',
-        thumbnailContent: data['thumbnailContent'] ?? '',
-        thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-        date: meetupDate,
-        category: data['category'] ?? '기타',
-        userId: data['userId'], // 모임 주최자 ID 추가
-        hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-        isCompleted: data['isCompleted'] ?? false,
-        hasReview: data['hasReview'] ?? false,
-        reviewId: data['reviewId'],
-      );
+      return _createMeetupFromData(doc.id, data);
     }).toList();
+  }
+
+  // 데이터 맵에서 Meetup 객체 생성하는 헬퍼 메서드
+  Meetup _createMeetupFromData(String id, Map<String, dynamic> data) {
+    // Timestamp에서 DateTime으로 변환
+    DateTime meetupDate;
+    if (data['date'] is Timestamp) {
+      meetupDate = (data['date'] as Timestamp).toDate();
+    } else {
+      meetupDate = DateTime.now();
+    }
+
+    return Meetup(
+      id: id,
+      title: data['title'] ?? '',
+      description: data['description'] ?? '',
+      location: data['location'] ?? '',
+      time: data['time'] ?? '',
+      maxParticipants: data['maxParticipants'] ?? 0,
+      currentParticipants: data['currentParticipants'] ?? 1,
+      host: data['hostNickname'] ?? data['host'] ?? '익명',
+      hostNationality:
+          data['hostNickname'] == 'dev99'
+              ? '한국'
+              : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+      imageUrl:
+          data['thumbnailImageUrl'] ??
+          AppConstants.DEFAULT_IMAGE_URL,
+      thumbnailContent: data['thumbnailContent'] ?? '',
+      thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+      date: meetupDate,
+      category: data['category'] ?? '기타',
+      userId: data['userId'], // 모임 주최자 ID 추가
+      hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+      visibility: data['visibility'] ?? 'public', // 공개 범위 추가
+      visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []), // 특정 카테고리 공개 추가
+      isCompleted: data['isCompleted'] ?? false,
+      hasReview: data['hasReview'] ?? false,
+      reviewId: data['reviewId'],
+    );
+  }
+
+  // 검색어 일치 여부 확인 헬퍼 메서드
+  bool _matchesQuery(Map<String, dynamic> data, String lowercaseQuery) {
+    final title = (data['title'] as String? ?? '').toLowerCase();
+    final description = (data['description'] as String? ?? '').toLowerCase();
+    final location = (data['location'] as String? ?? '').toLowerCase();
+    final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
+    final host = (data['host'] as String? ?? '').toLowerCase();
+    final category = (data['category'] as String? ?? '').toLowerCase();
+
+    return title.contains(lowercaseQuery) ||
+        description.contains(lowercaseQuery) ||
+        location.contains(lowercaseQuery) ||
+        hostNickname.contains(lowercaseQuery) ||
+        host.contains(lowercaseQuery) ||
+        category.contains(lowercaseQuery);
   }
 
   // 특정 ID의 모임 가져오기
@@ -295,41 +281,7 @@ class MeetupService {
         return null;
       }
 
-      final data = doc.data()!;
-
-      // Timestamp에서 DateTime으로 변환
-      DateTime meetupDate;
-      if (data['date'] is Timestamp) {
-        meetupDate = (data['date'] as Timestamp).toDate();
-      } else {
-        // 기본값으로 현재 날짜 사용
-        meetupDate = DateTime.now();
-      }
-
-      return Meetup(
-        id: doc.id,
-        title: data['title'] ?? '',
-        description: data['description'] ?? '',
-        location: data['location'] ?? '',
-        time: data['time'] ?? '',
-        maxParticipants: data['maxParticipants'] ?? 0,
-        currentParticipants: data['currentParticipants'] ?? 1,
-        host: data['hostNickname'] ?? '익명',
-        hostNationality:
-            data['hostNickname'] == 'dev99'
-                ? '한국'
-                : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-        imageUrl: data['thumbnailImageUrl'] ?? '',
-        thumbnailContent: data['thumbnailContent'] ?? '',
-        thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-        date: meetupDate,
-        category: data['category'] ?? '기타', // 카테고리 필드 추가
-        userId: data['userId'], // 모임 주최자 ID 추가
-        hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-        isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
-        hasReview: data['hasReview'] ?? false, // 후기 작성 여부
-        reviewId: data['reviewId'], // 후기 ID
-      );
+      return _createMeetupFromData(doc.id, doc.data()!);
     } catch (e) {
       Logger.error('모임 정보 불러오기 오류: $e');
       return null;
@@ -367,65 +319,22 @@ class MeetupService {
         .where('date', isGreaterThanOrEqualTo: today)
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
+        .asyncMap((snapshot) async {
+          final meetups = snapshot.docs
               .map((doc) {
                 final data = doc.data();
 
-                // 검색어와 일치하는지 확인 (제목, 내용, 위치, 호스트 닉네임)
-                final title = (data['title'] as String? ?? '').toLowerCase();
-                final description =
-                    (data['description'] as String? ?? '').toLowerCase();
-                final location =
-                    (data['location'] as String? ?? '').toLowerCase();
-                final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
-
-                // 제목, 내용, 위치, 호스트 닉네임에서 검색
-                if (title.contains(lowercaseQuery) ||
-                    description.contains(lowercaseQuery) ||
-                    location.contains(lowercaseQuery) ||
-                    hostNickname.contains(lowercaseQuery)) {
-                  // Timestamp에서 DateTime으로 변환
-                  DateTime meetupDate;
-                  if (data['date'] is Timestamp) {
-                    meetupDate = (data['date'] as Timestamp).toDate();
-                  } else {
-                    meetupDate = DateTime.now();
-                  }
-
-                  return Meetup(
-                    id: doc.id,
-                    title: data['title'] ?? '',
-                    description: data['description'] ?? '',
-                    location: data['location'] ?? '',
-                    time: data['time'] ?? '',
-                    maxParticipants: data['maxParticipants'] ?? 0,
-                    currentParticipants: data['currentParticipants'] ?? 1,
-                    host: data['hostNickname'] ?? '익명',
-                    hostNationality:
-                        data['hostNickname'] == 'dev99'
-                            ? '한국'
-                            : (data['hostNationality'] ??
-                                ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-                    imageUrl:
-                        data['thumbnailImageUrl'] ??
-                        AppConstants.DEFAULT_IMAGE_URL,
-                    thumbnailContent: data['thumbnailContent'] ?? '',
-                    thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-                    date: meetupDate,
-                    category: data['category'] ?? '기타',
-                    userId: data['userId'], // 모임 주최자 ID 추가
-                    hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-                  isCompleted: data['isCompleted'] ?? false,
-                  hasReview: data['hasReview'] ?? false,
-                  reviewId: data['reviewId'],
-                  );
+                if (_matchesQuery(data, lowercaseQuery)) {
+                  return _createMeetupFromData(doc.id, data);
                 } else {
-                  return null; // 검색 조건에 맞지 않으면 null 반환
+                  return null;
                 }
               })
               .whereType<Meetup>() // null이 아닌 항목만 필터링
               .toList();
+          
+          // 차단된 사용자의 게시물 필터링
+          return await ContentFilterService.filterMeetups(meetups);
         });
   }
 
@@ -446,48 +355,13 @@ class MeetupService {
           .orderBy('date', descending: false)
           .get();
 
-      return snapshot.docs
+      final meetups = snapshot.docs
           .map((doc) {
             try {
               final data = doc.data();
 
-              // 검색어와 일치하는지 확인 (제목, 설명, 위치, 호스트 닉네임)
-              final title = (data['title'] as String? ?? '').toLowerCase();
-              final description = (data['description'] as String? ?? '').toLowerCase();
-              final location = (data['location'] as String? ?? '').toLowerCase();
-              final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
-
-              if (title.contains(lowercaseQuery) ||
-                  description.contains(lowercaseQuery) ||
-                  location.contains(lowercaseQuery) ||
-                  hostNickname.contains(lowercaseQuery)) {
-                
-                // Timestamp에서 DateTime으로 변환
-                DateTime meetupDate;
-                if (data['date'] is Timestamp) {
-                  meetupDate = (data['date'] as Timestamp).toDate();
-                } else {
-                  meetupDate = DateTime.now();
-                }
-
-                return Meetup(
-                  id: doc.id,
-                  title: data['title'] ?? '',
-                  description: data['description'] ?? '',
-                  location: data['location'] ?? '',
-                  time: data['time'] ?? '',
-                  maxParticipants: data['maxParticipants'] ?? 0,
-                  currentParticipants: data['currentParticipants'] ?? 1,
-                  host: data['hostNickname'] ?? '익명',
-                  hostNationality: data['hostNationality'] ?? '',
-                  imageUrl: data['thumbnailImageUrl'] ?? '',
-                  thumbnailContent: data['thumbnailContent'] ?? '',
-                  thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-                  date: meetupDate,
-                  category: data['category'] ?? '기타',
-                  userId: data['userId'], // 모임 주최자 ID 추가
-                  hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-                );
+              if (_matchesQuery(data, lowercaseQuery)) {
+                return _createMeetupFromData(doc.id, data);
               }
               return null;
             } catch (e) {
@@ -498,6 +372,9 @@ class MeetupService {
           .where((meetup) => meetup != null)
           .cast<Meetup>()
           .toList();
+
+      // 차단된 사용자의 게시물 필터링
+      return await ContentFilterService.filterMeetups(meetups);
     } catch (e) {
       Logger.error('모임 검색 오류: $e');
       return [];
@@ -1125,41 +1002,7 @@ class MeetupService {
           .get();
 
       final allMeetups = snapshot.docs.map((doc) {
-        final data = doc.data();
-        
-        // 날짜 처리
-        DateTime meetupDate;
-        if (data['date'] is Timestamp) {
-          meetupDate = (data['date'] as Timestamp).toDate();
-        } else {
-          final now = DateTime.now();
-          meetupDate = DateTime(now.year, now.month, now.day);
-        }
-
-        final meetup = Meetup(
-          id: doc.id,
-          title: data['title'] ?? '',
-          description: data['description'] ?? '',
-          location: data['location'] ?? '',
-          time: data['time'] ?? '',
-          maxParticipants: data['maxParticipants'] ?? 0,
-          currentParticipants: data['currentParticipants'] ?? 1,
-          host: data['hostNickname'] ?? '익명',
-          hostNationality: data['hostNationality'] ?? '',
-          imageUrl: data['thumbnailImageUrl'] ?? '',
-          thumbnailContent: data['thumbnailContent'] ?? '',
-          thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-          date: meetupDate,
-          category: data['category'] ?? '기타',
-          userId: data['userId'],
-          hostNickname: data['hostNickname'],
-          visibility: data['visibility'] ?? 'public',
-          visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
-          isCompleted: data['isCompleted'] ?? false,
-          hasReview: data['hasReview'] ?? false,
-          reviewId: data['reviewId'],
-        );
-        
+        final meetup = _createMeetupFromData(doc.id, doc.data());
         // 디버그: Logger.log('📄 모임 로드: ${meetup.title}');
         return meetup;
       }).toList();
@@ -1936,10 +1779,7 @@ class MeetupService {
       Logger.log('🔄 [STREAM] 스냅샷 수신 - exists: ${snapshot.exists}, metadata: ${snapshot.metadata}');
       
       if (snapshot.exists && snapshot.data() != null) {
-        final data = snapshot.data()!;
-        data['id'] = snapshot.id;
-        
-        final meetup = Meetup.fromJson(data);
+        final meetup = _createMeetupFromData(snapshot.id, snapshot.data()!);
         Logger.log('📋 [STREAM] 모임 데이터 파싱 완료: isCompleted=${meetup.isCompleted}, hasReview=${meetup.hasReview}');
         Logger.log('🔍 [STREAM] 메타데이터 - fromCache: ${snapshot.metadata.isFromCache}, hasPendingWrites: ${snapshot.metadata.hasPendingWrites}');
         

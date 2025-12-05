@@ -76,6 +76,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _checkIfUserIsAuthor();
     _checkIfUserLikedPost();
     _checkIfUserSavedPost();
+    
+    // 조회수 증가 호출
+    _incrementViewCount();
+    
     // 디버그용: 이미지 URL 확인
     _logImageUrls();
     
@@ -114,6 +118,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     });
+  }
+
+  // 조회수 증가 메서드
+  Future<void> _incrementViewCount() async {
+    await _postService.incrementViewCount(widget.post.id);
+    
+    if (mounted) {
+      setState(() {
+        _currentPost = _currentPost.copyWith(
+          viewCount: _currentPost.viewCount + 1,
+        );
+      });
+    }
   }
 
   /// 게시글 상세에서 DM 열기
@@ -945,8 +962,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _isTogglingSave
               ? Container(
                   margin: const EdgeInsets.all(14.0),
-                  width: 24,
-                  height: 24,
+                  width: DesignTokens.icon,
+                  height: DesignTokens.icon,
                 child: const CircularProgressIndicator(
                   strokeWidth: 2,
                     color: Color(0xFF111827),
@@ -956,7 +973,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 icon: Icon(
                   _isSaved ? Icons.bookmark : Icons.bookmark_border,
                     color: const Color(0xFF111827),
-                    size: 26,
+                    size: DesignTokens.icon,
                 ),
                   tooltip: _isSaved ? '저장 취소' : '게시글 저장',
                 onPressed: _toggleSave,
@@ -966,8 +983,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _isDeleting
                 ? Container(
                     margin: const EdgeInsets.all(14.0),
-                    width: 24,
-                    height: 24,
+                    width: DesignTokens.icon,
+                    height: DesignTokens.icon,
                   child: const CircularProgressIndicator(
                       color: Color(0xFFEF4444),
                     strokeWidth: 2,
@@ -977,7 +994,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     icon: const Icon(
                       Icons.delete_outline,
                       color: Color(0xFFEF4444),
-                      size: 26,
+                      size: DesignTokens.icon,
                     ),
                     tooltip: '게시글 삭제',
                   onPressed: _deletePost,
@@ -1003,8 +1020,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       children: [
                         // 프로필 사진 (인스타그램 크기)
                         Container(
-                          width: 32,
-                          height: 32,
+                          width: 40,
+                          height: 40,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.grey[200],
@@ -1013,20 +1030,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ? ClipOval(
                                   child: Image.network(
                                     _currentPost.authorPhotoURL,
-                                    width: 32,
-                                    height: 32,
+                                    width: 40,
+                                    height: 40,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, __, ___) => Icon(
                                       Icons.person,
                                       color: Colors.grey[600],
-                                      size: 18,
+                                      size: DesignTokens.icon,
                                     ),
                                   ),
                                 )
                               : Icon(
                                   Icons.person,
                                   color: Colors.grey[600],
-                                  size: 18,
+                                  size: DesignTokens.icon,
                                 ),
                         ),
                         const SizedBox(width: 12),
@@ -1202,7 +1219,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           icon: Icon(
                             _isLiked ? Icons.favorite : Icons.favorite_border,
                             color: _isLiked ? Colors.red : Colors.black,
-                            size: 24,
+                            size: DesignTokens.icon,
                           ),
                           onPressed: _isTogglingLike ? null : _toggleLike,
                           splashRadius: 20,
@@ -1217,11 +1234,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               child: const Icon(
                                 Icons.send_rounded,
                                 color: Colors.black,
-                                size: 24,
+                                size: DesignTokens.icon,
                               ),
                             ),
                             onPressed: _openDMFromDetail,
                             splashRadius: 20,
+                          ),
+                          
+                          const SizedBox(width: 12),
+                          // 조회수 표시
+                          Icon(
+                            Icons.remove_red_eye_outlined,
+                            color: Colors.grey[600],
+                            size: DesignTokens.icon,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${_currentPost.viewCount}',
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                       ],
                     ),
@@ -1315,6 +1350,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                               onPressed: _openDMFromDetail,
                               splashRadius: 20,
+                            ),
+
+                            const SizedBox(width: 12),
+                            // 조회수 표시
+                            Icon(
+                              Icons.remove_red_eye_outlined,
+                              color: Colors.grey[600],
+                              size: 20,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${_currentPost.viewCount}',
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                         ],
                       ),

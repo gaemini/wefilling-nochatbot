@@ -26,6 +26,7 @@ class DesignTokens {
   static const Duration normal = Duration(milliseconds: 180);
 
   // === 아이콘 크기 ===
+  static const double iconSmall = 16.0;
   static const double icon = 24.0;
   static const double hit = 48.0;
 

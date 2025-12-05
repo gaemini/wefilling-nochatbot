@@ -20,6 +20,7 @@ class Post {
   final DateTime createdAt;
   final String userId;
   final int commentCount;
+  final int viewCount; // 조회수
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
@@ -45,6 +46,7 @@ class Post {
     required this.createdAt,
     required this.userId,
     this.commentCount = 0,
+    this.viewCount = 0,
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
@@ -134,6 +136,7 @@ class Post {
     DateTime? createdAt,
     String? userId,
     int? commentCount,
+    int? viewCount,
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
@@ -153,6 +156,7 @@ class Post {
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,
+      viewCount: viewCount ?? this.viewCount,
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
@@ -176,6 +180,7 @@ class Post {
       'createdAt': createdAt.millisecondsSinceEpoch,
       'userId': userId,
       'commentCount': commentCount,
+      'viewCount': viewCount,
       'likes': likes,
       'likedBy': likedBy,
       'imageUrls': imageUrls,
@@ -201,6 +206,7 @@ class Post {
           : DateTime.now(),
       userId: map['userId'] ?? '',
       commentCount: map['commentCount'] ?? 0,
+      viewCount: map['viewCount'] ?? 0,
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),

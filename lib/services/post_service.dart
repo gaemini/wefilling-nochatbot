@@ -194,6 +194,7 @@ class PostService {
               userId: data['userId'] ?? '',
               commentCount: data['commentCount'] ?? 0,
               likes: data['likes'] ?? 0,
+              viewCount: data['viewCount'] ?? 0,
               likedBy: List<String>.from(data['likedBy'] ?? []),
               imageUrls: List<String>.from(data['imageUrls'] ?? []),
               visibility: data['visibility'] ?? 'public',
@@ -409,6 +410,18 @@ class PostService {
     } catch (e) {
       // 권한 오류는 정상 - 비공개 게시글에 접근할 수 없음
       return false;
+    }
+  }
+
+  // 게시글 조회수 증가
+  Future<void> incrementViewCount(String postId) async {
+    try {
+      final postRef = _firestore.collection('posts').doc(postId);
+      await postRef.update({
+        'viewCount': FieldValue.increment(1),
+      });
+    } catch (e) {
+      Logger.error('조회수 증가 오류: $e');
     }
   }
 
@@ -789,6 +802,7 @@ class PostService {
               userId: data['userId'] ?? '',
               commentCount: data['commentCount'] ?? 0,
               likes: data['likes'] ?? 0,
+              viewCount: data['viewCount'] ?? 0,
               likedBy: List<String>.from(data['likedBy'] ?? []),
               imageUrls: List<String>.from(data['imageUrls'] ?? []),
               visibility: data['visibility'] ?? 'public',

@@ -68,19 +68,18 @@ class FriendCategorySelector extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (isSelected) ...[
-                  const Icon(
-                    Icons.check_rounded,
-                    size: 16,
-                    color: Colors.white,
-                  ),
-                  const SizedBox(width: 6),
-                ],
+                // 선택 여부와 관계없이 아이콘 공간을 확보하여 레이아웃 변경 방지
+                Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: isSelected ? Colors.white : Colors.transparent,
+                ),
+                const SizedBox(width: 6),
                 Text(
                   category.name,
                   style: TextStyle(
                     fontSize: 14,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: isSelected ? Colors.white : const Color(0xFF333333),
                   ),
                 ),

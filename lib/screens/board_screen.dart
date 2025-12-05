@@ -526,14 +526,14 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
-    final result = await Navigator.push<bool>(
+    await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
 
-    // 게시글이 삭제되었으면 목록 새로고침
-    if (result == true) {
-      setState(() {}); // Stream이므로 자동으로 갱신됨
+    // 상세 화면에서 돌아왔을 때 목록 새로고침 (조회수, 좋아요 등 업데이트 반영)
+    if (mounted) {
+      setState(() {}); 
     }
   }
 

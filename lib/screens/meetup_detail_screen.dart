@@ -557,7 +557,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       children: [
         Icon(
           icon,
-          size: 20,
+          size: DesignTokens.icon,
           color: Color(0xFF64748B),
         ),
         const SizedBox(width: 12),
@@ -619,7 +619,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               color: color.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 16),
+            child: Icon(icon, color: color, size: DesignTokens.iconSmall),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -913,7 +913,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           onPressed: () => _showEditMeetup(),
           icon: const Icon(
             Icons.edit_outlined,
-            size: 24,
+            size: DesignTokens.icon,
             color: Colors.black,
           ),
           padding: EdgeInsets.zero,
@@ -927,8 +927,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       // 다른 사용자 모임인 경우: 항상 신고/차단 케밥 메뉴 표시
       return PopupMenuButton<String>(
         icon: const Icon(
-          Icons.more_vert, 
-          size: 24,
+          Icons.more_vert,
+          size: DesignTokens.icon,
           color: Colors.black,
         ),
         padding: EdgeInsets.zero,
@@ -1123,7 +1123,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               : Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.cancel_outlined, size: 20),
+                    Icon(Icons.cancel_outlined, size: DesignTokens.icon),
                     const SizedBox(width: 8),
                     Text(
                       isFull
@@ -1167,7 +1167,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               : Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.rate_review_outlined, size: 20),
+                    Icon(Icons.rate_review_outlined, size: DesignTokens.icon),
                     const SizedBox(width: 8),
                     Text(
                       AppLocalizations.of(context)!.writeMeetupReview,
@@ -1200,7 +1200,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.edit_outlined, size: 20),
+            Icon(Icons.edit_outlined, size: DesignTokens.icon),
             const SizedBox(width: 8),
             Text(
               AppLocalizations.of(context)!.editReview,
@@ -1234,7 +1234,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.check_circle_outline, size: 20),
+            Icon(Icons.check_circle_outline, size: DesignTokens.icon),
             const SizedBox(width: 8),
             Text(
               AppLocalizations.of(context)!.checkReview,
@@ -1284,7 +1284,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             children: [
               Icon(
                 Icons.check_circle_outline,
-                size: 20,
+                size: DesignTokens.icon,
                 color: Colors.grey[600],
               ),
               const SizedBox(width: 8),
@@ -1331,7 +1331,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.group_add, size: 20),
+                  const Icon(Icons.group_add, size: DesignTokens.icon),
                   const SizedBox(width: 8),
                   Text(
                     AppLocalizations.of(context)!.joinMeetup,
@@ -1374,7 +1374,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.exit_to_app, size: 20),
+                  const Icon(Icons.exit_to_app, size: DesignTokens.icon),
                   const SizedBox(width: 8),
                   Text(
                     AppLocalizations.of(context)!.leaveMeetup,
@@ -1911,7 +1911,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.info_outline, color: statusColor.shade700, size: 24),
+                              Icon(Icons.info_outline, color: statusColor.shade700, size: DesignTokens.icon),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
@@ -1975,7 +1975,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           ),
                           child: Row(
                             children: [
-                              Icon(Icons.info_outline, color: Colors.blue[700], size: 20),
+                              Icon(Icons.info_outline, color: Colors.blue[700], size: DesignTokens.icon),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -2533,8 +2533,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.warning_amber, 
-                           size: 16, 
+                      Icon(Icons.warning_amber,
+                           size: DesignTokens.iconSmall,
                            color: Colors.orange[700]),
                       const SizedBox(width: 4),
                       Text(
@@ -2690,7 +2690,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               children: [
                 Icon(
                   Icons.people,
-                  size: 20,
+                  size: DesignTokens.icon,
                   color: Color(0xFF64748B),
                 ),
                 const SizedBox(width: 4),
@@ -2793,7 +2793,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               : null,
           child: participant.userProfileImage == null ||
                   participant.userProfileImage!.isEmpty
-              ? Icon(Icons.person, color: Color(0xFF5865F2), size: 20)
+              ? Icon(Icons.person, color: Color(0xFF5865F2), size: DesignTokens.icon)
               : null,
         ),
         const SizedBox(width: 12),
@@ -2869,7 +2869,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 : null,
             child: participant.userProfileImage == null ||
                     participant.userProfileImage!.isEmpty
-                ? Icon(Icons.person, color: Color(0xFF5865F2), size: 24)
+                ? Icon(Icons.person, color: Color(0xFF5865F2), size: DesignTokens.icon)
                 : null,
           ),
           const SizedBox(width: 12),

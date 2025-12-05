@@ -1414,7 +1414,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         Text(
                           AppLocalizations.of(context)!.comments,
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

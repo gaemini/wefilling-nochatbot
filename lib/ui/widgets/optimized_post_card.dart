@@ -412,7 +412,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         if (post.likes > 0) ...[
           Icon(
             IconStyles.favoriteFilled,
-            size: DesignTokens.icon,
+            size: 16,
             color: BrandColors.error,
           ),
           const SizedBox(width: 4),
@@ -445,7 +445,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 조회수
         Icon(
           Icons.remove_red_eye_outlined,
-          size: DesignTokens.icon,
+          size: 16,
           color: BrandColors.neutral500,
         ),
         const SizedBox(width: 4),

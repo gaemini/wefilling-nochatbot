@@ -520,6 +520,7 @@ class PostService {
             userId: data['userId'] ?? '',
             commentCount: data['commentCount'] ?? 0,
             likes: data['likes'] ?? 0,
+            viewCount: data['viewCount'] ?? 0,
             likedBy: List<String>.from(data['likedBy'] ?? []),
             imageUrls: List<String>.from(data['imageUrls'] ?? []),
             visibility: data['visibility'] ?? 'public',

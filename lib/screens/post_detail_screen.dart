@@ -122,14 +122,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 조회수 증가 메서드
   Future<void> _incrementViewCount() async {
-    await _postService.incrementViewCount(widget.post.id);
-    
-    if (mounted) {
-      setState(() {
-        _currentPost = _currentPost.copyWith(
-          viewCount: _currentPost.viewCount + 1,
-        );
-      });
+    try {
+      Logger.log('🔍 게시글 상세 화면 - 조회수 증가 시작');
+      Logger.log('   - 게시글 제목: ${widget.post.title}');
+      Logger.log('   - 게시글 ID: ${widget.post.id}');
+      
+      await _postService.incrementViewCount(widget.post.id);
+
+      // UI 업데이트는 실제 Firestore에서 업데이트된 후에 하도록 개선
+      // (실제로는 Firestore의 실시간 업데이트를 통해 자동으로 반영됨)
+      Logger.log('✅ 게시글 상세 화면 - 조회수 증가 완료');
+    } catch (e) {
+      Logger.error('❌ 게시글 상세 화면 - 조회수 증가 실패: $e');
     }
   }
 

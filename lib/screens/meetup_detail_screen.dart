@@ -58,6 +58,18 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     _checkIfUserIsHost();
     _checkIfUserIsParticipant();
     _loadParticipants();
+    // 모임 조회수 증가
+    _incrementViewCount();
+  }
+
+  // 모임 조회수 증가
+  Future<void> _incrementViewCount() async {
+    try {
+      await _meetupService.incrementViewCount(widget.meetupId);
+    } catch (e) {
+      // 조회수 증가 실패는 무시 (사용자 경험에 영향 없음)
+      Logger.error('조회수 증가 실패: $e');
+    }
   }
 
   @override
@@ -100,11 +112,79 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       '일본': 'Japan',
       '중국': 'China',
       '우크라이나': AppLocalizations.of(context)!.ukraine,
+      '러시아': 'Russia',
       '독일': 'Germany',
       '프랑스': 'France',
       '영국': 'United Kingdom',
       '캐나다': 'Canada',
       '호주': 'Australia',
+      '카자흐스탄': 'Kazakhstan',
+      '이탈리아': 'Italy',
+      '스페인': 'Spain',
+      '네덜란드': 'Netherlands',
+      '벨기에': 'Belgium',
+      '스위스': 'Switzerland',
+      '오스트리아': 'Austria',
+      '스웨덴': 'Sweden',
+      '노르웨이': 'Norway',
+      '덴마크': 'Denmark',
+      '핀란드': 'Finland',
+      '폴란드': 'Poland',
+      '체코': 'Czech Republic',
+      '헝가리': 'Hungary',
+      '루마니아': 'Romania',
+      '불가리아': 'Bulgaria',
+      '그리스': 'Greece',
+      '터키': 'Turkey',
+      '인도': 'India',
+      '태국': 'Thailand',
+      '베트남': 'Vietnam',
+      '싱가포르': 'Singapore',
+      '말레이시아': 'Malaysia',
+      '인도네시아': 'Indonesia',
+      '필리핀': 'Philippines',
+      '브라질': 'Brazil',
+      '아르헨티나': 'Argentina',
+      '멕시코': 'Mexico',
+      '칠레': 'Chile',
+      '페루': 'Peru',
+      '콜롬비아': 'Colombia',
+      '이집트': 'Egypt',
+      '남아프리카공화국': 'South Africa',
+      '나이지리아': 'Nigeria',
+      '케냐': 'Kenya',
+      '모로코': 'Morocco',
+      '이스라엘': 'Israel',
+      '사우디아라비아': 'Saudi Arabia',
+      '아랍에미리트': 'United Arab Emirates',
+      '카타르': 'Qatar',
+      '쿠웨이트': 'Kuwait',
+      '요르단': 'Jordan',
+      '레바논': 'Lebanon',
+      '이란': 'Iran',
+      '이라크': 'Iraq',
+      '아프가니스탄': 'Afghanistan',
+      '파키스탄': 'Pakistan',
+      '방글라데시': 'Bangladesh',
+      '스리랑카': 'Sri Lanka',
+      '미얀마': 'Myanmar',
+      '라오스': 'Laos',
+      '캄보디아': 'Cambodia',
+      '몽골': 'Mongolia',
+      '네팔': 'Nepal',
+      '부탄': 'Bhutan',
+      '우즈베키스탄': 'Uzbekistan',
+      '키르기스스탄': 'Kyrgyzstan',
+      '타지키스탄': 'Tajikistan',
+      '투르크메니스탄': 'Turkmenistan',
+      '아제르바이잔': 'Azerbaijan',
+      '아르메니아': 'Armenia',
+      '조지아': 'Georgia',
+      '벨라루스': 'Belarus',
+      '몰도바': 'Moldova',
+      '리투아니아': 'Lithuania',
+      '라트비아': 'Latvia',
+      '에스토니아': 'Estonia',
     };
     
     return countryMap[countryName] ?? countryName;

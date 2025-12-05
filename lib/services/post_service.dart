@@ -416,12 +416,39 @@ class PostService {
   // 게시글 조회수 증가
   Future<void> incrementViewCount(String postId) async {
     try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        Logger.log('🔍 조회수 증가 실패: 로그인되지 않은 사용자');
+        return;
+      }
+
+      // 게시글 정보 먼저 가져오기
+      final postDoc = await _firestore.collection('posts').doc(postId).get();
+      if (!postDoc.exists) {
+        Logger.log('🔍 조회수 증가 실패: 게시글이 존재하지 않음 ($postId)');
+        return;
+      }
+
+      final postData = postDoc.data()!;
+      final authorId = postData['userId'] as String?;
+      final currentUserId = user.uid;
+
+      Logger.log('🔍 조회수 증가 시도:');
+      Logger.log('   - 게시글 ID: $postId');
+      Logger.log('   - 작성자 ID: $authorId');
+      Logger.log('   - 현재 사용자 ID: $currentUserId');
+      Logger.log('   - 자신의 글인가: ${authorId == currentUserId}');
+
+      // 조회수 증가 (자신의 글이든 다른 사람의 글이든 모두 증가)
       final postRef = _firestore.collection('posts').doc(postId);
       await postRef.update({
         'viewCount': FieldValue.increment(1),
       });
+
+      Logger.log('✅ 조회수 증가 완료: $postId');
     } catch (e) {
-      Logger.error('조회수 증가 오류: $e');
+      Logger.error('❌ 조회수 증가 오류: $e');
+      Logger.error('스택 트레이스: ${StackTrace.current}');
     }
   }
 

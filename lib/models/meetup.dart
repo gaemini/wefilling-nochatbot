@@ -29,6 +29,8 @@ class Meetup {
   final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
   final bool hasReview; // 후기가 작성되었는지
   final String? reviewId; // 작성된 후기 ID
+  final int viewCount; // 조회수
+  final int commentCount; // 댓글수
 
   const Meetup({
     required this.id,
@@ -53,6 +55,8 @@ class Meetup {
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
     this.reviewId,
+    this.viewCount = 0, // 기본값: 조회수 0
+    this.commentCount = 0, // 기본값: 댓글수 0
   });
 
   Meetup copyWith({
@@ -78,6 +82,8 @@ class Meetup {
     bool? isCompleted,
     bool? hasReview,
     String? reviewId,
+    int? viewCount,
+    int? commentCount,
   }) {
     return Meetup(
       id: id ?? this.id,
@@ -102,6 +108,8 @@ class Meetup {
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
       reviewId: reviewId ?? this.reviewId,
+      viewCount: viewCount ?? this.viewCount,
+      commentCount: commentCount ?? this.commentCount,
     );
   }
 
@@ -320,6 +328,8 @@ class Meetup {
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
       reviewId: json['reviewId'],
+      viewCount: json['viewCount'] ?? 0,
+      commentCount: json['commentCount'] ?? 0,
     );
   }
 
@@ -360,6 +370,8 @@ class Meetup {
       'isCompleted': isCompleted,
       'hasReview': hasReview,
       'reviewId': reviewId,
+      'viewCount': viewCount,
+      'commentCount': commentCount,
     };
   }
 }

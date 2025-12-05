@@ -648,7 +648,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         }
                       },
                       child: StreamBuilder<List<Meetup>>(
-                        stream: _meetupService.getMeetupsByDay(_tabController.index),
+                        stream: _meetupService.getMeetupsByDay(_tabController.index, weekAnchor: _currentWeekAnchor),
                         builder: (context, snapshot) {
                           // 초기 로딩만 스켈레톤 표시, 새로고침 시에는 이전 데이터 유지
                           if (snapshot.connectionState ==

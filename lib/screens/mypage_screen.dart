@@ -27,6 +27,7 @@ import 'login_screen.dart';
 import 'review_detail_screen.dart';
 import '../services/relationship_service.dart';
 import '../utils/logger.dart';
+import 'main_screen.dart'; // 메인 화면 추가
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -238,11 +239,29 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem(AppLocalizations.of(context)!.friends, isFriends: true, icon: Icons.people, color: const Color(0xFF5865F2)),
+              _buildStatItem(
+                AppLocalizations.of(context)!.friends, 
+                isFriends: true, 
+                icon: Icons.people, 
+                color: const Color(0xFF5865F2),
+                onTap: () => _navigateToFriendsPage(),
+              ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, isJoined: true, icon: Icons.groups, color: const Color(0xFF5865F2)),
+              _buildStatItem(
+                AppLocalizations.of(context)!.joinedMeetups, 
+                isJoined: true, 
+                icon: Icons.groups, 
+                color: const Color(0xFF5865F2),
+                onTap: () => _navigateToUserMeetups(),
+              ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, isPosts: true, icon: Icons.article, color: const Color(0xFF5865F2)),
+              _buildStatItem(
+                AppLocalizations.of(context)!.writtenPosts, 
+                isPosts: true, 
+                icon: Icons.article, 
+                color: const Color(0xFF5865F2),
+                onTap: () => _navigateToUserPosts(),
+              ),
             ],
           ),
           
@@ -777,45 +796,53 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     bool isPosts = false,
     required IconData icon,
     required Color color,
+    VoidCallback? onTap,
   }) {
     return Expanded(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 8),
-          StreamBuilder<int>(
-            stream: isFriends
-                ? _relationshipService.getFriendCount()
-                : isJoined
-                    ? _userStatsService.getJoinedMeetupCount()
-                    : isPosts
-                        ? _userStatsService.getUserPostCount()
-                        : _userStatsService.getHostedMeetupCount(),
-            builder: (context, snapshot) {
-              return Text(
-                '${snapshot.data ?? 0}',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 24, color: color),
+              const SizedBox(height: 8),
+              StreamBuilder<int>(
+                stream: isFriends
+                    ? _relationshipService.getFriendCount()
+                    : isJoined
+                        ? _userStatsService.getJoinedMeetupCount()
+                        : isPosts
+                            ? _userStatsService.getUserPostCount()
+                            : _userStatsService.getHostedMeetupCount(),
+                builder: (context, snapshot) {
+                  return Text(
+                    '${snapshot.data ?? 0}',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF6B7280),
                 ),
-              );
-            },
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              color: Color(0xFF6B7280),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1116,6 +1143,35 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 각 통계 항목 클릭 시 해당 페이지로 이동하는 메서드들
+  void _navigateToFriendsPage() {
+    // 친구 탭으로 이동 (하단바 유지)
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MainScreen(initialTabIndex: 4), // 친구 탭 인덱스
+      ),
+    );
+  }
+
+  void _navigateToUserMeetups() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UserMeetupsScreen(),
+      ),
+    );
+  }
+
+  void _navigateToUserPosts() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UserPostsScreen(),
       ),
     );
   }

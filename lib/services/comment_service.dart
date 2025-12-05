@@ -11,6 +11,7 @@ import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
+import 'meetup_service.dart';
 import '../utils/logger.dart';
 
 class CommentService {
@@ -18,6 +19,7 @@ class CommentService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
   final CommentCacheManager _cache = CommentCacheManager();
+  final MeetupService _meetupService = MeetupService();
 
   // 댓글 추가 (원댓글 또는 대댓글)
   Future<bool> addComment(
@@ -122,8 +124,11 @@ class CommentService {
         Logger.log('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
       }
 
-      // 댓글 수 업데이트 (게시글/리뷰 모두 시도, 실패해도 무시)
+      // 댓글 수 업데이트 (게시글/리뷰/모임 모두 시도, 실패해도 무시)
       await _updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId);
+      
+      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
+      await _updateMeetupCommentCount(postId);
 
       return true;
     } catch (e) {
@@ -171,6 +176,21 @@ class CommentService {
       }
     } catch (e) {
       Logger.error('댓글 수 업데이트 오류: $e');
+    }
+  }
+
+  // 모임 댓글수 업데이트 헬퍼 메서드
+  Future<void> _updateMeetupCommentCount(String postId) async {
+    try {
+      // postId가 모임 ID인지 확인 (meetups 컬렉션에 해당 문서가 있는지 확인)
+      final meetupDoc = await _firestore.collection('meetups').doc(postId).get();
+      if (meetupDoc.exists) {
+        // 모임이 존재하면 댓글수 업데이트
+        await _meetupService.updateCommentCount(postId);
+      }
+    } catch (e) {
+      // 모임 댓글수 업데이트 실패는 무시 (일반 게시글일 수 있음)
+      Logger.log('모임 댓글수 업데이트 시도 (실패 무시): $e');
     }
   }
 
@@ -264,6 +284,9 @@ class CommentService {
 
       // 게시글 문서의 댓글 수 업데이트
       await _updateCommentCount(postId);
+      
+      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
+      await _updateMeetupCommentCount(postId);
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
@@ -397,6 +420,9 @@ class CommentService {
 
       // 게시글 댓글 수 업데이트
       await _updateCommentCount(postId);
+      
+      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
+      await _updateMeetupCommentCount(postId);
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {

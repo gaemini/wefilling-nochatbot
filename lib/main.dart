@@ -34,6 +34,7 @@ import 'services/language_service.dart';
 import 'services/cache/cache_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
+import 'screens/admin_migration_screen.dart';
 
 void main() {
   runZonedGuarded(
@@ -347,6 +348,7 @@ class _MeetupAppState extends State<MeetupApp> {
           final meetup = ModalRoute.of(context)!.settings.arguments as Meetup;
           return EditMeetupScreen(meetup: meetup);
         },
+        '/admin-migration': (context) => const AdminMigrationScreen(),
       },
       navigatorKey: NavigationService.navigatorKey,
       home: Consumer<app_auth.AuthProvider>(

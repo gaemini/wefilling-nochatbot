@@ -25,12 +25,12 @@ class MeetupService {
   // Firestore 인스턴스 getter 추가
   FirebaseFirestore get firestore => _firestore;
 
-  // 현재 주의 월요일부터 일요일까지 날짜 계산
-  List<DateTime> getWeekDates() {
-    final DateTime now = DateTime.now();
+  // 지정된 주차의 월요일부터 일요일까지 날짜 계산
+  List<DateTime> getWeekDates({DateTime? weekAnchor}) {
+    final DateTime baseDate = weekAnchor ?? DateTime.now();
     
-    // 현재 주의 월요일 찾기 (월요일=1, 일요일=7)
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    // 지정된 주차의 월요일 찾기 (월요일=1, 일요일=7)
+    final startOfWeek = baseDate.subtract(Duration(days: baseDate.weekday - 1));
     final DateTime startOfWeekDay = DateTime(startOfWeek.year, startOfWeek.month, startOfWeek.day);
     
     final List<DateTime> weekDates = [];
@@ -129,9 +129,9 @@ class MeetupService {
   }
 
   // 요일별 모임 가져오기 - 모든 모임 표시
-  Stream<List<Meetup>> getMeetupsByDay(int dayIndex) {
-    // 해당 요일의 날짜 계산 (현재 날짜 기준)
-    final List<DateTime> weekDates = getWeekDates();
+  Stream<List<Meetup>> getMeetupsByDay(int dayIndex, {DateTime? weekAnchor}) {
+    // 해당 요일의 날짜 계산 (지정된 주차 기준 또는 현재 날짜 기준)
+    final List<DateTime> weekDates = getWeekDates(weekAnchor: weekAnchor);
     final DateTime targetDate = weekDates[dayIndex];
 
     // 날짜 범위 설정 (해당 날짜의 00:00:00부터 23:59:59까지)
@@ -190,6 +190,8 @@ class MeetupService {
               isCompleted: data['isCompleted'] ?? false,
               hasReview: data['hasReview'] ?? false,
               reviewId: data['reviewId'],
+              viewCount: data['viewCount'] ?? 0,
+              commentCount: data['commentCount'] ?? 0,
             );
           }).toList();
         });
@@ -282,6 +284,8 @@ class MeetupService {
         isCompleted: data['isCompleted'] ?? false,
         hasReview: data['hasReview'] ?? false,
         reviewId: data['reviewId'],
+        viewCount: data['viewCount'] ?? 0,
+        commentCount: data['commentCount'] ?? 0,
       );
     }).toList();
   }
@@ -329,6 +333,8 @@ class MeetupService {
         isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
         hasReview: data['hasReview'] ?? false, // 후기 작성 여부
         reviewId: data['reviewId'], // 후기 ID
+        viewCount: data['viewCount'] ?? 0,
+        commentCount: data['commentCount'] ?? 0,
       );
     } catch (e) {
       Logger.error('모임 정보 불러오기 오류: $e');
@@ -348,19 +354,42 @@ class MeetupService {
     });
   }
 
+  // Firebase 연결 테스트 메서드
+  Future<bool> testFirebaseConnection() async {
+    try {
+      Logger.log('🔗 [TEST] Firebase 연결 테스트 시작');
+      
+      final testQuery = await _firestore
+          .collection('meetups')
+          .limit(1)
+          .get(const GetOptions(source: Source.server));
+      
+      Logger.log('✅ [TEST] Firebase 연결 성공 - 문서 수: ${testQuery.docs.length}');
+      return true;
+    } catch (e) {
+      Logger.error('❌ [TEST] Firebase 연결 실패: $e');
+      return false;
+    }
+  }
+
   // 모임 검색 메서드 추가
   Stream<List<Meetup>> searchMeetups(String query) {
-    if (query.isEmpty) {
-      // 빈 검색어인 경우 모든 모임 반환
-      return getMeetupsByCategory('전체');
+    Logger.log('🔍 [SERVICE] 검색 시작: "$query"');
+    
+    if (query.trim().isEmpty) {
+      Logger.log('⚠️ [SERVICE] 빈 검색어 - 빈 결과 반환');
+      // 빈 검색어인 경우 빈 결과 반환
+      return Stream.value([]);
     }
 
     // 소문자로 변환하여 대소문자 구분 없이 검색
-    final lowercaseQuery = query.toLowerCase();
+    final lowercaseQuery = query.trim().toLowerCase();
+    Logger.log('🔍 [SERVICE] 정규화된 검색어: "$lowercaseQuery"');
 
     // 현재 날짜 이후의 모임 중에서 검색
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    Logger.log('📅 [SERVICE] 검색 기준 날짜: $today');
 
     return _firestore
         .collection('meetups')
@@ -368,64 +397,74 @@ class MeetupService {
         .orderBy('date', descending: false)
         .snapshots()
         .map((snapshot) {
-          return snapshot.docs
-              .map((doc) {
-                final data = doc.data();
+          Logger.log('📡 [SERVICE] Firestore 스냅샷 수신: ${snapshot.docs.length}개 문서');
+          
+          final matchedMeetups = <Meetup>[];
+          
+          for (final doc in snapshot.docs) {
+            try {
+              final data = doc.data();
 
-                // 검색어와 일치하는지 확인 (제목, 내용, 위치, 호스트 닉네임)
-                final title = (data['title'] as String? ?? '').toLowerCase();
-                final description =
-                    (data['description'] as String? ?? '').toLowerCase();
-                final location =
-                    (data['location'] as String? ?? '').toLowerCase();
-                final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
+              // 검색어와 일치하는지 확인 (제목, 내용, 위치, 호스트 닉네임)
+              final title = (data['title'] as String? ?? '').toLowerCase();
+              final description = (data['description'] as String? ?? '').toLowerCase();
+              final location = (data['location'] as String? ?? '').toLowerCase();
+              final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
 
-                // 제목, 내용, 위치, 호스트 닉네임에서 검색
-                if (title.contains(lowercaseQuery) ||
-                    description.contains(lowercaseQuery) ||
-                    location.contains(lowercaseQuery) ||
-                    hostNickname.contains(lowercaseQuery)) {
-                  // Timestamp에서 DateTime으로 변환
-                  DateTime meetupDate;
-                  if (data['date'] is Timestamp) {
-                    meetupDate = (data['date'] as Timestamp).toDate();
-                  } else {
-                    meetupDate = DateTime.now();
-                  }
+              // 제목, 내용, 위치, 호스트 닉네임에서 검색
+              final isMatch = title.contains(lowercaseQuery) ||
+                  description.contains(lowercaseQuery) ||
+                  location.contains(lowercaseQuery) ||
+                  hostNickname.contains(lowercaseQuery);
 
-                  return Meetup(
-                    id: doc.id,
-                    title: data['title'] ?? '',
-                    description: data['description'] ?? '',
-                    location: data['location'] ?? '',
-                    time: data['time'] ?? '',
-                    maxParticipants: data['maxParticipants'] ?? 0,
-                    currentParticipants: data['currentParticipants'] ?? 1,
-                    host: data['hostNickname'] ?? '익명',
-                    hostNationality:
-                        data['hostNickname'] == 'dev99'
-                            ? '한국'
-                            : (data['hostNationality'] ??
-                                ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-                    imageUrl:
-                        data['thumbnailImageUrl'] ??
-                        AppConstants.DEFAULT_IMAGE_URL,
-                    thumbnailContent: data['thumbnailContent'] ?? '',
-                    thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-                    date: meetupDate,
-                    category: data['category'] ?? '기타',
-                    userId: data['userId'], // 모임 주최자 ID 추가
-                    hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+              if (isMatch) {
+                Logger.log('✅ [SERVICE] 매치된 모임: ${data['title']} (${doc.id})');
+                
+                // Timestamp에서 DateTime으로 변환
+                DateTime meetupDate;
+                if (data['date'] is Timestamp) {
+                  meetupDate = (data['date'] as Timestamp).toDate();
+                } else {
+                  meetupDate = DateTime.now();
+                }
+
+                final meetup = Meetup(
+                  id: doc.id,
+                  title: data['title'] ?? '',
+                  description: data['description'] ?? '',
+                  location: data['location'] ?? '',
+                  time: data['time'] ?? '',
+                  maxParticipants: data['maxParticipants'] ?? 0,
+                  currentParticipants: data['currentParticipants'] ?? 1,
+                  host: data['hostNickname'] ?? '익명',
+                  hostNationality: data['hostNationality'] ?? '',
+                  imageUrl: data['thumbnailImageUrl'] ?? '',
+                  thumbnailContent: data['thumbnailContent'] ?? '',
+                  thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+                  date: meetupDate,
+                  category: data['category'] ?? '기타',
+                  userId: data['userId'],
+                  hostNickname: data['hostNickname'],
                   isCompleted: data['isCompleted'] ?? false,
                   hasReview: data['hasReview'] ?? false,
                   reviewId: data['reviewId'],
-                  );
-                } else {
-                  return null; // 검색 조건에 맞지 않으면 null 반환
-                }
-              })
-              .whereType<Meetup>() // null이 아닌 항목만 필터링
-              .toList();
+                  viewCount: data['viewCount'] ?? 0,
+                  commentCount: data['commentCount'] ?? 0,
+                );
+                
+                matchedMeetups.add(meetup);
+              }
+            } catch (e) {
+              Logger.error('❌ [SERVICE] 모임 파싱 오류: $e (문서 ID: ${doc.id})');
+            }
+          }
+          
+          Logger.log('📋 [SERVICE] 최종 검색 결과: ${matchedMeetups.length}개');
+          return matchedMeetups;
+        })
+        .handleError((error) {
+          Logger.error('❌ [SERVICE] 검색 스트림 오류: $error');
+          throw error;
         });
   }
 
@@ -487,6 +526,8 @@ class MeetupService {
                   category: data['category'] ?? '기타',
                   userId: data['userId'], // 모임 주최자 ID 추가
                   hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+                  viewCount: data['viewCount'] ?? 0,
+                  commentCount: data['commentCount'] ?? 0,
                 );
               }
               return null;
@@ -1158,6 +1199,8 @@ class MeetupService {
           isCompleted: data['isCompleted'] ?? false,
           hasReview: data['hasReview'] ?? false,
           reviewId: data['reviewId'],
+          viewCount: data['viewCount'] ?? 0,
+          commentCount: data['commentCount'] ?? 0,
         );
         
         // 디버그: Logger.log('📄 모임 로드: ${meetup.title}');
@@ -1949,6 +1992,102 @@ class MeetupService {
       Logger.log('⚠️ [STREAM] 모임 데이터 없음 또는 삭제됨');
       return null;
     });
+  }
+
+  // 모임 조회수 증가
+  Future<void> incrementViewCount(String meetupId) async {
+    try {
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'viewCount': FieldValue.increment(1),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      Logger.log('✅ 모임 조회수 증가: $meetupId');
+    } catch (e) {
+      Logger.error('❌ 모임 조회수 증가 오류: $e');
+    }
+  }
+
+  // 모임 댓글수 업데이트
+  Future<void> updateCommentCount(String meetupId) async {
+    try {
+      // 해당 모임의 댓글 수 계산
+      final querySnapshot = await _firestore
+          .collection('comments')
+          .where('postId', isEqualTo: meetupId)
+          .get();
+
+      final commentCount = querySnapshot.docs.length;
+
+      // 모임 문서의 댓글수 업데이트
+      await _firestore.collection('meetups').doc(meetupId).update({
+        'commentCount': commentCount,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      Logger.log('✅ 모임 댓글수 업데이트: $meetupId -> $commentCount개');
+    } catch (e) {
+      Logger.error('❌ 모임 댓글수 업데이트 오류: $e');
+    }
+  }
+
+  // 간단한 마이그레이션 실행 (개발용)
+  Future<void> quickMigration() async {
+    try {
+      Logger.log('🚀 빠른 마이그레이션 시작...');
+      
+      final snapshot = await _firestore.collection('meetups').get();
+      Logger.log('📊 총 ${snapshot.docs.length}개 모임 발견');
+      
+      WriteBatch batch = _firestore.batch();
+      int count = 0;
+      
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        Map<String, dynamic> updates = {};
+        
+        Logger.log('📋 모임 확인: ${data['title']} (${doc.id})');
+        Logger.log('   - 기존 viewCount: ${data['viewCount']}');
+        Logger.log('   - 기존 commentCount: ${data['commentCount']}');
+        
+        if (!data.containsKey('viewCount')) {
+          updates['viewCount'] = 0;
+          Logger.log('   → viewCount 추가: 0');
+        }
+        
+        if (!data.containsKey('commentCount')) {
+          // 댓글 수 계산
+          final commentsSnapshot = await _firestore
+              .collection('comments')
+              .where('postId', isEqualTo: doc.id)
+              .get();
+          final commentCount = commentsSnapshot.docs.length;
+          updates['commentCount'] = commentCount;
+          Logger.log('   → commentCount 추가: $commentCount');
+        }
+        
+        if (updates.isNotEmpty) {
+          updates['updatedAt'] = FieldValue.serverTimestamp();
+          batch.update(doc.reference, updates);
+          count++;
+          Logger.log('   ✅ 업데이트 예정');
+        } else {
+          Logger.log('   ⏭️ 업데이트 불필요');
+        }
+      }
+      
+      if (count > 0) {
+        Logger.log('💾 배치 커밋 실행 중...');
+        await batch.commit();
+        Logger.log('✅ 마이그레이션 완료: ${count}개 모임 업데이트');
+      } else {
+        Logger.log('ℹ️ 마이그레이션 불필요: 모든 모임이 이미 업데이트됨');
+      }
+      
+    } catch (e) {
+      Logger.error('❌ 마이그레이션 실패: $e');
+      Logger.error('스택 트레이스: ${StackTrace.current}');
+      rethrow;
+    }
   }
 
   // 실시간 참여자 목록 스트림

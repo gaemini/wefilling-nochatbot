@@ -63,6 +63,18 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           _userData = doc.data();
           _isLoading = false;
         });
+      } else if (!doc.exists && mounted) {
+        // 탈퇴한 사용자 처리
+        Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
+        setState(() {
+          _userData = {
+            'nickname': 'Deleted Account',
+            'displayName': 'Deleted Account',
+            'photoURL': '',
+            'bio': '',
+          };
+          _isLoading = false;
+        });
       }
     } catch (e) {
       Logger.error('사용자 데이터 로드 오류: $e');

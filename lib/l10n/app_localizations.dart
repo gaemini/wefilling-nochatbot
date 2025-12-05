@@ -4273,6 +4273,60 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'다른 계정 추가'**
   String get addAnotherAccount;
+
+  /// No description provided for @appInfo.
+  ///
+  /// In ko, this message translates to:
+  /// **'앱 정보'**
+  String get appInfo;
+
+  /// No description provided for @appInfoTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'Wefilling'**
+  String get appInfoTitle;
+
+  /// No description provided for @appVersion.
+  ///
+  /// In ko, this message translates to:
+  /// **'버전'**
+  String get appVersion;
+
+  /// No description provided for @appTaglineShort.
+  ///
+  /// In ko, this message translates to:
+  /// **'함께하면 즐거운 대학 생활'**
+  String get appTaglineShort;
+
+  /// No description provided for @copyright.
+  ///
+  /// In ko, this message translates to:
+  /// **'© 2025 Wefilling. All rights reserved.'**
+  String get copyright;
+
+  /// No description provided for @patentPending.
+  ///
+  /// In ko, this message translates to:
+  /// **'특허 출원 중'**
+  String get patentPending;
+
+  /// No description provided for @patentApplicationNumber.
+  ///
+  /// In ko, this message translates to:
+  /// **'출원번호: 제10-2025-0187957호'**
+  String get patentApplicationNumber;
+
+  /// No description provided for @patentInventionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'발명의 명칭: AI 기반 소셜 네트워크 자동 분류 및 지능형 정보 관리 시스템'**
+  String get patentInventionTitle;
+
+  /// No description provided for @deletedUser.
+  ///
+  /// In ko, this message translates to:
+  /// **'탈퇴한 사용자'**
+  String get deletedUser;
 }
 
 class _AppLocalizationsDelegate

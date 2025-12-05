@@ -2219,4 +2219,32 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get addAnotherAccount => '다른 계정 추가';
+
+  @override
+  String get appInfo => '앱 정보';
+
+  @override
+  String get appInfoTitle => 'Wefilling';
+
+  @override
+  String get appVersion => '버전';
+
+  @override
+  String get appTaglineShort => '함께하면 즐거운 대학 생활';
+
+  @override
+  String get copyright => '© 2025 Wefilling. All rights reserved.';
+
+  @override
+  String get patentPending => '특허 출원 중';
+
+  @override
+  String get patentApplicationNumber => '출원번호: 제10-2025-0187957호';
+
+  @override
+  String get patentInventionTitle =>
+      '발명의 명칭: AI 기반 소셜 네트워크 자동 분류 및 지능형 정보 관리 시스템';
+
+  @override
+  String get deletedUser => '탈퇴한 사용자';
 }

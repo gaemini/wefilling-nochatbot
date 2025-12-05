@@ -1024,5 +1024,15 @@
   "chooseLoginMethod": "로그인 방법을 선택해주세요",
   "accountSelection": "계정 선택",
   "continueWithWefillingAccount": "Wefilling 계정으로 계속",
-  "addAnotherAccount": "다른 계정 추가"
+  "addAnotherAccount": "다른 계정 추가",
+  "appInfo": "앱 정보",
+  "appInfoTitle": "Wefilling",
+  "appVersion": "버전",
+  "appTaglineShort": "함께하면 즐거운 대학 생활",
+  "copyright": "© 2025 Wefilling. All rights reserved.",
+  "patentPending": "특허 출원 중",
+  "patentApplicationNumber": "출원번호: 제10-2025-0187957호",
+  "patentInventionTitle": "발명의 명칭: AI 기반 소셜 네트워크 자동 분류 및 지능형 정보 관리 시스템",
+  "deletedAccount": "탈퇴한 계정",
+  "deletedUser": "탈퇴한 사용자"
 }

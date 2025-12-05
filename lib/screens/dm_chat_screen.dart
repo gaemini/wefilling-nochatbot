@@ -293,25 +293,37 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
-    final otherUserName = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
-    final otherUserPhoto = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
+    final otherUserId = widget.otherUserId;
     final isAnonymous = _conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false;
-    
     final dmTitle = _conversation?.dmTitle;
-    final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
-        : (isAnonymous 
-            ? 'Anonymous' : otherUserName);
-    final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
-        ? (AppLocalizations.of(context)!.author ?? "") : null;
+    
+    // 실시간으로 사용자 정보 조회 (탈퇴한 사용자 감지)
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(kToolbarHeight),
+      child: FutureBuilder<Map<String, String>>(
+        future: _getLatestUserInfo(otherUserId, isAnonymous),
+        initialData: {
+          'name': _conversation?.getOtherUserName(_currentUser!.uid) ?? '',
+          'photo': _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '',
+        },
+        builder: (context, snapshot) {
+          final otherUserName = snapshot.data?['name'] ?? '';
+          final otherUserPhoto = snapshot.data?['photo'] ?? '';
+          
+          final primaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
+              ? '제목: $dmTitle'  // 익명 게시글 제목 형식 변경
+              : (isAnonymous 
+                  ? 'Anonymous' : otherUserName);
+          final secondaryTitle = (dmTitle != null && dmTitle.isNotEmpty)
+              ? (AppLocalizations.of(context)!.author ?? "") : null;
 
-    String _formatHeaderDate() {
-      final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
-      if (date == null) return '';
-      return DateFormat('yyyy.MM.dd').format(date);
-    }
+          String _formatHeaderDate() {
+            final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
+            if (date == null) return '';
+            return DateFormat('yyyy.MM.dd').format(date);
+          }
 
-    return AppBar(
+          return AppBar(
       elevation: 0,
       backgroundColor: Colors.white,
       leading: IconButton(
@@ -413,7 +425,45 @@ class _DMChatScreenState extends State<DMChatScreen> {
           },
         ),
       ],
+          );
+        },
+      ),
     );
+  }
+
+  /// 최신 사용자 정보 가져오기 (실시간 조회)
+  Future<Map<String, String>> _getLatestUserInfo(
+    String otherUserId,
+    bool isAnonymous,
+  ) async {
+    // 익명이면 바로 반환
+    if (isAnonymous) {
+      return {'name': '익명', 'photo': ''};
+    }
+    
+    try {
+      // 항상 서버에서 최신 정보 조회
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(otherUserId)
+          .get(const GetOptions(source: Source.server));
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        return {
+          'name': data['nickname'] ?? data['displayName'] ?? 'User',
+          'photo': data['photoURL'] ?? '',
+        };
+      } else {
+        // 탈퇴한 사용자 처리
+        Logger.log('⚠️ 탈퇴한 사용자: $otherUserId');
+        return {'name': 'Deleted Account', 'photo': ''};
+      }
+    } catch (e) {
+      Logger.error('⚠️ 사용자 정보 조회 실패: $e');
+      // 오류 발생 시에도 탈퇴한 사용자로 간주
+      return {'name': 'Deleted Account', 'photo': ''};
+    }
   }
 
   /// 채팅방 보관(삭제) - 서버 플래그 기반

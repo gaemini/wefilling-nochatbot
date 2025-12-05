@@ -1025,5 +1025,15 @@
   "chooseLoginMethod": "Please choose a login method",
   "accountSelection": "Account Selection",
   "continueWithWefillingAccount": "Continue with Wefilling account",
-  "addAnotherAccount": "Add another account"
+  "addAnotherAccount": "Add another account",
+  "appInfo": "App Info",
+  "appInfoTitle": "Wefilling",
+  "appVersion": "Version",
+  "appTaglineShort": "Connect Together",
+  "copyright": "© 2025 Wefilling. All rights reserved.",
+  "patentPending": "Patent Pending",
+  "patentApplicationNumber": "Application No.: KR 10-2025-0187957",
+  "patentInventionTitle": "Invention: AI-based Social Network Automatic Classification and Intelligent Information Management System",
+  "deletedAccount": "Deleted Account",
+  "deletedUser": "Deleted User"
 }

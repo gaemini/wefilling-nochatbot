@@ -153,7 +153,7 @@ class Conversation {
       return '익명'; // 익명 표시 (UI에서 로컬라이제이션 처리)
     }
     
-    return participantNames[otherUserId] ?? 'Unknown';
+    return participantNames[otherUserId] ?? 'Deleted Account';
   }
 
   /// 상대방 프로필 사진 URL 가져오기

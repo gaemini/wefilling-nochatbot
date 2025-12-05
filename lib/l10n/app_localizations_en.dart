@@ -2280,4 +2280,32 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get addAnotherAccount => 'Add another account';
+
+  @override
+  String get appInfo => 'App Info';
+
+  @override
+  String get appInfoTitle => 'Wefilling';
+
+  @override
+  String get appVersion => 'Version';
+
+  @override
+  String get appTaglineShort => 'Connect Together';
+
+  @override
+  String get copyright => '© 2025 Wefilling. All rights reserved.';
+
+  @override
+  String get patentPending => 'Patent Pending';
+
+  @override
+  String get patentApplicationNumber => 'Application No.: KR 10-2025-0187957';
+
+  @override
+  String get patentInventionTitle =>
+      'Invention: AI-based Social Network Automatic Classification and Intelligent Information Management System';
+
+  @override
+  String get deletedUser => 'Deleted User';
 }

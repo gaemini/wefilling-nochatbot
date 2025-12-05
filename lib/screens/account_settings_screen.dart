@@ -252,6 +252,48 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                       ),
 
                       const SizedBox(height: 32),
+
+                      // 앱 정보 섹션
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        child: Text(
+                          AppLocalizations.of(context)!.appInfo,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+
+                      Card(
+                        elevation: 1,
+                        margin: const EdgeInsets.symmetric(vertical: 8.0),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.info_outline,
+                            color: Color(0xFF6366F1),
+                          ),
+                          title: Text(
+                            AppLocalizations.of(context)!.appInfo,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          subtitle: Text(
+                            '${AppLocalizations.of(context)!.appVersion} 1.0.0',
+                            style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: _showAppInfoDialog,
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
@@ -452,5 +494,122 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         );
       }
     }
+  }
+
+  // 앱 정보 다이얼로그
+  void _showAppInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.apps, color: Color(0xFF6366F1)),
+            const SizedBox(width: 8),
+            Text(AppLocalizations.of(context)!.appInfoTitle),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 버전 정보
+              Text(
+                '${AppLocalizations.of(context)!.appVersion} 1.0.0',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                AppLocalizations.of(context)!.appTaglineShort,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 20),
+              
+              // 저작권
+              Text(
+                AppLocalizations.of(context)!.copyright,
+                style: const TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              
+              const Divider(),
+              const SizedBox(height: 16),
+              
+              // 특허 정보
+              Row(
+                children: [
+                  const Icon(
+                    Icons.verified_outlined,
+                    size: 18,
+                    color: Color(0xFF6366F1),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    AppLocalizations.of(context)!.patentPending,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF6366F1),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                AppLocalizations.of(context)!.patentApplicationNumber,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                AppLocalizations.of(context)!.patentInventionTitle,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Patent Pending',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              Text(
+                'Application No.: KR 10-2025-0187957',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              AppLocalizations.of(context)!.confirm,
+              style: const TextStyle(
+                color: Color(0xFF6366F1),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

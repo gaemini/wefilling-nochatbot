@@ -1,0 +1,698 @@
+Resolving dependencies...
+Downloading packages...
+  _fe_analyzer_shared 67.0.0 (92.0.0 available)
+  analyzer 6.4.1 (9.0.0 available)
+  build 2.4.1 (4.0.3 available)
+  build_config 1.1.2 (1.2.0 available)
+  build_resolvers 2.4.2 (3.0.4 available)
+  build_runner 2.4.13 (2.10.4 available)
+  build_runner_core 7.3.2 (9.3.2 available)
+  characters 1.4.0 (1.4.1 available)
+  cloud_firestore 6.0.2 (6.1.0 available)
+  cloud_firestore_platform_interface 7.0.2 (7.0.4 available)
+  cloud_firestore_web 5.0.2 (5.1.0 available)
+  cloud_functions 6.0.2 (6.0.4 available)
+  cloud_functions_platform_interface 5.8.5 (5.8.7 available)
+  cloud_functions_web 5.0.2 (5.1.0 available)
+  cross_file 0.3.4+2 (0.3.5+1 available)
+  crypto 3.0.6 (3.0.7 available)
+  dart_style 2.3.6 (3.1.3 available)
+  file_selector_linux 0.9.3+2 (0.9.4 available)
+  file_selector_macos 0.9.4+4 (0.9.5 available)
+  file_selector_platform_interface 2.6.2 (2.7.0 available)
+  file_selector_windows 0.9.3+4 (0.9.3+5 available)
+  firebase_auth 6.1.0 (6.1.2 available)
+  firebase_auth_platform_interface 8.1.2 (8.1.4 available)
+  firebase_auth_web 6.0.3 (6.1.0 available)
+  firebase_crashlytics 5.0.2 (5.0.5 available)
+  firebase_crashlytics_platform_interface 3.8.13 (3.8.15 available)
+  firebase_messaging 16.0.2 (16.0.4 available)
+  firebase_messaging_platform_interface 4.7.2 (4.7.4 available)
+  firebase_messaging_web 4.0.2 (4.1.0 available)
+  firebase_remote_config 6.0.2 (6.1.2 available)
+  firebase_remote_config_platform_interface 2.0.3 (2.0.5 available)
+  firebase_remote_config_web 1.8.12 (1.10.1 available)
+  firebase_storage 13.0.2 (13.0.4 available)
+  firebase_storage_platform_interface 5.2.13 (5.2.15 available)
+  firebase_storage_web 3.10.20 (3.11.0 available)
+  flutter_lints 2.0.3 (6.0.0 available)
+  flutter_local_notifications 18.0.1 (19.5.0 available)
+  flutter_local_notifications_linux 5.0.0 (6.0.0 available)
+  flutter_local_notifications_platform_interface 8.0.0 (9.1.0 available)
+  flutter_plugin_android_lifecycle 2.0.30 (2.0.33 available)
+  google_sign_in_android 7.2.0 (7.2.6 available)
+  google_sign_in_ios 6.2.1 (6.2.4 available)
+  http 1.5.0 (1.6.0 available)
+  image_picker 1.2.0 (1.2.1 available)
+  image_picker_android 0.8.13+3 (0.8.13+10 available)
+  image_picker_for_web 3.1.0 (3.1.1 available)
+  image_picker_ios 0.8.13 (0.8.13+2 available)
+  image_picker_macos 0.2.2 (0.2.2+1 available)
+  image_picker_platform_interface 2.11.0 (2.11.1 available)
+  lints 2.1.1 (6.0.0 available)
+  matcher 0.12.17 (0.12.18 available)
+  material_color_utilities 0.11.1 (0.13.0 available)
+  meta 1.16.0 (1.17.0 available)
+  path_provider_android 2.2.18 (2.2.22 available)
+  path_provider_foundation 2.4.2 (2.5.1 available)
+  permission_handler 11.4.0 (12.0.1 available)
+  permission_handler_android 12.1.0 (13.0.1 available)
+  shared_preferences_android 2.4.13 (2.4.18 available)
+  shared_preferences_foundation 2.5.4 (2.5.6 available)
+  shelf_web_socket 2.0.1 (3.0.0 available)
+  sign_in_with_apple 6.1.4 (7.0.1 available)
+  sign_in_with_apple_platform_interface 1.1.0 (2.0.0 available)
+  sign_in_with_apple_web 2.1.1 (3.0.0 available)
+  source_gen 1.5.0 (4.1.1 available)
+  source_helper 1.3.5 (1.3.9 available)
+  test_api 0.7.6 (0.7.8 available)
+  url_launcher_android 6.3.22 (6.3.28 available)
+  url_launcher_ios 6.3.4 (6.3.6 available)
+  url_launcher_linux 3.2.1 (3.2.2 available)
+  url_launcher_macos 3.2.3 (3.2.5 available)
+  url_launcher_windows 3.1.4 (3.1.5 available)
+  uuid 4.5.1 (4.5.2 available)
+  webview_flutter_android 4.10.2 (4.10.9 available)
+  webview_flutter_wkwebview 3.23.1 (3.23.4 available)
+Got dependencies!
+74 packages have newer versions incompatible with dependency constraints.
+Try `flutter pub outdated` for more information.
+Warning: Building for device with codesigning disabled. You will have to manually codesign before deploying to device.
+Building com.wefilling.app for device (ios-release)...
+Running pod install...                                             19.8s
+Running Xcode build...                                          
+Xcode build done.                                           303.3s
+Failed to build iOS app
+Error output from Xcode build:
+↳
+    ** BUILD FAILED **
+
+
+Xcode's output:
+↳
+    Writing result bundle at path:
+    	/var/folders/_g/b2gfzn1s3j37mfp8z6cf36wc0000gn/T/flutter_tools.Jjl9mc/flutter_ios_build_temp_dirAxePGR/temporary_xcresult_bundle
+
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/url_launcher_ios-6.3.4/ios/url_launcher_ios/Sources/url_launcher_ios/URLLauncherPlugin.swift:22:26: warning: 'keyWindow' was deprecated in iOS 13.0: Should not be used for applications that support multiple scenes as it returns a key window across all connected scenes
+        UIApplication.shared.keyWindow?.rootViewController?.topViewController
+                             ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/webview_flutter_wkwebview-3.23.1/darwin/webview_flutter_wkwebview/Sources/webview_flutter_wkwebview/HTTPCookieProxyAPIDelegate.swift:17:42: warning: cannot explicitly specialize instance method 'map'
+        let keyValueTuples = try! properties.map<[(HTTPCookiePropertyKey, Any)], PigeonError> {
+                                             ^
+    Swift.Collection.map:2:24: note: 'map' declared here
+    @inlinable public func map<T, E>(_ transform: (Self.Element) throws(E) -> T) throws(E) -> [T] where E : Error}
+                           ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/webview_flutter_wkwebview-3.23.1/darwin/webview_flutter_wkwebview/Sources/webview_flutter_wkwebview/SecTrustProxyAPIDelegate.swift:133:12: warning: 'SecTrustGetCertificateAtIndex' was deprecated in iOS 15.0: renamed to 'SecTrustCopyCertificateChain(_:)'
+        return SecTrustGetCertificateAtIndex(trust, ix)
+               ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/webview_flutter_wkwebview-3.23.1/darwin/webview_flutter_wkwebview/Sources/webview_flutter_wkwebview/SecTrustProxyAPIDelegate.swift:133:12: note: use 'SecTrustCopyCertificateChain(_:)' instead
+        return SecTrustGetCertificateAtIndex(trust, ix)
+               ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+               SecTrustCopyCertificateChain
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: warning: switch must be exhaustive
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: note: add missing case: '.credentialImport'
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: note: add missing case: '.credentialExport'
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: note: add missing case: '.preferSignInWithApple'
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: note: add missing case: '.deviceNotConfiguredForPasskeyCreation'
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/sign_in_with_apple-6.1.4/ios/Classes/SignInWithAppleError.swift:99:13: note: add missing cases
+                switch code {
+                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/permission_handler_apple-9.4.7/ios/Classes/strategies/PhonePermissionStrategy.m:49:35: warning: 'subscriberCellularProvider' is deprecated: first deprecated in iOS 12.0 [-Wdeprecated-declarations]
+       49 |     CTCarrier *carrier = [netInfo subscriberCellularProvider];
+          |                                   ^~~~~~~~~~~~~~~~~~~~~~~~~~
+          |                                   serviceSubscriberCellularProviders
+    In module 'CoreTelephony' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/permission_handler_apple-9.4.7/ios/Classes/strategies/PhonePermissionStrategy.m:8:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/CoreTelephony.framework/Headers/CTTelephonyNetworkInfo.h:114:50: note: property 'subscriberCellularProvider' is declared deprecated here
+      114 | @property(readonly, retain, nullable) CTCarrier *subscriberCellularProvider API_DEPRECATED_WITH_REPLACEMENT("serviceSubscriberCellularProviders", ios(4.0, 12.0)) API_UNAVAILABLE(macos);
+          |                                                  ^
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/CoreTelephony.framework/Headers/CTTelephonyNetworkInfo.h:114:50: note: 'subscriberCellularProvider' has been explicitly marked deprecated here
+    1 warning generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1467:38: warning: variable 'sum_left' may be uninitialized when used here [-Wconditional-uninitialized]
+     1467 |     const uint16x8_t sum = vaddq_u16(sum_left, sum_top);
+          |                                      ^~~~~~~~
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1432:3: note: variable 'sum_left' is declared here
+     1432 |   uint16x8_t sum_left;
+          |   ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1467:48: warning: variable 'sum_top' may be uninitialized when used here [-Wconditional-uninitialized]
+     1467 |     const uint16x8_t sum = vaddq_u16(sum_left, sum_top);
+          |                                                ^~~~~~~
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1431:3: note: variable 'sum_top' is declared here
+     1431 |   uint16x8_t sum_top;
+          |   ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1556:38: warning: variable 'sum_left' may be uninitialized when used here [-Wconditional-uninitialized]
+     1556 |     const uint16x8_t sum = vaddq_u16(sum_left, sum_top);
+          |                                      ^~~~~~~~
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1515:3: note: variable 'sum_left' is declared here
+     1515 |   uint16x8_t sum_left;
+          |   ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1556:48: warning: variable 'sum_top' may be uninitialized when used here [-Wconditional-uninitialized]
+     1556 |     const uint16x8_t sum = vaddq_u16(sum_left, sum_top);
+          |                                                ^~~~~~~
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/dsp/dec_neon.c:1514:3: note: variable 'sum_top' is declared here
+     1514 |   uint16x8_t sum_top;
+          |   ^
+    4 warnings generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/enc/backward_references_enc.c:720:12: warning: variable 'best_offset' may be uninitialized when used here [-Wconditional-uninitialized]
+      720 |           (best_offset << MAX_LENGTH_BITS) | (uint32_t)best_length;
+          |            ^~~~~~~~~~~
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/libwebp/src/enc/backward_references_enc.c:652:20: note: initialize the variable 'best_offset' to silence this warning
+      652 |     int best_offset;
+          |                    ^
+          |                     = 0
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerImageUtil.m:120:71: warning: 'kUTTypeGIF' is deprecated: first deprecated in iOS 15.0 - Use UTTypeGIF or UTType.gif (swift) instead. [-Wdeprecated-declarations]
+      120 |   options[(NSString *)kCGImageSourceTypeIdentifierHint] = (NSString *)kUTTypeGIF;
+          |                                                                       ^
+    In module 'MobileCoreServices' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerImageUtil.m:6:
+    In module 'CoreServices' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/MobileCoreServices.framework/Headers/MobileCoreServices.h:9:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:729:26: note: 'kUTTypeGIF' has been explicitly marked deprecated here
+      729 | extern const CFStringRef kUTTypeGIF                                  API_DEPRECATED("Use UTTypeGIF or UTType.gif (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_local_notifications-18.0.1/ios/Classes/FlutterLocalNotificationsPlugin.m:913:30: warning: 'UNNotificationPresentationOptionAlert' is deprecated: first deprecated in iOS 14.0 [-Wdeprecated-declarations]
+      913 |       presentationOptions |= UNNotificationPresentationOptionAlert;
+          |                              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          |                              UNNotificationPresentationOptionList | UNNotificationPresentationOptionBanner
+    In module 'UserNotifications' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_local_notifications-18.0.1/ios/Classes/FlutterLocalNotificationsPlugin.h:2:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UserNotifications.framework/Headers/UNUserNotificationCenter.h:84:5: note: 'UNNotificationPresentationOptionAlert' has been explicitly marked deprecated here
+       84 |     UNNotificationPresentationOptionAlert API_DEPRECATED_WITH_REPLACEMENT("UNNotificationPresentationOptionList | UNNotificationPresentationOptionBanner", macos(10.14, 11.0), ios(10.0, 14.0), watchos(3.0, 7.0), tvos(10.0, 14.0)) = (1 << 2),
+          |     ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadataExif.m:41:65: warning: 'kCGImagePropertyExifSubsecTimeOrginal' is deprecated: first deprecated in iOS 10.0 - No longer supported [-Wdeprecated-declarations]
+       41 |              SYStringSel(subsecTimeOriginal):       (NSString *)kCGImagePropertyExifSubsecTimeOrginal,
+          |                                                                 ^
+    In module 'ImageIO' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadataExif.m:10:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/ImageIO.framework/Headers/CGImageProperties.h:252:34: note: 'kCGImagePropertyExifSubsecTimeOrginal' has been explicitly marked deprecated here
+      252 | IMAGEIO_EXTERN const CFStringRef kCGImagePropertyExifSubsecTimeOrginal IMAGEIO_AVAILABLE_BUT_DEPRECATED(10.4, 10.11, 4.0, 10.0);
+          |                                  ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:49:36: warning: 'ALAsset' is deprecated: first deprecated in iOS 9 - Use PHAsset from the Photos framework instead [-Wdeprecated-declarations]
+       49 | + (instancetype)metadataWithAsset:(ALAsset *)asset
+          |                                    ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAsset.h:40:12: note: 'ALAsset' has been explicitly marked deprecated here
+       40 | @interface ALAsset : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:52:5: warning: 'ALAssetRepresentation' is deprecated: first deprecated in iOS 9 - Use PHImageRequestOptions with the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+       52 |     ALAssetRepresentation *representation = [asset defaultRepresentation];
+          |     ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetRepresentation.h:20:12: note: 'ALAssetRepresentation' has been explicitly marked deprecated here
+       20 | @interface ALAssetRepresentation : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:52:52: warning: 'defaultRepresentation' is deprecated: first deprecated in iOS 9 - Use PHImageRequestOptions with the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+       52 |     ALAssetRepresentation *representation = [asset defaultRepresentation];
+          |                                                    ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAsset.h:49:1: note: 'defaultRepresentation' has been explicitly marked deprecated here
+       49 | - (ALAssetRepresentation *)defaultRepresentation AL_DEPRECATED(4, "Use PHImageRequestOptions with the PHImageManager from the Photos framework instead");
+          | ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:53:57: warning: 'metadata' is deprecated: first deprecated in iOS 9 - Use CGImageSourceCopyPropertiesAtIndex() to retrieve metadata from an image returned by the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+       53 |     return [self metadataWithDictionary:[representation metadata]];
+          |                                                         ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetRepresentation.h:56:1: note: 'metadata' has been explicitly marked deprecated here
+       56 | - (NSDictionary *)metadata AL_DEPRECATED(4, "Use CGImageSourceCopyPropertiesAtIndex() to retrieve metadata from an image returned by the PHImageManager from the Photos framework instead");
+          | ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:152:13: warning: 'ALAsset' is deprecated: first deprecated in iOS 9 - Use PHAsset from the Photos framework instead [-Wdeprecated-declarations]
+      152 |     __block ALAsset *assetAtUrl = nil;
+          |             ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAsset.h:40:12: note: 'ALAsset' has been explicitly marked deprecated here
+       40 | @interface ALAsset : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:153:5: warning: 'ALAssetsLibrary' is deprecated: first deprecated in iOS 9 - Use PHPhotoLibrary from the Photos framework instead [-Wdeprecated-declarations]
+      153 |     ALAssetsLibrary* library = [[ALAssetsLibrary alloc] init];
+          |     ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetsLibrary.h:80:12: note: 'ALAssetsLibrary' has been explicitly marked deprecated here
+       80 | @interface ALAssetsLibrary : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:153:50: warning: 'ALAssetsLibrary' is deprecated: first deprecated in iOS 9 - Use PHPhotoLibrary from the Photos framework instead [-Wdeprecated-declarations]
+      153 |     ALAssetsLibrary* library = [[ALAssetsLibrary alloc] init];
+          |                                                  ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetsLibrary.h:80:12: note: 'ALAssetsLibrary' has been explicitly marked deprecated here
+       80 | @interface ALAssetsLibrary : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:156:49: warning: 'ALAsset' is deprecated: first deprecated in iOS 9 - Use PHAsset from the Photos framework instead [-Wdeprecated-declarations]
+      156 |     [library assetForURL:assetURL resultBlock:^(ALAsset *asset) {
+          |                                                 ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAsset.h:40:12: note: 'ALAsset' has been explicitly marked deprecated here
+       40 | @interface ALAsset : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:156:14: warning: 'assetForURL:resultBlock:failureBlock:' is deprecated: first deprecated in iOS 9 - Use fetchAssetsWithLocalIdentifiers:options: on PHAsset to fetch assets by local identifier (or to lookup PHAssets by a previously known ALAssetPropertyAssetURL use fetchAssetsWithALAssetURLs:options:) from the Photos framework instead [-Wdeprecated-declarations]
+      156 |     [library assetForURL:assetURL resultBlock:^(ALAsset *asset) {
+          |              ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetsLibrary.h:95:1: note: 'assetForURL:resultBlock:failureBlock:' has been explicitly marked deprecated here
+       95 | - (void)assetForURL:(NSURL *)assetURL resultBlock:(ALAssetsLibraryAssetForURLResultBlock)resultBlock failureBlock:(ALAssetsLibraryAccessFailureBlock)failureBlock AL_DEPRECATED(4, "Use fetchAssetsWithLocalIdentifiers:options: on PHAsset to fetch assets by local identifier (or to lookup PHAssets by a previously known ALAssetPropertyAssetURL use fetchAssetsWithALAssetURLs:options:) from the Photos framework instead");
+          | ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:167:5: warning: 'ALAssetRepresentation' is deprecated: first deprecated in iOS 9 - Use PHImageRequestOptions with the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+      167 |     ALAssetRepresentation *representation = [assetAtUrl defaultRepresentation];
+          |     ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetRepresentation.h:20:12: note: 'ALAssetRepresentation' has been explicitly marked deprecated here
+       20 | @interface ALAssetRepresentation : NSObject {
+          |            ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:167:57: warning: 'defaultRepresentation' is deprecated: first deprecated in iOS 9 - Use PHImageRequestOptions with the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+      167 |     ALAssetRepresentation *representation = [assetAtUrl defaultRepresentation];
+          |                                                         ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAsset.h:49:1: note: 'defaultRepresentation' has been explicitly marked deprecated here
+       49 | - (ALAssetRepresentation *)defaultRepresentation AL_DEPRECATED(4, "Use PHImageRequestOptions with the PHImageManager from the Photos framework instead");
+          | ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:168:28: warning: 'metadata' is deprecated: first deprecated in iOS 9 - Use CGImageSourceCopyPropertiesAtIndex() to retrieve metadata from an image returned by the PHImageManager from the Photos framework instead [-Wdeprecated-declarations]
+      168 |     return [representation metadata];
+          |                            ^
+    In module 'AssetsLibrary' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/SYPictureMetadata/SYMetadata.m:14:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/AssetsLibrary.framework/Headers/ALAssetRepresentation.h:56:1: note: 'metadata' has been explicitly marked deprecated here
+       56 | - (NSDictionary *)metadata AL_DEPRECATED(4, "Use CGImageSourceCopyPropertiesAtIndex() to retrieve metadata from an image returned by the PHImageManager from the Photos framework instead");
+          | ^
+    12 warnings generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPlugin.m:70:64: warning: 'windows' is deprecated: first deprecated in iOS 15.0 - Use UIWindowScene.windows on a relevant window scene instead [-Wdeprecated-declarations]
+       70 |     for (UIWindow *window in [UIApplication sharedApplication].windows) {
+          |                                                                ^
+    In module 'UIKit' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/Target Support Files/image_picker_ios/image_picker_ios-prefix.pch:2:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIApplication.h:109:62: note: 'windows' has been explicitly marked deprecated here
+      109 | @property(nonatomic,readonly) NSArray<__kindof UIWindow *>  *windows API_DEPRECATED("Use UIWindowScene.windows on a relevant window scene instead", ios(2.0, 15.0), visionos(1.0, 1.0)) API_UNAVAILABLE(watchos);
+          |                                                              ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPlugin.m:127:39: warning: 'kUTTypeImage' is deprecated: first deprecated in iOS 15.0 - Use UTTypeImage or UTType.image (swift) instead. [-Wdeprecated-declarations]
+      127 |     [mediaTypes addObject:(NSString *)kUTTypeImage];
+          |                                       ^
+    In module 'MobileCoreServices' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPlugin.m:9:
+    In module 'CoreServices' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/MobileCoreServices.framework/Headers/MobileCoreServices.h:9:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:725:26: note: 'kUTTypeImage' has been explicitly marked deprecated here
+      725 | extern const CFStringRef kUTTypeImage                                API_DEPRECATED("Use UTTypeImage or UTType.image (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPlugin.m:130:39: warning: 'kUTTypeMovie' is deprecated: first deprecated in iOS 15.0 - Use UTTypeMovie or UTType.movie (swift) instead. [-Wdeprecated-declarations]
+      130 |     [mediaTypes addObject:(NSString *)kUTTypeMovie];
+          |                                       ^
+    In module 'MobileCoreServices' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPlugin.m:9:
+    In module 'CoreServices' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/MobileCoreServices.framework/Headers/MobileCoreServices.h:9:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:880:26: note: 'kUTTypeMovie' has been explicitly marked deprecated here
+      880 | extern const CFStringRef kUTTypeMovie                                API_DEPRECATED("Use UTTypeMovie or UTType.movie (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    3 warnings generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPhotoAssetUtil.m:102:56: warning: 'kUTTypeGIF' is deprecated: first deprecated in iOS 15.0 - Use UTTypeGIF or UTType.gif (swift) instead. [-Wdeprecated-declarations]
+      102 |       (__bridge CFURLRef)[NSURL fileURLWithPath:path], kUTTypeGIF, gifInfo.images.count, NULL);
+          |                                                        ^
+    In module 'MobileCoreServices' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/image_picker_ios-0.8.13/ios/image_picker_ios/Sources/image_picker_ios/FLTImagePickerPhotoAssetUtil.m:9:
+    In module 'CoreServices' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/MobileCoreServices.framework/Headers/MobileCoreServices.h:9:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:729:26: note: 'kUTTypeGIF' has been explicitly marked deprecated here
+      729 | extern const CFStringRef kUTTypeGIF                                  API_DEPRECATED("Use UTTypeGIF or UTType.gif (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/CompressFileHandler.m:109:16: warning: unused variable 'swf' [-Wunused-variable]
+      109 |     const char swf[3] = {'F', 'W', 'S'};
+          |                ^~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/flutter_image_compress_common-1.0.6/ios/Classes/CompressFileHandler.m:110:16: warning: unused variable 'swc' [-Wunused-variable]
+      110 |     const char swc[3] = {'C', 'W', 'S'};
+          |                ^~~
+    2 warnings generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:208:64: warning: 'UTTypeCreatePreferredIdentifierForTag' is deprecated: first deprecated in iOS 15.0 - Use the UTType class instead. [-Wdeprecated-declarations]
+      208 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:317:1: note: 'UTTypeCreatePreferredIdentifierForTag' has been explicitly marked deprecated here
+      317 | UTTypeCreatePreferredIdentifierForTag(
+          | ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:208:102: warning: 'kUTTagClassFilenameExtension' is deprecated: first deprecated in iOS 15.0 - Use UTTagClassFilenameExtension instead. [-Wdeprecated-declarations]
+      208 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                      ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:258:26: note: 'kUTTagClassFilenameExtension' has been explicitly marked deprecated here
+      258 | extern const CFStringRef kUTTagClassFilenameExtension                API_DEPRECATED("Use UTTagClassFilenameExtension instead.", ios(3.0, 15.0), macos(10.3, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:208:173: warning: 'kUTTypeImage' is deprecated: first deprecated in iOS 15.0 - Use UTTypeImage or UTType.image (swift) instead. [-Wdeprecated-declarations]
+      208 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                                                                                             ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:725:26: note: 'kUTTypeImage' has been explicitly marked deprecated here
+      725 | extern const CFStringRef kUTTypeImage                                API_DEPRECATED("Use UTTypeImage or UTType.image (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:210:17: warning: 'UTTypeIsDynamic' is deprecated: first deprecated in iOS 15.0 - Use UTType.dynamic instead. [-Wdeprecated-declarations]
+      210 |             if (UTTypeIsDynamic((__bridge CFStringRef)typeIdentifierHint)) {
+          |                 ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOCoder.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:536:1: note: 'UTTypeIsDynamic' has been explicitly marked deprecated here
+      536 | UTTypeIsDynamic(CFStringRef inUTI)                                   API_DEPRECATED("Use UTType.dynamic instead.", ios(8.0, 15.0), macos(10.10, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          | ^
+    4 warnings generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:652:64: warning: 'UTTypeCreatePreferredIdentifierForTag' is deprecated: first deprecated in iOS 15.0 - Use the UTType class instead. [-Wdeprecated-declarations]
+      652 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:20:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:317:1: note: 'UTTypeCreatePreferredIdentifierForTag' has been explicitly marked deprecated here
+      317 | UTTypeCreatePreferredIdentifierForTag(
+          | ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:652:102: warning: 'kUTTagClassFilenameExtension' is deprecated: first deprecated in iOS 15.0 - Use UTTagClassFilenameExtension instead. [-Wdeprecated-declarations]
+      652 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                      ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:20:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:258:26: note: 'kUTTagClassFilenameExtension' has been explicitly marked deprecated here
+      258 | extern const CFStringRef kUTTagClassFilenameExtension                API_DEPRECATED("Use UTTagClassFilenameExtension instead.", ios(3.0, 15.0), macos(10.3, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:652:173: warning: 'kUTTypeImage' is deprecated: first deprecated in iOS 15.0 - Use UTTypeImage or UTType.image (swift) instead. [-Wdeprecated-declarations]
+      652 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                                                                                             ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:20:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:725:26: note: 'kUTTypeImage' has been explicitly marked deprecated here
+      725 | extern const CFStringRef kUTTypeImage                                API_DEPRECATED("Use UTTypeImage or UTType.image (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:654:17: warning: 'UTTypeIsDynamic' is deprecated: first deprecated in iOS 15.0 - Use UTType.dynamic instead. [-Wdeprecated-declarations]
+      654 |             if (UTTypeIsDynamic((__bridge CFStringRef)typeIdentifierHint)) {
+          |                 ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageIOAnimatedCoder.m:20:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:536:1: note: 'UTTypeIsDynamic' has been explicitly marked deprecated here
+      536 | UTTypeIsDynamic(CFStringRef inUTI)                                   API_DEPRECATED("Use UTType.dynamic instead.", ios(8.0, 15.0), macos(10.10, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          | ^
+    4 warnings generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:89:64: warning: 'UTTypeCreatePreferredIdentifierForTag' is deprecated: first deprecated in iOS 15.0 - Use the UTType class instead. [-Wdeprecated-declarations]
+       89 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:317:1: note: 'UTTypeCreatePreferredIdentifierForTag' has been explicitly marked deprecated here
+      317 | UTTypeCreatePreferredIdentifierForTag(
+          | ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:89:102: warning: 'kUTTagClassFilenameExtension' is deprecated: first deprecated in iOS 15.0 - Use UTTagClassFilenameExtension instead. [-Wdeprecated-declarations]
+       89 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                      ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:258:26: note: 'kUTTagClassFilenameExtension' has been explicitly marked deprecated here
+      258 | extern const CFStringRef kUTTagClassFilenameExtension                API_DEPRECATED("Use UTTagClassFilenameExtension instead.", ios(3.0, 15.0), macos(10.3, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:89:173: warning: 'kUTTypeImage' is deprecated: first deprecated in iOS 15.0 - Use UTTypeImage or UTType.image (swift) instead. [-Wdeprecated-declarations]
+       89 |             typeIdentifierHint = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)fileExtensionHint, kUTTypeImage);
+          |                                                                                                                                                                             ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTCoreTypes.h:725:26: note: 'kUTTypeImage' has been explicitly marked deprecated here
+      725 | extern const CFStringRef kUTTypeImage                                API_DEPRECATED("Use UTTypeImage or UTType.image (swift) instead.", ios(3.0, 15.0), macos(10.4, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          |                          ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:91:17: warning: 'UTTypeIsDynamic' is deprecated: first deprecated in iOS 15.0 - Use UTType.dynamic instead. [-Wdeprecated-declarations]
+       91 |             if (UTTypeIsDynamic((__bridge CFStringRef)typeIdentifierHint)) {
+          |                 ^
+    In module 'CoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/SDImageCacheDefine.m:17:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:536:1: note: 'UTTypeIsDynamic' has been explicitly marked deprecated here
+      536 | UTTypeIsDynamic(CFStringRef inUTI)                                   API_DEPRECATED("Use UTType.dynamic instead.", ios(8.0, 15.0), macos(10.10, 12.0), tvos(9.0, 15.0), watchos(1.0, 8.0));
+          | ^
+    4 warnings generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/NSData+ImageContentType.m:159:16: warning: 'UTTypeConformsTo' is deprecated: first deprecated in iOS 15.0 - Use -[UTType conformsToType:] instead. [-Wdeprecated-declarations]
+      159 |     } else if (UTTypeConformsTo(uttype, kSDUTTypeRAW)) {
+          |                ^
+    In module 'MobileCoreServices' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImage/SDWebImage/Core/NSData+ImageContentType.m:14:
+    In module 'CoreServices' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/System/Library/Frameworks/MobileCoreServices.framework/Headers/MobileCoreServices.h:9:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreServices.framework/Headers/UTType.h:472:1: note: 'UTTypeConformsTo' has been explicitly marked deprecated here
+      472 | UTTypeConformsTo(
+          | ^
+    1 warning generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/SDWebImageWebPCoder/SDWebImageWebPCoder/Classes/SDImageWebPCoder.m:673:33: warning: 'CGColorSpaceCreateWithICCProfile' is deprecated: first deprecated in iOS 11.0 - No longer supported [-Wdeprecated-declarations]
+      673 |                 colorSpaceRef = CGColorSpaceCreateWithICCProfile((__bridge CFDataRef)profileData);
+          |                                 ^
+    In module 'UIKit' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/Target Support Files/SDWebImageWebPCoder/SDWebImageWebPCoder-prefix.pch:2:
+    In module 'CoreGraphics' imported from /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIBezierPath.h:10:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/CoreGraphics.framework/Headers/CGColorSpace.h:493:38: note: 'CGColorSpaceCreateWithICCProfile' has been explicitly marked deprecated here
+      493 | CG_EXTERN CGColorSpaceRef __nullable CGColorSpaceCreateWithICCProfile(CFDataRef cg_nullable data)
+          |                                      ^
+    1 warning generated.
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/GoogleSignIn/GoogleSignIn/Sources/GIDAppCheck/UI/GIDActivityIndicatorViewController.m:34:13: warning: 'UIActivityIndicatorViewStyleGray' is deprecated: first deprecated in iOS 13.0 [-Wdeprecated-declarations]
+       34 |     style = UIActivityIndicatorViewStyleGray;
+          |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          |             UIActivityIndicatorViewStyleMedium
+    In module 'UIKit' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/GoogleSignIn/GoogleSignIn/Sources/GIDAppCheck/UI/GIDActivityIndicatorViewController.h:21:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIActivityIndicatorView.h:20:5: note: 'UIActivityIndicatorViewStyleGray' has been explicitly marked deprecated here
+       20 |     UIActivityIndicatorViewStyleGray API_DEPRECATED_WITH_REPLACEMENT("UIActivityIndicatorViewStyleMedium", ios(2.0, 13.0)) API_UNAVAILABLE(tvos, visionos, watchos) = 2,
+          |     ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/trees.c:37:
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/deflate.h:16:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.c:8:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/inftrees.c:6:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/inflate.c:83:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/inffast.c:6:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/infback.c:13:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/deflate.c:52:
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/deflate.h:16:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/crc32.c:30:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    In file included from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/adler32.c:8:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:170:11: warning: 'OS_CODE' macro redefined [-Wmacro-redefined]
+      170 | #  define OS_CODE 19
+          |           ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/gRPC-Core/third_party/zlib/zutil.h:141:11: note: previous definition is here
+      141 | #  define OS_CODE  7
+          |           ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_remote_config-6.0.2/ios/firebase_remote_config/Sources/firebase_remote_config/FirebaseRemoteConfigPlugin.swift:21:1: warning: extension declares a conformance of imported type 'FlutterError' to imported protocol 'Error'; this will not behave correctly if the owners of 'Flutter' introduce this conformance in the future
+    extension FlutterError: Error {}
+    ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_remote_config-6.0.2/ios/firebase_remote_config/Sources/firebase_remote_config/FirebaseRemoteConfigPlugin.swift:21:1: note: add '@retroactive' to silence this warning
+    extension FlutterError: Error {}
+    ^                       ~~~~~
+                            @retroactive Error
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_functions-6.0.2/ios/cloud_functions/Sources/cloud_functions/FirebaseFunctionsPlugin.swift:18:1: warning: extension declares a conformance of imported type 'FlutterError' to imported protocol 'Error'; this will not behave correctly if the owners of 'Flutter' introduce this conformance in the future
+    extension FlutterError: Error {}
+    ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_functions-6.0.2/ios/cloud_functions/Sources/cloud_functions/FirebaseFunctionsPlugin.swift:18:1: note: add '@retroactive' to silence this warning
+    extension FlutterError: Error {}
+    ^                       ~~~~~
+                            @retroactive Error
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_functions-6.0.2/ios/cloud_functions/Sources/cloud_functions/FirebaseFunctionsPlugin.swift:25:34: warning: expression implicitly coerced from '[String : Any?]' to '[String : Any]'
+        httpsFunctionCall(arguments: arguments) { result, error in
+                                     ^~~~~~~~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_functions-6.0.2/ios/cloud_functions/Sources/cloud_functions/FirebaseFunctionsPlugin.swift:25:34: note: explicitly cast to '[String : Any]' with 'as [String : Any]' to silence this warning
+        httpsFunctionCall(arguments: arguments) { result, error in
+                                     ^~~~~~~~~
+                                               as [String : Any]
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_messaging-16.0.2/ios/firebase_messaging/Sources/firebase_messaging/FLTFirebaseMessagingPlugin.m:348:32: warning: 'UNNotificationPresentationOptionAlert' is deprecated: first deprecated in iOS 14.0 [-Wdeprecated-declarations]
+      348 |         presentationOptions |= UNNotificationPresentationOptionAlert;
+          |                                ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          |                                UNNotificationPresentationOptionList | UNNotificationPresentationOptionBanner
+    In module 'UserNotifications' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_messaging-16.0.2/ios/firebase_messaging/Sources/firebase_messaging/include/FLTFirebaseMessagingPlugin.h:15:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UserNotifications.framework/Headers/UNUserNotificationCenter.h:84:5: note: 'UNNotificationPresentationOptionAlert' has been explicitly marked deprecated here
+       84 |     UNNotificationPresentationOptionAlert API_DEPRECATED_WITH_REPLACEMENT("UNNotificationPresentationOptionList | UNNotificationPresentationOptionBanner", macos(10.14, 11.0), ios(10.0, 14.0), watchos(3.0, 7.0), tvos(10.0, 14.0)) = (1 << 2),
+          |     ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_core-4.2.1/ios/firebase_core/Sources/firebase_core/FLTFirebaseCorePlugin.m:92:35: warning: incompatible pointer types assigning to 'NSString * _Nullable' from 'NSNull * _Nonnull' [-Wincompatible-pointer-types]
+       92 |   pigeonOptions.deepLinkURLScheme = [NSNull null];
+          |                                   ^ ~~~~~~~~~~~~~
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_firestore-6.0.2/ios/cloud_firestore/Sources/cloud_firestore/FLTFirebaseFirestorePlugin.m:563:14: warning: 'setIndexConfigurationFromJSON:completion:' is deprecated: Instead of creating cache indexes manually, consider using `PersistentCacheIndexManager.enableIndexAutoCreation()` to let the SDK decide whether to create cache indexes for queries running locally. [-Wdeprecated-declarations]
+      563 |   [firestore setIndexConfigurationFromJSON:indexConfiguration
+          |              ^
+    In module 'FirebaseFirestoreInternal' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_firestore-6.0.2/ios/cloud_firestore/Sources/cloud_firestore/FLTFirebaseFirestorePlugin.m:13:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/FirebaseFirestoreInternal/Firestore/Source/Public/FirebaseFirestore/FIRFirestore.h:134:57: note: 'setIndexConfigurationFromJSON:completion:' has been explicitly marked deprecated here
+      134 |     NS_SWIFT_NAME(setIndexConfiguration(_:completion:)) DEPRECATED_MSG_ATTRIBUTE(
+          |                                                         ^
+    In module '_DarwinFoundation1' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/cloud_firestore-6.0.2/ios/cloud_firestore/Sources/cloud_firestore/FLTFirebaseFirestorePlugin.m:12:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/include/AvailabilityMacros.h:152:64: note: expanded from macro 'DEPRECATED_MSG_ATTRIBUTE'
+      152 |             #define DEPRECATED_MSG_ATTRIBUTE(s) __attribute__((deprecated(s)))
+          |                                                                ^
+    1 warning generated.
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:127:72: warning: sending 'FLTFirebaseAuthPlugin *__strong' to parameter of incompatible type 'id<FLTFirebasePlugin> _Nonnull'
+      127 |     [[FLTFirebasePluginRegistry sharedInstance] registerFirebasePlugin:self];
+          |                                                                        ^~~~
+    In module 'firebase_core' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:9:
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_core-4.2.1/ios/firebase_core/Sources/firebase_core/include/firebase_core/FLTFirebasePluginRegistry.h:23:64: note: passing argument to parameter 'firebasePlugin' here
+       23 | - (void)registerFirebasePlugin:(id<FLTFirebasePlugin> _Nonnull)firebasePlugin;
+          |                                                                ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:322:11: warning: unused variable 'errorCode' [-Wunused-variable]
+      322 |       int errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random);
+          |           ^~~~~~~~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:408:14: warning: unused variable 'capturedCompletion' [-Wunused-variable]
+      408 |       void (^capturedCompletion)(PigeonUserCredential *_Nullable, FlutterError *_Nullable) =
+          |              ^~~~~~~~~~~~~~~~~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:419:14: warning: unused variable 'capturedCompletion' [-Wunused-variable]
+      419 |       void (^capturedCompletion)(PigeonUserCredential *_Nullable, FlutterError *_Nullable) =
+          |              ^~~~~~~~~~~~~~~~~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:430:14: warning: unused variable 'capturedCompletion' [-Wunused-variable]
+      430 |       void (^capturedCompletion)(PigeonUserCredential *_Nullable, FlutterError *_Nullable) =
+          |              ^~~~~~~~~~~~~~~~~~
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:834:45: warning: 'keyWindow' is deprecated: first deprecated in iOS 13.0 - Should not be used for applications that support multiple scenes as it returns a key window across all connected scenes [-Wdeprecated-declarations]
+      834 |   return [[UIApplication sharedApplication] keyWindow];
+          |                                             ^
+    In module 'UIKit' imported from /Users/chajaemin/Desktop/wefilling-nochatbot/ios/Pods/Target Support Files/firebase_auth/firebase_auth-prefix.pch:2:
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIApplication.h:108:51: note: property 'keyWindow' is declared deprecated here
+      108 | @property(nullable, nonatomic,readonly) UIWindow *keyWindow API_DEPRECATED("Should not be used for applications that support multiple scenes as it returns a key window across all connected scenes", ios(2.0, 13.0)) API_UNAVAILABLE(visionos, watchos);
+          |                                                   ^
+    /Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.1.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIApplication.h:108:51: note: 'keyWindow' has been explicitly marked deprecated here
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:1166:9: warning: 'fetchSignInMethodsForEmail:completion:' is deprecated: `fetchSignInMethods` is deprecated and will be removed in a future release. This method returns an empty list when Email Enumeration Protection is enabled. [-Wdeprecated-declarations]
+     1166 |   [auth fetchSignInMethodsForEmail:email
+          |         ^
+    In module 'FirebaseAuth' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:5:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/build/ios/Release-iphoneos/FirebaseAuth/FirebaseAuth.framework/Headers/FirebaseAuth-Swift.h:501:159: note: 'fetchSignInMethodsForEmail:completion:' has been explicitly marked deprecated here
+      501 | - (void)fetchSignInMethodsForEmail:(NSString * _Nonnull)email completion:(void (^ _Nullable)(NSArray<NSString *> * _Nullable, NSError * _Nullable))completion SWIFT_DEPRECATED_MSG("`fetchSignInMethods` is deprecated and will be removed in a future release. This method returns an empty list when Email Enumeration Protection is enabled.");
+          |                                                                                                                                                               ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/build/ios/Release-iphoneos/FirebaseAuth/FirebaseAuth.framework/Headers/FirebaseAuth-Swift.h:221:51: note: expanded from macro 'SWIFT_DEPRECATED_MSG'
+      221 | # define SWIFT_DEPRECATED_MSG(...) __attribute__((deprecated(__VA_ARGS__)))
+          |                                                   ^
+    /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:1973:16: warning: 'updateEmail:completion:' is deprecated: `updateEmail` is deprecated and will be removed in a future release. Use sendEmailVerification(beforeUpdatingEmail:) instead. [-Wdeprecated-declarations]
+     1973 |   [currentUser updateEmail:newEmail
+          |                ^
+    In module 'FirebaseAuth' imported from /Users/chajaemin/.pub-cache/hosted/pub.dev/firebase_auth-6.1.0/ios/firebase_auth/Sources/firebase_auth/FLTFirebaseAuthPlugin.m:5:
+    /Users/chajaemin/Desktop/wefilling-nochatbot/build/ios/Release-iphoneos/FirebaseAuth/FirebaseAuth.framework/Headers/FirebaseAuth-Swift.h:2075:111: note: 'updateEmail:completion:' has been explicitly marked deprecated here
+     2075 | - (void)updateEmail:(NSString * _Nonnull)email completion:(void (^ _Nullable)(NSError * _Nullable))completion SWIFT_DEPRECATED_MSG("`updateEmail` is deprecated and will be removed in a future release. Use sendEmailVerification(beforeUpdatingEmail:) instead.");
+          |                                                                                                               ^
+    /Users/chajaemin/Desktop/wefilling-nochatbot/build/ios/Release-iphoneos/FirebaseAuth/FirebaseAuth.framework/Headers/FirebaseAuth-Swift.h:221:51: note: expanded from macro 'SWIFT_DEPRECATED_MSG'
+      221 | # define SWIFT_DEPRECATED_MSG(...) __attribute__((deprecated(__VA_ARGS__)))
+          |                                                   ^
+    8 warnings generated.
+    lib/screens/login_screen.dart:761:57: Error: Can't find '}' to match '{'.
+              if (authProvider.consumeSignupRequiredFlag()) {
+                                                            ^
+    lib/screens/login_screen.dart:757:58: Error: Can't find '}' to match '{'.
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+                                                             ^
+    lib/screens/login_screen.dart:943:7: Error: 'catch' can't be used as an identifier because it's a keyword.
+    Try renaming this to be an identifier that isn't a keyword.
+        } catch (e) {
+          ^^^^^
+    lib/screens/login_screen.dart:955:3: Error: Expected a declaration, but got '}'.
+      }
+      ^
+    lib/screens/login_screen.dart:1266:1: Error: Expected a declaration, but got '}'.
+    }
+    ^
+    lib/screens/login_screen.dart:936:15: Error: Expected ';' after this.
+                  ),
+                  ^
+    lib/screens/login_screen.dart:936:16: Error: Expected an identifier, but got ','.
+    Try inserting an identifier before ','.
+                  ),
+                   ^
+    lib/screens/login_screen.dart:936:16: Error: Unexpected token ','.
+                  ),
+                   ^
+    lib/screens/login_screen.dart:725:5: Error: A try block must be followed by an 'on', 'catch', or 'finally' clause.
+    Try adding either a catch or finally clause, or remove the try statement.
+        try {
+        ^^^
+    lib/screens/login_screen.dart:941:10: Error: Expected an identifier, but got ')'.
+    Try inserting an identifier before ')'.
+            });
+             ^
+    lib/screens/login_screen.dart:941:9: Error: Expected ';' after this.
+            });
+            ^
+    lib/screens/login_screen.dart:941:10: Error: Unexpected token ';'.
+            });
+             ^
+    lib/screens/login_screen.dart:945:11: Error: Undefined name 'mounted'.
+          if (mounted) {
+              ^^^^^^^
+    lib/screens/login_screen.dart:946:30: Error: Undefined name 'context'.
+            ScaffoldMessenger.of(context).showSnackBar(
+                                 ^^^^^^^
+    lib/screens/login_screen.dart:948:50: Error: Undefined name 'context'.
+                content: Text('${AppLocalizations.of(context)!.loginError}: $e'),
+                                                     ^^^^^^^
+    lib/screens/login_screen.dart:966:12: Error: Undefined name 'mounted'.
+          if (!mounted) return;
+               ^^^^^^^
+    lib/screens/login_screen.dart:995:16: Error: Undefined name 'mounted'.
+              if (!mounted) return;
+                   ^^^^^^^
+    lib/screens/login_screen.dart:1173:15: Error: Expected ';' after this.
+                  ),
+                  ^
+    lib/screens/login_screen.dart:1173:16: Error: Expected an identifier, but got ','.
+    Try inserting an identifier before ','.
+                  ),
+                   ^
+    lib/screens/login_screen.dart:1173:16: Error: Unexpected token ','.
+                  ),
+                   ^
+    lib/screens/login_screen.dart:1174:13: Error: Expected an identifier, but got ')'.
+    Try inserting an identifier before ')'.
+                );
+                ^
+    lib/screens/login_screen.dart:1173:16: Error: Expected ';' after this.
+                  ),
+                   ^
+    lib/screens/login_screen.dart:1174:13: Error: Unexpected token ')'.
+                );
+                ^
+    lib/screens/login_screen.dart:1192:13: Error: Undefined name 'mounted'.
+            if (mounted) {
+                ^^^^^^^
+    lib/screens/login_screen.dart:1249:11: Error: Undefined name 'mounted'.
+          if (mounted) {
+              ^^^^^^^
+    Target kernel_snapshot_program failed: Exception
+    Failed to package /Users/chajaemin/Desktop/wefilling-nochatbot.
+    Command PhaseScriptExecution failed with a nonzero exit code
+    note: Run script build phase 'Run Script' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'Runner' from project 'Runner')
+    note: Run script build phase 'Thin Binary' will be run during every build because the option to run the script phase "Based on dependency analysis" is unchecked. (in target 'Runner' from project 'Runner')
+    warning: Run script build phase 'FlutterFire: "flutterfire upload-crashlytics-symbols"' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'Runner' from project 'Runner')
+    warning: Run script build phase 'Create Symlinks to Header Folders' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'gRPC-Core' from project 'Pods')
+    warning: Run script build phase 'Create Symlinks to Header Folders' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'gRPC-C++' from project 'Pods')
+    warning: Run script build phase 'Create Symlinks to Header Folders' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'abseil' from project 'Pods')
+    warning: Run script build phase 'Create Symlinks to Header Folders' will be run during every build because it does not specify any outputs. To address this issue, either add output dependencies to the script phase, or configure it to run in every build by unchecking "Based on dependency analysis" in the script phase. (in target 'BoringSSL-GRPC' from project 'Pods')
+
+Encountered error while building for device.

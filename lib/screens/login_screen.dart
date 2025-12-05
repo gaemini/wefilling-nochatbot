@@ -98,84 +98,108 @@ class _LoginScreenState extends State<LoginScreen>
           barrierDismissible: false,
           builder: (dialogContext) => AlertDialog(
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(20),
             ),
-            title: Row(
+            contentPadding: const EdgeInsets.all(24),
+            title: Column(
               children: [
                 Icon(
                   Icons.info_outline,
-                  color: Colors.orange.shade700,
-                  size: 28,
+                  color: Colors.blue.shade600,
+                  size: 48,
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(height: 16),
                 Text(
                   AppLocalizations.of(context)!.registrationRequired,
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Pretendard',
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.5,
                   ),
+                  textAlign: TextAlign.center,
                 ),
               ],
             ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   AppLocalizations.of(context)!.signupRequired,
                   style: const TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 16,
-                    height: 1.5,
+                    fontWeight: FontWeight.w400,
+                    height: 1.6,
+                    color: Color(0xFF475569),
+                    letterSpacing: -0.3,
                   ),
+                  textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(8),
+                    color: const Color(0xFFF0F9FF),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
-                      color: Colors.orange.shade200,
+                      color: const Color(0xFFBAE6FD),
                       width: 1,
                     ),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
-                        Icons.arrow_forward,
-                        color: Colors.orange.shade700,
-                        size: 20,
+                        Icons.lightbulb_outline,
+                        color: Colors.blue.shade700,
+                        size: 22,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           AppLocalizations.of(context)!.signUpFirstMessage,
                           style: TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 14,
-                            color: Colors.orange.shade900,
-                            height: 1.4,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.blue.shade900,
+                            height: 1.5,
+                            letterSpacing: -0.2,
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(dialogContext).pop();
-                },
-                child: Text(
-                  AppLocalizations.of(context)!.confirm,
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 16,
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue.shade600,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.confirm,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }
@@ -715,113 +739,149 @@ class _LoginScreenState extends State<LoginScreen>
               barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
               builder: (dialogContext) => AlertDialog(
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                title: Row(
+                contentPadding: const EdgeInsets.all(24),
+                title: Column(
                   children: [
                     Icon(
                       Icons.info_outline,
-                      color: Colors.orange.shade700,
-                      size: 28,
+                      color: Colors.blue.shade600,
+                      size: 48,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(height: 16),
                     Text(
                       AppLocalizations.of(context)!.registrationRequired,
                       style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Pretendard',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                        letterSpacing: -0.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       AppLocalizations.of(context)!.signupRequired,
                       style: const TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 16,
-                        height: 1.5,
+                        fontWeight: FontWeight.w400,
+                        height: 1.6,
+                        color: Color(0xFF475569),
+                        letterSpacing: -0.3,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFFF0F9FF),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.orange.shade200,
+                          color: const Color(0xFFBAE6FD),
                           width: 1,
                         ),
                       ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(
-                            Icons.arrow_forward,
-                            color: Colors.orange.shade700,
-                            size: 20,
+                            Icons.lightbulb_outline,
+                            color: Colors.blue.shade700,
+                            size: 22,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
+                                fontFamily: 'Pretendard',
                                 fontSize: 14,
-                                color: Colors.orange.shade900,
-                                height: 1.4,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.blue.shade900,
+                                height: 1.5,
+                                letterSpacing: -0.2,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF64748B),
+                                side: const BorderSide(
+                                  color: Color(0xFFE2E8F0),
+                                  width: 1.5,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                AppLocalizations.of(context)!.close,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const HanyangEmailVerificationScreen(),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade600,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                AppLocalizations.of(context)!.signUp,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                    },
-                    child: Text(
-                      AppLocalizations.of(context)!.close,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const HanyangEmailVerificationScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade700,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context)!.signUp,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             );
           } else {
@@ -891,113 +951,149 @@ class _LoginScreenState extends State<LoginScreen>
               barrierDismissible: false, // 바깥 영역 터치로 닫히지 않음
               builder: (dialogContext) => AlertDialog(
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                title: Row(
+                contentPadding: const EdgeInsets.all(24),
+                title: Column(
                   children: [
                     Icon(
                       Icons.info_outline,
-                      color: Colors.orange.shade700,
-                      size: 28,
+                      color: Colors.blue.shade600,
+                      size: 48,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(height: 16),
                     Text(
                       AppLocalizations.of(context)!.registrationRequired,
                       style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+                        fontFamily: 'Pretendard',
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                        letterSpacing: -0.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
                 content: Column(
                   mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       AppLocalizations.of(context)!.signupRequired,
                       style: const TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 16,
-                        height: 1.5,
+                        fontWeight: FontWeight.w400,
+                        height: 1.6,
+                        color: Color(0xFF475569),
+                        letterSpacing: -0.3,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFFF0F9FF),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color: Colors.orange.shade200,
+                          color: const Color(0xFFBAE6FD),
                           width: 1,
                         ),
                       ),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(
-                            Icons.arrow_forward,
-                            color: Colors.orange.shade700,
-                            size: 20,
+                            Icons.lightbulb_outline,
+                            color: Colors.blue.shade700,
+                            size: 22,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               AppLocalizations.of(context)!.signUpFirstMessage,
                               style: TextStyle(
+                                fontFamily: 'Pretendard',
                                 fontSize: 14,
-                                color: Colors.orange.shade900,
-                                height: 1.4,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.blue.shade900,
+                                height: 1.5,
+                                letterSpacing: -0.2,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 24),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.of(dialogContext).pop(),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF64748B),
+                                side: const BorderSide(
+                                  color: Color(0xFFE2E8F0),
+                                  width: 1.5,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                AppLocalizations.of(context)!.close,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: SizedBox(
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                Navigator.of(dialogContext).pop();
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const HanyangEmailVerificationScreen(),
+                                  ),
+                                );
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.blue.shade600,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: Text(
+                                AppLocalizations.of(context)!.signUp,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                    },
-                    child: Text(
-                      AppLocalizations.of(context)!.close,
-                      style: TextStyle(
-                        color: Colors.grey.shade600,
-                        fontSize: 16,
-                      ),
-                    ),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(dialogContext).pop();
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const HanyangEmailVerificationScreen(),
-                        ),
-                      );
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade700,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context)!.signUp,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
               ),
             );
           } else {

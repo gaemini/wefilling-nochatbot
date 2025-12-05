@@ -443,10 +443,10 @@ class DMService {
       }
       
       if (otherUserData == null) {
-        Logger.log('⚠️ 상대방 사용자 정보 없음 - 기본값 사용');
+        Logger.log('⚠️ 상대방 사용자 정보 없음 - 탈퇴한 계정으로 처리');
         otherUserData = {
-          'nickname': isOtherUserAnonymous ? '익명' : 'User',
-          'name': isOtherUserAnonymous ? '익명' : 'User',
+          'nickname': isOtherUserAnonymous ? '익명' : 'Deleted Account',
+          'name': isOtherUserAnonymous ? '익명' : 'Deleted Account',
           'photoURL': '',
         };
       }

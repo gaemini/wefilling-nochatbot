@@ -358,13 +358,16 @@ class _DMListScreenState extends State<DMListScreen> {
           'name': data['nickname'] ?? data['displayName'] ?? 'User',
           'photo': data['photoURL'] ?? '',
         };
+      } else {
+        // 탈퇴한 사용자 처리
+        Logger.log('⚠️ 탈퇴한 사용자: $otherUserId');
+        return {'name': 'Deleted Account', 'photo': ''};
       }
     } catch (e) {
       Logger.error('⚠️ 사용자 정보 조회 실패: $e');
+      // 오류 발생 시에도 탈퇴한 사용자로 간주
+      return {'name': 'Deleted Account', 'photo': ''};
     }
-    
-    // 실패 시 기본값
-    return {'name': 'User', 'photo': ''};
   }
 
   /// 대화방 카드 콘텐츠 빌드 (FutureBuilder 내부용)

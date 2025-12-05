@@ -22,6 +22,8 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>NSHumanReadableCopyright</key>
+	<string>© 2025 Wefilling. Patent Pending (KR 10-2025-0187957)</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

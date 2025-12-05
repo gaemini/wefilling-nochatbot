@@ -164,7 +164,16 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       final userDoc = await _firestore.collection('users').doc(userId).get();
       
       if (!userDoc.exists) {
-        Logger.log('❌ 사용자 문서 없음: $userId');
+        Logger.log('❌ 사용자 문서 없음 (탈퇴한 사용자): $userId');
+        // 탈퇴한 사용자 정보 추가
+        final participantInfo = {
+          'userId': userId,
+          'nickname': 'Deleted Account',
+          'photoURL': '',
+          'isHost': isHost,
+        };
+        list.add(participantInfo);
+        Logger.log('✅ 탈퇴한 참여자 추가 완료 - 현재 총 ${list.length}명');
         return;
       }
       

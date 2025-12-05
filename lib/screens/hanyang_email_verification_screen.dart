@@ -168,51 +168,102 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           context: context,
           barrierDismissible: false,
           builder: (dialogContext) => AlertDialog(
-            title: Text(AppLocalizations.of(context)!.verificationSuccess ?? ""),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            contentPadding: const EdgeInsets.all(24),
+            title: Text(
+              AppLocalizations.of(context)!.verificationSuccess ?? "",
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1E293B),
+              ),
+              textAlign: TextAlign.center,
+            ),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(AppLocalizations.of(context)!.chooseLoginMethod),
+                const Icon(
+                  Icons.check_circle_outline,
+                  size: 64,
+                  color: Color(0xFF10B981),
+                ),
                 const SizedBox(height: 16),
+                Text(
+                  AppLocalizations.of(context)!.chooseLoginMethod,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    color: Color(0xFF64748B),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 24),
+                // Apple 버튼
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _continueWithApple();
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.black,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: const Icon(Icons.apple, size: 22),
+                    label: Text(
+                      AppLocalizations.of(context)!.continueWithApple,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                // Google 버튼
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(dialogContext);
+                      _continueWithGoogle();
+                    },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF1E293B),
+                      side: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon: Image.asset(
+                      'assets/icons/google_logo.png',
+                      width: 22,
+                      height: 22,
+                    ),
+                    label: Text(
+                      AppLocalizations.of(context)!.continueWithGoogle ?? "",
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
-            actions: [
-              // Apple로 계속하기 버튼
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _continueWithApple();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.black,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 45),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.apple, size: 20),
-                    const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context)!.continueWithApple),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Google로 계속하기 버튼
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                  _continueWithGoogle();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: Colors.black87,
-                  side: BorderSide(color: Colors.grey.shade300),
-                  minimumSize: const Size(double.infinity, 45),
-                ),
-                child: Text(AppLocalizations.of(context)!.continueWithGoogle ?? ""),
-              ),
-            ],
           ),
         );
         return;
@@ -367,14 +418,22 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
       appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text(AppLocalizations.of(context)!.emailVerificationRequired ?? ""),
-        backgroundColor: Colors.white,
-        foregroundColor: Colors.black,
-        elevation: 0,
+        title: Text(
+          AppLocalizations.of(context)!.emailVerificationRequired ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1E293B),
+          ),
+        ),
+        centerTitle: true,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
@@ -387,125 +446,213 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
               
               // 안내 텍스트
               Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF6366F1).withOpacity(0.3),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
                 ),
                 child: Column(
                   children: [
-                    Icon(
-                      Icons.school,
-                      color: Colors.blue.shade700,
-                      size: 48,
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.school_outlined,
+                        size: 48,
+                        color: Colors.white,
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 24),
                     Text(
                       AppLocalizations.of(context)!.hanyangEmailOnly,
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade800,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: -0.5,
+                        height: 1.3,
                       ),
                       textAlign: TextAlign.center,
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppLocalizations.of(context)!.hanyangEmailDescription,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue.shade600,
-                        height: 1.5,
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        AppLocalizations.of(context)!.hanyangEmailDescription,
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w400,
+                          color: Colors.white.withOpacity(0.95),
+                          height: 1.7,
+                          letterSpacing: -0.2,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
               ),
               
-              const SizedBox(height: 30),
+              const SizedBox(height: 32),
+
+              // 이메일 입력 레이블
+              Padding(
+                padding: const EdgeInsets.only(left: 4, bottom: 12),
+                child: Text(
+                  AppLocalizations.of(context)!.email,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
 
               // 이메일 입력
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                enabled: !_isCodeSent,
-                decoration: InputDecoration(
-                  labelText: AppLocalizations.of(context)!.email,
-                  hintText: 'example@hanyang.ac.kr',
-                  prefixIcon: const Icon(Icons.email),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: const Color(0xFFE2E8F0),
+                    width: 1,
                   ),
-                  filled: true,
-                  fillColor: _isCodeSent ? Colors.grey.shade200 : Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)!.required ?? "";
-                  }
-                  if (!value.endsWith('@hanyang.ac.kr')) {
-                    return AppLocalizations.of(context)!.hanyangEmailRequired ?? "";
-                  }
-                  return null;
-                },
+                child: TextFormField(
+                  controller: _emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  enabled: !_isCodeSent,
+                  decoration: InputDecoration(
+                    hintText: 'example@hanyang.ac.kr',
+                    hintStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      color: Color(0xFFCBD5E1),
+                      letterSpacing: -0.2,
+                    ),
+                    prefixIcon: const Icon(
+                      Icons.email_outlined,
+                      color: Color(0xFF6366F1),
+                      size: 22,
+                    ),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 18,
+                    ),
+                  ),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.2,
+                  ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return AppLocalizations.of(context)!.required ?? "";
+                    }
+                    if (!value.endsWith('@hanyang.ac.kr')) {
+                      return AppLocalizations.of(context)!.hanyangEmailRequired ?? "";
+                    }
+                    return null;
+                  },
+                ),
               ),
               
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
               // 인증번호 전송 버튼
               if (!_isCodeSent)
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _sendVerificationCode,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _sendVerificationCode,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF6366F1),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Text(
+                            AppLocalizations.of(context)!.sendVerificationCode,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Text(
-                          AppLocalizations.of(context)!.sendVerificationCode,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                 ),
 
               // 인증번호 입력 및 확인
               if (_isCodeSent) ...[
                 Container(
-                  padding: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.shade200),
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFBBF7D0),
+                      width: 1,
+                    ),
                   ),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.check_circle,
-                        color: Colors.green.shade700,
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        color: Color(0xFF10B981),
                         size: 24,
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Text(
                           AppLocalizations.of(context)!.verificationCodeSent,
-                          style: TextStyle(
-                            color: Colors.green.shade700,
-                            fontWeight: FontWeight.bold,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF065F46),
+                            letterSpacing: -0.2,
                           ),
                         ),
                       ),
@@ -513,61 +660,118 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   ),
                 ),
                 
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
-                TextFormField(
-                  controller: _verificationCodeController,
-                  keyboardType: TextInputType.number,
-                  maxLength: 4,
-                  decoration: InputDecoration(
-                    labelText: AppLocalizations.of(context)!.verificationCode,
-                    hintText: '1234',
-                    prefixIcon: const Icon(Icons.security),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                // 인증번호 입력 레이블
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 12),
+                  child: Text(
+                    AppLocalizations.of(context)!.verificationCode,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF334155),
+                      letterSpacing: -0.2,
                     ),
-                    filled: true,
-                    fillColor: Colors.white,
-                    counterText: '',
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)!.verificationCodeRequired ?? "";
-                    }
-                    if (value.length != 4) {
-                      return AppLocalizations.of(context)!.verificationCodeLength ?? "";
-                    }
-                    return null;
-                  },
+                ),
+
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: const Color(0xFFE2E8F0),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: TextFormField(
+                    controller: _verificationCodeController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    decoration: const InputDecoration(
+                      hintText: '4자리 인증번호',
+                      hintStyle: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        color: Color(0xFFCBD5E1),
+                        letterSpacing: -0.2,
+                      ),
+                      prefixIcon: Icon(
+                        Icons.lock_outline,
+                        color: Color(0xFF6366F1),
+                        size: 22,
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      counterText: '',
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                      letterSpacing: 4,
+                    ),
+                    textAlign: TextAlign.center,
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return AppLocalizations.of(context)!.verificationCodeRequired ?? "";
+                      }
+                      if (value.length != 4) {
+                        return AppLocalizations.of(context)!.verificationCodeLength ?? "";
+                      }
+                      return null;
+                    },
+                  ),
                 ),
                 
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
 
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyAndComplete,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: _isLoading ? null : _verifyAndComplete,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF10B981),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : Text(
+                            AppLocalizations.of(context)!.verifyCode,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Text(
-                          AppLocalizations.of(context)!.verifyCode,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
                 ),
                 
                 const SizedBox(height: 16),
@@ -582,7 +786,13 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   },
                   child: Text(
                     AppLocalizations.of(context)!.retryAction,
-                    style: TextStyle(color: Colors.blue.shade700),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6366F1),
+                      letterSpacing: -0.2,
+                    ),
                   ),
                 ),
               ],
@@ -592,26 +802,34 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
               // 에러 메시지
               if (_errorMessage != null)
                 Container(
-                  padding: const EdgeInsets.all(12),
+                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0xFFFECACA),
+                      width: 1,
+                    ),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.error_outline,
-                        color: Colors.red.shade700,
-                        size: 20,
+                        color: Color(0xFFDC2626),
+                        size: 22,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
                             fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF991B1B),
+                            height: 1.5,
+                            letterSpacing: -0.2,
                           ),
                         ),
                       ),

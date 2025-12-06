@@ -1399,7 +1399,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   // 댓글 섹션 타이틀 (간격 조정)
                   SizedBox(height: _currentPost.imageUrls.isEmpty ? 16 : 24),
                   Container(
-                    padding: const EdgeInsets.only(top: 16, bottom: 8),
+                    padding: const EdgeInsets.only(top: 16, bottom: 8, left: 16, right: 16), // Padding added
                     decoration: BoxDecoration(
                       border: Border(
                         top: BorderSide(color: Colors.grey.shade200, width: 1),
@@ -1407,20 +1407,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                     child: Row(
                       children: [
-                        Container(
-                          height: 18,
-                          width: 3,
-                          decoration: BoxDecoration(
-                            color: Colors.blue.shade700,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
                         Text(
                           AppLocalizations.of(context)!.comments,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
+                            color: Color(0xFF111827),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -1442,7 +1434,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               return Text(
                                 '$count',
                                 style: TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.grey.shade700,
                                 ),
@@ -1629,7 +1621,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     : BorderSide.none,
                               ),
                               filled: true,
-                              fillColor: Colors.grey[50], // 더 밝은 회색 배경으로 통일
+                              fillColor: Colors.grey[100], // 더 밝은 회색 배경으로 통일
                               contentPadding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 10,

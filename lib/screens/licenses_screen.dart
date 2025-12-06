@@ -40,9 +40,10 @@ class LicensesScreen extends StatelessWidget {
           }
 
           if (snapshot.hasError) {
+            final isKo = Localizations.localeOf(context).languageCode == 'ko';
             return Center(
               child: Text(
-                'Error loading licenses',
+                isKo ? '라이선스를 불러오는 중 오류가 발생했습니다' : 'Error loading licenses',
                 style: TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 14,
@@ -53,6 +54,7 @@ class LicensesScreen extends StatelessWidget {
           }
 
           final licenseData = snapshot.data!;
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
           return Column(
             children: [
@@ -83,7 +85,9 @@ class LicensesScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      '라이선스 ${licenseData.packages.length}개',
+                      isKo 
+                          ? '라이선스 ${licenseData.packages.length}개'
+                          : '${licenseData.packages.length} licenses',
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,
@@ -126,6 +130,8 @@ class LicensesScreen extends StatelessWidget {
     List<int> licenseIndices,
     List<LicenseEntry> licenses,
   ) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    
     return InkWell(
       onTap: () {
         Navigator.push(
@@ -158,7 +164,9 @@ class LicensesScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '라이선스 ${licenseIndices.length}개',
+                    isKo 
+                        ? '라이선스 ${licenseIndices.length}개'
+                        : '${licenseIndices.length} ${licenseIndices.length == 1 ? 'license' : 'licenses'}',
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 14,

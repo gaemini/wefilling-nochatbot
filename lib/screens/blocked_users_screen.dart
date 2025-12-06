@@ -103,18 +103,24 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         });
         
         if (mounted) {
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${_getUserName(blockedUser.blockedUserId)} 사용자의 차단을 해제했습니다.'),
+              content: Text(
+                isKo 
+                    ? '${_getUserName(blockedUser.blockedUserId)} 사용자의 차단을 해제했습니다.'
+                    : 'Unblocked ${_getUserName(blockedUser.blockedUserId)}.',
+              ),
               backgroundColor: Colors.green,
             ),
           );
         }
       } else {
         if (mounted) {
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('차단 해제에 실패했습니다.'),
+            SnackBar(
+              content: Text(isKo ? '차단 해제에 실패했습니다.' : 'Failed to unblock user.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -123,9 +129,10 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     } catch (e) {
       Logger.error('차단 해제 실패: $e');
       if (mounted) {
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('차단 해제 중 오류가 발생했습니다.'),
+          SnackBar(
+            content: Text(isKo ? '차단 해제 중 오류가 발생했습니다.' : 'An error occurred while unblocking.'),
             backgroundColor: Colors.red,
           ),
         );
@@ -134,23 +141,54 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   }
 
   Future<bool> _showUnblockConfirmDialog(String userName) async {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    
     return await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('차단 해제'),
-        content: Text('$userName 사용자의 차단을 해제하시겠습니까?'),
+        title: Text(
+          isKo ? '차단 해제' : 'Unblock User',
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        content: Text(
+          isKo 
+              ? '$userName 사용자의 차단을 해제하시겠습니까?' 
+              : 'Do you want to unblock $userName?',
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('취소'),
+            child: Text(
+              isKo ? '취소' : 'Cancel',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                color: Color(0xFF6B7280),
+              ),
+            ),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(context).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: BrandColors.primary,
+              backgroundColor: const Color(0xFF6366F1),
               foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-            child: const Text('해제'),
+            child: Text(
+              isKo ? '해제' : 'Unblock',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ],
       ),
@@ -159,43 +197,49 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
   String _getUserName(String userId) {
     final profile = _userProfiles[userId];
-    return profile?['nickname'] ?? profile?['displayName'] ?? '알 수 없는 사용자';
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return profile?['nickname'] ?? profile?['displayName'] ?? (isKo ? '알 수 없는 사용자' : 'Unknown User');
   }
 
   String _getFormattedDate(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     
     if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      return isKo ? '${difference.inDays}일 전' : '${difference.inDays}d ago';
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      return isKo ? '${difference.inHours}시간 전' : '${difference.inHours}h ago';
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      return isKo ? '${difference.inMinutes}분 전' : '${difference.inMinutes}m ago';
     } else {
-      return '방금 전';
+      return isKo ? '방금 전' : 'Just now';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.blockList ?? ""),
-        backgroundColor: theme.scaffoldBackgroundColor,
+        backgroundColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: Icon(Icons.arrow_back, color: theme.colorScheme.onSurface),
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        titleTextStyle: theme.textTheme.titleLarge?.copyWith(
-          color: theme.colorScheme.onSurface,
-          fontWeight: FontWeight.w600,
+        title: Text(
+          AppLocalizations.of(context)!.blockList ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
         ),
+        centerTitle: false,
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -224,6 +268,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             Text(
               isKo ? '오류가 발생했습니다' : 'An error occurred',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 color: Colors.red.shade700,
@@ -233,7 +278,11 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             Text(
               _errorMessage,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: Colors.black87),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                color: Color(0xFF111827),
+              ),
             ),
             const SizedBox(height: 24),
             ElevatedButton.icon(
@@ -241,9 +290,13 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
               icon: const Icon(Icons.refresh),
               label: Text(isKo ? '다시 시도' : 'Retry'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: BrandColors.primary,
+                backgroundColor: const Color(0xFF6366F1),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
               ),
             ),
           ],
@@ -267,9 +320,14 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     return RefreshIndicator(
       onRefresh: _loadBlockedUsers,
       child: ListView.separated(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: _blockedUsers.length,
-        separatorBuilder: (context, index) => const SizedBox(height: 12),
+        separatorBuilder: (context, index) => const Divider(
+          height: 1,
+          thickness: 1,
+          color: Color(0xFFF3F4F6),
+          indent: 56,
+        ),
         itemBuilder: (context, index) {
           final blockedUser = _blockedUsers[index];
           return _buildBlockedUserCard(blockedUser);
@@ -279,28 +337,21 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   }
 
   Widget _buildBlockedUserCard(BlockedUser blockedUser) {
-    final theme = Theme.of(context);
     final userName = _getUserName(blockedUser.blockedUserId);
     final profile = _userProfiles[blockedUser.blockedUserId];
     
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: theme.colorScheme.outline.withOpacity(0.2),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+    return InkWell(
+      onTap: null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
         child: Row(
           children: [
             // 사용자 아바타
             Container(
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: theme.colorScheme.surfaceVariant,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F4F6),
                 shape: BoxShape.circle,
               ),
               child: profile?['photoURL'] != null
@@ -311,18 +362,18 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                         height: 48,
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) {
-                          return Icon(
+                          return const Icon(
                             Icons.person,
                             size: 24,
-                            color: theme.colorScheme.onSurfaceVariant,
+                            color: Color(0xFF6B7280),
                           );
                         },
                       ),
                     )
-                  : Icon(
+                  : const Icon(
                       Icons.person,
                       size: 24,
-                      color: theme.colorScheme.onSurfaceVariant,
+                      color: Color(0xFF6B7280),
                     ),
             ),
             
@@ -335,17 +386,26 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
                 children: [
                   Text(
                     userName,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF111827),
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${_getFormattedDate(blockedUser.createdAt)}에 차단',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
+                    () {
+                      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+                      final timeAgo = _getFormattedDate(blockedUser.createdAt);
+                      return isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo';
+                    }(),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      color: Color(0xFF6B7280),
                     ),
                   ),
                 ],
@@ -356,12 +416,19 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
             TextButton(
               onPressed: () => _unblockUser(blockedUser),
               style: TextButton.styleFrom(
-                foregroundColor: BrandColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                foregroundColor: const Color(0xFF6366F1),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               ),
-              child: const Text(
-                '차단 해제',
-                style: TextStyle(fontWeight: FontWeight.w600),
+              child: Text(
+                () {
+                  final isKo = Localizations.localeOf(context).languageCode == 'ko';
+                  return isKo ? '차단 해제' : 'Unblock';
+                }(),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
               ),
             ),
           ],

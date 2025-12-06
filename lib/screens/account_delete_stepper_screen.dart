@@ -39,7 +39,15 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
     return [
       // Step 1: 이유 선택
       Step(
-        title: Text(loc.selectDeleteReason),
+        title: Text(
+          loc.selectDeleteReason,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         isActive: _currentStep >= 0,
         state: _currentStep > 0 ? StepState.complete : StepState.indexed,
         content: Column(
@@ -49,13 +57,36 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                 value: reason,
                 groupValue: _selectedReason,
                 onChanged: (v) => setState(() => _selectedReason = v ?? ''),
-                title: Text(reason),
+                title: Text(
+                  reason,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                activeColor: const Color(0xFF6366F1),
               ),
             if (_selectedReason == loc.deleteReasonOther)
-              TextField(
-                controller: _otherReasonController,
-                decoration: InputDecoration(
-                  labelText: loc.otherReasonOptional,
+              Padding(
+                padding: const EdgeInsets.only(top: 12.0),
+                child: TextField(
+                  controller: _otherReasonController,
+                  decoration: InputDecoration(
+                    labelText: loc.otherReasonOptional,
+                    labelStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      color: Color(0xFF6B7280),
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF6366F1), width: 2),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -64,7 +95,15 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
 
       // Step 2: 삭제될 데이터 안내
       Step(
-        title: Text(loc.deleteDataNotice),
+        title: Text(
+          loc.deleteDataNotice,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         isActive: _currentStep >= 1,
         state: _currentStep > 1 ? StepState.complete : StepState.indexed,
         content: Column(
@@ -79,7 +118,11 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
               ),
               child: Text(
                 loc.accountDeletionIrreversible,
-                style: TextStyle(color: Colors.red),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: Colors.red,
+                  fontSize: 14,
+                ),
               ),
             ),
             const SizedBox(height: 12),
@@ -112,6 +155,10 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
               ),
               child: Text(
                 loc.postDeleteTip,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
@@ -120,7 +167,15 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
 
       // Step 3: 최종 경고
       Step(
-        title: Text(loc.finalWarning),
+        title: Text(
+          loc.finalWarning,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         isActive: _currentStep >= 2,
         state: _currentStep > 2 ? StepState.complete : StepState.indexed,
         content: Column(
@@ -128,18 +183,28 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
           children: [
             Row(
               children: [
-                Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
-                SizedBox(width: 8),
-                Text(
-                  loc.reallyDeleteAccount,
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    loc.reallyDeleteAccount,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
             Text(
               loc.actionCannotBeUndone,
-              style: TextStyle(color: Colors.red),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                color: Colors.red,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 12),
             _check(loc.accountRecoveryImpossible),
@@ -149,21 +214,46 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             const SizedBox(height: 12),
             Text(
               '${loc.deleteReasonLabel}: ${_selectedReason == loc.deleteReasonOther ? (_otherReasonController.text.isNotEmpty ? _otherReasonController.text : loc.deleteReasonOther) : _selectedReason}',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+              ),
             ),
-            Text(loc.postsAnonymizedAutomatic),
+            const SizedBox(height: 4),
+            Text(
+              loc.postsAnonymizedAutomatic,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+              ),
+            ),
           ],
         ),
       ),
 
       // Step 4: 본인 확인
       Step(
-        title: Text(loc.identityVerification),
+        title: Text(
+          loc.identityVerification,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
         isActive: _currentStep >= 3,
         state: _currentStep == 3 ? StepState.indexed : StepState.indexed,
         content: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(loc.reLoginForVerification),
+            Text(
+              loc.reLoginForVerification,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+              ),
+            ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(12),
@@ -177,7 +267,13 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                   Icon(Icons.info_outline, color: Colors.blue.shade700),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(loc.deleteButtonGoogleLogin),
+                    child: Text(
+                      loc.deleteButtonGoogleLogin,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -185,7 +281,12 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
             const SizedBox(height: 12),
             Text(
               loc.accountDeletedImmediatelyAfterAuth,
-              style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
             ),
           ],
         ),
@@ -204,15 +305,50 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: TextStyle(color: color, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
           const SizedBox(height: 8),
-          for (final it in items) Row(children: [const Text('• '), Expanded(child: Text(it))]),
+          for (final it in items)
+            Row(
+              children: [
+                const Text('• '),
+                Expanded(
+                  child: Text(
+                    it,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );
   }
 
-  static Widget _check(String text) => Row(children: [const Text('• '), Expanded(child: Text(text))]);
+  static Widget _check(String text) => Row(
+        children: [
+          const Text('• '),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      );
 
   Future<void> _onContinue() async {
     if (_currentStep < 3) {
@@ -352,7 +488,25 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     return Scaffold(
-      appBar: AppBar(title: Text(loc.deleteAccount)),
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          loc.deleteAccount,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: false,
+      ),
       body: AbsorbPointer(
         absorbing: _isProcessing,
         child: Stepper(
@@ -361,22 +515,51 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
           onStepCancel: _onCancel,
           controlsBuilder: (context, details) {
             final isLast = _currentStep == 3;
-            return Row(children: [
-              ElevatedButton(
-                onPressed: _isProcessing ? null : details.onStepContinue,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: isLast ? Colors.red : Colors.blue,
-                ),
-                child: Text(
-                  isLast ? loc.deleteAccount : loc.next,
-                ),
+            return Padding(
+              padding: const EdgeInsets.only(top: 16.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : details.onStepContinue,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isLast ? Colors.red : const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        elevation: 0,
+                      ),
+                      child: Text(
+                        isLast ? loc.deleteAccount : loc.next,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  TextButton(
+                    onPressed: _isProcessing ? null : details.onStepCancel,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B7280),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    ),
+                    child: Text(
+                      loc.back,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: _isProcessing ? null : details.onStepCancel,
-                child: Text(loc.back),
-              ),
-            ]);
+            );
           },
           steps: _steps(context),
         ),

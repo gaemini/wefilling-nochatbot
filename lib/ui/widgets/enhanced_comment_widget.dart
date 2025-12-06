@@ -620,7 +620,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                           padding: EdgeInsets.zero,
                           icon: Icon(Icons.more_horiz, size: 18, color: Colors.grey[500]),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 2,
+                          elevation: 4,
+                          color: Colors.white,
+                          surfaceTintColor: Colors.white,
+                          offset: const Offset(0, 8),
                           onSelected: (value) {
                             switch (value) {
                               case 'dm':
@@ -635,24 +638,66 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                             return [
                               PopupMenuItem<String>(
                                 value: 'dm',
-                                height: 40,
+                                height: 48,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.chat_bubble_outline, size: 16),
-                                    const SizedBox(width: 8),
-                                    Text(AppLocalizations.of(context)!.directMessage, style: const TextStyle(fontSize: 13)),
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF6366F1).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.chat_bubble_outline,
+                                        size: 16,
+                                        color: Color(0xFF6366F1),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      AppLocalizations.of(context)!.directMessage,
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF111827),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),
                               const PopupMenuDivider(height: 1),
                               PopupMenuItem<String>(
                                 value: 'report',
-                                height: 40,
+                                height: 48,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.report_gmailerrorred_outlined, size: 16, color: Colors.red),
-                                    const SizedBox(width: 8),
-                                    Text(AppLocalizations.of(context)!.report, style: const TextStyle(fontSize: 13, color: Colors.red)),
+                                    Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEF4444).withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Icons.report_gmailerrorred_outlined,
+                                        size: 16,
+                                        color: Color(0xFFEF4444),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      AppLocalizations.of(context)!.report,
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFFEF4444),
+                                      ),
+                                    ),
                                   ],
                                 ),
                               ),

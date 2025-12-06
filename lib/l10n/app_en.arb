@@ -1035,5 +1035,42 @@
   "patentApplicationNumber": "Application No.: KR 10-2025-0187957",
   "patentInventionTitle": "Invention: AI-based Social Network Automatic Classification and Intelligent Information Management System",
   "deletedAccount": "Deleted Account",
-  "deletedUser": "Deleted User"
+  "deletedUser": "Deleted User",
+  "blockUserTitle": "Block User",
+  "blockUserMessage": "Are you sure you want to block {userName}?",
+  "@blockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "blockUserWarningTitle": "When you block this user:",
+  "blockUserWarning1": "You won't see their posts and comments",
+  "blockUserWarning2": "You won't see meetups they create",
+  "blockUserWarning3": "You won't be able to message each other",
+  "blockUserWarning4": "You can unblock them anytime",
+  "blockUserButton": "Block",
+  "unblockUserTitle": "Unblock User",
+  "unblockUserMessage": "Are you sure you want to unblock {userName}?\n\nYou'll be able to see their content again after unblocking.",
+  "@unblockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "unblockUserButton": "Unblock",
+  "reportTitle": "Report",
+  "reportPostTitle": "Report Post",
+  "reportCommentTitle": "Report Comment",
+  "reportMeetupTitle": "Report Meetup",
+  "reportUserTitle": "Report User",
+  "reportReasonSelect": "Please select a reason for reporting",
+  "reportDescriptionLabel": "Additional Details (Optional)",
+  "reportDescriptionHint": "Please provide more details about your report",
+  "reportWarning": "Reports will be reviewed and processed. False reports may result in penalties.",
+  "reportButton": "Report",
+  "reportSuccess": "Your report has been submitted. We'll review it and take action.",
+  "reportFailed": "Failed to submit report. Please try again."
 }

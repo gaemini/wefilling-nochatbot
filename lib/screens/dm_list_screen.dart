@@ -108,7 +108,9 @@ class _DMListScreenState extends State<DMListScreen> {
           final errorMessage = snapshot.error.toString();
           if (errorMessage.contains('permission-denied')) {
             return _buildErrorState(
-              'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.',
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
+                  : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
             );
           }
           
@@ -305,10 +307,12 @@ class _DMListScreenState extends State<DMListScreen> {
         initialData: 0,
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
+          final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+          final titlePrefix = isKorean ? '제목: ' : 'Title: ';
 
           return _buildConversationCardContent(
             conversation: conversation,
-            displayName: '제목: $dmTitle',  // 게시글 제목만 표시
+            displayName: '$titlePrefix$dmTitle',  // 게시글 제목만 표시
             otherUserPhoto: '',  // 익명이므로 사진 없음
             isAnonymous: isAnonymous,
             timeString: timeString,
@@ -741,7 +745,9 @@ class _DMListScreenState extends State<DMListScreen> {
                     if (snapshot.hasError) {
                       return Center(
                         child: Text(
-                          '친구 목록을 불러올 수 없습니다',
+                          Localizations.localeOf(context).languageCode == 'ko'
+                              ? '친구 목록을 불러올 수 없습니다'
+                              : 'Unable to load friend list',
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 14,
@@ -764,9 +770,11 @@ class _DMListScreenState extends State<DMListScreen> {
                               color: Color(0xFFD1D5DB),
                             ),
                             const SizedBox(height: 16),
-                            const Text(
-                              '친구가 없습니다',
-                              style: TextStyle(
+                            Text(
+                              Localizations.localeOf(context).languageCode == 'ko'
+                                  ? '친구가 없습니다'
+                                  : 'No friends yet',
+                              style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -920,9 +928,13 @@ class _DMListScreenState extends State<DMListScreen> {
         Logger.log('❌ 대화방 ID가 null입니다');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('대화방을 만들 수 없습니다'),
-              backgroundColor: Color(0xFFEF4444),
+            SnackBar(
+              content: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '대화방을 만들 수 없습니다'
+                    : 'Cannot create conversation'
+              ),
+              backgroundColor: const Color(0xFFEF4444),
             ),
           );
         }
@@ -931,9 +943,13 @@ class _DMListScreenState extends State<DMListScreen> {
       Logger.error('❌ 대화 시작 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('대화를 시작할 수 없습니다'),
-            backgroundColor: Color(0xFFEF4444),
+          SnackBar(
+            content: Text(
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '대화를 시작할 수 없습니다'
+                  : 'Cannot start conversation'
+            ),
+            backgroundColor: const Color(0xFFEF4444),
           ),
         );
       }

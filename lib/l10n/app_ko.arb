@@ -1034,5 +1034,42 @@
   "patentApplicationNumber": "출원번호: 제10-2025-0187957호",
   "patentInventionTitle": "발명의 명칭: AI 기반 소셜 네트워크 자동 분류 및 지능형 정보 관리 시스템",
   "deletedAccount": "탈퇴한 계정",
-  "deletedUser": "탈퇴한 사용자"
+  "deletedUser": "탈퇴한 사용자",
+  "blockUserTitle": "사용자 차단",
+  "blockUserMessage": "{userName}님을 차단하시겠습니까?",
+  "@blockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "blockUserWarningTitle": "차단 시 다음과 같이 됩니다:",
+  "blockUserWarning1": "해당 사용자의 게시물과 댓글이 보이지 않습니다",
+  "blockUserWarning2": "해당 사용자가 만든 모임이 보이지 않습니다",
+  "blockUserWarning3": "상호 간에 메시지를 주고받을 수 없습니다",
+  "blockUserWarning4": "언제든지 차단을 해제할 수 있습니다",
+  "blockUserButton": "차단하기",
+  "unblockUserTitle": "차단 해제",
+  "unblockUserMessage": "{userName}님의 차단을 해제하시겠습니까?\n\n차단 해제 후 해당 사용자의 콘텐츠를 다시 볼 수 있습니다.",
+  "@unblockUserMessage": {
+    "placeholders": {
+      "userName": {
+        "type": "String"
+      }
+    }
+  },
+  "unblockUserButton": "차단 해제",
+  "reportTitle": "신고하기",
+  "reportPostTitle": "게시물 신고하기",
+  "reportCommentTitle": "댓글 신고하기",
+  "reportMeetupTitle": "모임 신고하기",
+  "reportUserTitle": "사용자 신고하기",
+  "reportReasonSelect": "신고 사유를 선택해주세요",
+  "reportDescriptionLabel": "상세 설명 (선택사항)",
+  "reportDescriptionHint": "신고 사유에 대한 자세한 설명을 입력해주세요",
+  "reportWarning": "신고는 검토 후 처리되며, 허위 신고 시 제재를 받을 수 있습니다.",
+  "reportButton": "신고하기",
+  "reportSuccess": "신고가 접수되었습니다. 검토 후 처리하겠습니다.",
+  "reportFailed": "신고 접수에 실패했습니다. 다시 시도해주세요."
 }

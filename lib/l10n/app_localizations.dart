@@ -4327,6 +4327,144 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'탈퇴한 사용자'**
   String get deletedUser;
+
+  /// No description provided for @blockUserTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자 차단'**
+  String get blockUserTitle;
+
+  /// No description provided for @blockUserMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{userName}님을 차단하시겠습니까?'**
+  String blockUserMessage(String userName);
+
+  /// No description provided for @blockUserWarningTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'차단 시 다음과 같이 됩니다:'**
+  String get blockUserWarningTitle;
+
+  /// No description provided for @blockUserWarning1.
+  ///
+  /// In ko, this message translates to:
+  /// **'해당 사용자의 게시물과 댓글이 보이지 않습니다'**
+  String get blockUserWarning1;
+
+  /// No description provided for @blockUserWarning2.
+  ///
+  /// In ko, this message translates to:
+  /// **'해당 사용자가 만든 모임이 보이지 않습니다'**
+  String get blockUserWarning2;
+
+  /// No description provided for @blockUserWarning3.
+  ///
+  /// In ko, this message translates to:
+  /// **'상호 간에 메시지를 주고받을 수 없습니다'**
+  String get blockUserWarning3;
+
+  /// No description provided for @blockUserWarning4.
+  ///
+  /// In ko, this message translates to:
+  /// **'언제든지 차단을 해제할 수 있습니다'**
+  String get blockUserWarning4;
+
+  /// No description provided for @blockUserButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'차단하기'**
+  String get blockUserButton;
+
+  /// No description provided for @unblockUserTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'차단 해제'**
+  String get unblockUserTitle;
+
+  /// No description provided for @unblockUserMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{userName}님의 차단을 해제하시겠습니까?\n\n차단 해제 후 해당 사용자의 콘텐츠를 다시 볼 수 있습니다.'**
+  String unblockUserMessage(String userName);
+
+  /// No description provided for @unblockUserButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'차단 해제'**
+  String get unblockUserButton;
+
+  /// No description provided for @reportTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고하기'**
+  String get reportTitle;
+
+  /// No description provided for @reportPostTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시물 신고하기'**
+  String get reportPostTitle;
+
+  /// No description provided for @reportCommentTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'댓글 신고하기'**
+  String get reportCommentTitle;
+
+  /// No description provided for @reportMeetupTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 신고하기'**
+  String get reportMeetupTitle;
+
+  /// No description provided for @reportUserTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용자 신고하기'**
+  String get reportUserTitle;
+
+  /// No description provided for @reportReasonSelect.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고 사유를 선택해주세요'**
+  String get reportReasonSelect;
+
+  /// No description provided for @reportDescriptionLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'상세 설명 (선택사항)'**
+  String get reportDescriptionLabel;
+
+  /// No description provided for @reportDescriptionHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고 사유에 대한 자세한 설명을 입력해주세요'**
+  String get reportDescriptionHint;
+
+  /// No description provided for @reportWarning.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고는 검토 후 처리되며, 허위 신고 시 제재를 받을 수 있습니다.'**
+  String get reportWarning;
+
+  /// No description provided for @reportButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고하기'**
+  String get reportButton;
+
+  /// No description provided for @reportSuccess.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고가 접수되었습니다. 검토 후 처리하겠습니다.'**
+  String get reportSuccess;
+
+  /// No description provided for @reportFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'신고 접수에 실패했습니다. 다시 시도해주세요.'**
+  String get reportFailed;
 }
 
 class _AppLocalizationsDelegate

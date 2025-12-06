@@ -1012,39 +1012,75 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           color: Colors.black,
         ),
         padding: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 4,
+        color: Colors.white,
+        surfaceTintColor: Colors.white,
+        offset: const Offset(0, 8),
         itemBuilder: (context) => [
-              PopupMenuItem(
+          PopupMenuItem(
             value: 'report',
-                child: Row(
-                  children: [
-                Icon(Icons.report_outlined, size: 18, color: Colors.red[600]),
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.report_gmailerrorred_outlined,
+                    size: 16,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Text(
                   AppLocalizations.of(context)!.reportAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFEF4444),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+          PopupMenuItem(
+            value: 'block',
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEF4444).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.block,
+                    size: 16,
+                    color: Color(0xFFEF4444),
+                  ),
                 ),
-              ),
-              PopupMenuItem(
-                value: 'block',
-                child: Row(
-                  children: [
-                Icon(Icons.block, size: 18, color: Colors.red[600]),
                 const SizedBox(width: 12),
                 Text(
                   AppLocalizations.of(context)!.blockAction,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFEF4444),
+                  ),
                 ),
-              ),
-            ],
+              ],
             ),
           ),
         ],

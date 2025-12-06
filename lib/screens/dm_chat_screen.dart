@@ -101,7 +101,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('이 사용자에게는 메시지를 보낼 수 없습니다'),
+              content: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '이 사용자에게는 메시지를 보낼 수 없습니다'
+                    : 'Cannot send message to this user'
+              ),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
             ),
@@ -144,7 +148,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('본인에게는 메시지를 보낼 수 없습니다'),
+                content: Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '본인에게는 메시지를 보낼 수 없습니다'
+                      : 'Cannot send message to yourself'
+                ),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 2),
               ),
@@ -173,7 +181,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text('본인에게는 메시지를 보낼 수 없습니다'),
+                content: Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '본인에게는 메시지를 보낼 수 없습니다'
+                      : 'Cannot send message to yourself'
+                ),
                 backgroundColor: Colors.orange,
                 duration: const Duration(seconds: 2),
               ),
@@ -364,7 +376,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
     // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
     if (dmTitle != null && dmTitle.isNotEmpty) {
-      final primaryTitle = '제목: $dmTitle';
+      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+      final primaryTitle = isKorean ? '제목: $dmTitle' : 'Title: $dmTitle';
       final secondaryTitle = AppLocalizations.of(context)!.author ?? "";
 
       String _formatHeaderDate() {
@@ -789,8 +802,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
                     Icon(Icons.lock_outline, size: 64, color: Colors.red[300]),
                     const SizedBox(height: 16),
                     Text(
-                      '권한 오류',
-                      style: TextStyle(
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '권한 오류'
+                          : 'Permission Error',
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w600,
                         color: Colors.red,
@@ -798,7 +813,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.',
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
+                          : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
                       style: TextStyle(
                         color: Colors.grey[600],
                         fontWeight: FontWeight.bold,
@@ -1191,7 +1208,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
     if (confirmed == true && mounted) {
       // 차단 로직 구현 (향후 추가)
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('차단 기능은 곧 추가됩니다')),
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'ko'
+                ? '차단 기능은 곧 추가됩니다'
+                : 'Block feature coming soon'
+          )
+        ),
       );
     }
   }
@@ -1217,7 +1240,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '이 대화는 게시글에서 시작되었습니다',
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '이 대화는 게시글에서 시작되었습니다'
+                  : 'This conversation started from a post',
               style: TextStyle(
                 color: Colors.blue.shade700,
                 fontSize: 14,
@@ -1233,9 +1258,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: const Text(
-              '게시글 보기',
-              style: TextStyle(
+            child: Text(
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '게시글 보기'
+                  : 'View Post',
+              style: const TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -1261,7 +1288,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('게시글을 찾을 수 없습니다')),
+            SnackBar(
+              content: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '게시글을 찾을 수 없습니다'
+                    : 'Post not found'
+              )
+            ),
           );
         }
       }
@@ -1269,7 +1302,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
       Logger.error('게시글 로드 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('게시글을 불러오는 중 오류가 발생했습니다')),
+          SnackBar(
+            content: Text(
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '게시글을 불러오는 중 오류가 발생했습니다'
+                  : 'An error occurred while loading the post'
+            )
+          ),
         );
       }
     }

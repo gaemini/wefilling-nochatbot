@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import '../../models/report.dart';
 import '../../services/report_service.dart';
+import '../../l10n/app_localizations.dart';
 
 class ReportDialog extends StatefulWidget {
   final String reportedUserId;
@@ -34,33 +35,53 @@ class _ReportDialogState extends State<ReportDialog> {
     super.dispose();
   }
 
-  String get targetTypeKorean {
+  String getTargetTypeTitle(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
     switch (widget.targetType) {
       case 'post':
-        return '게시물';
+        return loc.reportPostTitle;
       case 'comment':
-        return '댓글';
+        return loc.reportCommentTitle;
       case 'meetup':
-        return '모임';
+        return loc.reportMeetupTitle;
       case 'user':
-        return '사용자';
+        return loc.reportUserTitle;
       default:
-        return '콘텐츠';
+        return loc.reportTitle;
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      backgroundColor: Colors.white,
+      elevation: 8,
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
       title: Row(
         children: [
-          Icon(Icons.report_outlined, color: Colors.red[600]),
-          const SizedBox(width: 8),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF4444).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: const Icon(
+              Icons.report_gmailerrorred_outlined, 
+              color: Color(0xFFEF4444), 
+              size: 18
+            ),
+          ),
+          const SizedBox(width: 12),
           Text(
-            '$targetTypeKorean 신고하기',
+            getTargetTypeTitle(context),
             style: const TextStyle(
+              fontFamily: 'Pretendard',
               fontSize: 18,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
             ),
           ),
         ],
@@ -74,8 +95,9 @@ class _ReportDialogState extends State<ReportDialog> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.grey[100],
-                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
                 ),
                 child: Row(
                   children: [
@@ -84,9 +106,11 @@ class _ReportDialogState extends State<ReportDialog> {
                     Expanded(
                       child: Text(
                         widget.targetTitle!,
-                        style: TextStyle(
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
                           fontSize: 14,
-                          color: Colors.grey[700],
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280),
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -98,11 +122,13 @@ class _ReportDialogState extends State<ReportDialog> {
               const SizedBox(height: 16),
             ],
             
-            const Text(
-              '신고 사유를 선택해주세요',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
+            Text(
+              AppLocalizations.of(context)!.reportReasonSelect,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
               ),
             ),
             const SizedBox(height: 12),
@@ -110,7 +136,15 @@ class _ReportDialogState extends State<ReportDialog> {
             // 신고 사유 선택
             ...ReportReasons.allReasons.map((reason) => 
               RadioListTile<String>(
-                title: Text(reason),
+                title: Text(
+                  reason,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF1F2937),
+                  ),
+                ),
                 value: reason,
                 groupValue: selectedReason,
                 onChanged: (value) {
@@ -118,6 +152,7 @@ class _ReportDialogState extends State<ReportDialog> {
                     selectedReason = value;
                   });
                 },
+                activeColor: const Color(0xFFEF4444),
                 contentPadding: EdgeInsets.zero,
                 dense: true,
               ),
@@ -126,11 +161,13 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(height: 16),
             
             // 상세 설명 (선택사항)
-            const Text(
-              '상세 설명 (선택사항)',
-              style: TextStyle(
+            Text(
+              AppLocalizations.of(context)!.reportDescriptionLabel,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
               ),
             ),
             const SizedBox(height: 8),
@@ -138,44 +175,111 @@ class _ReportDialogState extends State<ReportDialog> {
               controller: descriptionController,
               maxLines: 3,
               maxLength: 500,
-              decoration: const InputDecoration(
-                hintText: '신고 사유에 대한 자세한 설명을 입력해주세요',
-                border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.all(12),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                color: Color(0xFF111827),
+              ),
+              decoration: InputDecoration(
+                hintText: AppLocalizations.of(context)!.reportDescriptionHint,
+                hintStyle: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  color: Color(0xFF9CA3AF),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
               ),
             ),
             
             const SizedBox(height: 8),
             Text(
-              '신고는 검토 후 처리되며, 허위 신고 시 제재를 받을 수 있습니다.',
-              style: TextStyle(
+              AppLocalizations.of(context)!.reportWarning,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 12,
-                color: Colors.grey[600],
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF9CA3AF),
+                height: 1.4,
               ),
             ),
           ],
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: isSubmitting ? null : () => Navigator.pop(context),
-          child: const Text('취소'),
-        ),
-        ElevatedButton(
-          onPressed: selectedReason == null || isSubmitting 
-              ? null 
-              : _submitReport,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red[600],
-            foregroundColor: Colors.white,
-          ),
-          child: isSubmitting 
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('신고하기'),
+        Row(
+          children: [
+            Expanded(
+              child: TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(context),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(color: Colors.grey.shade300, width: 1),
+                  ),
+                  backgroundColor: Colors.white,
+                ),
+                child: Text(
+                  AppLocalizations.of(context)!.cancel,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: selectedReason == null || isSubmitting 
+                    ? null 
+                    : _submitReport,
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  backgroundColor: const Color(0xFFEF4444),
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  disabledBackgroundColor: const Color(0xFFE5E7EB),
+                ),
+                child: isSubmitting 
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        AppLocalizations.of(context)!.reportButton,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -205,7 +309,7 @@ class _ReportDialogState extends State<ReportDialog> {
           Navigator.pop(context);
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('신고가 접수되었습니다. 검토 후 처리하겠습니다.'),
+              content: Text(AppLocalizations.of(context)!.reportSuccess),
               backgroundColor: Colors.green,
               duration: const Duration(seconds: 3),
             ),
@@ -215,7 +319,7 @@ class _ReportDialogState extends State<ReportDialog> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('신고 접수에 실패했습니다. 다시 시도해주세요.'),
+              content: Text(AppLocalizations.of(context)!.reportFailed),
               backgroundColor: Colors.red,
             ),
           );
@@ -225,7 +329,7 @@ class _ReportDialogState extends State<ReportDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
             backgroundColor: Colors.red,
           ),
         );

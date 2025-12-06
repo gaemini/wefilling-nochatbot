@@ -2247,4 +2247,77 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get deletedUser => '탈퇴한 사용자';
+
+  @override
+  String get blockUserTitle => '사용자 차단';
+
+  @override
+  String blockUserMessage(String userName) {
+    return '$userName님을 차단하시겠습니까?';
+  }
+
+  @override
+  String get blockUserWarningTitle => '차단 시 다음과 같이 됩니다:';
+
+  @override
+  String get blockUserWarning1 => '해당 사용자의 게시물과 댓글이 보이지 않습니다';
+
+  @override
+  String get blockUserWarning2 => '해당 사용자가 만든 모임이 보이지 않습니다';
+
+  @override
+  String get blockUserWarning3 => '상호 간에 메시지를 주고받을 수 없습니다';
+
+  @override
+  String get blockUserWarning4 => '언제든지 차단을 해제할 수 있습니다';
+
+  @override
+  String get blockUserButton => '차단하기';
+
+  @override
+  String get unblockUserTitle => '차단 해제';
+
+  @override
+  String unblockUserMessage(String userName) {
+    return '$userName님의 차단을 해제하시겠습니까?\n\n차단 해제 후 해당 사용자의 콘텐츠를 다시 볼 수 있습니다.';
+  }
+
+  @override
+  String get unblockUserButton => '차단 해제';
+
+  @override
+  String get reportTitle => '신고하기';
+
+  @override
+  String get reportPostTitle => '게시물 신고하기';
+
+  @override
+  String get reportCommentTitle => '댓글 신고하기';
+
+  @override
+  String get reportMeetupTitle => '모임 신고하기';
+
+  @override
+  String get reportUserTitle => '사용자 신고하기';
+
+  @override
+  String get reportReasonSelect => '신고 사유를 선택해주세요';
+
+  @override
+  String get reportDescriptionLabel => '상세 설명 (선택사항)';
+
+  @override
+  String get reportDescriptionHint => '신고 사유에 대한 자세한 설명을 입력해주세요';
+
+  @override
+  String get reportWarning => '신고는 검토 후 처리되며, 허위 신고 시 제재를 받을 수 있습니다.';
+
+  @override
+  String get reportButton => '신고하기';
+
+  @override
+  String get reportSuccess => '신고가 접수되었습니다. 검토 후 처리하겠습니다.';
+
+  @override
+  String get reportFailed => '신고 접수에 실패했습니다. 다시 시도해주세요.';
 }

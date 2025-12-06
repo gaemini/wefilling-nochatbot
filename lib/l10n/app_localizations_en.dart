@@ -2307,4 +2307,80 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deletedUser => 'Deleted User';
+
+  @override
+  String get blockUserTitle => 'Block User';
+
+  @override
+  String blockUserMessage(String userName) {
+    return 'Are you sure you want to block $userName?';
+  }
+
+  @override
+  String get blockUserWarningTitle => 'When you block this user:';
+
+  @override
+  String get blockUserWarning1 => 'You won\'t see their posts and comments';
+
+  @override
+  String get blockUserWarning2 => 'You won\'t see meetups they create';
+
+  @override
+  String get blockUserWarning3 => 'You won\'t be able to message each other';
+
+  @override
+  String get blockUserWarning4 => 'You can unblock them anytime';
+
+  @override
+  String get blockUserButton => 'Block';
+
+  @override
+  String get unblockUserTitle => 'Unblock User';
+
+  @override
+  String unblockUserMessage(String userName) {
+    return 'Are you sure you want to unblock $userName?\n\nYou\'ll be able to see their content again after unblocking.';
+  }
+
+  @override
+  String get unblockUserButton => 'Unblock';
+
+  @override
+  String get reportTitle => 'Report';
+
+  @override
+  String get reportPostTitle => 'Report Post';
+
+  @override
+  String get reportCommentTitle => 'Report Comment';
+
+  @override
+  String get reportMeetupTitle => 'Report Meetup';
+
+  @override
+  String get reportUserTitle => 'Report User';
+
+  @override
+  String get reportReasonSelect => 'Please select a reason for reporting';
+
+  @override
+  String get reportDescriptionLabel => 'Additional Details (Optional)';
+
+  @override
+  String get reportDescriptionHint =>
+      'Please provide more details about your report';
+
+  @override
+  String get reportWarning =>
+      'Reports will be reviewed and processed. False reports may result in penalties.';
+
+  @override
+  String get reportButton => 'Report';
+
+  @override
+  String get reportSuccess =>
+      'Your report has been submitted. We\'ll review it and take action.';
+
+  @override
+  String get reportFailed => 'Failed to submit report. Please try again.';
 }

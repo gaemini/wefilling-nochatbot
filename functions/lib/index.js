@@ -4,7 +4,7 @@
 // 친구요청 관련 함수들을 export
 var _a;
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationCreated = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.reportUser = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = void 0;
+exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationCreated = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -12,11 +12,13 @@ const nodemailer = require("nodemailer");
 admin.initializeApp();
 // Firestore 인스턴스
 const db = admin.firestore();
-// Gmail SMTP 설정
+// Gmail SMTP 설정 (명시적 설정)
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // use SSL
     auth: {
-        user: 'hanyangwatson@gmail.com',
+        user: 'wefilling@gmail.com',
         pass: ((_a = functions.config().gmail) === null || _a === void 0 ? void 0 : _a.password) || process.env.GMAIL_PASSWORD,
     },
 });
@@ -26,7 +28,7 @@ Object.defineProperty(exports, "initializeAds", { enumerable: true, get: functio
 var migration_add_emailverified_1 = require("./migration_add_emailverified");
 Object.defineProperty(exports, "migrateEmailVerified", { enumerable: true, get: function () { return migration_add_emailverified_1.migrateEmailVerified; } });
 // 관리자 이메일 주소
-const ADMIN_EMAIL = 'hanyangwatson@gmail.com';
+const ADMIN_EMAIL = 'wefilling@gmail.com';
 // 관리자에게 이메일 전송 헬퍼 함수
 async function sendAdminEmail(subject, htmlContent) {
     var _a;
@@ -37,7 +39,7 @@ async function sendAdminEmail(subject, htmlContent) {
             return;
         }
         const mailOptions = {
-            from: `Wefilling Admin <hanyangwatson@gmail.com>`,
+            from: `Wefilling Admin <wefilling@gmail.com>`,
             to: ADMIN_EMAIL,
             subject,
             html: htmlContent,
@@ -450,8 +452,8 @@ exports.onMeetupUpdated = functions.firestore
         // 저장 시 다국어 문자열을 직접 넣지 않고, 클라이언트에서 i18n 하도록 최소 데이터만 저장
         await db.collection('notifications').add({
             userId: hostId,
-            title: 'meetup_full',
-            message: '',
+            title: 'meetup_full', // 클라이언트에서 타입 기반으로 번역 처리
+            message: '', // 메시지는 클라이언트에서 생성
             type: 'meetup_full',
             meetupId,
             data: {
@@ -775,7 +777,7 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
         // 안전하게 현재 설정으로 트랜스포터 생성
         const mailTransporter = nodemailer.createTransport({
             service: 'gmail',
-            auth: { user: 'hanyangwatson@gmail.com', pass: sanitizedPassword },
+            auth: { user: 'wefilling@gmail.com', pass: sanitizedPassword },
         });
         // 자격 증명 사전 검증: 설정 오류(EAUTH 등) 즉시 감지
         await mailTransporter.verify();
@@ -804,7 +806,7 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
           </div>
           <div style="text-align: center; color: #999; font-size: 12px;">
             <p>이 이메일은 Wefilling 앱에서 자동으로 발송된 이메일입니다.</p>
-            <p>문의사항이 있으시면 hanyangwatson@gmail.com으로 연락해주세요.</p>
+            <p>문의사항이 있으시면 wefilling@gmail.com으로 연락해주세요.</p>
           </div>
         </div>`;
         const htmlEn = `
@@ -829,11 +831,11 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
           </div>
           <div style="text-align: center; color: #999; font-size: 12px;">
             <p>This email was sent automatically by the Wefilling app.</p>
-            <p>If you have any questions, contact us at hanyangwatson@gmail.com.</p>
+            <p>If you have any questions, contact us at wefilling@gmail.com.</p>
           </div>
         </div>`;
         const mailOptions = {
-            from: 'hanyangwatson@gmail.com',
+            from: 'wefilling@gmail.com',
             to: email,
             subject,
             html: isKo ? htmlKo : htmlEn,
@@ -1415,7 +1417,7 @@ exports.reportUser = functions.https.onCall(async (data, context) => {
             reporterId: reporterUid,
             reporterName,
             reportedUserId,
-            targetType,
+            targetType, // 'post', 'meetup', 'comment', 'user'
             targetId,
             targetTitle: targetTitle || '',
             reason,
@@ -1427,8 +1429,8 @@ exports.reportUser = functions.https.onCall(async (data, context) => {
         // 이메일 발송
         try {
             const mailOptions = {
-                from: 'hanyangwatson@gmail.com',
-                to: 'hanyangwatson@gmail.com',
+                from: 'wefilling@gmail.com',
+                to: 'wefilling@gmail.com',
                 subject: '[Wefilling] 신고요청이 왔습니다',
                 html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1464,6 +1466,71 @@ exports.reportUser = functions.https.onCall(async (data, context) => {
             throw error;
         }
         throw new functions.https.HttpsError('internal', '신고 처리 중 오류가 발생했습니다.');
+    }
+});
+// 신고 데이터 생성 시 관리자에게 이메일 알림 (Firestore Trigger)
+exports.onReportCreated = functions.region('asia-northeast3').firestore
+    .document('reports/{reportId}')
+    .onCreate(async (snapshot, context) => {
+    var _a;
+    try {
+        const reportData = snapshot.data();
+        const reportId = context.params.reportId;
+        console.log(`📢 새 신고 접수: ${reportId}`);
+        const reporterId = reportData.reporterId;
+        const reportedUserId = reportData.reportedUserId;
+        const targetType = reportData.targetType;
+        const reason = reportData.reason;
+        const description = reportData.description || '';
+        const targetTitle = reportData.targetTitle || '';
+        // 신고자 정보 가져오기 (만약 reportData에 없으면 조회)
+        let reporterName = reportData.reporterName;
+        if (!reporterName) {
+            const userDoc = await db.collection('users').doc(reporterId).get();
+            reporterName = ((_a = userDoc.data()) === null || _a === void 0 ? void 0 : _a.nickname) || '익명';
+        }
+        const mailOptions = {
+            from: 'wefilling@gmail.com',
+            to: ADMIN_EMAIL,
+            subject: `[Wefilling] 신고 접수 알림 (${targetType})`,
+            html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #d32f2f;">🚨 신고가 접수되었습니다</h2>
+            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>신고 ID:</strong> ${reportId}</p>
+              <p><strong>신고자:</strong> ${reporterName} (${reporterId})</p>
+              <p><strong>신고 대상 사용자:</strong> ${reportedUserId}</p>
+              <p><strong>신고 유형:</strong> ${targetType}</p>
+              <p><strong>신고 사유:</strong> ${reason}</p>
+              ${targetTitle ? `<p><strong>대상 제목:</strong> ${targetTitle}</p>` : ''}
+              ${description ? `<p><strong>상세 설명:</strong><br/>${description}</p>` : ''}
+              <p><strong>접수 시간:</strong> ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</p>
+            </div>
+            <div style="text-align: center;">
+              <a href="https://console.firebase.google.com/u/0/project/wefilling-2025/firestore/data/~2Freports~2F${reportId}" 
+                 style="background-color: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Firestore에서 확인하기
+              </a>
+            </div>
+          </div>
+        `,
+        };
+        // 메일 서버 연결 테스트
+        try {
+            await transporter.verify();
+            console.log('✅ SMTP 서버 연결 성공');
+        }
+        catch (verifyError) {
+            console.error('❌ SMTP 서버 연결 실패:', verifyError);
+            throw verifyError; // 연결 실패 시 중단
+        }
+        await transporter.sendMail(mailOptions);
+        console.log(`✅ 관리자 알림 메일 전송 완료: ${reportId}`);
+        return null;
+    }
+    catch (error) {
+        console.error('onReportCreated 오류 (상세):', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        return null;
     }
 });
 // 계정 즉시 삭제(관리자 권한으로 실행) - 게시글/댓글은 익명 처리
@@ -1506,7 +1573,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         postsSnap.forEach((doc) => {
             batch.update(doc.ref, {
                 userId: 'deleted',
-                authorNickname: 'Deleted',
+                authorNickname: 'Deleted', // 한/영 모두 "Deleted"로 통일
                 authorPhotoURL: '',
                 updatedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -1516,7 +1583,7 @@ exports.deleteAccountImmediately = functions.https.onCall(async (data, context) 
         commentsTopSnap.forEach((doc) => {
             batch.update(doc.ref, {
                 userId: 'deleted',
-                authorNickname: 'Deleted',
+                authorNickname: 'Deleted', // 한/영 모두 "Deleted"로 통일
                 authorPhotoUrl: '',
             });
         });
@@ -2227,14 +2294,14 @@ exports.onReviewRequestUpdated = functions.firestore
                 meetupTitle: reviewData.meetupTitle,
                 imageUrls: [reviewData.imageUrl],
                 content: reviewData.content,
-                category: '모임',
-                rating: 5,
-                taggedUserIds: allRecipients.filter((id) => id !== userId),
+                category: '모임', // 모임 후기 카테고리
+                rating: 5, // 기본 평점
+                taggedUserIds: allRecipients.filter((id) => id !== userId), // 다른 참가자들 태그
                 createdAt: timestamp,
                 likedBy: [],
                 commentCount: 0,
-                privacyLevel: 'friends',
-                sourceReviewId: reviewId,
+                privacyLevel: 'friends', // 기본 친구 공개
+                sourceReviewId: reviewId, // 원본 후기 ID
                 hidden: false, // 숨김 여부
             });
         }

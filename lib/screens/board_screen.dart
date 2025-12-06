@@ -301,6 +301,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
           },
           child: ListView.builder(
+            key: const PageStorageKey('board_today_list'),
             controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -479,6 +480,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         if (mounted) setState(() {});
           },
       child: ListView.builder(
+        key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -540,37 +542,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
-    // 현재 활성 탭의 ScrollController 선택
-    final currentController = _tabController.index == 0 
-        ? _todayScrollController 
-        : _allScrollController;
-    
-    // 현재 스크롤 위치 저장
-    double savedOffset = 0.0;
-    if (currentController.hasClients) {
-      savedOffset = currentController.offset;
-    }
-
     await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
 
-    // 상세 화면에서 돌아왔을 때 목록 새로고침 및 위치 복원
-    if (mounted) {
-      setState(() {}); 
-      
-      // 위젯 리빌드 후 스크롤 위치 복원
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (currentController.hasClients) {
-          currentController.animateTo(
-            savedOffset,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    }
+    // StreamBuilder가 자동으로 갱신하므로 setState 불필요
+    // setState를 호출하면 로딩 화면이 다시 보여 스크롤이 초기화될 수 있음
   }
 
   /// 에러 위젯 빌드

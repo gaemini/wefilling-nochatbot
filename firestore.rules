@@ -232,7 +232,7 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true
         && request.resource.data.userId == request.auth.uid;
       
-      // 게시글 수정: 작성자만 가능 또는 좋아요 필드만 변경하는 경우 읽기 권한이 있는 사용자 가능
+      // 게시글 수정: 작성자만 가능 또는 좋아요/조회수 필드만 변경하는 경우 읽기 권한이 있는 사용자 가능
       // userId='deleted'는 수정 불가 (탈퇴한 사용자 게시글 보호)
       allow update: if request.auth != null && 
         resource.data.userId != 'deleted' &&
@@ -247,7 +247,9 @@ service cloud.firestore {
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
         (request.auth.uid == resource.data.userId ||
          // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']));
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']) ||
+         // 조회수 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']));
       
       // 게시글 삭제: 작성자만 가능 (userId='deleted'는 삭제 불가)
       allow delete: if request.auth != null && 
@@ -283,7 +285,9 @@ service cloud.firestore {
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParticipants', 'updatedAt']) &&
          request.resource.data.currentParticipants is int &&
          request.resource.data.currentParticipants >= 1 &&
-         request.resource.data.currentParticipants <= resource.data.maxParticipants + 1)
+         request.resource.data.currentParticipants <= resource.data.maxParticipants + 1) ||
+        // 조회수 필드만 변경하는 경우 누구나 가능
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount', 'updatedAt'])
       );
       
       allow delete: if request.auth != null && 

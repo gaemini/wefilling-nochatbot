@@ -5,6 +5,7 @@
 
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 
 class Meetup {
   final String id;
@@ -113,22 +114,39 @@ class Meetup {
     );
   }
 
-  // 날짜 포맷 문자열 반환 함수
-  String getFormattedDate() {
+  // 날짜 포맷 문자열 반환 함수 (다국어 지원)
+  String getFormattedDate(BuildContext context) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final meetupDate = DateTime(date.year, date.month, date.day);
+    final l10n = AppLocalizations.of(context)!;
+    final locale = Localizations.localeOf(context);
 
     final difference = meetupDate.difference(today).inDays;
 
     if (difference == 0) {
-      return '오늘 예정';
+      // 오늘 예정 / Today Scheduled
+      return locale.languageCode == 'ko' 
+          ? '오늘 ${l10n.scheduled}' 
+          : 'Today ${l10n.scheduled}';
     } else if (difference == 1) {
-      return '내일 예정';
+      // 내일 예정 / Tomorrow Scheduled
+      return locale.languageCode == 'ko' 
+          ? '내일 ${l10n.scheduled}' 
+          : 'Tomorrow ${l10n.scheduled}';
     } else if (difference > 1 && difference < 7) {
-      return '$difference일 후 예정';
+      // N일 후 예정 / In N days
+      return locale.languageCode == 'ko' 
+          ? '$difference일 후 ${l10n.scheduled}' 
+          : 'In $difference days';
     } else {
-      return '${date.month}월 ${date.day}일 예정';
+      // 날짜 표시 / Date display
+      if (locale.languageCode == 'ko') {
+        return '${date.month}월 ${date.day}일 ${l10n.scheduled}';
+      } else {
+        final formatter = DateFormat('MMM d', 'en');
+        return '${formatter.format(date)} ${l10n.scheduled}';
+      }
     }
   }
 

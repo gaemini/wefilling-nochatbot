@@ -301,7 +301,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        meetup.getFormattedDate(),
+                        meetup.getFormattedDate(context),
                         style: const TextStyle(
                           fontSize: 11,
                           color: Colors.white,
@@ -315,10 +315,11 @@ class _SearchResultPageState extends State<SearchResultPage> {
                 
                 // 호스트 닉네임
                 Text(
-                  '주최자: ${meetup.host}',
+                  '${AppLocalizations.of(context)!.host}: ${meetup.host}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.black.withOpacity(0.5),
+                    color: Colors.black.withOpacity(0.7), // 0.5 → 0.7 (더 진하게)
+                    fontWeight: FontWeight.w500, // 폰트 굵기 추가
                   ),
                 ),
                 const SizedBox(height: 8),

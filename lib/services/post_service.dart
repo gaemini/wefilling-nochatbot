@@ -14,6 +14,7 @@ import 'storage_service.dart';
 import 'content_filter_service.dart';
 import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
+import 'view_history_service.dart';
 import '../utils/logger.dart';
 
 class PostService {
@@ -22,6 +23,7 @@ class PostService {
   final NotificationService _notificationService = NotificationService();
   final StorageService _storageService = StorageService();
   final PostCacheManager _cache = PostCacheManager();
+  final ViewHistoryService _viewHistory = ViewHistoryService();
 
   // 이미지를 포함한 게시글 추가
   Future<bool> addPost(
@@ -413,7 +415,7 @@ class PostService {
     }
   }
 
-  // 게시글 조회수 증가
+  // 게시글 조회수 증가 (세션당 1회만)
   Future<void> incrementViewCount(String postId) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
@@ -422,33 +424,23 @@ class PostService {
         return;
       }
 
-      // 게시글 정보 먼저 가져오기
-      final postDoc = await _firestore.collection('posts').doc(postId).get();
-      if (!postDoc.exists) {
-        Logger.log('🔍 조회수 증가 실패: 게시글이 존재하지 않음 ($postId)');
+      // 이미 조회한 게시글인지 확인
+      if (_viewHistory.hasViewed('post', postId)) {
+        Logger.log('⏭️ 조회수 증가 건너뜀: 이미 조회한 게시글 ($postId)');
         return;
       }
 
-      final postData = postDoc.data()!;
-      final authorId = postData['userId'] as String?;
-      final currentUserId = user.uid;
-
-      Logger.log('🔍 조회수 증가 시도:');
-      Logger.log('   - 게시글 ID: $postId');
-      Logger.log('   - 작성자 ID: $authorId');
-      Logger.log('   - 현재 사용자 ID: $currentUserId');
-      Logger.log('   - 자신의 글인가: ${authorId == currentUserId}');
-
-      // 조회수 증가 (자신의 글이든 다른 사람의 글이든 모두 증가)
-      final postRef = _firestore.collection('posts').doc(postId);
-      await postRef.update({
+      // 조회수 증가
+      await _firestore.collection('posts').doc(postId).update({
         'viewCount': FieldValue.increment(1),
       });
+
+      // 조회 이력에 추가
+      _viewHistory.markAsViewed('post', postId);
 
       Logger.log('✅ 조회수 증가 완료: $postId');
     } catch (e) {
       Logger.error('❌ 조회수 증가 오류: $e');
-      Logger.error('스택 트레이스: ${StackTrace.current}');
     }
   }
 

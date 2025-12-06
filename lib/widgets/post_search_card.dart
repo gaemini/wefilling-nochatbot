@@ -4,30 +4,35 @@
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../screens/post_detail_screen.dart';
+import '../design/tokens.dart';
+import '../l10n/app_localizations.dart';
 
 class PostSearchCard extends StatelessWidget {
   final Post post;
 
   const PostSearchCard({Key? key, required this.post}) : super(key: key);
 
-  // 날짜 포맷 함수
-  String _getFormattedDate(DateTime date) {
+  // 날짜 포맷 함수 (다국어 지원)
+  String _getFormattedDate(BuildContext context, DateTime date) {
     final now = DateTime.now();
     final difference = now.difference(date);
+    final l10n = AppLocalizations.of(context)!;
     
     if (difference.inDays > 0) {
-      return '${difference.inDays}일 전';
+      return l10n.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      return '${difference.inHours}시간 전';
+      return l10n.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      return '${difference.inMinutes}분 전';
+      return l10n.minutesAgo(difference.inMinutes);
     } else {
-      return '방금 전';
+      return l10n.justNow;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    
     return InkWell(
       onTap: () {
         // 게시글 상세 페이지로 직접 이동
@@ -38,15 +43,12 @@ class PostSearchCard extends StatelessWidget {
           ),
         );
       },
-      borderRadius: BorderRadius.circular(12),
-      child: Card(
-        elevation: 4,
-        margin: const EdgeInsets.symmetric(vertical: 8),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        clipBehavior: Clip.antiAlias,
-        shadowColor: Colors.black.withOpacity(0.1),
+      borderRadius: DesignTokens.radiusM,
+      child: Container(
+        margin: DesignTokens.paddingVerticalS,
+        decoration: ComponentStyles.cardDecoration,
         child: Padding(
-          padding: const EdgeInsets.all(16),
+          padding: DesignTokens.paddingM,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -54,32 +56,32 @@ class PostSearchCard extends StatelessWidget {
               Row(
                 children: [
                   CircleAvatar(
-                    radius: 16,
+                    radius: 18,
+                    backgroundColor: BrandColors.neutral200,
                     backgroundImage: post.authorPhotoURL.isNotEmpty
                         ? NetworkImage(post.authorPhotoURL)
                         : null,
                     child: post.authorPhotoURL.isEmpty
-                        ? const Icon(Icons.person, size: 16)
+                        ? Icon(
+                            IconStyles.person,
+                            size: 18,
+                            color: BrandColors.textTertiary,
+                          )
                         : null,
                   ),
-                  const SizedBox(width: 8),
+                  SizedBox(width: DesignTokens.s8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          post.author.isNotEmpty ? post.author : '익명',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
+                          post.author.isNotEmpty ? post.author : l10n.anonymous,
+                          style: TypographyStyles.username,
                         ),
+                        SizedBox(height: DesignTokens.s2),
                         Text(
-                          _getFormattedDate(post.createdAt),
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
+                          _getFormattedDate(context, post.createdAt),
+                          style: TypographyStyles.timestamp,
                         ),
                       ],
                     ),
@@ -87,60 +89,60 @@ class PostSearchCard extends StatelessWidget {
                 ],
               ),
               
-              const SizedBox(height: 12),
+              SizedBox(height: DesignTokens.s12),
               
               // 제목
               Text(
                 post.title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  color: Colors.black87,
-                ),
+                style: TypographyStyles.titleLarge,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
               
               // 내용
               if (post.content.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                SizedBox(height: DesignTokens.s8),
                 Text(
                   post.content,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                  style: TypographyStyles.bodyMedium.copyWith(
                     height: 1.4,
                   ),
                 ),
               ],
               
-              const SizedBox(height: 12),
+              SizedBox(height: DesignTokens.s12),
               
               // 통계 정보 (좋아요수, 댓글수)
               Row(
                 children: [
                   // 좋아요수
-                  Icon(Icons.favorite, size: 16, color: Colors.red[400]),
-                  const SizedBox(width: 4),
+                  Icon(
+                    IconStyles.favoriteFilled,
+                    size: DesignTokens.iconSmall,
+                    color: BrandColors.error,
+                  ),
+                  SizedBox(width: DesignTokens.s4),
                   Text(
                     '${post.likes}',
-                    style: TextStyle(
-                      color: Colors.grey[700],
-                      fontSize: 12,
+                    style: TypographyStyles.labelSmall.copyWith(
+                      color: BrandColors.textTertiary,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: DesignTokens.s16),
                   
                   // 댓글수
-                  Icon(Icons.chat_bubble_outline, size: 16, color: Colors.green[400]),
-                  const SizedBox(width: 4),
+                  Icon(
+                    Icons.chat_bubble_outline,
+                    size: DesignTokens.iconSmall,
+                    color: BrandColors.accent,
+                  ),
+                  SizedBox(width: DesignTokens.s4),
                   Text(
                     '${post.commentCount}',
-                    style: TextStyle(
-                      color: Colors.grey[700],
-                      fontSize: 12,
+                    style: TypographyStyles.labelSmall.copyWith(
+                      color: BrandColors.textTertiary,
                     ),
                   ),
                 ],
@@ -152,3 +154,4 @@ class PostSearchCard extends StatelessWidget {
     );
   }
 }
+

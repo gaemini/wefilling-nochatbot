@@ -12,6 +12,7 @@ import '../models/meetup_participant.dart';
 import '../constants/app_constants.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
+import 'view_history_service.dart';
 import 'dart:io';
 import '../utils/logger.dart';
 import 'participation_cache_service.dart';
@@ -21,6 +22,7 @@ class MeetupService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
   final ParticipationCacheService _cacheService = ParticipationCacheService();
+  final ViewHistoryService _viewHistory = ViewHistoryService();
   
   // Firestore 인스턴스 getter 추가
   FirebaseFirestore get firestore => _firestore;
@@ -1994,13 +1996,23 @@ class MeetupService {
     });
   }
 
-  // 모임 조회수 증가
+  // 모임 조회수 증가 (세션당 1회만)
   Future<void> incrementViewCount(String meetupId) async {
     try {
+      // 이미 조회한 모임인지 확인
+      if (_viewHistory.hasViewed('meetup', meetupId)) {
+        Logger.log('⏭️ 조회수 증가 건너뜀: 이미 조회한 모임 ($meetupId)');
+        return;
+      }
+
       await _firestore.collection('meetups').doc(meetupId).update({
         'viewCount': FieldValue.increment(1),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      // 조회 이력에 추가
+      _viewHistory.markAsViewed('meetup', meetupId);
+
       Logger.log('✅ 모임 조회수 증가: $meetupId');
     } catch (e) {
       Logger.error('❌ 모임 조회수 증가 오류: $e');

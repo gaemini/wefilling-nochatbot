@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
+import '../../services/report_service.dart';
 import '../../design/tokens.dart';
 import '../../design/theme.dart';
 import '../../l10n/app_localizations.dart';
@@ -65,41 +66,144 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       context: context,
       builder: (context) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          elevation: 8,
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
           title: Row(
             children: [
-              const Icon(Icons.report_gmailerrorred_outlined, color: Colors.red, size: 22),
-              const SizedBox(width: 8),
-              Text(AppLocalizations.of(context)!.report),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.report_gmailerrorred_outlined, 
+                  color: Color(0xFFEF4444), 
+                  size: 18
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                AppLocalizations.of(context)!.report,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
             ],
           ),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(AppLocalizations.of(context)!.reportConfirm),
+              Text(
+                AppLocalizations.of(context)!.reportConfirm,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF374151),
+                  height: 1.5,
+                ),
+              ),
               const SizedBox(height: 16),
               TextField(
                 controller: reasonController,
-                decoration: const InputDecoration(
-                  labelText: '신고 사유',
-                  hintText: '신고 사유를 입력해주세요 (예: 욕설, 비방)',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  color: Color(0xFF111827),
+                ),
+                decoration: InputDecoration(
+                  labelText: Localizations.localeOf(context).languageCode == 'ko' ? '신고 사유' : 'Reason',
+                  hintText: Localizations.localeOf(context).languageCode == 'ko' 
+                      ? '신고 사유를 입력해주세요 (예: 욕설, 비방)' 
+                      : 'Please enter the reason (e.g., abuse, spam)',
+                  labelStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    color: Color(0xFF6B7280),
+                  ),
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  filled: true,
+                  fillColor: const Color(0xFFF9FAFB),
                 ),
                 maxLines: 3,
               ),
             ],
           ),
           actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: Text(AppLocalizations.of(context)!.cancel),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
-              child: Text(AppLocalizations.of(context)!.report),
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                      backgroundColor: Colors.white,
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.cancel,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: const Color(0xFFEF4444),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.report,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         );
@@ -115,62 +219,154 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return;
       }
 
-      await _sendReportEmail(reason);
+      await _submitReport(reason);
     }
   }
 
-  /// 신고 이메일 전송
-  Future<void> _sendReportEmail(String reason) async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final String subject = '[신고] 댓글 신고 접수';
-    final String body = '''
-[신고 사유]
-$reason
-
-[신고 대상 정보]
-- 게시글 ID: ${widget.postId}
-- 댓글 ID: ${widget.comment.id}
-- 작성자 ID: ${widget.comment.userId}
-- 댓글 내용:
-${widget.comment.content}
-
-[신고자 정보]
-- 사용자 ID: ${currentUser?.uid ?? '익명/비로그인'}
-- 신고 일시: ${DateTime.now().toString()}
-
-위필링 관리자님, 위 내용으로 신고가 접수되었습니다.
-''';
-
-    final Uri emailLaunchUri = Uri(
-      scheme: 'mailto',
-      path: 'wefilling@gmail.com',
-      query: _encodeQueryParameters(<String, String>{
-        'subject': subject,
-        'body': body,
-      }),
+  /// 신고 제출 (Firestore 저장)
+  Future<void> _submitReport(String reason) async {
+    final success = await ReportService.reportContent(
+      reportedUserId: widget.comment.userId,
+      targetType: 'comment',
+      targetId: widget.comment.id,
+      reason: reason,
+      description: widget.comment.content, // 댓글 내용을 상세 설명으로 저장
+      targetTitle: '댓글 신고',
     );
 
-    try {
-      if (await canLaunchUrl(emailLaunchUri)) {
-        await launchUrl(emailLaunchUri);
-      } else {
-        throw 'Could not launch email';
-      }
-    } catch (e) {
-      Logger.error('이메일 앱 열기 실패: $e');
-      if (mounted) {
+    if (mounted) {
+      if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('이메일 앱을 열 수 없습니다. wefilling@gmail.com으로 직접 문의해주세요.')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.reportSubmitted)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.reportError)),
         );
       }
     }
   }
 
-  String? _encodeQueryParameters(Map<String, String> params) {
-    return params.entries
-        .map((MapEntry<String, String> e) =>
-            '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
+  /// 댓글 삭제 확인 다이얼로그
+  Future<void> _showDeleteConfirmDialog() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          elevation: 8,
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+          title: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.delete_outline, 
+                  color: Color(0xFFEF4444), 
+                  size: 18
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                AppLocalizations.of(context)!.delete,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ],
+          ),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 16), // 하단 여백 추가
+            child: Text(
+              _getDeleteConfirmMessage(context),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF6B7280),
+                height: 1.5,
+              ),
+            ),
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                      backgroundColor: Colors.white,
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.cancel,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700, // w600 → w700 (bold)
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: const Color(0xFFEF4444),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      AppLocalizations.of(context)!.delete,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700, // w600 → w700 (bold)
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed == true && mounted) {
+      widget.onDeleteComment?.call(widget.comment.id);
+    }
+  }
+
+  /// 언어별 삭제 확인 메시지 반환
+  String _getDeleteConfirmMessage(BuildContext context) {
+    final locale = Localizations.localeOf(context).languageCode;
+    if (locale == 'ko') {
+      return '댓글을 삭제하시겠습니까?\n삭제된 댓글은 복구할 수 없습니다.';
+    } else {
+      return 'Are you sure you want to delete this comment?\nDeleted comments cannot be recovered.';
+    }
   }
 
   /// 댓글 작성자에게 DM 열기
@@ -401,7 +597,7 @@ ${widget.comment.content}
                     
                     const Spacer(),
                     
-                    // 케밥 메뉴 (댓글별 액션)
+                    // 삭제 아이콘 (내 댓글인 경우)
                     if (isMyComment)
                       SizedBox(
                         width: 24,
@@ -409,9 +605,9 @@ ${widget.comment.content}
                         child: IconButton(
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          icon: Icon(Icons.more_horiz, size: 18, color: Colors.grey[500]),
+                          icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey[500]),
                           onPressed: () {
-                            widget.onDeleteComment?.call(widget.comment.id);
+                            _showDeleteConfirmDialog();
                           },
                           tooltip: '댓글 삭제',
                         ),

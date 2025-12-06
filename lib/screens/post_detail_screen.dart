@@ -1214,81 +1214,100 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
 
-                    // 액션 버튼들 (이미지 바로 아래)
-                  Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
+                    // 액션 버튼들과 좋아요 수 표시 (이미지 바로 아래)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0), // 위쪽 여백 12 → 6으로 절반 감소
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 좋아요 버튼
-                        IconButton(
-                          icon: Icon(
-                            _isLiked ? Icons.favorite : Icons.favorite_border,
-                            color: _isLiked ? Colors.red : Colors.black,
-                            size: DesignTokens.icon,
-                          ),
-                          onPressed: _isTogglingLike ? null : _toggleLike,
-                          splashRadius: 20,
-                        ),
-                        
-                        // DM 버튼 (본인 글이 아닌 경우만)
-                        if (FirebaseAuth.instance.currentUser != null &&
-                            _currentPost.userId != FirebaseAuth.instance.currentUser!.uid)
-                          IconButton(
-                            icon: Transform.rotate(
-                              angle: -math.pi / 4, // 45도 기울임
-                              child: const Icon(
-                                Icons.send_rounded,
-                                color: Colors.black,
-                                size: DesignTokens.icon,
+                        // 액션 버튼들
+                        Row(
+                          children: [
+                            // 좋아요 버튼
+                            SizedBox(
+                              width: 24, 
+                              height: 24,
+                              child: IconButton(
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                                icon: Icon(
+                                  _isLiked ? Icons.favorite : Icons.favorite_border,
+                                  color: _isLiked ? Colors.red : Colors.black,
+                                  size: DesignTokens.icon,
+                                ),
+                                onPressed: _isTogglingLike ? null : _toggleLike,
+                                splashRadius: 20,
                               ),
                             ),
-                            onPressed: _openDMFromDetail,
-                            splashRadius: 20,
-                          ),
-                          
-                          const SizedBox(width: 12),
-                          // 조회수 표시
-                          Icon(
-                            Icons.remove_red_eye_outlined,
-                            color: Colors.grey[600],
-                            size: DesignTokens.icon,
-                          ),
-                          const SizedBox(width: 4),
+                            
+                            const SizedBox(width: 16),
+                            
+                            // DM 버튼 (본인 글이 아닌 경우만)
+                            if (FirebaseAuth.instance.currentUser != null &&
+                                _currentPost.userId != FirebaseAuth.instance.currentUser!.uid) ...[
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  icon: Transform.rotate(
+                                    angle: -math.pi / 4,
+                                    child: const Icon(
+                                      Icons.send_rounded,
+                                      color: Colors.black,
+                                      size: DesignTokens.icon,
+                                    ),
+                                  ),
+                                  onPressed: _openDMFromDetail,
+                                  splashRadius: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                            ],
+                              
+                            // 조회수 표시
+                            Icon(
+                              Icons.remove_red_eye_outlined,
+                              color: Colors.grey[600],
+                              size: DesignTokens.icon,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${_currentPost.viewCount}',
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                        
+                        // 좋아요 수 표시 (간격 조절)
+                        if (_currentPost.likes > 0) ...[
+                          const SizedBox(height: 6), // 하트 아이콘과 likes 텍스트 사이 간격
                           Text(
-                            '${_currentPost.viewCount}',
-                            style: TextStyle(
+                            '${_currentPost.likes} likes',
+                            style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 14,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
                             ),
                           ),
+                          const SizedBox(height: 6), // 아래쪽 여백 12 → 6으로 절반 감소
+                        ],
                       ],
                     ),
                   ),
-
-                    // 좋아요 수 표시
-                  if (_currentPost.likes > 0)
-                    Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: DesignTokens.s16,
-                        ),
-                      child: Text(
-                        AppLocalizations.of(context)!.likesCount(_currentPost.likes),
-                        style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
 
                     // 본문 영역 (이미지가 있을 때)
                   Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: DesignTokens.s16,
-                        vertical: DesignTokens.s12,
+                        vertical: 18, // 12 → 18 (1.5배)
                       ),
                     child: Text(
                       _currentPost.content,
@@ -1306,9 +1325,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     // === 이미지가 없는 경우: 제목 → 본문 → 좋아요 ===
                     // 본문 영역 (제목 바로 아래 배치)
                     Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: DesignTokens.s16,
-                        vertical: 8, // 이미지 없을 때 간격 축소
+                      padding: const EdgeInsets.fromLTRB(
+                        DesignTokens.s16,
+                        8, // 위쪽 여백 (제목과의 간격)
+                        DesignTokens.s16,
+                        0, // 아래쪽 여백 제거
                       ),
                       child: Text(
                         _currentPost.content,
@@ -1323,81 +1344,100 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                     
-                    const SizedBox(height: 12), // 본문과 좋아요 사이 간격
+                    const SizedBox(height: 48), // 본문과 아이콘 사이 간격을 크게 늘림
                     
-                    // 액션 버튼들 (본문 바로 아래)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
+                    // 액션 버튼들과 좋아요 수 표시 (본문 바로 아래)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0), // 위쪽 패딩 제거하여 간격 명확히
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 좋아요 버튼
-                          IconButton(
-                            icon: Icon(
-                              _isLiked ? Icons.favorite : Icons.favorite_border,
-                              color: _isLiked ? Colors.red : Colors.black,
-                              size: 24,
-                            ),
-                            onPressed: _isTogglingLike ? null : _toggleLike,
-                            splashRadius: 20,
-                          ),
-                          
-                          // DM 버튼 (본인 글이 아닌 경우만)
-                          if (FirebaseAuth.instance.currentUser != null &&
-                              _currentPost.userId != FirebaseAuth.instance.currentUser!.uid)
-                            IconButton(
-                              icon: Transform.rotate(
-                                angle: -math.pi / 4, // 45도 기울임
-                                child: const Icon(
-                                  Icons.send_rounded,
-                                  color: Colors.black,
-                                  size: 24,
+                          // 액션 버튼들
+                          Row(
+                            children: [
+                              // 좋아요 버튼
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: IconButton(
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                  icon: Icon(
+                                    _isLiked ? Icons.favorite : Icons.favorite_border,
+                                    color: _isLiked ? Colors.red : Colors.black,
+                                    size: DesignTokens.icon,
+                                  ),
+                                  onPressed: _isTogglingLike ? null : _toggleLike,
+                                  splashRadius: 20,
                                 ),
                               ),
-                              onPressed: _openDMFromDetail,
-                              splashRadius: 20,
-                            ),
-
-                            const SizedBox(width: 12),
-                            // 조회수 표시
-                            Icon(
-                              Icons.remove_red_eye_outlined,
-                              color: Colors.grey[600],
-                              size: 20,
-                            ),
-                            const SizedBox(width: 4),
+                              
+                              const SizedBox(width: 16),
+                              
+                              // DM 버튼 (본인 글이 아닌 경우만)
+                              if (FirebaseAuth.instance.currentUser != null &&
+                                  _currentPost.userId != FirebaseAuth.instance.currentUser!.uid) ...[
+                                SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                    icon: Transform.rotate(
+                                      angle: -math.pi / 4,
+                                      child: const Icon(
+                                        Icons.send_rounded,
+                                        color: Colors.black,
+                                        size: DesignTokens.icon,
+                                      ),
+                                    ),
+                                    onPressed: _openDMFromDetail,
+                                    splashRadius: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 16),
+                              ],
+                                
+                              // 조회수 표시
+                              Icon(
+                                Icons.remove_red_eye_outlined,
+                                color: Colors.grey[600],
+                                size: DesignTokens.icon,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                '${_currentPost.viewCount}',
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          
+                          // 좋아요 수 표시 (간격 조절)
+                          if (_currentPost.likes > 0) ...[
+                            const SizedBox(height: 6), // 하트 아이콘과 likes 텍스트 사이 간격
                             Text(
-                              '${_currentPost.viewCount}',
-                              style: TextStyle(
+                              '${_currentPost.likes} likes',
+                              style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 14,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black,
                               ),
                             ),
+                            const SizedBox(height: 6), // 아래쪽 여백 12 → 6으로 절반 감소
+                          ],
                         ],
                       ),
                     ),
-
-                    // 좋아요 수 표시
-                    if (_currentPost.likes > 0)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: DesignTokens.s16,
-                        ),
-                        child: Text(
-                          AppLocalizations.of(context)!.likesCount(_currentPost.likes),
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                        fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
                   ],
 
                   // 댓글 섹션 타이틀 (간격 조정)
-                  SizedBox(height: _currentPost.imageUrls.isEmpty ? 16 : 24),
+                  SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 24), // 이미지 없을 때 16 → 8로 절반 감소
                   Container(
                     padding: const EdgeInsets.only(top: 16, bottom: 8, left: 16, right: 16), // Padding added
                     decoration: BoxDecoration(

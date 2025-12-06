@@ -16,7 +16,7 @@ const db = admin.firestore();
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'hanyangwatson@gmail.com',
+    user: 'wefilling@gmail.com',
     pass: functions.config().gmail?.password || process.env.GMAIL_PASSWORD,
   },
 });
@@ -27,7 +27,7 @@ export { initializeAds } from './initAds';
 export { migrateEmailVerified } from './migration_add_emailverified';
 
 // 관리자 이메일 주소
-const ADMIN_EMAIL = 'hanyangwatson@gmail.com';
+const ADMIN_EMAIL = 'wefilling@gmail.com';
 
 // 관리자에게 이메일 전송 헬퍼 함수
 async function sendAdminEmail(subject: string, htmlContent: string): Promise<void> {
@@ -39,7 +39,7 @@ async function sendAdminEmail(subject: string, htmlContent: string): Promise<voi
     }
 
     const mailOptions = {
-      from: `Wefilling Admin <hanyangwatson@gmail.com>`,
+      from: `Wefilling Admin <wefilling@gmail.com>`,
       to: ADMIN_EMAIL,
       subject,
       html: htmlContent,
@@ -819,7 +819,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     // 안전하게 현재 설정으로 트랜스포터 생성
     const mailTransporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: { user: 'hanyangwatson@gmail.com', pass: sanitizedPassword },
+      auth: { user: 'wefilling@gmail.com', pass: sanitizedPassword },
     });
 
     // 자격 증명 사전 검증: 설정 오류(EAUTH 등) 즉시 감지
@@ -852,7 +852,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
           </div>
           <div style="text-align: center; color: #999; font-size: 12px;">
             <p>이 이메일은 Wefilling 앱에서 자동으로 발송된 이메일입니다.</p>
-            <p>문의사항이 있으시면 hanyangwatson@gmail.com으로 연락해주세요.</p>
+            <p>문의사항이 있으시면 wefilling@gmail.com으로 연락해주세요.</p>
           </div>
         </div>`;
 
@@ -878,12 +878,12 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
           </div>
           <div style="text-align: center; color: #999; font-size: 12px;">
             <p>This email was sent automatically by the Wefilling app.</p>
-            <p>If you have any questions, contact us at hanyangwatson@gmail.com.</p>
+            <p>If you have any questions, contact us at wefilling@gmail.com.</p>
           </div>
         </div>`;
 
     const mailOptions = {
-      from: 'hanyangwatson@gmail.com',
+      from: 'wefilling@gmail.com',
       to: email,
       subject,
       html: isKo ? htmlKo : htmlEn,
@@ -1821,8 +1821,8 @@ export const reportUser = functions.https.onCall(async (data, context) => {
     // 이메일 발송
     try {
       const mailOptions = {
-        from: 'hanyangwatson@gmail.com',
-        to: 'hanyangwatson@gmail.com',
+        from: 'wefilling@gmail.com',
+        to: 'wefilling@gmail.com',
         subject: '[Wefilling] 신고요청이 왔습니다',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1865,6 +1865,66 @@ export const reportUser = functions.https.onCall(async (data, context) => {
     );
   }
 });
+
+// 신고 데이터 생성 시 관리자에게 이메일 알림 (Firestore Trigger)
+export const onReportCreated = functions.firestore
+  .document('reports/{reportId}')
+  .onCreate(async (snapshot, context) => {
+    try {
+      const reportData = snapshot.data();
+      const reportId = context.params.reportId;
+      
+      console.log(`📢 새 신고 접수: ${reportId}`);
+
+      const reporterId = reportData.reporterId;
+      const reportedUserId = reportData.reportedUserId;
+      const targetType = reportData.targetType;
+      const reason = reportData.reason;
+      const description = reportData.description || '';
+      const targetTitle = reportData.targetTitle || '';
+
+      // 신고자 정보 가져오기 (만약 reportData에 없으면 조회)
+      let reporterName = reportData.reporterName;
+      if (!reporterName) {
+        const userDoc = await db.collection('users').doc(reporterId).get();
+        reporterName = userDoc.data()?.nickname || '익명';
+      }
+
+      const mailOptions = {
+        from: 'wefilling@gmail.com',
+        to: ADMIN_EMAIL,
+        subject: `[Wefilling] 신고 접수 알림 (${targetType})`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #d32f2f;">🚨 신고가 접수되었습니다</h2>
+            <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+              <p><strong>신고 ID:</strong> ${reportId}</p>
+              <p><strong>신고자:</strong> ${reporterName} (${reporterId})</p>
+              <p><strong>신고 대상 사용자:</strong> ${reportedUserId}</p>
+              <p><strong>신고 유형:</strong> ${targetType}</p>
+              <p><strong>신고 사유:</strong> ${reason}</p>
+              ${targetTitle ? `<p><strong>대상 제목:</strong> ${targetTitle}</p>` : ''}
+              ${description ? `<p><strong>상세 설명:</strong><br/>${description}</p>` : ''}
+              <p><strong>접수 시간:</strong> ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</p>
+            </div>
+            <div style="text-align: center;">
+              <a href="https://console.firebase.google.com/u/0/project/wefilling-2025/firestore/data/~2Freports~2F${reportId}" 
+                 style="background-color: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                Firestore에서 확인하기
+              </a>
+            </div>
+          </div>
+        `,
+      };
+
+      await transporter.sendMail(mailOptions);
+      console.log(`✅ 관리자 알림 메일 전송 완료: ${reportId}`);
+      return null;
+    } catch (error) {
+      console.error('onReportCreated 오류:', error);
+      return null;
+    }
+  });
 
 // 계정 즉시 삭제(관리자 권한으로 실행) - 게시글/댓글은 익명 처리
 export const deleteAccountImmediately = functions.https.onCall(async (data, context) => {

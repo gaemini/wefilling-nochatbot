@@ -687,5 +687,17 @@ service cloud.firestore {
         allow delete: if request.auth != null && (isParticipant() || isMyConversation());
       }
     }
+
+    // ===== 신고 컬렉션 =====
+    match /reports/{reportId} {
+      // 생성: 인증된 사용자 누구나 가능 (신고하기)
+      // 단, 신고자는 본인이어야 함
+      allow create: if 
+        request.auth != null &&
+        request.auth.uid == request.resource.data.reporterId;
+      
+      // 읽기/수정/삭제: 관리자만 가능 (일반 사용자는 본인 신고도 수정/삭제 불가)
+      allow read, update, delete: if false; 
+    }
   }
 }

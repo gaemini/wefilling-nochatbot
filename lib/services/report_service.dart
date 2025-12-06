@@ -25,24 +25,29 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
-      // Firebase Functions 호출
-      final callable = _functions.httpsCallable('reportUser');
-      final result = await callable.call({
-        'reportedUserId': reportedUserId,
-        'targetType': targetType,
-        'targetId': targetId,
-        'targetTitle': targetTitle,
-        'reason': reason,
-        'description': description,
-      });
+      // Firestore에 직접 저장
+      final reportRef = _firestore.collection('reports').doc();
+      final reportData = Report(
+        id: reportRef.id,
+        reporterId: currentUser.uid,
+        reportedUserId: reportedUserId,
+        targetType: targetType,
+        targetId: targetId,
+        reason: reason,
+        description: description,
+        createdAt: DateTime.now(),
+        status: 'pending',
+      ).toJson();
 
-      if (result.data['success'] == true) {
-        Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
-        return true;
-      } else {
-        Logger.log('❌ 신고 접수 실패: ${result.data['message']}');
-        return false;
+      // targetTitle 등 추가 필드 저장 (Report 모델에 없는 경우)
+      if (targetTitle != null) {
+        reportData['targetTitle'] = targetTitle;
       }
+
+      await reportRef.set(reportData);
+      
+      Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
+      return true;
     } catch (e) {
       Logger.error('❌ 신고 접수 실패: $e');
       return false;

@@ -21,6 +21,7 @@ import 'meetup_detail_screen.dart';
 import 'review_approval_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/ui_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MeetupHomePage extends StatefulWidget {
@@ -686,7 +687,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                       curve: Curves.easeOut,
                                       builder: (context, value, child) {
                                         return Opacity(
-                                          opacity: value,
+                                          opacity: UIUtils.safeOpacity(value),
                                           child: Transform.translate(
                                             offset: Offset(0, 20 * (1 - value)),
                                             child: Column(
@@ -1010,10 +1011,10 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                 curve: Curves.easeOut,
                 builder: (context, value, child) {
                   return Opacity(
-                    opacity: value,
+                    opacity: UIUtils.safeOpacity(value),
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.85 * value),
+                        color: UIUtils.safeColorWithOpacity(Colors.white, 0.85 * value),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Center(
@@ -1026,7 +1027,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               borderRadius: BorderRadius.circular(8),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1 * value),
+                                  color: UIUtils.safeColorWithOpacity(Colors.black, 0.1 * value),
                                   blurRadius: 8,
                                   offset: const Offset(0, 2),
                                 ),

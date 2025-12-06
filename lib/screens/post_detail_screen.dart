@@ -22,6 +22,7 @@ import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
+import '../utils/ui_utils.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -1170,7 +1171,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.55),
+                                  color: UIUtils.safeColorWithOpacity(Colors.black, 0.55),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Row(
@@ -1188,7 +1189,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             shape: BoxShape.circle,
                                             color: i == _currentImageIndex 
                                                 ? Colors.white 
-                                                : Colors.white.withOpacity(0.47),
+                                                : UIUtils.safeColorWithOpacity(Colors.white, 0.47),
                                           ),
                                         ),
                                       ),

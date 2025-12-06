@@ -278,14 +278,33 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-            child: AppEmptyState(
-              icon: Icons.calendar_today,
-              title: _safeL10n((l10n) => l10n.yourStoryMatters, '당신의 이야기가 중요합니다'),
-              description: _safeL10n((l10n) => l10n.shareYourMoments, '순간을 공유해보세요'),
-              illustration: const SizedBox.shrink(),
-              padding: EdgeInsets.zero,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _safeL10n((l10n) => l10n.yourStoryMatters, '당신의 이야기가 중요합니다'),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
                   ),
+                  textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 16),
+                Text(
+                  _safeL10n((l10n) => l10n.shareYourMoments, '순간을 공유해보세요'),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
           );

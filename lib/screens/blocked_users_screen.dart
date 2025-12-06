@@ -244,10 +244,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
   Widget _buildEmptyState() {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return AppEmptyState(
-      icon: Icons.block,
-      title: isKo ? '차단한 사용자가 없습니다' : 'No blocked users',
-      description: isKo ? '차단한 사용자가 있으면 여기에 표시됩니다.' : 'Blocked users will appear here.',
+    return Center(
+      child: AppEmptyState(
+        icon: Icons.block,
+        title: isKo ? '차단한 사용자가 없습니다' : 'No blocked users',
+        description: isKo ? '차단한 사용자가 있으면 여기에 표시됩니다.' : 'Blocked users will appear here.',
+      ),
     );
   }
 

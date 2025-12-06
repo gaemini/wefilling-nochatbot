@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../constants/app_constants.dart';
+import '../../utils/ui_utils.dart';
 
 /// 소셜 미디어 스타일 액션 버튼
 class SocialActionButton extends StatefulWidget {
@@ -461,7 +462,7 @@ class _HeartExplosionWidgetState extends State<HeartExplosionWidget>
         return Transform.scale(
           scale: _scaleAnimation.value,
           child: Opacity(
-            opacity: _opacityAnimation.value,
+            opacity: UIUtils.safeOpacity(_opacityAnimation.value),
             child: Icon(
               Icons.favorite_rounded,
               color: const Color(0xFFEF4444),

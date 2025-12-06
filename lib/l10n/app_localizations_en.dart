@@ -550,11 +550,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get saved => 'Saved';
 
   @override
-  String get yourStoryMatters => 'Share your campus story';
+  String get yourStoryMatters => 'Through categories';
 
   @override
-  String get shareYourMoments =>
-      'Share your campus experiences,\nmeet new friends,\nand build lasting connections.';
+  String get shareYourMoments => 'Share your story without emotion';
 
   @override
   String get writeStory => 'Share Your Story';

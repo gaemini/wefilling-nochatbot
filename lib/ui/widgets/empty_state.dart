@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
+import '../../utils/ui_utils.dart';
 
 /// 2024-2025 트렌드 기반 빈 상태 위젯
 ///
@@ -218,15 +219,15 @@ class AppEmptyState extends StatelessWidget {
         return Transform.scale(
           scale: value,
           child: Opacity(
-            opacity: value,
+            opacity: UIUtils.safeOpacity(value),
             child: Container(
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: BrandColors.primary.withOpacity(0.1),
+                color: UIUtils.safeColorWithOpacity(BrandColors.primary, 0.1),
                 shape: BoxShape.circle,
                 border: Border.all(
-                  color: BrandColors.primary.withOpacity(0.2),
+                  color: UIUtils.safeColorWithOpacity(BrandColors.primary, 0.2),
                   width: 2,
                 ),
               ),

@@ -40,8 +40,6 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
-      // 프로덕션 배포: 플랫폼 오버라이드 제거 (iOS 호환성)
-      // debugDefaultTargetPlatformOverride = TargetPlatform.android;
 
       // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
       SystemChrome.setSystemUIOverlayStyle(
@@ -103,8 +101,6 @@ void main() {
           debugPrint('⚠️ Crashlytics 초기화 실패: $e');
         }
       }
-
-      // Firebase Performance 모니터링은 제거됨
 
       // 캐시 시스템 초기화
       try {
@@ -246,8 +242,6 @@ void main() {
           debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
         }
       }
-
-      // Firebase Performance trace 종료 코드 제거됨
 
       runApp(
         MultiProvider(

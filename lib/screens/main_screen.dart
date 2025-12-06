@@ -3,32 +3,29 @@
 // 하단 탭 네비게이션 제공
 // 게시판, 모임, 마이페이지 화면 통합
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'dart:math' as math;
+
 import '../constants/app_constants.dart';
-import '../l10n/app_localizations.dart';
-import '../services/notification_service.dart';
-import '../services/dm_service.dart';
-import '../widgets/notification_badge.dart';
-import '../ui/widgets/app_icon_button.dart';
 import '../design/tokens.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import '../services/dm_service.dart';
+import '../services/notification_service.dart';
+import '../ui/widgets/app_icon_button.dart';
+import '../utils/logger.dart';
+import '../widgets/adaptive_bottom_navigation.dart';
+import '../widgets/notification_badge.dart';
+import 'ad_showcase_screen.dart';
 import 'board_screen.dart';
+import 'dm_list_screen.dart';
+import 'friends_main_page.dart';
+import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
-import 'home_screen.dart'; // MeetupHomePage 클래스가 있는 파일
-import 'friends_main_page.dart';
 import 'search_result_page.dart';
-import 'ad_showcase_screen.dart';
-import 'dm_list_screen.dart';
-
-// 프로덕션 배포: 디버그 헬퍼 제거
-// import '../utils/firebase_debug_helper.dart';
-// import 'firebase_security_rules_helper.dart';
-import '../widgets/adaptive_bottom_navigation.dart';
-import '../l10n/app_localizations.dart';
-import '../utils/logger.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;

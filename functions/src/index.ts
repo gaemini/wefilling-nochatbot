@@ -1554,9 +1554,46 @@ export const blockUser = functions.https.onCall(async (data, context) => {
       );
     }
 
+    // 트랜잭션 외부에서 먼저 카테고리 조회
+    const categoriesSnapshot = await db.collection('friend_categories')
+      .where('userId', '==', blockerUid)
+      .get();
+    
+    const categoriesToUpdate: any[] = [];
+    for (const categoryDoc of categoriesSnapshot.docs) {
+      const categoryData = categoryDoc.data();
+      const friendIds = categoryData.friendIds || [];
+      if (friendIds.includes(targetUid)) {
+        categoriesToUpdate.push(categoryDoc.ref);
+      }
+    }
+
     // 트랜잭션으로 사용자 차단
     const result = await db.runTransaction(async (transaction) => {
-      // 1. A → B 차단 관계 생성 (실제 차단)
+      // ⚠️ 중요: 모든 읽기 작업을 먼저 실행해야 함
+      
+      // 1. 기존 친구 관계 확인
+      const sortedIds = [blockerUid, targetUid].sort();
+      const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
+      const friendshipDoc = await transaction.get(
+        db.collection('friendships').doc(friendshipId)
+      );
+
+      // 2. 기존 친구요청 확인
+      const requestId = `${blockerUid}_${targetUid}`;
+      const reverseRequestId = `${targetUid}_${blockerUid}`;
+      
+      const requestDoc = await transaction.get(
+        db.collection('friend_requests').doc(requestId)
+      );
+      
+      const reverseRequestDoc = await transaction.get(
+        db.collection('friend_requests').doc(reverseRequestId)
+      );
+
+      // ✅ 모든 읽기 완료, 이제 쓰기 작업 시작
+      
+      // 3. A → B 차단 관계 생성 (실제 차단)
       transaction.set(
         db.collection('blocks').doc(`${blockerUid}_${targetUid}`),
         {
@@ -1568,7 +1605,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         }
       );
 
-      // 2. B → A 차단 효과 생성 (암묵적 차단)
+      // 4. B → A 차단 효과 생성 (암묵적 차단)
       transaction.set(
         db.collection('blocks').doc(`${targetUid}_${blockerUid}`),
         {
@@ -1580,13 +1617,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         }
       );
 
-      // 기존 친구 관계가 있다면 삭제
-      const sortedIds = [blockerUid, targetUid].sort();
-      const friendshipId = `${sortedIds[0]}__${sortedIds[1]}`;
-      const friendshipDoc = await transaction.get(
-        db.collection('friendships').doc(friendshipId)
-      );
-
+      // 5. 기존 친구 관계가 있다면 삭제
       if (friendshipDoc.exists) {
         transaction.delete(
           db.collection('friendships').doc(friendshipId)
@@ -1607,17 +1638,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         });
       }
 
-      // 기존 친구요청이 있다면 삭제
-      const requestId = `${blockerUid}_${targetUid}`;
-      const reverseRequestId = `${targetUid}_${blockerUid}`;
-      
-      const requestDoc = await transaction.get(
-        db.collection('friend_requests').doc(requestId)
-      );
-      
-      const reverseRequestDoc = await transaction.get(
-        db.collection('friend_requests').doc(reverseRequestId)
-      );
+      // 6. 기존 친구요청이 있다면 삭제
 
       if (requestDoc.exists) {
         const requestData = requestDoc.data();
@@ -1673,20 +1694,12 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         }
       }
 
-      // 모든 친구 카테고리에서 제거
-      const categoriesSnapshot = await db.collection('friend_categories')
-        .where('userId', '==', blockerUid)
-        .get();
-      
-      for (const categoryDoc of categoriesSnapshot.docs) {
-        const categoryData = categoryDoc.data();
-        const friendIds = categoryData.friendIds || [];
-        if (friendIds.includes(targetUid)) {
-          transaction.update(categoryDoc.ref, {
-            friendIds: admin.firestore.FieldValue.arrayRemove(targetUid),
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        }
+      // 모든 친구 카테고리에서 제거 (트랜잭션 외부에서 조회한 결과 사용)
+      for (const categoryRef of categoriesToUpdate) {
+        transaction.update(categoryRef, {
+          friendIds: admin.firestore.FieldValue.arrayRemove(targetUid),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
       }
 
       return { success: true };

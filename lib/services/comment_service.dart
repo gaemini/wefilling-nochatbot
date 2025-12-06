@@ -39,6 +39,28 @@ class CommentService {
         return false;
       }
 
+      // 게시글 작성자 확인 (차단 여부 확인용)
+      String? postAuthorId;
+      try {
+        final postDoc = await _firestore.collection('posts').doc(postId).get();
+        if (postDoc.exists && postDoc.data() != null) {
+          postAuthorId = postDoc.data()!['userId'];
+        }
+      } catch (_) {}
+      
+      postAuthorId ??= reviewOwnerUserId;
+      
+      // 게시글 작성자와 차단 관계 확인
+      if (postAuthorId != null && postAuthorId != user.uid) {
+        final isBlocked = await ContentFilterService.isUserBlocked(postAuthorId);
+        final isBlockedBy = await ContentFilterService.isBlockedByUser(postAuthorId);
+        
+        if (isBlocked || isBlockedBy) {
+          Logger.error('댓글 작성 실패: 차단된 사용자의 게시글입니다.');
+          throw Exception('차단된 사용자의 게시글에는 댓글을 작성할 수 없습니다.');
+        }
+      }
+
       // 사용자 데이터 가져오기
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final userData = userDoc.data();

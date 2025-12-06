@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'notification_service.dart';
+import 'content_filter_service.dart';
 import '../utils/dm_feature_flags.dart';
 import '../utils/logger.dart';
 
@@ -931,7 +932,7 @@ class DMService {
       Logger.log('🔍 대화방 문서 조회 시작: conversations/$conversationId');
       final convRef = _firestore.collection('conversations').doc(conversationId);
       
-      DocumentSnapshot convDoc;
+      DocumentSnapshot? convDoc;
       try {
         convDoc = await convRef.get();
         Logger.log('✓ 대화방 문서 조회 성공 - exists: ${convDoc.exists}');
@@ -943,8 +944,29 @@ class DMService {
         }
         rethrow;
       }
+      
+      // 대화 상대방 확인 및 차단 여부 확인
+      if (convDoc != null && convDoc.exists) {
+        final convData = convDoc.data() as Map<String, dynamic>?;
+        final participants = List<String>.from(convData?['participants'] ?? []);
+        final otherUserId = participants.firstWhere(
+          (id) => id != currentUser.uid,
+          orElse: () => '',
+        );
+        
+        if (otherUserId.isNotEmpty) {
+          // 차단 여부 확인
+          final isBlocked = await ContentFilterService.isUserBlocked(otherUserId);
+          final isBlockedBy = await ContentFilterService.isBlockedByUser(otherUserId);
+          
+          if (isBlocked || isBlockedBy) {
+            Logger.log('❌ 차단된 사용자에게 메시지를 보낼 수 없습니다');
+            throw Exception('차단된 사용자에게 메시지를 보낼 수 없습니다.');
+          }
+        }
+      }
 
-      if (!convDoc.exists) {
+      if (convDoc == null || !convDoc.exists) {
         // ID에서 상대 UID 및 익명/게시글 정보를 추출해 초기 문서 생성
         final parsed = _parseConversationId(conversationId);
         final otherUserId = parsed.uidA == currentUser.uid ? parsed.uidB : parsed.uidA;
@@ -1015,7 +1037,7 @@ class DMService {
         convDoc = await convRef.get();
         Logger.log('✅ 대화방 자동 생성 후 첫 메시지 전송');
       } else {
-        final existingData = convDoc.data() as Map<String, dynamic>;
+        final existingData = convDoc!.data() as Map<String, dynamic>;
         final existingParticipants = List<String>.from(existingData['participants'] ?? []);
         if (!existingParticipants.contains(currentUser.uid)) {
           Logger.error('❌ 메시지 전송 실패: 참여자가 아닌 대화방입니다 (conversationId=$conversationId)');

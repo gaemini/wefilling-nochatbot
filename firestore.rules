@@ -141,25 +141,20 @@ service cloud.firestore {
       // 읽기: 차단 관계에 포함된 사용자 모두 확인 가능
       // blockId 형식: {blocker}_{blocked}
       // 문서가 없어도 읽기 허용 (존재 여부 확인용)
-      allow read: if 
+      allow read: if
         request.auth != null &&
         (
           // 문서가 존재하는 경우: 관련 당사자만
-          (resource != null && 
+          (resource != null &&
            (request.auth.uid == resource.data.blocker ||
             request.auth.uid == resource.data.blocked)) ||
           // 문서가 존재하지 않는 경우: blockId 패턴에 자신의 ID 포함 시
           (resource == null &&
            blockId.matches('.*' + request.auth.uid + '.*'))
         );
-      
-      // 생성/삭제: 차단하는 사용자만 가능
-      allow create, delete: if 
-        request.auth != null &&
-        request.auth.uid == request.resource.data.blocker;
-      
-      // 업데이트: 금지
-      allow update: if false;
+
+      // 생성/삭제/업데이트: Cloud Functions만 가능 (보안 강화)
+      allow write: if false;
     }
     
     // ===== 관계(Relationships) 컬렉션 =====

@@ -9,6 +9,7 @@ import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../services/dm_service.dart';
 import '../services/post_service.dart';
+import '../services/content_filter_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
@@ -54,12 +55,32 @@ class _DMChatScreenState extends State<DMChatScreen> {
   bool _isLoading = false;
   bool _isLeaving = false; // 나가기 진행 중 플래그
   String? _preloadedDmTitle; // 미리 로드된 게시글 제목
+  bool _isBlocked = false; // 차단 여부
+  bool _isBlockedBy = false; // 차단당한 여부
 
   @override
   void initState() {
     super.initState();
+    _checkBlockStatus(); // 차단 상태 확인
     _preloadDmTitleIfAnonymous(); // 익명이면 제목 미리 로드
     _initConversationState();
+  }
+  
+  /// 차단 상태 확인
+  Future<void> _checkBlockStatus() async {
+    try {
+      final isBlocked = await ContentFilterService.isUserBlocked(widget.otherUserId);
+      final isBlockedBy = await ContentFilterService.isBlockedByUser(widget.otherUserId);
+      
+      if (mounted) {
+        setState(() {
+          _isBlocked = isBlocked;
+          _isBlockedBy = isBlockedBy;
+        });
+      }
+    } catch (e) {
+      Logger.error('차단 상태 확인 실패: $e');
+    }
   }
   
   /// 익명 대화방이면 게시글 제목을 미리 로드
@@ -1079,18 +1100,24 @@ class _DMChatScreenState extends State<DMChatScreen> {
               child: Container(
                 constraints: const BoxConstraints(maxHeight: 120),
                 decoration: BoxDecoration(
-                  color: DMColors.inputBg,
+                  color: (_isBlocked || _isBlockedBy) ? Colors.grey[200] : DMColors.inputBg,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: DMColors.inputBorder, width: 0.5),
                 ),
                 child: TextField(
                   controller: _messageController,
+                  enabled: !_isBlocked && !_isBlockedBy,
                   maxLines: null,
                   maxLength: 500,
                   textInputAction: TextInputAction.newline,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.typeMessage,
-                    hintStyle: TextStyle(color: Colors.grey[500], fontSize: 15),
+                    hintText: (_isBlocked || _isBlockedBy)
+                        ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
+                        : AppLocalizations.of(context)!.typeMessage,
+                    hintStyle: TextStyle(
+                      color: (_isBlocked || _isBlockedBy) ? Colors.grey[600] : Colors.grey[500],
+                      fontSize: 15,
+                    ),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     border: InputBorder.none,
                     counterText: '',
@@ -1105,13 +1132,15 @@ class _DMChatScreenState extends State<DMChatScreen> {
             
             // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
             InkWell(
-              onTap: _messageController.text.trim().isEmpty ? null : _sendMessage,
+              onTap: (_messageController.text.trim().isEmpty || _isBlocked || _isBlockedBy) 
+                  ? null 
+                  : _sendMessage,
               customBorder: const CircleBorder(),
               child: Container(
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(
-                  color: _messageController.text.trim().isEmpty
+                  color: (_messageController.text.trim().isEmpty || _isBlocked || _isBlockedBy)
                       ? Colors.grey[300]
                       : DMColors.myMessageBg,
                   shape: BoxShape.circle,

@@ -39,6 +39,7 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
+		<string>mailto</string>
 		<string>googlegmail</string>
 		<string>googlemail</string>
 		<string>googleplus</string>

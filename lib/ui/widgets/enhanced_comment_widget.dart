@@ -59,6 +59,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   /// 신고 다이얼로그
   Future<void> _showReportDialog() async {
+    final TextEditingController reasonController = TextEditingController();
+    
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -71,7 +73,24 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               Text(AppLocalizations.of(context)!.report),
             ],
           ),
-          content: Text(AppLocalizations.of(context)!.reportConfirm),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(AppLocalizations.of(context)!.reportConfirm),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                decoration: const InputDecoration(
+                  labelText: '신고 사유',
+                  hintText: '신고 사유를 입력해주세요 (예: 욕설, 비방)',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+                maxLines: 3,
+              ),
+            ],
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -88,11 +107,70 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     );
 
     if (confirmed == true && mounted) {
-      // 실제 신고 로직 연동 전까지 안내만 표시
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.reportSubmitted)),
-      );
+      final reason = reasonController.text.trim();
+      if (reason.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('신고 사유를 입력해주세요.')),
+        );
+        return;
+      }
+
+      await _sendReportEmail(reason);
     }
+  }
+
+  /// 신고 이메일 전송
+  Future<void> _sendReportEmail(String reason) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final String subject = '[신고] 댓글 신고 접수';
+    final String body = '''
+[신고 사유]
+$reason
+
+[신고 대상 정보]
+- 게시글 ID: ${widget.postId}
+- 댓글 ID: ${widget.comment.id}
+- 작성자 ID: ${widget.comment.userId}
+- 댓글 내용:
+${widget.comment.content}
+
+[신고자 정보]
+- 사용자 ID: ${currentUser?.uid ?? '익명/비로그인'}
+- 신고 일시: ${DateTime.now().toString()}
+
+위필링 관리자님, 위 내용으로 신고가 접수되었습니다.
+''';
+
+    final Uri emailLaunchUri = Uri(
+      scheme: 'mailto',
+      path: 'wefilling@gmail.com',
+      query: _encodeQueryParameters(<String, String>{
+        'subject': subject,
+        'body': body,
+      }),
+    );
+
+    try {
+      if (await canLaunchUrl(emailLaunchUri)) {
+        await launchUrl(emailLaunchUri);
+      } else {
+        throw 'Could not launch email';
+      }
+    } catch (e) {
+      Logger.error('이메일 앱 열기 실패: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이메일 앱을 열 수 없습니다. wefilling@gmail.com으로 직접 문의해주세요.')),
+        );
+      }
+    }
+  }
+
+  String? _encodeQueryParameters(Map<String, String> params) {
+    return params.entries
+        .map((MapEntry<String, String> e) =>
+            '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+        .join('&');
   }
 
   /// 댓글 작성자에게 DM 열기
@@ -243,7 +321,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     return Container(
       margin: EdgeInsets.only(
-        left: widget.comment.depth * 28.0, // 대댓글 들여쓰기
+        left: (widget.comment.depth * 20.0) + (widget.comment.depth == 0 ? 16.0 : 0.0),
+        right: widget.comment.depth == 0 ? 16.0 : 0.0,
         bottom: 16, // 댓글 간 간격
       ),
       child: Row(

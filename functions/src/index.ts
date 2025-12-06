@@ -12,9 +12,11 @@ admin.initializeApp();
 // Firestore 인스턴스
 const db = admin.firestore();
 
-// Gmail SMTP 설정
+// Gmail SMTP 설정 (명시적 설정)
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 465,
+  secure: true, // use SSL
   auth: {
     user: 'wefilling@gmail.com',
     pass: functions.config().gmail?.password || process.env.GMAIL_PASSWORD,
@@ -1867,7 +1869,7 @@ export const reportUser = functions.https.onCall(async (data, context) => {
 });
 
 // 신고 데이터 생성 시 관리자에게 이메일 알림 (Firestore Trigger)
-export const onReportCreated = functions.firestore
+export const onReportCreated = functions.region('asia-northeast3').firestore
   .document('reports/{reportId}')
   .onCreate(async (snapshot, context) => {
     try {
@@ -1917,11 +1919,20 @@ export const onReportCreated = functions.firestore
         `,
       };
 
+      // 메일 서버 연결 테스트
+      try {
+        await transporter.verify();
+        console.log('✅ SMTP 서버 연결 성공');
+      } catch (verifyError) {
+        console.error('❌ SMTP 서버 연결 실패:', verifyError);
+        throw verifyError; // 연결 실패 시 중단
+      }
+
       await transporter.sendMail(mailOptions);
       console.log(`✅ 관리자 알림 메일 전송 완료: ${reportId}`);
       return null;
     } catch (error) {
-      console.error('onReportCreated 오류:', error);
+      console.error('onReportCreated 오류 (상세):', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       return null;
     }
   });

@@ -1240,7 +1240,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               ),
                             ),
                             
-                            const SizedBox(width: 16),
+                            const SizedBox(width: 24), // 하트와 DM 사이 간격 증가
                             
                             // DM 버튼 (본인 글이 아닌 경우만)
                             if (FirebaseAuth.instance.currentUser != null &&
@@ -1263,7 +1263,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                   splashRadius: 20,
                                 ),
                               ),
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 24), // DM과 조회수 사이 간격 증가
                             ],
                               
                             // 조회수 표시
@@ -1372,7 +1372,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 ),
                               ),
                               
-                              const SizedBox(width: 16),
+                              const SizedBox(width: 24), // 하트와 DM 사이 간격 증가
                               
                               // DM 버튼 (본인 글이 아닌 경우만)
                               if (FirebaseAuth.instance.currentUser != null &&
@@ -1395,7 +1395,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     splashRadius: 20,
                                   ),
                                 ),
-                                const SizedBox(width: 16),
+                                const SizedBox(width: 24), // DM과 조회수 사이 간격 증가
                               ],
                                 
                               // 조회수 표시

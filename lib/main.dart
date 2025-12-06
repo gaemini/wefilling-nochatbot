@@ -86,7 +86,8 @@ void main() {
         await FirebaseCrashlytics.instance
             .setCrashlyticsCollectionEnabled(!kDebugMode);
 
-        FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+        FlutterError.onError =
+            FirebaseCrashlytics.instance.recordFlutterFatalError;
 
         PlatformDispatcher.instance.onError = (error, stack) {
           FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
@@ -122,7 +123,8 @@ void main() {
       try {
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
-          debugPrint('🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
+          debugPrint(
+              '🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
           debugPrint(
               '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
         }
@@ -178,7 +180,8 @@ void main() {
           // Android 캐시 문제 해결을 위해 무제한 → 100MB 제한
           firestore.settings = const Settings(
             persistenceEnabled: true,
-            cacheSizeBytes: 100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
+            cacheSizeBytes:
+                100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
           );
 
           if (kDebugMode) {

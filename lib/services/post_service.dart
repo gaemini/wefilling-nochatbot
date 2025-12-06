@@ -45,7 +45,8 @@ class PostService {
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final nationality = userData?['nationality'] ?? ''; // 국적 정보 가져오기
-      final photoURL = userData?['photoURL'] ?? user.photoURL ?? ''; // 프로필 사진 URL 가져오기
+      final photoURL =
+          userData?['photoURL'] ?? user.photoURL ?? ''; // 프로필 사진 URL 가져오기
 
       Logger.log(
         "AddPost - 사용자 데이터: ${userData?.toString()} | 닉네임: $nickname | 국적: $nationality | 프로필 사진: ${photoURL.isNotEmpty ? '있음' : '없음'}",
@@ -81,7 +82,8 @@ class PostService {
           imageUrls =
               results.where((url) => url != null).cast<String>().toList();
 
-          Logger.log('이미지 업로드 완료: ${imageUrls.length}개 (요청: ${imageFiles.length}개)');
+          Logger.log(
+              '이미지 업로드 완료: ${imageUrls.length}개 (요청: ${imageFiles.length}개)');
           // 성공한 URL 로깅
           for (int i = 0; i < imageUrls.length; i++) {
             Logger.log('이미지 URL #$i: ${imageUrls[i]}');
@@ -109,15 +111,16 @@ class PostService {
                 .collection('friend_categories')
                 .doc(categoryId)
                 .get();
-            
+
             if (categoryDoc.exists) {
               final categoryData = categoryDoc.data();
-              final friendIds = List<String>.from(categoryData?['friendIds'] ?? []);
+              final friendIds =
+                  List<String>.from(categoryData?['friendIds'] ?? []);
               uniqueFriendIds.addAll(friendIds);
               Logger.log('카테고리 ${categoryId}: ${friendIds.length}명의 친구');
             }
           }
-          
+
           // 작성자 본인도 포함
           uniqueFriendIds.add(user.uid);
           allowedUserIds = uniqueFriendIds.toList();
@@ -172,106 +175,111 @@ class PostService {
   // 모든 게시글 가져오기
   Stream<List<Post>> getAllPosts() {
     final user = _auth.currentUser;
-    
+
     return _firestore
         .collection('posts')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
-          Logger.log('📊 Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
-          
-          final posts = snapshot.docs.map((doc) {
-            final data = doc.data();
-            final post = Post(
-              id: doc.id,
-              title: data['title'] ?? '',
-              content: data['content'] ?? '',
-              author: data['authorNickname'] ?? '익명',
-              authorNationality: data['authorNationality'] ?? '알 수 없음',
-              authorPhotoURL: data['authorPhotoURL'] ?? '',
-              createdAt:
-                  data['createdAt'] != null
-                      ? (data['createdAt'] as Timestamp).toDate()
-                      : DateTime.now(),
-              userId: data['userId'] ?? '',
-              commentCount: data['commentCount'] ?? 0,
-              likes: data['likes'] ?? 0,
-              viewCount: data['viewCount'] ?? 0,
-              likedBy: List<String>.from(data['likedBy'] ?? []),
-              imageUrls: List<String>.from(data['imageUrls'] ?? []),
-              visibility: data['visibility'] ?? 'public',
-              isAnonymous: data['isAnonymous'] ?? false,
-              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
-              allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
-            );
-            
-            // 비공개 게시글 로그
-            if (post.visibility == 'category') {
-              Logger.log('🔒 비공개 게시글 발견: ${post.title}');
-              Logger.log('   작성자: ${post.author} (${post.userId})');
-              Logger.log('   현재 사용자: ${user?.uid ?? "로그인 안 함"}');
-              Logger.log('   허용된 사용자: ${post.allowedUserIds}');
-              Logger.log('   접근 가능: ${user != null && (post.userId == user.uid || post.allowedUserIds.contains(user.uid))}');
-            }
-            
-            return post;
-          }).toList();
-          
-          // 클라이언트 측 필수 필터링: 비공개 게시글 차단
-          if (user != null) {
-            final filteredPosts = posts.where((post) {
-              // visibility 필드가 없으면 전체 공개로 간주
-              final visibility = post.visibility;
-              
-              // 전체 공개 게시글은 모두 표시
-              if (visibility == 'public' || visibility.isEmpty) {
-                return true;
-              }
-              
-              // 카테고리별 비공개 게시글 - 매우 엄격하게 필터링
-              if (visibility == 'category') {
-                // 1. 작성자 본인인 경우만 무조건 표시
-                if (post.userId == user.uid) {
-                  Logger.log('✅ 작성자 본인: ${post.title}');
-                  return true;
-                }
-                
-                // 2. allowedUserIds 배열이 없거나 비어있으면 차단
-                if (post.allowedUserIds.isEmpty) {
-                  Logger.log('❌ allowedUserIds 비어있음: ${post.title}');
-                  return false;
-                }
-                
-                // 3. allowedUserIds에 정확히 포함되어 있는지 확인
-                final isAllowed = post.allowedUserIds.contains(user.uid);
-                
-                if (isAllowed) {
-                  Logger.log('✅ 접근 허용: ${post.title}');
-                  Logger.log('   - 현재 사용자: ${user.uid}');
-                  Logger.log('   - 허용된 사용자: ${post.allowedUserIds}');
-                } else {
-                  Logger.log('❌ 접근 차단: ${post.title}');
-                  Logger.log('   - 현재 사용자: ${user.uid}');
-                  Logger.log('   - 허용된 사용자: ${post.allowedUserIds}');
-                  Logger.log('   - 작성자: ${post.userId}');
-                }
-                
-                return isAllowed;
-              }
-              
-              // 알 수 없는 visibility 값은 차단
-              Logger.log('⚠️  알 수 없는 visibility: ${visibility} - ${post.title}');
-              return false;
-            }).toList();
-            
-            Logger.log('✅ 필터링 후 게시글 수: ${filteredPosts.length} (전체: ${posts.length})');
-            return filteredPosts;
+      Logger.log('📊 Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
+
+      final posts = snapshot.docs.map((doc) {
+        final data = doc.data();
+        final post = Post(
+          id: doc.id,
+          title: data['title'] ?? '',
+          content: data['content'] ?? '',
+          author: data['authorNickname'] ?? '익명',
+          authorNationality: data['authorNationality'] ?? '알 수 없음',
+          authorPhotoURL: data['authorPhotoURL'] ?? '',
+          createdAt: data['createdAt'] != null
+              ? (data['createdAt'] as Timestamp).toDate()
+              : DateTime.now(),
+          userId: data['userId'] ?? '',
+          commentCount: data['commentCount'] ?? 0,
+          likes: data['likes'] ?? 0,
+          viewCount: data['viewCount'] ?? 0,
+          likedBy: List<String>.from(data['likedBy'] ?? []),
+          imageUrls: List<String>.from(data['imageUrls'] ?? []),
+          visibility: data['visibility'] ?? 'public',
+          isAnonymous: data['isAnonymous'] ?? false,
+          visibleToCategoryIds:
+              List<String>.from(data['visibleToCategoryIds'] ?? []),
+          allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
+        );
+
+        // 비공개 게시글 로그
+        if (post.visibility == 'category') {
+          Logger.log('🔒 비공개 게시글 발견: ${post.title}');
+          Logger.log('   작성자: ${post.author} (${post.userId})');
+          Logger.log('   현재 사용자: ${user?.uid ?? "로그인 안 함"}');
+          Logger.log('   허용된 사용자: ${post.allowedUserIds}');
+          Logger.log(
+              '   접근 가능: ${user != null && (post.userId == user.uid || post.allowedUserIds.contains(user.uid))}');
+        }
+
+        return post;
+      }).toList();
+
+      // 클라이언트 측 필수 필터링: 비공개 게시글 차단
+      if (user != null) {
+        final filteredPosts = posts.where((post) {
+          // visibility 필드가 없으면 전체 공개로 간주
+          final visibility = post.visibility;
+
+          // 전체 공개 게시글은 모두 표시
+          if (visibility == 'public' || visibility.isEmpty) {
+            return true;
           }
-          
-          // 로그인하지 않은 경우 전체 공개 게시글만 표시
-          Logger.log('⚠️  로그인하지 않음 - 전체 공개만 표시');
-          return posts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
-        });
+
+          // 카테고리별 비공개 게시글 - 매우 엄격하게 필터링
+          if (visibility == 'category') {
+            // 1. 작성자 본인인 경우만 무조건 표시
+            if (post.userId == user.uid) {
+              Logger.log('✅ 작성자 본인: ${post.title}');
+              return true;
+            }
+
+            // 2. allowedUserIds 배열이 없거나 비어있으면 차단
+            if (post.allowedUserIds.isEmpty) {
+              Logger.log('❌ allowedUserIds 비어있음: ${post.title}');
+              return false;
+            }
+
+            // 3. allowedUserIds에 정확히 포함되어 있는지 확인
+            final isAllowed = post.allowedUserIds.contains(user.uid);
+
+            if (isAllowed) {
+              Logger.log('✅ 접근 허용: ${post.title}');
+              Logger.log('   - 현재 사용자: ${user.uid}');
+              Logger.log('   - 허용된 사용자: ${post.allowedUserIds}');
+            } else {
+              Logger.log('❌ 접근 차단: ${post.title}');
+              Logger.log('   - 현재 사용자: ${user.uid}');
+              Logger.log('   - 허용된 사용자: ${post.allowedUserIds}');
+              Logger.log('   - 작성자: ${post.userId}');
+            }
+
+            return isAllowed;
+          }
+
+          // 알 수 없는 visibility 값은 차단
+          Logger.log('⚠️  알 수 없는 visibility: ${visibility} - ${post.title}');
+          return false;
+        }).toList();
+
+        Logger.log(
+            '✅ 필터링 후 게시글 수: ${filteredPosts.length} (전체: ${posts.length})');
+        return filteredPosts;
+      }
+
+      // 로그인하지 않은 경우 전체 공개 게시글만 표시
+      Logger.log('⚠️  로그인하지 않음 - 전체 공개만 표시');
+      return posts
+          .where(
+              (post) => post.visibility == 'public' || post.visibility.isEmpty)
+          .toList();
+    });
   }
 
   // 특정 게시글 가져오기
@@ -292,10 +300,9 @@ class PostService {
         author: data['authorNickname'] ?? '익명',
         authorNationality: data['authorNationality'] ?? '알 수 없음',
         authorPhotoURL: data['authorPhotoURL'] ?? '',
-        createdAt:
-            data['createdAt'] != null
-                ? (data['createdAt'] as Timestamp).toDate()
-                : DateTime.now(),
+        createdAt: data['createdAt'] != null
+            ? (data['createdAt'] as Timestamp).toDate()
+            : DateTime.now(),
         userId: data['userId'] ?? '',
         commentCount: data['commentCount'] ?? 0,
         viewCount: data['viewCount'] ?? 0,
@@ -304,7 +311,8 @@ class PostService {
         imageUrls: List<String>.from(data['imageUrls'] ?? []),
         visibility: data['visibility'] ?? 'public',
         isAnonymous: data['isAnonymous'] ?? false,
-        visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+        visibleToCategoryIds:
+            List<String>.from(data['visibleToCategoryIds'] ?? []),
         allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
       );
     } catch (e) {
@@ -375,7 +383,8 @@ class PostService {
 
           Logger.log('🔔 알림 전송 시작...');
           // 좋아요 알림 전송
-          final notificationSent = await _notificationService.sendNewLikeNotification(
+          final notificationSent =
+              await _notificationService.sendNewLikeNotification(
             postId,
             postTitle,
             authorId,
@@ -396,10 +405,10 @@ class PostService {
   }
 
   /// 현재 사용자가 좋아요를 눌렀는지 확인
-  /// 
+  ///
   /// **⚠️ Deprecated**: 이 메서드는 v2.0에서 제거될 예정입니다.
   /// 대신 Post 객체의 likedBy 리스트를 직접 사용하세요.
-  /// 
+  ///
   /// 사용 예시:
   /// ```dart
   /// final post = await postService.getPost(postId);
@@ -491,13 +500,13 @@ class PostService {
       }
 
       Logger.log('게시글 삭제 성공: $postId');
-      
+
       // 캐시 무효화 (게시글이 삭제되었으므로 캐시 삭제)
       if (CacheFeatureFlags.isPostCacheEnabled) {
         _cache.invalidate(key: postId);
         Logger.log('💾 게시글 캐시 무효화 (게시글 삭제)');
       }
-      
+
       return true;
     } catch (e) {
       Logger.error('게시글 삭제 오류: $e');
@@ -513,7 +522,7 @@ class PostService {
     if (!CacheFeatureFlags.isPostCacheEnabled) {
       return [];
     }
-    
+
     try {
       return await _cache.getPosts(visibility: visibility);
     } catch (e) {
@@ -525,14 +534,15 @@ class PostService {
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
     final user = _auth.currentUser;
-    
+
     return _firestore
         .collection('posts')
         .orderBy('createdAt', descending: true)
         .snapshots()
         .asyncMap((snapshot) async {
-      Logger.log('📊 [getPostsStream] Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
-      
+      Logger.log(
+          '📊 [getPostsStream] Firestore에서 받은 게시글 수: ${snapshot.docs.length}');
+
       final posts = snapshot.docs.map((doc) {
         try {
           final data = doc.data();
@@ -544,7 +554,8 @@ class PostService {
             authorNationality: data['authorNationality'] ?? '',
             authorPhotoURL: data['authorPhotoURL'] ?? '',
             category: data['category'] ?? '일반',
-            createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+            createdAt:
+                (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
             userId: data['userId'] ?? '',
             commentCount: data['commentCount'] ?? 0,
             likes: data['likes'] ?? 0,
@@ -553,10 +564,11 @@ class PostService {
             imageUrls: List<String>.from(data['imageUrls'] ?? []),
             visibility: data['visibility'] ?? 'public',
             isAnonymous: data['isAnonymous'] ?? false,
-            visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+            visibleToCategoryIds:
+                List<String>.from(data['visibleToCategoryIds'] ?? []),
             allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
           );
-          
+
           // 비공개 게시글 로그
           if (post.visibility == 'category') {
             Logger.log('🔒 비공개 게시글 발견: ${post.title}');
@@ -564,7 +576,7 @@ class PostService {
             Logger.log('   현재 사용자: ${user?.uid ?? "로그인 안 함"}');
             Logger.log('   허용된 사용자: ${post.allowedUserIds}');
           }
-          
+
           return post;
         } catch (e) {
           Logger.error('게시글 파싱 오류: $e');
@@ -588,17 +600,17 @@ class PostService {
 
       // 1단계: 차단된 사용자의 게시물 필터링
       final nonBlockedPosts = await ContentFilterService.filterPosts(posts);
-      
+
       // 2단계: 비공개 게시글 필터링 (매우 중요!)
       if (user != null) {
         final visiblePosts = nonBlockedPosts.where((post) {
           final visibility = post.visibility;
-          
+
           // 전체 공개 게시글은 모두 표시
           if (visibility == 'public' || visibility.isEmpty) {
             return true;
           }
-          
+
           // 카테고리별 비공개 게시글 - 엄격하게 필터링
           if (visibility == 'category') {
             // 1. 작성자 본인
@@ -606,16 +618,17 @@ class PostService {
               Logger.log('✅ [getPostsStream] 작성자 본인: ${post.title}');
               return true;
             }
-            
+
             // 2. allowedUserIds 비어있으면 차단
             if (post.allowedUserIds.isEmpty) {
-              Logger.log('❌ [getPostsStream] allowedUserIds 비어있음: ${post.title}');
+              Logger.log(
+                  '❌ [getPostsStream] allowedUserIds 비어있음: ${post.title}');
               return false;
             }
-            
+
             // 3. allowedUserIds에 포함 여부 확인
             final isAllowed = post.allowedUserIds.contains(user.uid);
-            
+
             if (isAllowed) {
               Logger.log('✅ [getPostsStream] 접근 허용: ${post.title}');
             } else {
@@ -624,43 +637,47 @@ class PostService {
               Logger.log('   - 허용된 사용자: ${post.allowedUserIds}');
               Logger.log('   - 작성자: ${post.userId}');
             }
-            
+
             return isAllowed;
           }
-          
+
           // 알 수 없는 visibility는 차단
           Logger.log('⚠️  [getPostsStream] 알 수 없는 visibility: ${visibility}');
           return false;
         }).toList();
-        
-        Logger.log('✅ [getPostsStream] 필터링 후 게시글 수: ${visiblePosts.length} (전체: ${posts.length})');
-        
+
+        Logger.log(
+            '✅ [getPostsStream] 필터링 후 게시글 수: ${visiblePosts.length} (전체: ${posts.length})');
+
         // 캐시 업데이트 (백그라운드, 실패해도 무시)
         if (CacheFeatureFlags.isPostCacheEnabled) {
           unawaited(_cache.savePosts(visiblePosts, visibility: 'public'));
         }
-        
+
         return visiblePosts;
       }
-      
+
       // 로그인하지 않은 경우 전체 공개만
       Logger.log('⚠️  [getPostsStream] 로그인하지 않음 - 전체 공개만 표시');
-      final publicPosts = nonBlockedPosts.where((post) => post.visibility == 'public' || post.visibility.isEmpty).toList();
-      
+      final publicPosts = nonBlockedPosts
+          .where(
+              (post) => post.visibility == 'public' || post.visibility.isEmpty)
+          .toList();
+
       // 캐시 업데이트 (백그라운드, 실패해도 무시)
       if (CacheFeatureFlags.isPostCacheEnabled) {
         unawaited(_cache.savePosts(publicPosts, visibility: 'public'));
       }
-      
+
       return publicPosts;
     });
   }
 
   /// 현재 사용자가 게시글 작성자인지 확인
-  /// 
+  ///
   /// **⚠️ Deprecated**: 이 메서드는 v2.0에서 제거될 예정입니다.
   /// 대신 Post 객체의 userId를 직접 사용하세요.
-  /// 
+  ///
   /// 사용 예시:
   /// ```dart
   /// final post = await postService.getPost(postId);
@@ -689,11 +706,10 @@ class PostService {
       if (query.isEmpty) return [];
 
       final lowercaseQuery = query.toLowerCase();
-      
+
       // 기본 쿼리
-      Query<Map<String, dynamic>> queryRef = _firestore
-          .collection('posts')
-          .orderBy('createdAt', descending: true);
+      Query<Map<String, dynamic>> queryRef =
+          _firestore.collection('posts').orderBy('createdAt', descending: true);
 
       // 카테고리 필터 추가
       if (category != null && category.isNotEmpty) {
@@ -701,17 +717,18 @@ class PostService {
       }
 
       final snapshot = await queryRef.get();
-      
+
       return snapshot.docs
           .map((doc) {
             try {
               final data = doc.data();
-              
+
               // 검색어와 일치하는지 확인
               final title = (data['title'] as String? ?? '').toLowerCase();
               final content = (data['content'] as String? ?? '').toLowerCase();
-              final author = (data['authorNickname'] as String? ?? '').toLowerCase();
-              
+              final author =
+                  (data['authorNickname'] as String? ?? '').toLowerCase();
+
               if (title.contains(lowercaseQuery) ||
                   content.contains(lowercaseQuery) ||
                   author.contains(lowercaseQuery)) {
@@ -723,7 +740,8 @@ class PostService {
                   authorNationality: data['authorNationality'] ?? '',
                   authorPhotoURL: data['authorPhotoURL'] ?? '',
                   category: data['category'] ?? '일반',
-                  createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+                  createdAt: (data['createdAt'] as Timestamp?)?.toDate() ??
+                      DateTime.now(),
                   userId: data['userId'] ?? '',
                   commentCount: data['commentCount'] ?? 0,
                   viewCount: data['viewCount'] ?? 0,
@@ -732,8 +750,10 @@ class PostService {
                   imageUrls: List<String>.from(data['imageUrls'] ?? []),
                   visibility: data['visibility'] ?? 'public',
                   isAnonymous: data['isAnonymous'] ?? false,
-                  visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
-                  allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
+                  visibleToCategoryIds:
+                      List<String>.from(data['visibleToCategoryIds'] ?? []),
+                  allowedUserIds:
+                      List<String>.from(data['allowedUserIds'] ?? []),
                 );
               }
               return null;
@@ -824,7 +844,8 @@ class PostService {
       for (var savedDoc in savedSnapshot.docs) {
         try {
           final postId = savedDoc.data()['postId'] as String;
-          final postDoc = await _firestore.collection('posts').doc(postId).get();
+          final postDoc =
+              await _firestore.collection('posts').doc(postId).get();
 
           if (postDoc.exists) {
             final data = postDoc.data()!;
@@ -836,7 +857,8 @@ class PostService {
               authorNationality: data['authorNationality'] ?? '',
               authorPhotoURL: data['authorPhotoURL'] ?? '',
               category: data['category'] ?? '일반',
-              createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+              createdAt:
+                  (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
               userId: data['userId'] ?? '',
               commentCount: data['commentCount'] ?? 0,
               likes: data['likes'] ?? 0,
@@ -845,7 +867,8 @@ class PostService {
               imageUrls: List<String>.from(data['imageUrls'] ?? []),
               visibility: data['visibility'] ?? 'public',
               isAnonymous: data['isAnonymous'] ?? false,
-              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+              visibleToCategoryIds:
+                  List<String>.from(data['visibleToCategoryIds'] ?? []),
               allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
             ));
           }

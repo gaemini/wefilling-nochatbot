@@ -30,9 +30,9 @@ import 'search_result_page.dart';
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
   final String? initialMeetupId; // 알림에서 전달받을 모임 ID
-  
+
   const MainScreen({
-    Key? key, 
+    Key? key,
     this.initialTabIndex = 0,
     this.initialMeetupId,
   }) : super(key: key);
@@ -53,21 +53,21 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    
+
     // 초기 탭 인덱스 설정
     _selectedIndex = widget.initialTabIndex;
     // 알림으로 넘어온 모임 ID는 최초 1회만 사용하도록 보관
     _pendingMeetupId = widget.initialMeetupId;
-    
+
     // 스트림 정리 콜백 등록
     _cleanupCallback = () {
       _notificationService.dispose();
     };
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       authProvider.registerStreamCleanup(_cleanupCallback);
-      
+
       // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
       if (authProvider.consumeSignupRequiredFlag()) {
         _showSignupRequiredBanner();
@@ -92,7 +92,7 @@ class _MainScreenState extends State<MainScreen> {
     } catch (e) {
       Logger.error('MainScreen AuthProvider 콜백 제거 오류: $e');
     }
-    
+
     // 서비스 정리
     _notificationService.dispose();
     _searchController.dispose();
@@ -101,13 +101,13 @@ class _MainScreenState extends State<MainScreen> {
 
   // 화면 목록 - 검색어를 전달할 수 있도록 수정
   List<Widget> get _screens => [
-    BoardScreen(searchQuery: _searchController.text),
-    // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
-    MeetupHomePage(initialMeetupId: _pendingMeetupId),
-    const DMListScreen(),
-    const MyPageScreen(),
-    const FriendsMainPage(),
-  ];
+        BoardScreen(searchQuery: _searchController.text),
+        // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
+        MeetupHomePage(initialMeetupId: _pendingMeetupId),
+        const DMListScreen(),
+        const MyPageScreen(),
+        const FriendsMainPage(),
+      ];
   // 프로덕션 배포: 디버그 헬퍼 제거
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
@@ -127,7 +127,6 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
   }
-
 
   void _onSearchChanged() {
     setState(() {
@@ -203,7 +202,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-
   void _showSignupRequiredBanner() {
     showModalBottomSheet(
       context: context,
@@ -217,7 +215,8 @@ class _MainScreenState extends State<MainScreen> {
               borderRadius: BorderRadius.circular(12),
               color: Colors.orange.shade50,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.orange.shade200),
@@ -238,7 +237,8 @@ class _MainScreenState extends State<MainScreen> {
                           const SizedBox(height: 8),
                           Text(
                             '한양메일 인증을 완료한 후 회원가입을 진행해주세요.',
-                            style: TextStyle(fontSize: 13, color: Colors.orange.shade900),
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.orange.shade900),
                           ),
                         ],
                       ),
@@ -393,10 +393,10 @@ class _MainScreenState extends State<MainScreen> {
           if (snapshot.hasError) {
             Logger.error('  - error: ${snapshot.error}');
           }
-          
+
           final unreadDMCount = snapshot.data ?? 0;
           Logger.log('  - unreadDMCount: $unreadDMCount');
-          
+
           return AdaptiveBottomNavigation(
             selectedIndex: _selectedIndex,
             onItemTapped: _onItemTapped,
@@ -442,61 +442,61 @@ class WefillingLogoPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width * 0.4;
-    
+
     // 실제 Wefilling 로고 색상 (스플래시 화면과 동일)
     final petalColors = [
       const Color(0xFF1E88E5), // 메인 파란색
-      const Color(0xFF42A5F5), // 밝은 파란색  
+      const Color(0xFF42A5F5), // 밝은 파란색
       const Color(0xFF64B5F6), // 중간 파란색
       const Color(0xFF90CAF9), // 연한 파란색
       const Color(0xFFBBDEFB), // 가장 연한 파란색
     ];
-    
+
     // 5개의 꽃잎을 72도씩 회전하며 그리기
     for (int i = 0; i < 5; i++) {
       final angle = (i * 72) * math.pi / 180;
-      
+
       canvas.save();
       canvas.translate(center.dx, center.dy);
       canvas.rotate(angle);
-      
+
       // 더 정확한 꽃잎 모양 (타원형 기반)
       final path = Path();
-      
+
       // 꽃잎의 타원형 모양 생성
       final rect = Rect.fromCenter(
         center: Offset(0, -radius * 0.3),
         width: radius * 0.8,
         height: radius * 1.2,
       );
-      
+
       path.addOval(rect);
-      
+
       // 꽃잎 그리기 (그라데이션 효과)
       final paint = Paint()
         ..color = petalColors[i]
         ..style = PaintingStyle.fill;
-      
+
       canvas.drawPath(path, paint);
-      
+
       // 약간의 투명도로 겹침 효과
       final overlayPaint = Paint()
         ..color = petalColors[i].withOpacity(0.6)
         ..style = PaintingStyle.fill;
-      
+
       canvas.drawPath(path, overlayPaint);
-      
+
       canvas.restore();
     }
-    
+
     // 중앙 하이라이트 (더 작게)
     final centerPaint = Paint()
       ..color = Colors.white.withOpacity(0.4)
       ..style = PaintingStyle.fill;
-    
+
     canvas.drawCircle(center, radius * 0.12, centerPaint);
   }
-  
+
   @override
   bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

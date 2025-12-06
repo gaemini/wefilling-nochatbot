@@ -799,7 +799,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.',
-                      style: TextStyle(color: Colors.grey[600]),
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.bold,
+                      ),
                       textAlign: TextAlign.center,
                     ),
                   ],

@@ -12,57 +12,36 @@ class PrivacyPolicyScreen extends StatelessWidget {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.privacyPolicy ?? ""),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        backgroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          AppLocalizations.of(context)!.privacyPolicy ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: false,
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).padding.bottom + 16,
+          left: 20,
+          right: 20,
+          top: 24,
+          bottom: MediaQuery.of(context).padding.bottom + 24,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.blue[50],
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue[200]!),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.info_outline, color: Colors.blue[700]),
-                      const SizedBox(width: 8),
-                      Text(
-                        isKo ? '개인정보 처리방침 안내' : 'Privacy Policy Guide',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    isKo
-                        ? 'Wefilling 서비스를 운영하는 Christopher Watson은 개인정보보호법에 따라 이용자의 개인정보 보호 및 권익을 보호하고 개인정보와 관련한 이용자의 고충을 원활하게 처리할 수 있도록 다음과 같은 처리방침을 두고 있습니다.'
-                        : 'Christopher Watson, who operates the Wefilling service, processes personal information in accordance with the Personal Information Protection Act and takes necessary measures to protect users\' rights and handle related inquiries effectively.',
-                    style: TextStyle(fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-            
-            const SizedBox(height: 24),
+            const SizedBox(height: 0),
 
             _buildSection(
               isKo ? '제1조 개인정보의 처리목적' : 'Article 1 Purpose of Processing',
@@ -290,40 +269,45 @@ Data subjects may contact the privacy officer and department regarding all perso
    - Phone: 110''',
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
             
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: Colors.grey[100],
-                borderRadius: BorderRadius.circular(8),
+                color: const Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     isKo ? '부칙' : 'Addendum',
-                    style: TextStyle(
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Text(
                     isKo
                         ? '이 개인정보 처리방침은 2025년 11월 25일부터 적용됩니다.\n이전의 개인정보 처리방침은 아래에서 확인하실 수 있습니다.'
                         : 'This Privacy Policy takes effect on November 25, 2025.\nPrevious versions can be found below.',
-                    style: TextStyle(
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
                       fontSize: 14,
-                      color: Colors.grey[700],
+                      color: Color(0xFF6B7280),
+                      height: 1.5,
                     ),
                   ),
                   const SizedBox(height: 16),
                   Text(
                     isKo ? '문의: wefilling@gmail.com' : 'Contact: wefilling@gmail.com',
-                    style: TextStyle(
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
                       fontSize: 14,
-                      color: Colors.grey[600],
+                      color: Color(0xFF6B7280),
                     ),
                   ),
                 ],
@@ -337,25 +321,29 @@ Data subjects may contact the privacy officer and department regarding all perso
 
   Widget _buildSection(String title, String content) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.only(bottom: 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.4,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             content,
             style: const TextStyle(
-              fontSize: 14,
-              height: 1.6,
-              color: Colors.black54,
+              fontFamily: 'Pretendard',
+              fontSize: 15,
+              height: 1.7,
+              color: Color(0xFF374151),
+              letterSpacing: -0.2,
             ),
           ),
         ],

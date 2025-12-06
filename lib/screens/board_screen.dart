@@ -109,11 +109,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
               indicatorColor: const Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
               labelStyle: const TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
               ),
               unselectedLabelStyle: const TextStyle(
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
               ),
               tabs: const [
                 Tab(text: 'Today'),
@@ -659,7 +659,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             fontFamily: 'Pretendard',
             color: Color(0xFF18181B), // 진한 검은색 (N-900)
             fontSize: 20, // 크게
-            fontWeight: FontWeight.w800, // 매우 진하게
+            fontWeight: FontWeight.bold, // 매우 진하게
             letterSpacing: -0.5,
             ),
           ),

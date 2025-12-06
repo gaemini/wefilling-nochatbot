@@ -181,7 +181,7 @@ class _RequestsPageState extends State<RequestsPage>
                 ),
                 child: TabBar(
                   controller: _tabController,
-                  labelColor: Colors.blue,
+                  labelColor: Colors.black,
                   unselectedLabelColor: Colors.grey,
                   indicatorColor: Colors.blue,
                   indicatorWeight: 2.0,

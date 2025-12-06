@@ -12,18 +12,31 @@ class TermsScreen extends StatelessWidget {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     
     return Scaffold(
+      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: Text(AppLocalizations.of(context)!.termsOfService ?? ""),
-        backgroundColor: Theme.of(context).colorScheme.surface,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
+        backgroundColor: Colors.white,
         elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(
+          AppLocalizations.of(context)!.termsOfService ?? "",
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        centerTitle: false,
       ),
       body: SingleChildScrollView(
         padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(context).padding.bottom + 16,
+          left: 20,
+          right: 20,
+          top: 24,
+          bottom: MediaQuery.of(context).padding.bottom + 24,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -173,10 +186,10 @@ class TermsScreen extends StatelessWidget {
       const SizedBox(height: 16),
       
       Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.grey[100],
-          borderRadius: BorderRadius.circular(8),
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -184,24 +197,29 @@ class TermsScreen extends StatelessWidget {
             const Text(
               '부칙',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 12),
+            const Text(
               '이 약관은 2025년 11월 25일부터 적용됩니다.',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                color: Colors.grey[700],
+                color: Color(0xFF6B7280),
+                height: 1.5,
               ),
             ),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               '문의: wefilling@gmail.com',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: Color(0xFF6B7280),
               ),
             ),
           ],
@@ -350,10 +368,10 @@ class TermsScreen extends StatelessWidget {
       const SizedBox(height: 16),
       
       Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.grey[100],
-          borderRadius: BorderRadius.circular(8),
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -361,24 +379,29 @@ class TermsScreen extends StatelessWidget {
             const Text(
               'Supplementary Provisions',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 16,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 12),
+            const Text(
               'These Terms become effective from November 25, 2025.',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                color: Colors.grey[700],
+                color: Color(0xFF6B7280),
+                height: 1.5,
               ),
             ),
             const SizedBox(height: 16),
-            Text(
+            const Text(
               'Contact: wefilling@gmail.com',
               style: TextStyle(
+                fontFamily: 'Pretendard',
                 fontSize: 14,
-                color: Colors.grey[600],
+                color: Color(0xFF6B7280),
               ),
             ),
           ],
@@ -389,25 +412,29 @@ class TermsScreen extends StatelessWidget {
 
   Widget _buildSection(String title, String content) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
+      padding: const EdgeInsets.only(bottom: 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
             style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black87,
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.4,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             content,
             style: const TextStyle(
-              fontSize: 14,
-              height: 1.6,
-              color: Colors.black54,
+              fontFamily: 'Pretendard',
+              fontSize: 15,
+              height: 1.7,
+              color: Color(0xFF374151),
+              letterSpacing: -0.2,
             ),
           ),
         ],

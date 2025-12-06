@@ -130,7 +130,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
           style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
-            color: Colors.blue,
+            color: Colors.black,
           ),
         ),
       ),
@@ -305,7 +305,7 @@ class _SearchResultPageState extends State<SearchResultPage> {
                         style: const TextStyle(
                           fontSize: 11,
                           color: Colors.white,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),

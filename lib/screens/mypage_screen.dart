@@ -5,29 +5,29 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'profile_edit_screen.dart';
-import 'user_meetups_screens.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/user_stats_service.dart';
+import '../services/review_service.dart';
+import '../services/post_service.dart';
+import '../services/relationship_service.dart';
+import '../models/review_post.dart';
+import '../models/post.dart';
+import '../constants/app_constants.dart';
+import '../design/tokens.dart';
+import '../l10n/app_localizations.dart';
+import '../utils/country_flag_helper.dart';
+import '../utils/logger.dart';
+import '../widgets/country_flag_circle.dart';
+import 'profile_edit_screen.dart';
+import 'user_meetups_screens.dart';
 import 'user_posts_screen.dart';
 import 'notification_settings_screen.dart';
 import 'account_settings_screen.dart';
-import '../services/review_service.dart';
-import '../models/review_post.dart';
-import '../constants/app_constants.dart';
-import '../design/tokens.dart';
-import '../services/post_service.dart';
-import '../models/post.dart';
-import '../screens/post_detail_screen.dart';
-import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
-import '../l10n/app_localizations.dart';
-import '../utils/country_flag_helper.dart';
+import 'post_detail_screen.dart';
 import 'login_screen.dart';
 import 'review_detail_screen.dart';
-import '../services/relationship_service.dart';
-import '../utils/logger.dart';
-import 'main_screen.dart'; // 메인 화면 추가
+import 'main_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -319,20 +319,25 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             Icon(
               Icons.login_rounded,
               size: 64,
-              color: AppTheme.primary,
+              color: Color(0xFF6366F1),
             ),
             SizedBox(height: 16),
             Text(
               AppLocalizations.of(context)!.loginRequired,
-              style: AppTheme.headlineMedium.copyWith(
-                color: AppTheme.primary,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
               ),
             ),
             SizedBox(height: 8),
             Text(
               AppLocalizations.of(context)!.loginToViewReviews,
-              style: AppTheme.bodyMedium.copyWith(
-                color: Colors.grey[600],
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                color: Color(0xFF6B7280),
               ),
             ),
           ],
@@ -346,7 +351,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
             ),
           );
         }
@@ -359,20 +364,25 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 Icon(
                   Icons.error_outline_rounded,
                   size: 64,
-                  color: AppTheme.accentRed,
+                  color: Color(0xFFEF4444),
                 ),
                 SizedBox(height: 16),
                 Text(
                   '오류가 발생했습니다',
-                  style: AppTheme.headlineMedium.copyWith(
-                    color: AppTheme.accentRed,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFEF4444),
                   ),
                 ),
                 SizedBox(height: 8),
                 Text(
                   '${snapshot.error}',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: Colors.grey[600],
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -390,29 +400,32 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 Container(
                   padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    gradient: AppTheme.primaryGradient,
+                    color: Color(0xFFF3F4F6),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.photo_library_outlined,
                     size: 32,
-                    color: Colors.white,
+                    color: Color(0xFF6366F1),
                   ),
                 ),
                 SizedBox(height: 16),
                 Text(
                   AppLocalizations.of(context)!.noReviewsYet,
-                  style: AppTheme.headlineMedium.copyWith(
-                    color: AppTheme.primary,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
                   ),
                 ),
                 SizedBox(height: 6),
                 Text(
                   AppLocalizations.of(context)!.joinMeetupAndWriteReview,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: Colors.grey[600],
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 13,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -578,20 +591,25 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             Icon(
               Icons.login_rounded,
               size: 64,
-              color: AppTheme.primary,
+              color: Color(0xFF6366F1),
             ),
             SizedBox(height: 16),
             Text(
               AppLocalizations.of(context)!.loginRequired,
-              style: AppTheme.headlineMedium.copyWith(
-                color: AppTheme.primary,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
               ),
             ),
             SizedBox(height: 8),
             Text(
               AppLocalizations.of(context)!.loginToViewSavedPosts,
-              style: AppTheme.bodyMedium.copyWith(
-                color: Colors.grey[600],
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                color: Color(0xFF6B7280),
               ),
             ),
           ],
@@ -605,7 +623,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
             child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primary),
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
             ),
           );
         }
@@ -618,20 +636,25 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 Icon(
                   Icons.error_outline_rounded,
                   size: 64,
-                  color: AppTheme.accentRed,
+                  color: Color(0xFFEF4444),
                 ),
                 SizedBox(height: 16),
                 Text(
                   AppLocalizations.of(context)!.error,
-                  style: AppTheme.headlineMedium.copyWith(
-                    color: AppTheme.accentRed,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFEF4444),
                   ),
                 ),
                 SizedBox(height: 8),
                 Text(
                   '${snapshot.error}',
-                  style: AppTheme.bodySmall.copyWith(
-                    color: Colors.grey[600],
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -649,29 +672,32 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 Container(
                   padding: EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    gradient: AppTheme.secondaryGradient,
+                    color: Color(0xFFF3F4F6),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.bookmark_border_rounded,
                     size: 32,
-                    color: Colors.white,
+                    color: Color(0xFF6366F1),
                   ),
                 ),
                 SizedBox(height: 16),
                 Text(
                   AppLocalizations.of(context)!.noSavedPosts,
-                  style: AppTheme.headlineMedium.copyWith(
-                    color: AppTheme.primary,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
                   ),
                 ),
                 SizedBox(height: 6),
                 Text(
                   AppLocalizations.of(context)!.saveInterestingPosts,
-                  style: AppTheme.bodyMedium.copyWith(
-                    color: Colors.grey[600],
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 13,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -680,85 +706,126 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         }
         
         return ListView.builder(
-          padding: EdgeInsets.all(DesignTokens.s8),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           itemCount: savedPosts.length,
           itemBuilder: (context, index) {
             final post = savedPosts[index];
-            return Card(
-              margin: EdgeInsets.only(bottom: DesignTokens.s8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(DesignTokens.r12),
-              ),
-              child: ListTile(
-                leading: post.imageUrls.isNotEmpty
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.network(
-                          post.imageUrls.first,
-                          width: 60,
-                          height: 60,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              width: 60,
-                              height: 60,
-                              color: Colors.grey[300],
-                              child: Icon(Icons.image_not_supported),
-                            );
-                          },
-                        ),
-                      )
-                    : Container(
-                        width: 60,
-                        height: 60,
-                        decoration: BoxDecoration(
-                          color: AppTheme.primary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.article_rounded,
-                          color: AppTheme.primary,
-                        ),
-                      ),
-                title: Text(
-                  post.title,
-                  style: AppTheme.bodyMedium.copyWith(
-                    fontWeight: FontWeight.w600,
+            return Container(
+              margin: EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      post.content,
-                      style: AppTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    SizedBox(height: 4),
-                    Text(
-                      '${post.author} • ${_getTimeAgo(post.createdAt)}',
-                      style: AppTheme.labelSmall.copyWith(
-                        color: Colors.grey[600],
+                ],
+              ),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => PostDetailScreen(post: post),
                       ),
+                    );
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 썸네일 또는 아이콘
+                        Container(
+                          width: 64,
+                          height: 64,
+                          decoration: BoxDecoration(
+                            color: post.imageUrls.isNotEmpty 
+                                ? Colors.transparent 
+                                : Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: post.imageUrls.isNotEmpty
+                              ? ClipRRect(
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Image.network(
+                                    post.imageUrls.first,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Color(0xFFF3F4F6),
+                                        child: Icon(
+                                          Icons.image_not_supported_outlined,
+                                          color: Color(0xFF9CA3AF),
+                                          size: 24,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.article_outlined,
+                                  color: Color(0xFF6366F1),
+                                  size: 28,
+                                ),
+                        ),
+                        SizedBox(width: 12),
+                        // 텍스트 정보
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                post.title,
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111827),
+                                  height: 1.4,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(height: 4),
+                              Text(
+                                post.content,
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 14,
+                                  color: Color(0xFF6B7280),
+                                  height: 1.5,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              SizedBox(height: 8),
+                              Text(
+                                '${post.author} • ${_getTimeAgo(post.createdAt)}',
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 12,
+                                  color: Color(0xFF9CA3AF),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        // 북마크 아이콘
+                        Icon(
+                          Icons.bookmark,
+                          color: Color(0xFF10B981),
+                          size: 20,
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-                trailing: Icon(
-                  Icons.bookmark_rounded,
-                  color: AppTheme.accentEmerald,
-                ),
-                onTap: () {
-                  // 게시물 상세 화면으로 이동
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PostDetailScreen(post: post),
-                    ),
-                  );
-                },
               ),
             );
           },
@@ -1048,24 +1115,26 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(height: 20),
-                _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
-                  Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const UserMeetupsScreen(),
-                  ),
-                );
-              }),
-                _buildMenuItem(context, AppLocalizations.of(context)!.myPosts, Icons.article_rounded, () {
-                  Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const UserPostsScreen(),
-                  ),
-                );
-              }),
+                // 내 모임 메뉴 숨김 처리
+                // _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
+                //   Navigator.pop(context);
+                // Navigator.push(
+                //   context,
+                //   MaterialPageRoute(
+                //     builder: (context) => const UserMeetupsScreen(),
+                //   ),
+                // );
+                // }),
+                // 내 게시글 메뉴 숨김 처리
+                // _buildMenuItem(context, AppLocalizations.of(context)!.myPosts, Icons.article_rounded, () {
+                //   Navigator.pop(context);
+                // Navigator.push(
+                //   context,
+                //   MaterialPageRoute(
+                //     builder: (context) => const UserPostsScreen(),
+                //   ),
+                // );
+                // }),
                 _buildMenuItem(context, AppLocalizations.of(context)!.notificationSettings, Icons.notifications_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(

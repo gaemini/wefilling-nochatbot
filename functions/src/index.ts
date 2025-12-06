@@ -1562,6 +1562,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         {
           blocker: blockerUid,
           blocked: targetUid,
+          isImplicit: false, // 실제 차단임을 명시
           mutualBlock: true,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }
@@ -1573,7 +1574,7 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         {
           blocker: targetUid,
           blocked: blockerUid,
-          isImplicit: true,
+          isImplicit: true, // 암묵적 차단임을 명시
           mutualBlock: true,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }

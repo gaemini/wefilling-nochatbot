@@ -93,6 +93,8 @@ class ReportService {
 
       if (result.data['success'] == true) {
         Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
+        // ContentFilterService 캐시 갱신
+        await Future.delayed(Duration(milliseconds: 100)); // Firestore 동기화 대기
         return true;
       } else {
         Logger.error('❌ 사용자 차단 해제 실패');
@@ -116,7 +118,13 @@ class ReportService {
           .orderBy('createdAt', descending: true)
           .get();
 
+      // 클라이언트 측에서 isImplicit 필터링 (실제 차단만 포함)
       return querySnapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            // isImplicit이 false이거나 없는 경우만 포함 (실제 차단)
+            return data['isImplicit'] != true;
+          })
           .map((doc) => BlockedUser.fromFirestore(doc.data()))
           .toList();
     } catch (e) {

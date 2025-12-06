@@ -348,10 +348,14 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 모임 생성 화면으로 이동
   void _showCreateMeetupDialog(BuildContext context) {
+    final weekDates = _getWeekDates();
+    final selectedDate = weekDates[_tabController.index];
+    
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => CreateMeetupScreen(
           initialDayIndex: _tabController.index,
+          initialDate: selectedDate, // 실제 선택된 날짜 전달
           onCreateMeetup: (index, meetup) {
             // 모임이 생성되면 캐시 클리어하고 목록 새로고침
             _meetupCache.clear();
@@ -1564,11 +1568,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   /// 모임 생성 화면으로 이동
   void _navigateToCreateMeetup() {
+    final weekDates = _getWeekDates();
+    final selectedDate = weekDates[_tabController.index];
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => CreateMeetupScreen(
-          initialDayIndex: 0,
+          initialDayIndex: _tabController.index, // 현재 선택된 요일 인덱스
+          initialDate: selectedDate, // 실제 선택된 날짜 전달
           onCreateMeetup: (dayIndex, meetup) {
             // 모임 생성 후 목록 새로고침
             setState(() {});

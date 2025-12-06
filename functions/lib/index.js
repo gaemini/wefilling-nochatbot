@@ -1256,6 +1256,7 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             transaction.set(db.collection('blocks').doc(`${blockerUid}_${targetUid}`), {
                 blocker: blockerUid,
                 blocked: targetUid,
+                isImplicit: false, // 실제 차단임을 명시
                 mutualBlock: true,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });
@@ -1263,7 +1264,7 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             transaction.set(db.collection('blocks').doc(`${targetUid}_${blockerUid}`), {
                 blocker: targetUid,
                 blocked: blockerUid,
-                isImplicit: true,
+                isImplicit: true, // 암묵적 차단임을 명시
                 mutualBlock: true,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });

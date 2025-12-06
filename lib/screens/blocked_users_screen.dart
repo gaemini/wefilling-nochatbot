@@ -2,10 +2,12 @@
 // 차단된 사용자 목록 관리 화면
 
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/report.dart';
 import '../l10n/app_localizations.dart';
 import '../services/report_service.dart';
 import '../services/auth_service.dart';
+import '../services/content_filter_service.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import '../utils/logger.dart';
@@ -45,9 +47,14 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       Map<String, Map<String, dynamic>> profiles = {};
       for (final blockedUser in blockedUsers) {
         try {
-          final profile = await _authService.getUserProfile();
-          if (profile != null) {
-            profiles[blockedUser.blockedUserId] = profile;
+          // 차단된 사용자의 프로필 정보를 Firestore에서 직접 가져오기
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(blockedUser.blockedUserId)
+              .get();
+          
+          if (userDoc.exists) {
+            profiles[blockedUser.blockedUserId] = userDoc.data() ?? {};
           }
         } catch (e) {
           Logger.error('프로필 로딩 실패: ${blockedUser.blockedUserId}');
@@ -87,6 +94,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       final success = await ReportService.unblockUser(blockedUser.blockedUserId);
       
       if (success) {
+        // 캐시 즉시 갱신
+        ContentFilterService.refreshCache();
+        
         setState(() {
           _blockedUsers.removeWhere((user) => user.id == blockedUser.id);
           _userProfiles.remove(blockedUser.blockedUserId);

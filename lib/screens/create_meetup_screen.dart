@@ -21,11 +21,13 @@ import '../utils/logger.dart';
 
 class CreateMeetupScreen extends StatefulWidget {
   final int initialDayIndex;
+  final DateTime? initialDate; // 선택된 실제 날짜 추가
   final Function(int, Meetup) onCreateMeetup;
 
   const CreateMeetupScreen({
     super.key,
     required this.initialDayIndex,
+    this.initialDate, // 옵셔널로 추가
     required this.onCreateMeetup,
   });
 
@@ -41,6 +43,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   String? _selectedTime; // null로 시작하여 현재 시간 이후로 설정되도록 함
   int _maxParticipants = 3; // 기본값을 3으로 설정
   late int _selectedDayIndex;
+  late DateTime _currentWeekAnchor; // 주차 기준 날짜 추가
   final _meetupService = MeetupService();
   final _friendCategoryService = FriendCategoryService();
   final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
@@ -69,6 +72,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   void initState() {
     super.initState();
     _selectedDayIndex = widget.initialDayIndex;
+    
+    // initialDate가 있으면 그 날짜를 기준으로, 없으면 현재 날짜 기준
+    if (widget.initialDate != null) {
+      _currentWeekAnchor = widget.initialDate!;
+    } else {
+      _currentWeekAnchor = DateTime.now();
+    }
+    
     // 친구 카테고리 로드
     _loadFriendCategories();
   }
@@ -87,12 +98,19 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     }
   }
 
+  // 주간 날짜 목록 생성 (_currentWeekAnchor 기반)
+  List<DateTime> _getWeekDates() {
+    final startOfWeek = _currentWeekAnchor
+        .subtract(Duration(days: _currentWeekAnchor.weekday - 1));
+    return List.generate(7, (index) => startOfWeek.add(Duration(days: index)));
+  }
+
   // 선택된 날짜에 맞는 시간 옵션 업데이트
   void _updateTimeOptions() {
     // 현재 시간 가져오기
     final now = DateTime.now();
     // 선택된 날짜 가져오기
-    final selectedDate = _meetupService.getWeekDates()[_selectedDayIndex];
+    final selectedDate = _getWeekDates()[_selectedDayIndex];
 
     // 선택한 날짜가 오늘인지 확인
     final bool isToday =
@@ -164,7 +182,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   @override
   Widget build(BuildContext context) {
     // 현재 날짜 기준 일주일 날짜 계산 (오늘부터 6일 후까지)
-    final List<DateTime> weekDates = _meetupService.getWeekDates();
+    final List<DateTime> weekDates = _getWeekDates();
 
     // 선택된 날짜
     final DateTime selectedDate = weekDates[_selectedDayIndex];

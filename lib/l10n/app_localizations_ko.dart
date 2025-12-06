@@ -546,10 +546,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get saved => '저장된';
 
   @override
-  String get yourStoryMatters => '카테고리를 통해서';
+  String get yourStoryMatters => '카테고리를 사용해서';
 
   @override
-  String get shareYourMoments => '감성없이 스토리를 공유해보세요';
+  String get shareYourMoments => '부담 없이, 감성 없이\n있는 그대로 공유해보세요.';
 
   @override
   String get writeStory => '이야기 남기기';

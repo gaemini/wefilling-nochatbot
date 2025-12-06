@@ -521,25 +521,6 @@ class _SearchResultPageState extends State<SearchResultPage> {
                   ],
                 ),
               ),
-              
-              // 우측: 조회수
-              Column(
-                children: [
-                  Icon(
-                    Icons.visibility,
-                    size: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '0', // 조회수 필드가 없으므로 임시로 0
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
               ],
             ),
           ),

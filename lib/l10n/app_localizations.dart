@@ -1175,13 +1175,13 @@ abstract class AppLocalizations {
   /// No description provided for @yourStoryMatters.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리를 통해서'**
+  /// **'카테고리를 사용해서'**
   String get yourStoryMatters;
 
   /// No description provided for @shareYourMoments.
   ///
   /// In ko, this message translates to:
-  /// **'감성없이 스토리를 공유해보세요'**
+  /// **'부담 없이, 감성 없이\n있는 그대로 공유해보세요.'**
   String get shareYourMoments;
 
   /// No description provided for @writeStory.

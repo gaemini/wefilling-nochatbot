@@ -1946,7 +1946,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendMessage => '메시지 보내기';
 
   @override
-  String get typeMessage => 'Type a message';
+  String get typeMessage => '메시지를 입력하세요';
 
   @override
   String get noConversations => '대화 내역이 없습니다';
@@ -2003,7 +2003,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noMessages => '아직 메시지가 없습니다';
 
   @override
-  String get blockThisUser => 'Block this user';
+  String get blockThisUser => '이 사용자 차단하기';
 
   @override
   String get blockConfirm => '정말로 차단하시겠습니까?';

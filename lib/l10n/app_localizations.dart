@@ -3755,7 +3755,7 @@ abstract class AppLocalizations {
   /// No description provided for @typeMessage.
   ///
   /// In ko, this message translates to:
-  /// **'Type a message'**
+  /// **'메시지를 입력하세요'**
   String get typeMessage;
 
   /// No description provided for @noConversations.
@@ -3857,7 +3857,7 @@ abstract class AppLocalizations {
   /// No description provided for @blockThisUser.
   ///
   /// In ko, this message translates to:
-  /// **'Block this user'**
+  /// **'이 사용자 차단하기'**
   String get blockThisUser;
 
   /// No description provided for @blockConfirm.

@@ -391,7 +391,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       Logger.log('🔍 DM 대상 확인 (댓글):');
       Logger.log('  - comment.userId: ${widget.comment.userId}');
       Logger.log('  - comment.author: ${widget.comment.authorNickname}');
-      
+      Logger.log('  - isAnonymousPost: ${widget.isAnonymousPost}');
+      Logger.log('  - postId: ${widget.postId}');
+
       // Firebase Auth UID 형식 검증 (28자 영숫자)
       final uidPattern = RegExp(r'^[a-zA-Z0-9]{28}$');
       if (!uidPattern.hasMatch(widget.comment.userId)) {
@@ -406,14 +408,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         }
         return;
       }
-      
+
+      // 댓글은 항상 익명 대화방으로 처리
+      // 게시글이 전체공개든 익명이든 관계없이 댓글 DM은 익명 대화방에 생성
       final conversationId = await _dmService.prepareConversationId(
         widget.comment.userId,
-        isOtherUserAnonymous: false,
+        isOtherUserAnonymous: true,  // 항상 익명으로 처리
         postId: widget.postId,
       );
-      
-      Logger.log('✅ DM conversation ID 생성됨: $conversationId');
+
+      Logger.log('✅ DM conversation ID 생성됨 (익명 대화방): $conversationId');
 
       if (mounted) {
         Navigator.push(

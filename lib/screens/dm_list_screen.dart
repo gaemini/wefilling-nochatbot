@@ -177,7 +177,7 @@ class _DMListScreenState extends State<DMListScreen> {
             icon: Icons.chat_bubble_outline,
             title: _filter == DMFilter.friends
                     ? AppLocalizations.of(context)!.friends
-                : 'Anonymous',
+                : AppLocalizations.of(context)!.anonymous,
             subtitle: _filter == DMFilter.friends
                 ? AppLocalizations.of(context)!.noConversations
                 : AppLocalizations.of(context)!.anonymousDescription,
@@ -254,7 +254,7 @@ class _DMListScreenState extends State<DMListScreen> {
                         height: 48,
                       alignment: Alignment.center,
                       child: Text(
-                        'Anonymous',
+                        AppLocalizations.of(context)!.anonymous,
                         style: TextStyle(
                             fontFamily: 'Pretendard',
                           fontSize: 16,
@@ -352,7 +352,7 @@ class _DMListScreenState extends State<DMListScreen> {
         final otherUserName = rawName == 'DELETED_ACCOUNT' ? deletedLabel : rawName;
         final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
         
-        final displayName = isAnonymous ? 'Anonymous' : otherUserName;
+        final displayName = isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
 
         // 🔥 실시간 배지 업데이트 (StreamBuilder)
         return StreamBuilder<int>(

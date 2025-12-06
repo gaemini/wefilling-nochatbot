@@ -616,11 +616,19 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return;
       }
       
+      // 카테고리별 공개가 아닌 경우 (전체공개 또는 익명) 익명 대화방으로
+      // 카테고리별 공개인 경우에만 일반 대화방으로
+      final bool shouldUseAnonymousChat = 
+          post.category == null || 
+          post.category!.isEmpty || 
+          post.category == '전체' ||
+          post.isAnonymous;
+      
       // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
       final conversationId = _dmService.generateConversationId(
         post.userId,
         postId: post.id,
-        isOtherUserAnonymous: post.isAnonymous,
+        isOtherUserAnonymous: shouldUseAnonymousChat,
       );
       
       // 로딩 다이얼로그 닫기

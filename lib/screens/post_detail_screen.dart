@@ -205,14 +205,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return;
       }
       
+      // 카테고리별 공개가 아닌 경우 (전체공개 또는 익명) 익명 대화방으로
+      // 카테고리별 공개인 경우에만 일반 대화방으로
+      final bool shouldUseAnonymousChat = 
+          _currentPost.category == null || 
+          _currentPost.category!.isEmpty || 
+          _currentPost.category == '전체' ||
+          _currentPost.isAnonymous;
+      
       // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
       final conversationId = _dmService.generateConversationId(
         _currentPost.userId,
         postId: _currentPost.id,
-        isOtherUserAnonymous: _currentPost.isAnonymous,
+        isOtherUserAnonymous: shouldUseAnonymousChat,
       );
       
-      Logger.log('✅ DM conversation ID 생성: $conversationId');
+      Logger.log('✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
 
       if (mounted) {
         Navigator.push(

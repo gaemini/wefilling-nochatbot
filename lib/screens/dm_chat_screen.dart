@@ -439,6 +439,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
         actions: [
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert, color: Colors.black87),
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            elevation: 4,
+            color: Colors.white,
+            surfaceTintColor: Colors.white,
+            offset: const Offset(0, 8),
             onSelected: (value) {
               if (value == 'leave') {
                 _confirmLeaveConversation();
@@ -447,11 +453,33 @@ class _DMChatScreenState extends State<DMChatScreen> {
             itemBuilder: (context) => [
               PopupMenuItem(
                 value: 'leave',
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
-                    const Icon(Icons.exit_to_app, size: 20),
-                    const SizedBox(width: 8),
-                    Text(AppLocalizations.of(context)!.leaveChatRoom ?? "채팅방 나가기"),
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF6B7280).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.exit_to_app,
+                        size: 16,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Text(
+                      AppLocalizations.of(context)!.leaveChatRoom ?? "채팅방 나가기",
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -492,7 +520,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           final otherUserName = rawName == 'DELETED_ACCOUNT' ? deletedLabel : rawName;
           final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
           
-          final primaryTitle = _isAnonymous ? 'Anonymous' : otherUserName;
+          final primaryTitle = _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
           final secondaryTitle = null;
 
     String _formatHeaderDate() {
@@ -571,25 +599,75 @@ class _DMChatScreenState extends State<DMChatScreen> {
         ],
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert, color: Colors.black87),
+          padding: EdgeInsets.zero,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 4,
+          color: Colors.white,
+          surfaceTintColor: Colors.white,
+          offset: const Offset(0, 8),
           itemBuilder: (context) => [
             PopupMenuItem(
               value: 'block',
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.block, size: 20, color: Colors.red),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context)!.blockThisUser ?? ""),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.block,
+                      size: 16,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    AppLocalizations.of(context)!.blockThisUser ?? "",
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
                 ],
               ),
             ),
-            const PopupMenuDivider(),
+            const PopupMenuDivider(height: 1),
             PopupMenuItem(
               value: 'delete',
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.delete_outline, size: 20),
-                  const SizedBox(width: 8),
-                  Text(AppLocalizations.of(context)!.leaveChatRoom),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6B7280).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.exit_to_app,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    AppLocalizations.of(context)!.leaveChatRoom,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
                 ],
               ),
             ),

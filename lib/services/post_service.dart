@@ -395,9 +395,17 @@ class PostService {
     }
   }
 
-  // 현재 사용자가 좋아요를 눌렀는지 확인
-  // 주의: 이 함수는 더 이상 사용되지 않습니다. Post 객체의 likedBy를 직접 사용하세요.
-  @Deprecated('Post 객체의 likedBy 리스트를 직접 사용하세요')
+  /// 현재 사용자가 좋아요를 눌렀는지 확인
+  /// 
+  /// **⚠️ Deprecated**: 이 메서드는 v2.0에서 제거될 예정입니다.
+  /// 대신 Post 객체의 likedBy 리스트를 직접 사용하세요.
+  /// 
+  /// 사용 예시:
+  /// ```dart
+  /// final post = await postService.getPost(postId);
+  /// final hasLiked = post.likedBy.contains(currentUserId);
+  /// ```
+  @Deprecated('v2.0에서 제거 예정 - Post 객체의 likedBy 리스트를 직접 사용하세요')
   Future<bool> hasUserLikedPost(String postId) async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -648,9 +656,17 @@ class PostService {
     });
   }
 
-  // 현재 사용자가 게시글 작성자인지 확인
-  // 주의: 이 함수는 더 이상 사용되지 않습니다. Post 객체의 userId를 직접 사용하세요.
-  @Deprecated('Post 객체의 userId를 직접 사용하세요')
+  /// 현재 사용자가 게시글 작성자인지 확인
+  /// 
+  /// **⚠️ Deprecated**: 이 메서드는 v2.0에서 제거될 예정입니다.
+  /// 대신 Post 객체의 userId를 직접 사용하세요.
+  /// 
+  /// 사용 예시:
+  /// ```dart
+  /// final post = await postService.getPost(postId);
+  /// final isAuthor = post.userId == currentUserId;
+  /// ```
+  @Deprecated('v2.0에서 제거 예정 - Post 객체의 userId를 직접 사용하세요')
   Future<bool> isCurrentUserAuthor(String postId) async {
     try {
       final user = _auth.currentUser;

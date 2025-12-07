@@ -213,10 +213,17 @@ ios/Runner/GoogleService-Info.plist (프로덕션)
 
 ## 📚 문서
 
-- [의존성 관리](./DEPENDENCIES.md) - 패키지 관리 가이드
-- [디자인 시스템](./DESIGN_SYSTEM_GUIDE.md) - UI/UX 가이드
-- [배포 가이드](./OPTIMIZATION_SUMMARY.md) - 플레이스토어 배포
-- [Keystore 설정](./KEYSTORE_SETUP_GUIDE.md) - 앱 서명
+### 배포 관련
+- [배포 체크리스트](./DEPLOYMENT_CHECKLIST.md) - 상세 배포 준비 체크리스트
+- [배포 가이드](./DEPLOYMENT_READY_GUIDE.md) - 실전 배포 가이드
+- [배포 요약](./DEPLOYMENT_SUMMARY.md) - 빠른 배포 상태 확인
+- [Keystore 상태](./KEYSTORE_STATUS.md) - Android 서명 설정 완료
+- [iOS 배포 준비](./IOS_DEPLOYMENT_READY_REPORT.md) - iOS 배포 준비 완료
+
+### 개발 가이드
+- [의존성 관리](./docs/dependencies.md) - 패키지 관리 가이드
+- [디자인 시스템](./docs/design_system.md) - UI/UX 가이드
+- [Keystore 설정](./docs/keystore_setup.md) - 앱 서명 설정
 
 ---
 
@@ -269,12 +276,15 @@ chore: 빌드 설정, 의존성 업데이트
 
 ### 최신 버전: 1.0.0+1
 
-#### v1.0.0 (2025-01-13)
-- 초기 플레이스토어 배포
-- 회원탈퇴 완전 삭제 기능 구현
-- ProGuard 난독화 적용
-- 코드 최적화 및 정리
-- 패키지명 변경: com.wefilling.app
+#### v1.0.0 (2025-12-07) - 배포 준비 완료
+- ✅ Google Play Store 배포 준비 완료
+- ✅ Apple App Store 배포 준비 완료
+- ✅ Android Keystore 생성 및 서명 설정 완료
+- ✅ iOS 릴리즈 빌드 테스트 완료
+- ✅ ProGuard 난독화 적용
+- ✅ 법적 문서 호스팅 완료 (GitHub Pages)
+- ✅ 코드 정리 및 최적화
+- 패키지명: com.wefilling.app
 
 ---
 

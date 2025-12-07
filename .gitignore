@@ -53,3 +53,20 @@ key.properties
 
 # FVM Version Cache
 .fvm/
+
+# Build logs and temporary files
+build_log.txt
+build_ios_log.txt
+firepit-log.txt
+*.log
+
+# Temporary scripts and development files
+fix_*.js
+*_temp.dart
+*_backup.*
+
+# Development documentation (keep only essential docs)
+*_IMPLEMENTATION.md
+*_FIX_SUMMARY.md
+*_SETUP_COMPLETE.md
+.plan-*.md

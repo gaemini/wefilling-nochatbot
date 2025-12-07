@@ -188,3 +188,5 @@ firebase deploy --only firestore:rules
 - ❌ 세션당 1회 제한으로 무한 증가 방지
 
 **결론**: 안전하고 효율적인 조회수 시스템 구현 완료 ✅
+
+

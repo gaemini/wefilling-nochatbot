@@ -84,3 +84,5 @@ class ViewHistoryService {
     return _viewedItems.where((key) => key.startsWith('${contentType}_')).length;
   }
 }
+
+

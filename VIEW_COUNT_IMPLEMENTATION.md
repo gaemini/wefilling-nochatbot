@@ -283,3 +283,5 @@ final meetupCount = ViewHistoryService().getHistoryCountByType('meetup');
 - [ ] 친구공개 게시글 조회수 증가 확인 (허용된 친구)
 - [ ] 같은 글 재조회 시 카운트 안 됨 확인
 - [ ] 앱 재시작 후 재조회 시 카운트 됨 확인
+
+

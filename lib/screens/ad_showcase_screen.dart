@@ -217,7 +217,7 @@ class AdShowcaseScreen extends StatelessWidget {
                         banner.title,
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                           color: Colors.grey[900],
                           height: 1.3,
                         ),
@@ -285,6 +285,7 @@ class AdShowcaseScreen extends StatelessWidget {
                   banner.description,
                   style: TextStyle(
                     fontSize: 14,
+                    fontWeight: FontWeight.w600,
                     color: Colors.grey[700],
                     height: 1.5,
                   ),

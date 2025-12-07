@@ -2193,6 +2193,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get optional => '(Optional)';
 
   @override
+  String get optionalField => '(Optional)';
+
+  @override
   String get publicMeeting => 'Public';
 
   @override

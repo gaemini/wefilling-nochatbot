@@ -378,32 +378,18 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // 개선된 모임 정보 입력
+                // 제목 필드
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      AppLocalizations.of(context)!.meetupInfo,
+                      AppLocalizations.of(context)!.title,
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A1A),
+                        color: Colors.grey[800],
                       ),
                     ),
-                    const SizedBox(height: 12),
-                    
-                    // 제목 필드
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.title,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF666666),
-                          ),
-                        ),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _titleController,
@@ -435,21 +421,32 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         ),
                       ],
                     ),
-                  ],
-                ),
                 const SizedBox(height: 18),
 
                 // 설명 필드
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.description,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF666666),
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.description,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          AppLocalizations.of(context)!.optionalField ?? '(선택)',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     TextFormField(
@@ -475,12 +472,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       style: const TextStyle(fontSize: 14),
                       minLines: 4,
                       maxLines: 6,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)!.pleaseEnterMeetupDescription ?? "";
-                        }
-                        return null;
-                      },
                     ),
                   ],
                 ),
@@ -499,19 +490,16 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: Row(
-                        children: [
-                          _buildCategoryChip('study', AppLocalizations.of(context)!.study),
-                          _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
-                          _buildCategoryChip('hobby', AppLocalizations.of(context)!.hobby),
-                          _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
-                          _buildCategoryChip('other', AppLocalizations.of(context)!.other),
-                        ],
-                      ),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _buildCategoryChip('study', AppLocalizations.of(context)!.study),
+                        _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
+                        _buildCategoryChip('hobby', AppLocalizations.of(context)!.hobby),
+                        _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
+                        _buildCategoryChip('other', AppLocalizations.of(context)!.other),
+                      ],
                     ),
                   ],
                 ),
@@ -524,9 +512,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     Text(
                       AppLocalizations.of(context)!.location,
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF666666),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -566,12 +554,15 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const SizedBox(height: 16),
                     Text(
                       AppLocalizations.of(context)!.timeSelection,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
 
                     // 시간 옵션이 미정만 있는 경우 안내 메시지
                     if (_timeOptions.length <= 1)
@@ -581,49 +572,64 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           AppLocalizations.of(context)!.todayTimePassed,
                           style: TextStyle(
                             color: Colors.orange[700],
-                            fontSize: 14,
+                            fontSize: 12,
                           ),
                         ),
                       ),
                     
                     // 시간 선택 드롭다운 (항상 표시)
-                      DropdownButtonFormField<String>(
-                        value: _selectedTime,
-                        isExpanded: true, // 드롭다운을 전체 너비로 확장
-                        decoration: InputDecoration(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                    DropdownButtonFormField<String>(
+                      value: _selectedTime,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
-                        items:
-                            _timeOptions.map((String time) {
-                              return DropdownMenuItem<String>(
-                                value: time,
-                                child: Text(time),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() {
-                              _selectedTime = value;
-                            });
-                          }
-                        },
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return '시간을 선택해주세요';
-                          }
-                          return null;
-                        },
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
+                        ),
                       ),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                      dropdownColor: Colors.white,
+                      items: _timeOptions.map((String time) {
+                        return DropdownMenuItem<String>(
+                          value: time,
+                          child: Text(time),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _selectedTime = value;
+                          });
+                        }
+                      },
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return '시간을 선택해주세요';
+                        }
+                        return null;
+                      },
+                    ),
                   ],
                 ),
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
 
                 // 최대 인원 선택 드롭다운
                 Column(
@@ -631,28 +637,47 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   children: [
                     Text(
                       AppLocalizations.of(context)!.maxParticipants,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
+                      ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     DropdownButtonFormField<int>(
                       value: _maxParticipants,
                       isExpanded: true,
                       decoration: InputDecoration(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
+                        filled: true,
+                        fillColor: Colors.white,
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
                         ),
                       ),
-                      items:
-                          _participantOptions.map((int value) {
-                            return DropdownMenuItem<int>(
-                              value: value,
-                              child: Text('$value${AppLocalizations.of(context)!.people}'),
-                            );
-                          }).toList(),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                      dropdownColor: Colors.white,
+                      items: _participantOptions.map((int value) {
+                        return DropdownMenuItem<int>(
+                          value: value,
+                          child: Text('$value${AppLocalizations.of(context)!.people}'),
+                        );
+                      }).toList(),
                       onChanged: (value) {
                         if (value != null) {
                           setState(() {
@@ -1148,46 +1173,43 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   /// 카테고리 칩 위젯 생성
   Widget _buildCategoryChip(String key, String label) {
     final isSelected = _selectedCategory == key;
-    return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _selectedCategory = key;
-            });
-          },
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            decoration: BoxDecoration(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedCategory = key;
+          });
+        },
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            color: isSelected 
+                ? const Color(0xFF4A90E2)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
               color: isSelected 
                   ? const Color(0xFF4A90E2)
-                  : Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: isSelected 
-                    ? const Color(0xFF4A90E2)
-                    : const Color(0xFFE1E6EE),
-                width: 1,
-              ),
-              boxShadow: isSelected ? [
-                BoxShadow(
-                  color: const Color(0xFF4A90E2).withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ] : null,
+                  : const Color(0xFFE1E6EE),
+              width: 1,
             ),
-            child: Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+            boxShadow: isSelected ? [
+              BoxShadow(
+                color: const Color(0xFF4A90E2).withOpacity(0.2),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
+            ] : null,
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
             ),
           ),
         ),

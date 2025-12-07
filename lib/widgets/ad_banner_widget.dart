@@ -252,7 +252,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
                               color: Colors.black,
                             ),
                             maxLines: 2,
@@ -291,6 +291,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       style: TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 13,
+                        fontWeight: FontWeight.w600,
                         color: Colors.grey[600],
                         height: 1.4,
                       ),

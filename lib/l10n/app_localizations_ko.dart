@@ -2134,6 +2134,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get optional => '(선택)';
 
   @override
+  String get optionalField => '(선택)';
+
+  @override
   String get publicMeeting => '전체 공개';
 
   @override

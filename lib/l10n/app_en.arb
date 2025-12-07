@@ -926,6 +926,7 @@
   "meetupTitle": "Meetup Title",
   "thumbnailImage": "Thumbnail Image",
   "optional": "(Optional)",
+  "optionalField": "(Optional)",
   "meetupDescription": "Meetup Description",
   "category": "Category",
   "date": "Date",

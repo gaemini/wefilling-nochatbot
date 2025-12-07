@@ -925,6 +925,7 @@
   "meetupTitle": "모임 제목",
   "thumbnailImage": "썸네일 이미지",
   "optional": "(선택)",
+  "optionalField": "(선택)",
   "meetupDescription": "모임 설명",
   "category": "카테고리",
   "date": "날짜",

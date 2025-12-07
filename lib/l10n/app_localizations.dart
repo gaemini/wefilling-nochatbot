@@ -4112,6 +4112,12 @@ abstract class AppLocalizations {
   /// **'(선택)'**
   String get optional;
 
+  /// No description provided for @optionalField.
+  ///
+  /// In ko, this message translates to:
+  /// **'(선택)'**
+  String get optionalField;
+
   /// No description provided for @publicMeeting.
   ///
   /// In ko, this message translates to:

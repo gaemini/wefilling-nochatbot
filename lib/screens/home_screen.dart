@@ -285,7 +285,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         final categoryMap = {
           'study': '스터디',
           'meal': '식사',
-          'hobby': '카페',
+          'cafe': '카페',
           'culture': '문화',
           'other': '기타',
         };
@@ -412,50 +412,51 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     ];
 
     return Container(
-      height: 40,
-      margin: const EdgeInsets.only(top: 12), // 상단 여백 추가
+      margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: categories.map((category) {
-          final isSelected = _selectedCategory == category['key'];
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: categories.map((category) {
+            final isSelected = _selectedCategory == category['key'];
 
-          return Flexible(
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  _selectedCategory = category['key']!;
-                });
-              },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                margin: const EdgeInsets.symmetric(horizontal: 2),
-                decoration: BoxDecoration(
-                  color:
-                      isSelected ? const Color(0xFF5865F2) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(0xFF5865F2)
-                        : const Color(0xFFE5E7EB),
-                    width: 1,
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedCategory = category['key']!;
+                  });
+                },
+                child: Container(
+                  height: 40,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isSelected ? const Color(0xFF5865F2) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFF5865F2)
+                          : const Color(0xFFE5E7EB),
+                      width: 1,
+                    ),
                   ),
-                ),
-                child: Text(
-                  category['label']!,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: isSelected ? Colors.white : const Color(0xFF6B7280),
+                  child: Center(
+                    child: Text(
+                      category['label']!,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: isSelected ? Colors.white : const Color(0xFF6B7280),
+                      ),
+                    ),
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }

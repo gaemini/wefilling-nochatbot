@@ -389,13 +389,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.title,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.title,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '*',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
                     ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -488,13 +501,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.category,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1A1A1A),
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.category,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '*',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
                     Wrap(
@@ -503,7 +529,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       children: [
                         _buildCategoryChip('study', AppLocalizations.of(context)!.study),
                         _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
-                        _buildCategoryChip('hobby', AppLocalizations.of(context)!.hobby),
+                        _buildCategoryChip('cafe', AppLocalizations.of(context)!.cafe),
                         _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
                         _buildCategoryChip('other', AppLocalizations.of(context)!.other),
                       ],
@@ -522,13 +548,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.location,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey[800],
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          AppLocalizations.of(context)!.location,
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[800],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text(
+                          '*',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 6),
                     TextFormField(
@@ -572,13 +611,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            AppLocalizations.of(context)!.timeSelection,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                AppLocalizations.of(context)!.timeSelection,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                '*',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 6),
 
@@ -655,13 +707,26 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            AppLocalizations.of(context)!.maxParticipants,
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[800],
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                AppLocalizations.of(context)!.maxParticipants,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Text(
+                                '*',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red,
+                                ),
+                              ),
+                            ],
                           ),
                           const SizedBox(height: 6),
                           DropdownButtonFormField<int>(

@@ -2323,4 +2323,13 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get reportFailed => '신고 접수에 실패했습니다. 다시 시도해주세요.';
+
+  @override
+  String get recommendedPlaces => '추천 장소';
+
+  @override
+  String get customLocation => '직접 입력';
+
+  @override
+  String get noRecommendedPlaces => '추천 장소가 없습니다';
 }

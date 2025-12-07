@@ -15,6 +15,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../services/recommended_places_service.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -63,6 +64,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   // 최대 인원 선택 목록
   final List<int> _participantOptions = [3, 4];
+
+  // 추천 장소 관련 변수
+  final _recommendedPlacesService = RecommendedPlacesService();
+  List<RecommendedPlace> _recommendedPlaces = [];
+  bool _isLoadingPlaces = false;
+  bool _showRecommendedPlaces = false;
 
   // 30분 간격 시간 옵션 저장 리스트
   List<String> _timeOptions = [];
@@ -501,6 +508,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         _buildCategoryChip('other', AppLocalizations.of(context)!.other),
                       ],
                     ),
+                    
+                    // 추천 장소 섹션 (카테고리 선택 시 표시)
+                    if (_showRecommendedPlaces) ...[
+                      const SizedBox(height: 16),
+                      _buildRecommendedPlacesSection(),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -1180,17 +1193,32 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     );
 }
 
+  /// 카테고리 선택 시 추천 장소 로드
+  void _onCategorySelected(String category) async {
+    setState(() {
+      _selectedCategory = category;
+      _isLoadingPlaces = true;
+      _showRecommendedPlaces = true;
+    });
+
+    // 추천 장소 로드
+    final places = await _recommendedPlacesService.getRecommendedPlaces(category);
+    
+    if (mounted) {
+      setState(() {
+        _recommendedPlaces = places;
+        _isLoadingPlaces = false;
+      });
+    }
+  }
+
   /// 카테고리 칩 위젯 생성
   Widget _buildCategoryChip(String key, String label) {
     final isSelected = _selectedCategory == key;
     return AnimatedContainer(
       duration: const Duration(milliseconds: 150),
       child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedCategory = key;
-          });
-        },
+        onTap: () => _onCategorySelected(key),
         borderRadius: BorderRadius.circular(20),
         child: Container(
           height: 44,
@@ -1222,6 +1250,145 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
               fontWeight: FontWeight.w500,
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 추천 장소 섹션 위젯
+  Widget _buildRecommendedPlacesSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E6EE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.place, size: 20, color: Color(0xFF4A90E2)),
+              const SizedBox(width: 6),
+              Text(
+                AppLocalizations.of(context)!.recommendedPlaces,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          if (_isLoadingPlaces)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: CircularProgressIndicator(
+                  color: Color(0xFF4A90E2),
+                ),
+              ),
+            )
+          else if (_recommendedPlaces.isEmpty)
+            Text(
+              AppLocalizations.of(context)!.noRecommendedPlaces,
+              style: TextStyle(color: Colors.grey[600], fontSize: 14),
+            )
+          else
+            Column(
+              children: [
+                ..._recommendedPlaces.map((place) => 
+                  _buildPlaceItem(place)
+                ).toList(),
+                
+                // 직접 입력 옵션
+                _buildCustomLocationOption(),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 개별 장소 아이템 위젯
+  Widget _buildPlaceItem(RecommendedPlace place) {
+    final isSelected = _locationController.text == place.url;
+    
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _locationController.text = place.url;
+          _showRecommendedPlaces = false; // 선택 후 닫기
+        });
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? Color(0xFF4A90E2).withOpacity(0.1) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? Color(0xFF4A90E2) : Color(0xFFE6EAF0),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.location_on,
+              size: 20,
+              color: isSelected ? Color(0xFF4A90E2) : Colors.grey[600],
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                place.name,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  color: isSelected ? Color(0xFF4A90E2) : Color(0xFF1A1A1A),
+                ),
+              ),
+            ),
+            if (isSelected)
+              Icon(Icons.check_circle, color: Color(0xFF4A90E2), size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 직접 입력 옵션 위젯
+  Widget _buildCustomLocationOption() {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _locationController.clear();
+          _showRecommendedPlaces = false;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Color(0xFFE6EAF0)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.edit_location_alt, size: 20, color: Colors.grey[600]),
+            const SizedBox(width: 12),
+            Text(
+              AppLocalizations.of(context)!.customLocation,
+              style: TextStyle(
+                fontSize: 14,
+                color: Color(0xFF1A1A1A),
+              ),
+            ),
+          ],
         ),
       ),
     );

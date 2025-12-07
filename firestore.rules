@@ -518,6 +518,15 @@ service cloud.firestore {
       allow write: if false;
     }
     
+    // ===== 추천 장소 컬렉션 =====
+    match /recommended_places/{category} {
+      // 모든 사용자가 추천 장소를 읽을 수 있음
+      allow read: if true;
+      
+      // 쓰기는 Firebase Console에서만 가능 (관리자가 직접 관리)
+      allow write: if false;
+    }
+    
     // ===== 후기(Reviews) 컬렉션 =====
     match /reviews/{reviewId} {
       // 읽기: 본인의 후기 또는 공개된 후기만 읽기 가능

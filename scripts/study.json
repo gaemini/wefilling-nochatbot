@@ -1,0 +1,14 @@
+{
+  "places": [
+    {
+      "name": "스터디 카페 1",
+      "url": "https://map.naver.com/p/search/%EC%B9%B4%ED%8E%98/place/37762082?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071903&locale=ko&svcName=map_pcv5&searchText=%EC%B9%B4%ED%8E%98",
+      "order": 1
+    },
+    {
+      "name": "스터디 카페 2",
+      "url": "https://map.naver.com/p/search/%EC%B9%B4%ED%8E%98/place/1083319174?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071903&locale=ko&svcName=map_pcv5&searchText=%EC%B9%B4%ED%8E%98",
+      "order": 2
+    }
+  ]
+}

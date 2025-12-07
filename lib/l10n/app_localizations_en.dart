@@ -2386,4 +2386,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reportFailed => 'Failed to submit report. Please try again.';
+
+  @override
+  String get recommendedPlaces => 'Recommended Places';
+
+  @override
+  String get customLocation => 'Enter Custom Location';
+
+  @override
+  String get noRecommendedPlaces => 'No recommended places';
 }

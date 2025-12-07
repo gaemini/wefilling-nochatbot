@@ -1069,5 +1069,8 @@
   "reportWarning": "신고는 검토 후 처리되며, 허위 신고 시 제재를 받을 수 있습니다.",
   "reportButton": "신고하기",
   "reportSuccess": "신고가 접수되었습니다. 검토 후 처리하겠습니다.",
-  "reportFailed": "신고 접수에 실패했습니다. 다시 시도해주세요."
+  "reportFailed": "신고 접수에 실패했습니다. 다시 시도해주세요.",
+  "recommendedPlaces": "추천 장소",
+  "customLocation": "직접 입력",
+  "noRecommendedPlaces": "추천 장소가 없습니다"
 }

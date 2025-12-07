@@ -1,0 +1,19 @@
+{
+  "places": [
+    {
+      "name": "음식점 1",
+      "url": "https://map.naver.com/p/search/%EC%9D%8C%EC%8B%9D%EC%A0%90/place/1647183115?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071902&locale=ko&svcName=map_pcv5&searchText=%EC%9D%8C%EC%8B%9D%EC%A0%90",
+      "order": 1
+    },
+    {
+      "name": "음식점 2",
+      "url": "https://map.naver.com/p/search/%EC%9D%8C%EC%8B%9D%EC%A0%90/place/2020521950?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071902&locale=ko&svcName=map_pcv5&searchText=%EC%9D%8C%EC%8B%9D%EC%A0%90",
+      "order": 2
+    },
+    {
+      "name": "음식점 3",
+      "url": "https://map.naver.com/p/search/%EC%9D%8C%EC%8B%9D%EC%A0%90/place/33657511?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071902&locale=ko&svcName=map_pcv5&searchText=%EC%9D%8C%EC%8B%9D%EC%A0%90",
+      "order": 3
+    }
+  ]
+}

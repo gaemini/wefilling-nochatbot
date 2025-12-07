@@ -1,0 +1,11 @@
+{
+  "name": "wefilling-scripts",
+  "version": "1.0.0",
+  "description": "Firebase setup scripts for Wefilling",
+  "scripts": {
+    "setup-places": "node setup_recommended_places.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

@@ -1073,5 +1073,8 @@
   "reportWarning": "Reports will be reviewed and processed. False reports may result in penalties.",
   "reportButton": "Report",
   "reportSuccess": "Your report has been submitted. We'll review it and take action.",
-  "reportFailed": "Failed to submit report. Please try again."
+  "reportFailed": "Failed to submit report. Please try again.",
+  "recommendedPlaces": "Recommended Places",
+  "customLocation": "Enter Custom Location",
+  "noRecommendedPlaces": "No recommended places"
 }

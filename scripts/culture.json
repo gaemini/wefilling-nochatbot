@@ -1,0 +1,14 @@
+{
+  "places": [
+    {
+      "name": "보드게임 카페",
+      "url": "https://map.naver.com/p/search/%EB%B3%B4%EB%93%9C%EA%B2%8C%EC%9E%84/place/2078177472?c=13.66,0,0,0,dh&placePath=/home?from=map&fromPanelNum=2&timestamp=202512071903&locale=ko&svcName=map_pcv5&searchText=%EB%B3%B4%EB%93%9C%EA%B2%8C%EC%9E%84",
+      "order": 1
+    },
+    {
+      "name": "노래방",
+      "url": "https://map.naver.com/p/search/%EB%85%B8%EB%9E%98%EB%B0%A9/place/1395923818?c=14.77,0,0,0,dh&placePath=/home?from=map&fromPanelNum=2&timestamp=202512071904&locale=ko&svcName=map_pcv5&searchText=%EB%85%B8%EB%9E%98%EB%B0%A9",
+      "order": 2
+    }
+  ]
+}

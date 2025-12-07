@@ -4471,6 +4471,24 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'신고 접수에 실패했습니다. 다시 시도해주세요.'**
   String get reportFailed;
+
+  /// No description provided for @recommendedPlaces.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천 장소'**
+  String get recommendedPlaces;
+
+  /// No description provided for @customLocation.
+  ///
+  /// In ko, this message translates to:
+  /// **'직접 입력'**
+  String get customLocation;
+
+  /// No description provided for @noRecommendedPlaces.
+  ///
+  /// In ko, this message translates to:
+  /// **'추천 장소가 없습니다'**
+  String get noRecommendedPlaces;
 }
 
 class _AppLocalizationsDelegate

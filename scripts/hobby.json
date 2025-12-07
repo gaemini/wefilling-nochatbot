@@ -1,0 +1,19 @@
+{
+  "places": [
+    {
+      "name": "카페 1",
+      "url": "https://map.naver.com/p/search/%EC%B9%B4%ED%8E%98/place/33239471?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071901&locale=ko&svcName=map_pcv5&searchText=%EC%B9%B4%ED%8E%98",
+      "order": 1
+    },
+    {
+      "name": "카페 2",
+      "url": "https://map.naver.com/p/search/%EC%B9%B4%ED%8E%98/place/1182416697?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071902&locale=ko&svcName=map_pcv5&searchText=%EC%B9%B4%ED%8E%98",
+      "order": 2
+    },
+    {
+      "name": "카페 3",
+      "url": "https://map.naver.com/p/search/%EC%B9%B4%ED%8E%98/place/1114967069?c=16.30,0,0,0,dh&placePath=/home?entry=bmp&from=map&fromPanelNum=2&timestamp=202512071902&locale=ko&svcName=map_pcv5&searchText=%EC%B9%B4%ED%8E%98",
+      "order": 3
+    }
+  ]
+}

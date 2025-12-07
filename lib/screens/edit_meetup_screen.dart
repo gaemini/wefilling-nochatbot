@@ -333,10 +333,10 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 hintText: widget.meetup.title,
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
-                    return '제목을 입력해주세요';
+                    return AppLocalizations.of(context)!.pleaseEnterTitle;
                   }
                   if (value.trim().length < 2) {
-                    return '제목은 최소 2자 이상이어야 합니다';
+                    return AppLocalizations.of(context)!.titleMinLengthError;
                   }
                   return null;
                 },
@@ -352,18 +352,34 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
               const SizedBox(height: 24),
               
               // 모임 설명
-              _buildLabel(AppLocalizations.of(context)!.meetupDescription),
+              Row(
+                children: [
+                  Text(
+                    AppLocalizations.of(context)!.meetupDescription,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF374151),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppLocalizations.of(context)!.optionalField ?? '(선택)',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+                ],
+              ),
               const SizedBox(height: 8),
               _buildTextField(
                 controller: _descriptionController,
                 hintText: widget.meetup.description,
                 maxLines: 5,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '설명을 입력해주세요';
-                  }
-                  return null;
-                },
               ),
               
               const SizedBox(height: 24),
@@ -669,7 +685,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           icon: const Icon(Icons.edit, size: 20),
                           color: const Color(0xFF5865F2),
                           onPressed: _pickImage,
-                          tooltip: '이미지 변경',
+                          tooltip: AppLocalizations.of(context)!.changeImageTooltip,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -690,7 +706,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           icon: const Icon(Icons.close, size: 20),
                           color: const Color(0xFFEF4444),
                           onPressed: _removeImage,
-                          tooltip: '이미지 제거',
+                          tooltip: AppLocalizations.of(context)!.removeImageTooltip,
                         ),
                       ),
                     ],
@@ -717,9 +733,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  const Text(
-                    '이미지 추가',
-                    style: TextStyle(
+                  Text(
+                    AppLocalizations.of(context)!.addImage,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 15,
                       fontWeight: FontWeight.w500,
@@ -727,9 +743,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  const Text(
-                    '탭하여 갤러리에서 선택',
-                    style: TextStyle(
+                  Text(
+                    AppLocalizations.of(context)!.tapToSelectFromGallery,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 13,
                       color: Color(0xFF9CA3AF),

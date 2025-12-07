@@ -2395,4 +2395,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noRecommendedPlaces => 'No recommended places';
+
+  @override
+  String get pleaseSelectCategory => 'Please select a category';
+
+  @override
+  String get titleMinLengthError => 'Title must be at least 2 characters';
+
+  @override
+  String get addImage => 'Add Image';
+
+  @override
+  String get tapToSelectFromGallery => 'Tap to select from gallery';
+
+  @override
+  String get changeImageTooltip => 'Change image';
+
+  @override
+  String get removeImageTooltip => 'Remove image';
 }

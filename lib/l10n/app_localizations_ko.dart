@@ -2332,4 +2332,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get noRecommendedPlaces => '추천 장소가 없습니다';
+
+  @override
+  String get pleaseSelectCategory => '카테고리를 선택해주세요';
+
+  @override
+  String get titleMinLengthError => '제목은 최소 2자 이상이어야 합니다';
+
+  @override
+  String get addImage => '이미지 추가';
+
+  @override
+  String get tapToSelectFromGallery => '탭하여 갤러리에서 선택';
+
+  @override
+  String get changeImageTooltip => '이미지 변경';
+
+  @override
+  String get removeImageTooltip => '이미지 제거';
 }

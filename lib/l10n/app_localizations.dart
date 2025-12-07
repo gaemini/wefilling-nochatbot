@@ -4489,6 +4489,42 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'추천 장소가 없습니다'**
   String get noRecommendedPlaces;
+
+  /// No description provided for @pleaseSelectCategory.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리를 선택해주세요'**
+  String get pleaseSelectCategory;
+
+  /// No description provided for @titleMinLengthError.
+  ///
+  /// In ko, this message translates to:
+  /// **'제목은 최소 2자 이상이어야 합니다'**
+  String get titleMinLengthError;
+
+  /// No description provided for @addImage.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 추가'**
+  String get addImage;
+
+  /// No description provided for @tapToSelectFromGallery.
+  ///
+  /// In ko, this message translates to:
+  /// **'탭하여 갤러리에서 선택'**
+  String get tapToSelectFromGallery;
+
+  /// No description provided for @changeImageTooltip.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 변경'**
+  String get changeImageTooltip;
+
+  /// No description provided for @removeImageTooltip.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 제거'**
+  String get removeImageTooltip;
 }
 
 class _AppLocalizationsDelegate

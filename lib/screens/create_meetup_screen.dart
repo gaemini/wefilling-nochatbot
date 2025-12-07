@@ -49,7 +49,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final _friendCategoryService = FriendCategoryService();
   final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
   bool _isSubmitting = false;
-  String _selectedCategory = 'study'; // 카테고리 키로 저장
+  String? _selectedCategory; // 초기에는 선택 안 됨
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   // 카테고리는 build 메서드에서 동적으로 생성
   
@@ -1054,6 +1054,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                               ? null
                               : () async {
                                 if (_formKey.currentState!.validate()) {
+                                  // 카테고리 유효성 검사
+                                  if (_selectedCategory == null) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(AppLocalizations.of(context)!.pleaseSelectCategory),
+                                        backgroundColor: Colors.orange,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  
                                   // 공개 범위 유효성 검사
                                   if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -1085,7 +1096,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           maxParticipants: _maxParticipants,
                                           date: selectedDate,
                                           category:
-                                              _selectedCategory, // 선택된 카테고리 전달
+                                              _selectedCategory!, // 선택된 카테고리 전달
                                           thumbnailContent: '',
                                           thumbnailImage:
                                               _thumbnailImage, // 이미지 전달
@@ -1110,7 +1121,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           thumbnailContent: '',
                                           thumbnailImageUrl: '',
                                           date: selectedDate,
-                                          category: _selectedCategory,
+                                          category: _selectedCategory!,
                                         );
 
                                         // 콜백 호출하여 홈 화면 새로고침
@@ -1347,8 +1358,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
               child: Text(
                 place.name,
                 style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
                   color: isSelected ? Color(0xFF4A90E2) : Color(0xFF1A1A1A),
                 ),
               ),

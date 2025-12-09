@@ -269,9 +269,9 @@ class _LoginScreenState extends State<LoginScreen>
                                     AppLocalizations.of(context)!.appName,
                                     style: const TextStyle(
                                       fontSize: 40,
-                                      fontWeight: FontWeight.bold,
+                                      fontWeight: FontWeight.w900,
                                       fontFamily: 'HancomMalrangmalrang',
-                                      color: Colors.black87,
+                                      color: Colors.black,
                                       letterSpacing: 1.2,
                                     ),
                                   ),

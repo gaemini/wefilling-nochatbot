@@ -1078,7 +1078,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get createFirstCategoryDescription =>
-      'Create categories to organize your friends into groups.\nYou can create various groups for school, work, hobbies, etc.';
+      'Create categories\nto organize your friends into groups.';
 
   @override
   String get editAction => 'Edit';
@@ -1250,7 +1250,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get makeFriendsWithSameInterests =>
-      'Make new friends and create joyful memories.\nPeople with similar interests are waiting for you.';
+      'Make new friends and\ncreate joyful memories';
 
   @override
   String get findFriendsAction => 'Find Friends';

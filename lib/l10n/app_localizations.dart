@@ -4531,6 +4531,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'이미지 제거'**
   String get removeImageTooltip;
+
+  /// No description provided for @searchPostsHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'스토리 찾기'**
+  String get searchPostsHint;
+
+  /// No description provided for @searchMeetupsHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 찾기'**
+  String get searchMeetupsHint;
 }
 
 class _AppLocalizationsDelegate

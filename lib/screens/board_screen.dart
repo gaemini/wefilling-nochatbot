@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
+import '../constants/app_constants.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
@@ -104,9 +105,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             ),
             child: TabBar(
               controller: _tabController,
-              labelColor: const Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
+              labelColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
               unselectedLabelColor: Colors.grey[600],
-              indicatorColor: const Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
+              indicatorColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
               labelStyle: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
@@ -207,7 +208,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 로딩 뷰 (AdBanner + 스켈레톤)
   Widget _buildTodayLoadingView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -234,7 +235,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 에러 뷰 (AdBanner + 에러)
   Widget _buildTodayErrorView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -261,7 +262,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 빈 상태 뷰 (AdBanner + Empty State)
   Widget _buildTodayEmptyView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -313,7 +314,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 게시글 목록 뷰 (AdBanner + 게시글들)
   Widget _buildTodayPostsView(List<Post> todayPosts) {
         return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
           onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -390,7 +391,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 전체 탭 - 로딩 뷰
   Widget _buildAllLoadingView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -417,7 +418,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 전체 탭 - 에러 뷰
   Widget _buildAllErrorView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -444,7 +445,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   // 전체 탭 - 빈 상태 뷰
   Widget _buildAllEmptyView() {
     return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
       onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));
@@ -492,7 +493,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     final groupedPosts = _groupPostsByDate(posts);
 
         return RefreshIndicator(
-      color: const Color(0xFF5865F2),
+      color: AppColors.pointColor,
       backgroundColor: Colors.white,
           onRefresh: () async {
         await Future.delayed(const Duration(milliseconds: 500));

@@ -16,6 +16,7 @@ import '../design/tokens.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 import 'meetup_participants_screen.dart';
 import 'edit_meetup_screen.dart';
 import 'create_meetup_review_screen.dart';
@@ -434,7 +435,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
           // 내용
           Expanded(
             child: RefreshIndicator(
-              color: const Color(0xFF5865F2),
+              color: AppColors.pointColor,
               backgroundColor: Colors.white,
               onRefresh: () async {
                 // 새로고침 시 로딩 표시와 함께 데이터 업데이트
@@ -573,7 +574,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                           linkStyle: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
-                      color: Color(0xFF5865F2),
+                      color: AppColors.pointColor,
                             decoration: TextDecoration.underline,
                       fontWeight: FontWeight.w500,
                           ),
@@ -667,7 +668,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               height: 1.4,
             ),
             linkStyle: const TextStyle(
-              color: Color(0xFF5865F2),
+              color: AppColors.pointColor,
               decoration: TextDecoration.underline,
             ),
             options: const LinkifyOptions(humanize: false),
@@ -748,7 +749,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     linkStyle: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 15,
-                      color: Color(0xFF5865F2), // 위필링 시그니처 블루
+                      color: AppColors.pointColor, // 위필링 시그니처 블루
                       decoration: TextDecoration.underline,
                       fontWeight: FontWeight.w600,
                     ),
@@ -1264,7 +1265,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         child: ElevatedButton(
           onPressed: _isLoading ? null : () => _navigateToCreateReview(),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Color(0xFF5865F2), // 위필링 시그니처 블루
+            backgroundColor: AppColors.pointColor, // 위필링 시그니처 블루
             foregroundColor: Colors.white,
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -1306,7 +1307,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       child: ElevatedButton(
         onPressed: _isLoading ? null : () => _navigateToEditReview(),
         style: ElevatedButton.styleFrom(
-          backgroundColor: Color(0xFF5865F2),
+          backgroundColor: AppColors.pointColor,
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
@@ -1428,7 +1429,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       child: ElevatedButton(
         onPressed: _isLoading ? null : () => _joinMeetup(),
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF5865F2), // 위필링 시그니처 블루
+          backgroundColor: AppColors.pointColor, // 위필링 시그니처 블루
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
@@ -2882,7 +2883,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                                 fontFamily: 'Pretendard',
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
-                                color: Color(0xFF5865F2),
+                                color: AppColors.pointColor,
                               ),
                     ),
                   ),
@@ -2909,7 +2910,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               : null,
           child: participant.userProfileImage == null ||
                   participant.userProfileImage!.isEmpty
-              ? Icon(Icons.person, color: Color(0xFF5865F2), size: DesignTokens.icon)
+              ? Icon(Icons.person, color: AppColors.pointColor, size: DesignTokens.icon)
               : null,
         ),
         const SizedBox(width: 12),
@@ -2985,7 +2986,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 : null,
             child: participant.userProfileImage == null ||
                     participant.userProfileImage!.isEmpty
-                ? Icon(Icons.person, color: Color(0xFF5865F2), size: DesignTokens.icon)
+                ? Icon(Icons.person, color: AppColors.pointColor, size: DesignTokens.icon)
                 : null,
           ),
           const SizedBox(width: 12),

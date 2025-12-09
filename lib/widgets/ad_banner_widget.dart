@@ -8,6 +8,7 @@ import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
 import '../utils/logger.dart';
+import '../constants/app_constants.dart';
 
 class AdBannerWidget extends StatefulWidget {
   final String? widgetId;
@@ -266,7 +267,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF5865F2),
+                            color: AppColors.pointColor,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -323,16 +324,16 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
       width: 100,
       height: 100,
       decoration: BoxDecoration(
-        color: const Color(0xFF5865F2).withOpacity(0.1),
+        color: AppColors.pointColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: const Color(0xFF5865F2).withOpacity(0.2),
+          color: AppColors.pointColor.withOpacity(0.2),
           width: 2,
         ),
       ),
       child: Icon(
         Icons.campaign_rounded,
-        color: const Color(0xFF5865F2),
+        color: AppColors.pointColor,
         size: 48,
       ),
     );

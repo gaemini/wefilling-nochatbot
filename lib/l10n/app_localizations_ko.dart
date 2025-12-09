@@ -2353,4 +2353,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get removeImageTooltip => '이미지 제거';
+
+  @override
+  String get searchPostsHint => '스토리 찾기';
+
+  @override
+  String get searchMeetupsHint => '모임 찾기';
 }

@@ -9,6 +9,7 @@ import '../services/notification_service.dart';
 import 'meetup_detail_screen.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 import 'post_detail_screen.dart';
 import 'requests_page.dart';
 import 'ad_showcase_screen.dart';
@@ -485,7 +486,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     switch (notification.type) {
       case 'meetup_full':
         iconData = Icons.group;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'meetup_cancelled':
         iconData = Icons.event_busy;
@@ -493,11 +494,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
         break;
       case 'meetup_participant_joined':
         iconData = Icons.person_add;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'new_comment':
         iconData = Icons.chat_bubble;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'new_like':
       case 'comment_like':
@@ -510,11 +511,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
         break;
       case 'friend_request':
         iconData = Icons.person_add;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'dm_received':
         iconData = Icons.send;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'ad_updates':
         iconData = Icons.campaign;
@@ -522,11 +523,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
         break;
       case 'review_approval_request':
         iconData = Icons.rate_review;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'review_comment':
         iconData = Icons.chat_bubble;
-        iconColor = const Color(0xFF5865F2);
+        iconColor = AppColors.pointColor;
         break;
       case 'review_like':
         iconData = Icons.favorite;

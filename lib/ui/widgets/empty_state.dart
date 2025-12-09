@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../design/tokens.dart';
 import '../../l10n/app_localizations.dart';
 import '../../utils/ui_utils.dart';
+import '../../constants/app_constants.dart';
 
 /// 2024-2025 트렌드 기반 빈 상태 위젯
 ///
@@ -113,10 +114,7 @@ class AppEmptyState extends StatelessWidget {
       icon: IconStyles.group,
       title: l10n?.findFriends ?? "",
       description: l10n?.makeFriendsWithSameInterests ?? "",
-      ctaText: l10n?.findFriendsAction ?? "",
-      ctaIcon: IconStyles.search,
-      onCtaPressed: onSearchFriends,
-      secondaryCtaText: l10n?.viewRecommendedFriends ?? "",
+      // ctaText 및 onCtaPressed 제거하여 "Find Friends" 버튼 숨김
     );
   }
 
@@ -207,35 +205,37 @@ class AppEmptyState extends StatelessWidget {
   /// 일러스트 또는 아이콘 빌드
   Widget _buildIllustration(ColorScheme colorScheme) {
     if (illustration != null) {
-      return illustration!;
+      return Center(child: illustration!);
     }
 
       // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 600),
-      curve: Curves.easeOutBack,
-      builder: (context, value, child) {
-        return Transform.scale(
-          scale: value,
-          child: Opacity(
-            opacity: UIUtils.safeOpacity(value),
-            child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: UIUtils.safeColorWithOpacity(BrandColors.primary, 0.1),
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: UIUtils.safeColorWithOpacity(BrandColors.primary, 0.2),
-                  width: 2,
+    return Center(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeOutBack,
+        builder: (context, value, child) {
+          return Transform.scale(
+            scale: value,
+            child: Opacity(
+              opacity: UIUtils.safeOpacity(value),
+              child: Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.2),
+                    width: 2,
+                  ),
                 ),
+                child: Icon(icon, size: 48, color: AppColors.pointColor),
               ),
-              child: Icon(icon, size: 48, color: BrandColors.primary),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 

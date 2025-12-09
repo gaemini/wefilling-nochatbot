@@ -413,25 +413,23 @@ class _LoginScreenState extends State<LoginScreen>
                                         child: Row(
                                           mainAxisAlignment: MainAxisAlignment.center,
                                           children: [
-                                            // Google "G" 로고 (에셋 이미지 사용)
-                                            Container(
+                                            // Google "G" 로고
+                                            Image.asset(
+                                              'assets/icons/google_logo.png',
                                               width: 20,
                                               height: 20,
-                                              decoration: BoxDecoration(
-                                                borderRadius: BorderRadius.circular(2),
-                                              ),
-                                              child: Image.asset(
-                                                'assets/icons/google_logo.png',
-                                                fit: BoxFit.contain,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  // 에셋 로드 실패 시 기본 아이콘으로 대체
-                                                  return const Icon(
-                                                    Icons.android,
-                                                    size: 20,
-                                                    color: Colors.black87,
-                                                  );
-                                                },
-                                              ),
+                                              errorBuilder: (context, error, stackTrace) {
+                                                return Container(
+                                                  width: 20,
+                                                  height: 20,
+                                                  decoration: BoxDecoration(
+                                                    borderRadius: BorderRadius.circular(2),
+                                                  ),
+                                                  child: CustomPaint(
+                                                    painter: GoogleLogoPainter(),
+                                                  ),
+                                                );
+                                              },
                                             ),
                                             const SizedBox(width: 12),
                                             Text(

@@ -2417,4 +2417,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get removeImageTooltip => 'Remove image';
+
+  @override
+  String get searchPostsHint => 'Find stories';
+
+  @override
+  String get searchMeetupsHint => 'Find groups';
 }

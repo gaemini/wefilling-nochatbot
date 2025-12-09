@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/auth_provider.dart';
 import '../services/post_service.dart';
+import '../constants/app_constants.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -271,13 +272,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         height: 16,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Color(0xFF5865F2),
+                          color: AppColors.pointColor,
                         ),
                       )
                       : Icon(
                         Icons.check_circle,
                         color: _canSubmit 
-                            ? const Color(0xFF5865F2)
+                            ? AppColors.pointColor
                             : const Color(0xFF9CA3AF),
                       ),
               label: Text(
@@ -285,7 +286,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 style: TextStyle(
                   fontFamily: 'Pretendard',
                   color: _canSubmit 
-                      ? const Color(0xFF5865F2)
+                      ? AppColors.pointColor
                       : const Color(0xFF9CA3AF),
                   fontWeight: FontWeight.w600,
                   fontSize: 14,
@@ -380,7 +381,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 12,
-                          color: Color(0xFF5865F2),
+                          color: AppColors.pointColor,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -437,7 +438,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
-                            activeColor: const Color(0xFF5865F2),
+                            activeColor: AppColors.pointColor,
                           ),
                         ),
                         Expanded(
@@ -463,7 +464,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
-                            activeColor: const Color(0xFF5865F2),
+                            activeColor: AppColors.pointColor,
                           ),
                         ),
                       ],
@@ -482,7 +483,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.info_outline, size: 16, color: Color(0xFF5865F2)),
+                            const Icon(Icons.info_outline, size: 16, color: AppColors.pointColor),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -530,7 +531,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                         },
                         contentPadding: EdgeInsets.zero,
                         dense: true,
-                        activeColor: const Color(0xFF5865F2),
+                        activeColor: AppColors.pointColor,
                       ),
                     ],
                     
@@ -620,7 +621,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: const BorderSide(
-                      color: Color(0xFF5865F2),
+                      color: AppColors.pointColor,
                       width: 2,
                     ),
                   ),
@@ -653,7 +654,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
                 style: ElevatedButton.styleFrom(
                   foregroundColor: Colors.white,
-                  backgroundColor: const Color(0xFF5865F2),
+                  backgroundColor: AppColors.pointColor,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -725,7 +726,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: _contentFocusNode.hasFocus
-                        ? const Color(0xFF5865F2)
+                        ? AppColors.pointColor
                         : const Color(0xFFE5E7EB),
                     width: _contentFocusNode.hasFocus ? 2 : 1,
                   ),

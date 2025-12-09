@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../constants/app_constants.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 
 class ReviewApprovalScreen extends StatefulWidget {
@@ -147,7 +148,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
         ),
         body: const Center(
           child: CircularProgressIndicator(
-            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+            valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
           ),
         ),
       );
@@ -192,7 +193,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(20),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF5865F2).withOpacity(0.05),
+                      color: AppColors.pointColor.withOpacity(0.05),
                       border: Border(
                         bottom: BorderSide(
                           color: Colors.grey[200]!,
@@ -208,7 +209,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF5865F2),
+                                color: AppColors.pointColor,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: const Icon(
@@ -289,7 +290,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                                             ? loadingProgress.cumulativeBytesLoaded /
                                                 loadingProgress.expectedTotalBytes!
                                             : null,
-                                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                                        valueColor: const AlwaysStoppedAnimation<Color>(AppColors.pointColor),
                                       ),
                                     );
                                   },
@@ -544,7 +545,7 @@ class _ReviewApprovalScreenState extends State<ReviewApprovalScreen> {
                         child: ElevatedButton(
                           onPressed: _isProcessing ? null : () => _handleResponse(true),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5865F2),
+                            backgroundColor: AppColors.pointColor,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),

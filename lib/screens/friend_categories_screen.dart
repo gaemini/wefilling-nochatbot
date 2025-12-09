@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
+import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
@@ -101,9 +102,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               icon: IconStyles.group,
               title: AppLocalizations.of(context)!.createFirstCategory,
               description: AppLocalizations.of(context)!.createFirstCategoryDescription,
-              ctaText: AppLocalizations.of(context)!.newCategoryCreate,
-              ctaIcon: IconStyles.add,
-              onCtaPressed: () => _showCreateCategoryDialog(),
+              // ctaText 및 onCtaPressed 제거하여 "Create New Category" 버튼 숨김
             );
           }
 
@@ -136,7 +135,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
 
   Widget _buildCategoryCard(FriendCategory category) {
     // 색상 안전하게 파싱 (null 체크 포함)
-    final color = _parseColor(category.color ?? '#6366F1');
+    final color = _parseColor(category.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}');
     // 아이콘 안전하게 파싱 (null 체크 포함)
     final icon = _parseIcon(category.iconName ?? 'group');
 
@@ -271,7 +270,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     
     final isEdit = category != null;
     final nameController = TextEditingController(text: category?.name ?? '');
-    String selectedColor = category?.color ?? '#4A90E2';
+    String selectedColor = category?.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}';
     String selectedIcon = category?.iconName ?? 'group';
 
     showDialog(
@@ -319,7 +318,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
+                      borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
                     ),
                   ),
                   style: const TextStyle(
@@ -359,7 +358,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5865F2),
+                backgroundColor: AppColors.pointColor,
                 foregroundColor: Colors.white,
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -425,8 +424,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   }
 
   Widget _buildColorPicker(String selectedColor, Function(String) onColorSelected) {
-    const colors = [
-      '#4A90E2', '#6BC9A5', '#FF8C42', '#9B59B6', '#E74C3C',
+    final colors = [
+      '#${AppColors.pointColor.value.toRadixString(16).substring(2)}', '#6BC9A5', '#FF8C42', '#9B59B6', '#E74C3C',
       '#F39C12', '#27AE60', '#3498DB', '#8E44AD', '#95A5A6',
     ];
 
@@ -457,7 +456,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                   color: _parseColor(color),
                   shape: BoxShape.circle,
                   border: isSelected
-                      ? Border.all(color: const Color(0xFF5865F2), width: 3)
+                      ? Border.all(color: AppColors.pointColor, width: 3)
                       : Border.all(color: const Color(0xFFE5E7EB), width: 1),
                 ),
                 child: isSelected
@@ -511,12 +510,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 height: 48,
                 decoration: BoxDecoration(
                   color: isSelected 
-                      ? _safeColorWithOpacity(const Color(0xFF5865F2), 0.1)
+                      ? _safeColorWithOpacity(AppColors.pointColor, 0.1)
                       : const Color(0xFFF3F4F6),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isSelected 
-                        ? const Color(0xFF5865F2) 
+                        ? AppColors.pointColor 
                         : const Color(0xFFE5E7EB),
                     width: isSelected ? 2 : 1,
                   ),
@@ -524,7 +523,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                 child: Icon(
                   icon,
                   color: isSelected 
-                      ? const Color(0xFF5865F2) 
+                      ? AppColors.pointColor 
                       : const Color(0xFF6B7280),
                   size: 24,
                 ),

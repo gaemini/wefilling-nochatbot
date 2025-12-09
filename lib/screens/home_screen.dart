@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/meetup.dart';
+import '../constants/app_constants.dart';
 import '../models/friend_category.dart';
 import '../models/meetup_participant.dart';
 import '../services/meetup_service.dart';
@@ -432,11 +433,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   height: 40,
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF5865F2) : Colors.transparent,
+                    color: isSelected ? AppColors.pointColor : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                       color: isSelected
-                          ? const Color(0xFF5865F2)
+                          ? AppColors.pointColor
                           : const Color(0xFFE5E7EB),
                       width: 1,
                     ),
@@ -543,7 +544,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
                         color: isSelected
-                            ? const Color(0xFF5865F2)
+                            ? AppColors.pointColor
                             : index == 6 // 일요일
                                 ? const Color(0xFFEF4444)
                                 : index == 5 // 토요일
@@ -560,7 +561,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                       height: 32,
                       decoration: BoxDecoration(
                         color: isSelected
-                            ? const Color(0xFF5865F2)
+                            ? AppColors.pointColor
                             : Colors.transparent,
                         shape: BoxShape.circle,
                       ),
@@ -587,7 +588,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         width: 4,
                         height: 4,
                         decoration: const BoxDecoration(
-                          color: Color(0xFF5865F2),
+                          color: AppColors.pointColor,
                           shape: BoxShape.circle,
                         ),
                       )
@@ -614,7 +615,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           child: _isRefreshing
               ? const LinearProgressIndicator(
                   backgroundColor: Color(0xFFE5E7EB),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                  valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
                 )
               : null,
         ),
@@ -631,7 +632,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               child: _isSearching
                   ? _buildSearchResults()
                       : RefreshIndicator(
-                      color: const Color(0xFF5865F2),
+                      color: AppColors.pointColor,
                       backgroundColor: Colors.white,
                         onRefresh: () async {
                         // 새로고침 시 캐시 클리어
@@ -746,7 +747,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                                     ),
                                                   ),
                                                   style: ElevatedButton.styleFrom(
-                                                    backgroundColor: const Color(0xFF5865F2),
+                                                    backgroundColor: AppColors.pointColor,
                                                     foregroundColor: Colors.white,
                                                     padding: const EdgeInsets.symmetric(
                                                       horizontal: 24,
@@ -905,7 +906,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                                   style: const TextStyle(
                                     fontFamily: 'Pretendard',
                                     fontSize: 14,
-                                    color: Color(0xFF5865F2),
+                                    color: AppColors.pointColor,
                                     decoration: TextDecoration.underline,
                                   ),
                                   maxLines: 1,
@@ -1043,7 +1044,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               height: 24,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2.5,
-                                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                                valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
                               ),
                             ),
                           ),
@@ -1223,7 +1224,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         decoration: BoxDecoration(
           color: isParticipating
               ? const Color(0xFFEF4444)
-              : const Color(0xFF5865F2),
+              : AppColors.pointColor,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(

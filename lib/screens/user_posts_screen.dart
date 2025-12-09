@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../services/user_stats_service.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 import 'post_detail_screen.dart';
 
 class UserPostsScreen extends StatefulWidget {
@@ -176,7 +177,7 @@ class _UserPostsScreenState extends State<UserPostsScreen> {
                                   const Icon(
                                     Icons.chat_bubble_outline,
                                     size: 16,
-                                    color: Color(0xFF5865F2),
+                                    color: AppColors.pointColor,
                                   ),
                                   const SizedBox(width: 4),
                                   Text(

@@ -144,9 +144,9 @@ class _MainScreenState extends State<MainScreen> {
   String _getSearchHint() {
     switch (_selectedIndex) {
       case 0:
-        return AppLocalizations.of(context)!.enterSearchQuery ?? "";
+        return AppLocalizations.of(context)!.searchPostsHint ?? "스토리 찾기";
       case 1:
-        return AppLocalizations.of(context)!.enterSearchQuery ?? "";
+        return AppLocalizations.of(context)!.searchMeetupsHint ?? "모임 찾기";
       default:
         return AppLocalizations.of(context)!.search ?? "";
     }
@@ -292,65 +292,68 @@ class _MainScreenState extends State<MainScreen> {
                   const Text(
                     'Wefilling',
                     style: TextStyle(
+                      fontFamily: 'HancomMalrangmalrang',
                       fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF5865F2), // 위필링 시그니처 파란색으로 통일
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
                       letterSpacing: -0.5,
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(width: 16),
-            // 검색창 (가변 폭) - 정보게시판용
-            Expanded(
-              child: Container(
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(18),
-                  border: Border.all(
-                    color: Colors.grey.shade200,
-                    width: 0.5,
+            if (_selectedIndex <= 1) ...[
+              const SizedBox(width: 16),
+              // 검색창 (가변 폭) - 정보게시판용
+              Expanded(
+                child: Container(
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.grey.shade200,
+                      width: 0.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: GestureDetector(
-                  onTap: () => _navigateToSearchPage(),
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F6F8),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        Icon(
-                          Icons.search,
-                          color: Colors.black54,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _getSearchHint(),
-                          style: const TextStyle(
+                  child: GestureDetector(
+                    onTap: () => _navigateToSearchPage(),
+                    child: Container(
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F6F8),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Row(
+                        children: [
+                          const SizedBox(width: 12),
+                          Icon(
+                            Icons.search,
                             color: Colors.black54,
-                            fontSize: 13,
+                            size: 18,
                           ),
-                        ),
-                      ],
+                          const SizedBox(width: 8),
+                          Text(
+                            _getSearchHint(),
+                            style: const TextStyle(
+                              color: Colors.black54,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
         actions: [

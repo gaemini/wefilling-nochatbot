@@ -14,6 +14,7 @@ import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
+import '../constants/app_constants.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -63,7 +64,7 @@ class _DMListScreenState extends State<DMListScreen> {
     if (_filter == DMFilter.friends) {
       return FloatingActionButton(
         onPressed: _showFriendSelectionSheet,
-        backgroundColor: const Color(0xFF5865F2),
+        backgroundColor: AppColors.pointColor,
         child: const Icon(Icons.add, color: Colors.white),
       );
     }
@@ -200,7 +201,7 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 상단 필터 탭(친구 / 익명) - 밑줄 인디케이터 스타일
   Widget _buildFilterBanners() {
-    const activeColor = Color(0xFF5865F2);
+    const activeColor = AppColors.pointColor;
     const inactiveColor = Color(0xFF9CA3AF);
 
     return Container(
@@ -607,7 +608,7 @@ class _DMListScreenState extends State<DMListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(color: Color(0xFF5865F2)),
+          const CircularProgressIndicator(color: AppColors.pointColor),
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.loadingMessages,
@@ -738,7 +739,7 @@ class _DMListScreenState extends State<DMListScreen> {
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
-                        child: CircularProgressIndicator(color: Color(0xFF5865F2)),
+                        child: CircularProgressIndicator(color: AppColors.pointColor),
                       );
                     }
                     

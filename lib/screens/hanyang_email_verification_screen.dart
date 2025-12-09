@@ -8,6 +8,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 
 class HanyangEmailVerificationScreen extends StatefulWidget {
   const HanyangEmailVerificationScreen({Key? key}) : super(key: key);
@@ -247,19 +248,15 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                    icon: Image.asset(
-                      'assets/icons/google_logo.png',
+                    icon: Container(
                       width: 22,
                       height: 22,
-                      // 이미지가 손상되었거나 로드에 실패하더라도
-                      // 에러 위젯 대신 기본 아이콘을 표시하도록 처리
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.android,
-                          size: 22,
-                          color: Color(0xFF1E293B),
-                        );
-                      },
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                      child: CustomPaint(
+                        painter: GoogleLogoPainter(),
+                      ),
                     ),
                     label: Text(
                       AppLocalizations.of(context)!.continueWithGoogle ?? "",
@@ -431,11 +428,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
-          onPressed: () {
-            // 뒤로 가기 시 포커스를 먼저 해제해서 키보드가 남아있지 않도록 처리
-            FocusScope.of(context).unfocus();
-            Navigator.pop(context);
-          },
+          onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           AppLocalizations.of(context)!.emailVerificationRequired ?? "",
@@ -461,15 +454,18 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
               Container(
                 padding: const EdgeInsets.all(24),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.pointColor,
+                      AppColors.pointColor.withOpacity(0.8),
+                    ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF6366F1).withOpacity(0.3),
+                      color: AppColors.pointColor.withOpacity(0.3),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     ),
@@ -568,9 +564,9 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       color: Color(0xFFCBD5E1),
                       letterSpacing: -0.2,
                     ),
-                    prefixIcon: const Icon(
+                    prefixIcon: Icon(
                       Icons.email_outlined,
-                      color: Color(0xFF6366F1),
+                      color: AppColors.pointColor,
                       size: 22,
                     ),
                     border: InputBorder.none,
@@ -608,7 +604,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   child: ElevatedButton(
                     onPressed: _isLoading ? null : _sendVerificationCode,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF6366F1),
+                      backgroundColor: AppColors.pointColor,
                       foregroundColor: Colors.white,
                       elevation: 0,
                       disabledBackgroundColor: const Color(0xFFE2E8F0),
@@ -720,7 +716,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       ),
                       prefixIcon: Icon(
                         Icons.lock_outline,
-                        color: Color(0xFF6366F1),
+                        color: AppColors.pointColor,
                         size: 22,
                       ),
                       border: InputBorder.none,
@@ -799,11 +795,11 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   },
                   child: Text(
                     AppLocalizations.of(context)!.retryAction,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF6366F1),
+                      color: AppColors.pointColor,
                       letterSpacing: -0.2,
                     ),
                   ),
@@ -855,4 +851,77 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       ),
     );
   }
+}
+
+// Google 로고를 그리는 CustomPainter
+class GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..strokeWidth = 2;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // 파란색 부분 (오른쪽)
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -1.57, // -90도 (12시 방향)
+      1.57, // 90도
+      true,
+      paint,
+    );
+
+    // 빨간색 부분 (위쪽)
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -1.57, // -90도
+      -1.57, // -90도
+      true,
+      paint,
+    );
+
+    // 노란색 부분 (왼쪽 아래)
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      1.57, // 90도
+      1.05, // 60도
+      true,
+      paint,
+    );
+
+    // 초록색 부분 (왼쪽 위)
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      2.62, // 150도
+      0.52, // 30도
+      true,
+      paint,
+    );
+
+    // 중앙 흰색 원 (G 모양을 만들기 위해)
+    paint.color = Colors.white;
+    canvas.drawCircle(center, radius * 0.5, paint);
+
+    // 오른쪽 파란색 막대 (G의 가로선)
+    paint.color = const Color(0xFF4285F4);
+    final rectWidth = radius * 0.5;
+    final rectHeight = radius * 0.35;
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(center.dx + radius * 0.25, center.dy),
+        width: rectWidth,
+        height: rectHeight,
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

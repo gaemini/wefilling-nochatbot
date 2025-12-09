@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/meetup.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 import '../services/user_stats_service.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../utils/error_handling_utils.dart';
@@ -59,7 +60,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
           controller: _tabController,
           labelColor: const Color(0xFF111827),
           unselectedLabelColor: const Color(0xFF9CA3AF),
-          indicatorColor: const Color(0xFF5865F2),
+          indicatorColor: AppColors.pointColor,
           indicatorWeight: 2.5,
           labelStyle: const TextStyle(
             fontFamily: 'Pretendard',
@@ -305,7 +306,7 @@ class _UserMeetupsScreenState extends State<UserMeetupsScreen>
                                               fontFamily: 'Pretendard',
                                               fontSize: 13,
                                               fontWeight: FontWeight.w400,
-                                              color: Color(0xFF5865F2),
+                                              color: AppColors.pointColor,
                                               decoration: TextDecoration.underline,
                                             ),
                                             maxLines: 1,

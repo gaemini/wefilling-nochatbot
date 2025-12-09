@@ -1084,5 +1084,7 @@
   "addImage": "Add Image",
   "tapToSelectFromGallery": "Tap to select from gallery",
   "changeImageTooltip": "Change image",
-  "removeImageTooltip": "Remove image"
+  "removeImageTooltip": "Remove image",
+  "searchPostsHint": "Find stories",
+  "searchMeetupsHint": "Find groups"
 }

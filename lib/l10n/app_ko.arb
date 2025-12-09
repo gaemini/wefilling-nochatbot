@@ -1080,5 +1080,7 @@
   "addImage": "이미지 추가",
   "tapToSelectFromGallery": "탭하여 갤러리에서 선택",
   "changeImageTooltip": "이미지 변경",
-  "removeImageTooltip": "이미지 제거"
+  "removeImageTooltip": "이미지 제거",
+  "searchPostsHint": "스토리 찾기",
+  "searchMeetupsHint": "모임 찾기"
 }

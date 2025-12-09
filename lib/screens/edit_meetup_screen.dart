@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/meetup.dart';
+import '../constants/app_constants.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -189,7 +190,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         return Theme(
           data: Theme.of(context).copyWith(
             colorScheme: const ColorScheme.light(
-              primary: Color(0xFF5865F2),
+              primary: AppColors.pointColor,
               onPrimary: Colors.white,
               onSurface: Color(0xFF111827),
             ),
@@ -303,7 +304,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5865F2)),
+                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
                     ),
                   )
                 : Text(
@@ -312,7 +313,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: _isLoading ? const Color(0xFF9CA3AF) : const Color(0xFF5865F2),
+                      color: _isLoading ? const Color(0xFF9CA3AF) : AppColors.pointColor,
                     ),
                   ),
           ),
@@ -448,7 +449,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _updateMeetup,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5865F2),
+                    backgroundColor: AppColors.pointColor,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
@@ -531,7 +532,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFF5865F2), width: 1.5),
+          borderSide: const BorderSide(color: AppColors.pointColor, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -683,7 +684,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                         ),
                         child: IconButton(
                           icon: const Icon(Icons.edit, size: 20),
-                          color: const Color(0xFF5865F2),
+                          color: AppColors.pointColor,
                           onPressed: _pickImage,
                           tooltip: AppLocalizations.of(context)!.changeImageTooltip,
                         ),

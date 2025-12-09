@@ -43,6 +43,9 @@ class AppConstants {
 // 2024-2025 트렌드 기반 모던 컬러 팔레트 (Gen Z 타겟)
 class AppColors {
   // === 라이트 모드 색상 ===
+  
+  // 포인트 컬러 (전역 수정 용이성 확보)
+  static const Color pointColor = Color(0xFF4990E2);
 
   // 주 배경색 (60% - 배경) - Modern & Clean
   static const Color backgroundPrimary = Color(0xFFFAFAFA); // Soft white

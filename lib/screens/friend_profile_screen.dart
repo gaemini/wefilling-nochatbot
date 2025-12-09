@@ -267,11 +267,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem(AppLocalizations.of(context)!.friends, widget.userId, isFriends: true, icon: Icons.people, color: const Color(0xFF5865F2)),
+              _buildStatItem(AppLocalizations.of(context)!.friends, widget.userId, isFriends: true, icon: Icons.people, color: AppColors.pointColor),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: const Color(0xFF5865F2)),
+              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: AppColors.pointColor),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: const Color(0xFF5865F2)),
+              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: AppColors.pointColor),
             ],
           ),
           
@@ -317,14 +317,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.grid_on_rounded, size: 20, color: Color(0xFF5865F2)),
+          const Icon(Icons.grid_on_rounded, size: 20, color: AppColors.pointColor),
           const SizedBox(width: 8),
           Text(
             AppLocalizations.of(context)!.participatedReviews,
             style: const TextStyle(
               fontFamily: 'Pretendard',
               fontWeight: FontWeight.w600,
-              color: Color(0xFF5865F2),
+              color: AppColors.pointColor,
               fontSize: 16,
             ),
           ),

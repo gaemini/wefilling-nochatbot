@@ -11,6 +11,7 @@ import 'requests_page.dart';
 import 'friends_page.dart';
 import 'friend_categories_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
 
 class FriendsMainPage extends StatefulWidget {
   const FriendsMainPage({super.key});
@@ -51,13 +52,13 @@ class _FriendsMainPageState extends State<FriendsMainPage>
           child: TabBar(
             controller: _tabController,
             isScrollable: false,
-            labelColor: const Color(0xFF5865F2),
+            labelColor: AppColors.pointColor,
             unselectedLabelColor: const Color(0xFF9CA3AF),
             labelPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
             indicator: const BoxDecoration(
               border: Border(
                 bottom: BorderSide(
-                  color: Color(0xFF5865F2),
+                  color: AppColors.pointColor,
                   width: 2.5,
                 ),
               ),

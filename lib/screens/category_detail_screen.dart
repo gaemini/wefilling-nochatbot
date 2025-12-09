@@ -11,6 +11,7 @@ import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
+import '../constants/app_constants.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -128,7 +129,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         ),
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF5865F2)))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.pointColor))
           : _friends.isEmpty
               ? Center(
                   child: Padding(

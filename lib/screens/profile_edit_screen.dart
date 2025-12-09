@@ -407,7 +407,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   height: 20,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: Color(0xFF5865F2),
+                    color: AppColors.pointColor,
                   ),
                 ),
               )
@@ -419,7 +419,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     fontFamily: 'Pretendard',
                     fontSize: 16, 
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF5865F2),
+                    color: AppColors.pointColor,
                   ),
                 ),
               ),
@@ -456,7 +456,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
+                                color: AppColors.pointColor, // Wefilling 브랜드 색상
                                 width: 3,
                               ),
                               // boxShadow 제거
@@ -468,7 +468,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                       child: Icon(
                                         Icons.person,
                                         size: 40,
-                                        color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
+                                        color: AppColors.pointColor, // Wefilling 브랜드 색상
                                       ),
                                     )
                                   : _selectedImage != null
@@ -489,7 +489,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                         child: Icon(
                                                           Icons.person,
                                                           size: 40,
-                                                          color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
+                                                          color: AppColors.pointColor, // Wefilling 브랜드 색상
                                                         ),
                                                       );
                                                     },
@@ -499,7 +499,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                                     child: Icon(
                                                       Icons.person,
                                                       size: 40,
-                                                      color: const Color(0xFF5865F2), // Wefilling 브랜드 색상
+                                                      color: AppColors.pointColor, // Wefilling 브랜드 색상
                                                     ),
                                                   );
                                           },
@@ -527,7 +527,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                               width: 36,
                               height: 36,
                               decoration: BoxDecoration(
-                                color: const Color(0xFF5865F2),
+                                color: AppColors.pointColor,
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.white,
@@ -549,7 +549,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       AppLocalizations.of(context)!.tapToChangeImage,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        color: Color(0xFF5865F2),
+                        color: AppColors.pointColor,
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
                       ),
@@ -590,7 +590,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
+                    borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
                   ),
                   filled: true,
                   fillColor: Colors.white,
@@ -645,7 +645,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
+        borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
       ),
       filled: true,
       fillColor: Colors.white,
@@ -685,7 +685,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFF5865F2), width: 2),
+                    borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
                   ),
                   filled: true,
                   fillColor: Colors.white,
@@ -725,7 +725,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   onPressed: _isSubmitting ? null : _updateProfile,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),
-                    backgroundColor: const Color(0xFF5865F2),
+                    backgroundColor: AppColors.pointColor,
                     disabledBackgroundColor: const Color(0xFF9CA3AF),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

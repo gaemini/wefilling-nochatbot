@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../design/tokens.dart';
+import '../../constants/app_constants.dart';
 
 /// 통일된 디자인 시스템을 적용한 FAB
 /// - 일관된 브랜드 컬러 사용 (Primary Blue)
@@ -145,7 +146,7 @@ class AppFab extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
-        backgroundColor: BrandColors.primary,
+        backgroundColor: AppColors.pointColor,
         foregroundColor: Colors.white,
         elevation: DesignTokens.elevation3,
         heroTag: heroTag,
@@ -158,7 +159,7 @@ class AppFab extends StatelessWidget {
       // 일반 FAB
       return FloatingActionButton(
         onPressed: enabled ? _handleTap : null,
-        backgroundColor: BrandColors.primary,
+        backgroundColor: AppColors.pointColor,
         foregroundColor: Colors.white,
         elevation: DesignTokens.elevation3,
         mini: mini,

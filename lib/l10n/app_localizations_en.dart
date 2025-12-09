@@ -2153,6 +2153,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Clicking the \"Delete Account\" button will display the Google login window.';
 
   @override
+  String get deleteButtonAppleLogin =>
+      'Clicking the \"Delete Account\" button will display the Apple login window.';
+
+  @override
   String get accountDeletedImmediatelyAfterAuth =>
       '⚠️ Account will be deleted immediately after re-authentication';
 

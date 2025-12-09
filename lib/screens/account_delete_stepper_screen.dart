@@ -27,6 +27,12 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
 
   List<Step> _steps(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
+    
+    // 사용자의 로그인 방식 확인
+    final user = FirebaseAuth.instance.currentUser;
+    final isGoogleLogin = user?.providerData.any((info) => info.providerId == 'google.com') ?? false;
+    final isAppleLogin = user?.providerData.any((info) => info.providerId == 'apple.com') ?? false;
+    
     final reasonTiles = [
       loc.deleteReasonNoLongerUse,
       loc.deleteReasonMissingFeatures,
@@ -268,7 +274,11 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      loc.deleteButtonGoogleLogin,
+                      isGoogleLogin 
+                        ? loc.deleteButtonGoogleLogin 
+                        : isAppleLogin 
+                          ? loc.deleteButtonAppleLogin 
+                          : loc.deleteButtonGoogleLogin,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,
@@ -391,8 +401,19 @@ class _AccountDeleteStepperScreenState extends State<AccountDeleteStepperScreen>
 
     setState(() => _isProcessing = true);
     try {
-      // Google 계정으로 재인증
-      await service.reauthenticateWithGoogle();
+      // 사용자의 로그인 방식 확인
+      final user = FirebaseAuth.instance.currentUser;
+      final isGoogleLogin = user?.providerData.any((info) => info.providerId == 'google.com') ?? false;
+      final isAppleLogin = user?.providerData.any((info) => info.providerId == 'apple.com') ?? false;
+
+      // 로그인 방식에 따라 재인증
+      if (isGoogleLogin) {
+        await service.reauthenticateWithGoogle();
+      } else if (isAppleLogin) {
+        await service.reauthenticateWithApple();
+      } else {
+        throw Exception('지원하지 않는 로그인 방식입니다.');
+      }
       
       // 계정 삭제
       await service.deleteAccountImmediately(reason: reason);

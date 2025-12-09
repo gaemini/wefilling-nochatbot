@@ -2100,6 +2100,9 @@ class AppLocalizationsKo extends AppLocalizations {
       '\"계정 삭제\" 버튼을 누르면 Google 로그인 창이 표시됩니다.';
 
   @override
+  String get deleteButtonAppleLogin => '\"계정 삭제\" 버튼을 누르면 Apple 로그인 창이 표시됩니다.';
+
+  @override
   String get accountDeletedImmediatelyAfterAuth => '⚠️ 재인증 후 계정이 즉시 삭제됩니다';
 
   @override

@@ -4046,6 +4046,12 @@ abstract class AppLocalizations {
   /// **'\"계정 삭제\" 버튼을 누르면 Google 로그인 창이 표시됩니다.'**
   String get deleteButtonGoogleLogin;
 
+  /// No description provided for @deleteButtonAppleLogin.
+  ///
+  /// In ko, this message translates to:
+  /// **'\"계정 삭제\" 버튼을 누르면 Apple 로그인 창이 표시됩니다.'**
+  String get deleteButtonAppleLogin;
+
   /// No description provided for @accountDeletedImmediatelyAfterAuth.
   ///
   /// In ko, this message translates to:

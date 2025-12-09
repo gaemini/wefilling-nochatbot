@@ -270,6 +270,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     style: const TextStyle(
                                       fontSize: 40,
                                       fontWeight: FontWeight.bold,
+                                      fontFamily: 'HancomMalrangmalrang',
                                       color: Colors.black87,
                                       letterSpacing: 1.2,
                                     ),
@@ -412,75 +413,24 @@ class _LoginScreenState extends State<LoginScreen>
                                         child: Row(
                                           mainAxisAlignment: MainAxisAlignment.center,
                                           children: [
+                                            // Google "G" 로고 (에셋 이미지 사용)
                                             Container(
-                                              width: 24,
-                                              height: 24,
+                                              width: 20,
+                                              height: 20,
                                               decoration: BoxDecoration(
-                                                color: Colors.white,
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius: BorderRadius.circular(2),
                                               ),
-                                              child: Stack(
-                                                children: [
-                                                  // 4색 G 로고 근사치 만들기
-                                                  Positioned(
-                                                    left: 0,
-                                                    top: 0,
-                                                    child: Container(
-                                                      width: 12,
-                                                      height: 12,
-                                                      decoration: const BoxDecoration(
-                                                        color: Colors.red,
-                                                        borderRadius: BorderRadius.only(
-                                                          topLeft: Radius.circular(12),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    right: 0,
-                                                    top: 0,
-                                                    child: Container(
-                                                      width: 12,
-                                                      height: 12,
-                                                      decoration: const BoxDecoration(
-                                                        color: Colors.amber,
-                                                        borderRadius: BorderRadius.only(
-                                                          topRight: Radius.circular(12),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    left: 0,
-                                                    bottom: 0,
-                                                    child: Container(
-                                                      width: 12,
-                                                      height: 12,
-                                                      decoration: const BoxDecoration(
-                                                        color: Colors.green,
-                                                        borderRadius: BorderRadius.only(
-                                                          bottomLeft: Radius.circular(12),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    right: 0,
-                                                    bottom: 0,
-                                                    child: Container(
-                                                      width: 12,
-                                                      height: 12,
-                                                      decoration: const BoxDecoration(
-                                                        color: Colors.blue,
-                                                        borderRadius: BorderRadius.only(
-                                                          bottomRight: Radius.circular(
-                                                            12,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
+                                              child: Image.asset(
+                                                'assets/icons/google_logo.png',
+                                                fit: BoxFit.contain,
+                                                errorBuilder: (context, error, stackTrace) {
+                                                  // 에셋 로드 실패 시 기본 아이콘으로 대체
+                                                  return const Icon(
+                                                    Icons.android,
+                                                    size: 20,
+                                                    color: Colors.black87,
+                                                  );
+                                                },
                                               ),
                                             ),
                                             const SizedBox(width: 12),
@@ -1187,4 +1137,77 @@ class _LoginScreenState extends State<LoginScreen>
       }
     }
   }
+}
+
+// Google 로고를 그리는 CustomPainter
+class GoogleLogoPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..strokeWidth = 2;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+
+    // 파란색 부분 (오른쪽)
+    paint.color = const Color(0xFF4285F4);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -1.57, // -90도 (12시 방향)
+      1.57, // 90도
+      true,
+      paint,
+    );
+
+    // 빨간색 부분 (위쪽)
+    paint.color = const Color(0xFFEA4335);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -1.57, // -90도
+      -1.57, // -90도
+      true,
+      paint,
+    );
+
+    // 노란색 부분 (왼쪽 아래)
+    paint.color = const Color(0xFFFBBC05);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      1.57, // 90도
+      1.05, // 60도
+      true,
+      paint,
+    );
+
+    // 초록색 부분 (왼쪽 위)
+    paint.color = const Color(0xFF34A853);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      2.62, // 150도
+      0.52, // 30도
+      true,
+      paint,
+    );
+
+    // 중앙 흰색 원 (G 모양을 만들기 위해)
+    paint.color = Colors.white;
+    canvas.drawCircle(center, radius * 0.5, paint);
+
+    // 오른쪽 파란색 막대 (G의 가로선)
+    paint.color = const Color(0xFF4285F4);
+    final rectWidth = radius * 0.5;
+    final rectHeight = radius * 0.35;
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(center.dx + radius * 0.25, center.dy),
+        width: rectWidth,
+        height: rectHeight,
+      ),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

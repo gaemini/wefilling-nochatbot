@@ -251,6 +251,15 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       'assets/icons/google_logo.png',
                       width: 22,
                       height: 22,
+                      // 이미지가 손상되었거나 로드에 실패하더라도
+                      // 에러 위젯 대신 기본 아이콘을 표시하도록 처리
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.android,
+                          size: 22,
+                          color: Color(0xFF1E293B),
+                        );
+                      },
                     ),
                     label: Text(
                       AppLocalizations.of(context)!.continueWithGoogle ?? "",
@@ -422,7 +431,11 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            // 뒤로 가기 시 포커스를 먼저 해제해서 키보드가 남아있지 않도록 처리
+            FocusScope.of(context).unfocus();
+            Navigator.pop(context);
+          },
         ),
         title: Text(
           AppLocalizations.of(context)!.emailVerificationRequired ?? "",

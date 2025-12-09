@@ -906,6 +906,7 @@
   "identityVerification": "Identity Verification",
   "reLoginForVerification": "Please log in again with your Google account for identity verification.",
   "deleteButtonGoogleLogin": "Clicking the \"Delete Account\" button will display the Google login window.",
+  "deleteButtonAppleLogin": "Clicking the \"Delete Account\" button will display the Apple login window.",
   "accountDeletedImmediatelyAfterAuth": "⚠️ Account will be deleted immediately after re-authentication",
   "reallyDelete": "Really delete?",
   "deleteConfirmationMessage": "This action cannot be undone and all data will be permanently deleted. Posts will be displayed as \"Deleted User\".",

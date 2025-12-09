@@ -41,6 +41,25 @@ class AccountDeletionService {
     }
   }
 
+  /// Apple 계정으로 재인증
+  Future<void> reauthenticateWithApple() async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw Exception('로그인된 사용자가 없습니다.');
+    }
+
+    try {
+      // Apple Sign-In
+      final appleProvider = AppleAuthProvider();
+      appleProvider.addScope('email');
+      appleProvider.addScope('name');
+
+      await user.reauthenticateWithProvider(appleProvider);
+    } catch (e) {
+      throw Exception('Apple 재인증 실패: $e');
+    }
+  }
+
   Future<void> deleteAccountImmediately({required String reason}) async {
     final callable = _functions.httpsCallable('deleteAccountImmediately');
     await callable.call({

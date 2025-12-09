@@ -113,3 +113,9 @@ flutter:
           weight: 800
         - asset: assets/fonts/Pretendard/PretendardJP-Black.otf
           weight: 900
+    - family: HancomMalrangmalrang
+      fonts:
+        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Bold.ttf
+          weight: 700

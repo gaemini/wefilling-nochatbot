@@ -294,16 +294,23 @@ class _MainScreenState extends State<MainScreen> {
                     style: TextStyle(
                       fontFamily: 'HancomMalrangmalrang',
                       fontSize: 17,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w900,
                       color: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
                       letterSpacing: -0.5,
+                      shadows: [
+                        Shadow(
+                          offset: Offset(0.5, 0.5),
+                          blurRadius: 0.5,
+                          color: AppColors.pointColor,
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
             if (_selectedIndex <= 1) ...[
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
               // 검색창 (가변 폭) - 정보게시판용
               Expanded(
                 child: Container(
@@ -332,8 +339,8 @@ class _MainScreenState extends State<MainScreen> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(width: 12),
                           Icon(
                             Icons.search,
                             color: Colors.black54,
@@ -353,6 +360,7 @@ class _MainScreenState extends State<MainScreen> {
                   ),
                 ),
               ),
+              const SizedBox(width: 6),
             ],
           ],
         ),

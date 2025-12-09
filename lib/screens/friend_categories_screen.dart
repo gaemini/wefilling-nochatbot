@@ -60,7 +60,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFEBEBEB),
       body: SafeArea(
         child: StreamBuilder<List<FriendCategory>>(
         stream: _categoryService.getCategoriesStream(),
@@ -98,11 +98,17 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           final categories = snapshot.data ?? [];
 
           if (categories.isEmpty) {
-            return AppEmptyState(
-              icon: IconStyles.group,
-              title: AppLocalizations.of(context)!.createFirstCategory,
-              description: AppLocalizations.of(context)!.createFirstCategoryDescription,
-              // ctaText 및 onCtaPressed 제거하여 "Create New Category" 버튼 숨김
+            return SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40),
+                child: AppEmptyState(
+                  icon: IconStyles.group,
+                  title: AppLocalizations.of(context)!.createFirstCategory,
+                  description: AppLocalizations.of(context)!.createFirstCategoryDescription,
+                  // ctaText 및 onCtaPressed 제거하여 "Create New Category" 버튼 숨김
+                ),
+              ),
             );
           }
 

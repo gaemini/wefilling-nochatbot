@@ -202,7 +202,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     
                     // 한 줄 소개 (국기 아래)
                     if (userData?['bio'] != null && (userData!['bio'] as String).isNotEmpty) ...[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Text(
                         userData!['bio'],
                         style: const TextStyle(
@@ -398,33 +398,33 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Color(0xFFF3F4F6),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.photo_library_outlined,
-                    size: 32,
-                    color: Color(0xFF6366F1),
+                    size: 48,
+                    color: AppColors.pointColor,
                   ),
                 ),
-                SizedBox(height: 16),
+                SizedBox(height: 20),
                 Text(
                   AppLocalizations.of(context)!.noReviewsYet,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 16,
+                    fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
                   ),
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 8),
                 Text(
                   AppLocalizations.of(context)!.joinMeetupAndWriteReview,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 13,
+                    fontSize: 15,
                     color: Color(0xFF6B7280),
                   ),
                 ),
@@ -670,33 +670,33 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Container(
-                  padding: EdgeInsets.all(16),
+                  padding: EdgeInsets.all(20),
                   decoration: BoxDecoration(
                     color: Color(0xFFF3F4F6),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
                     Icons.bookmark_border_rounded,
-                    size: 32,
-                    color: Color(0xFF6366F1),
+                    size: 48,
+                    color: AppColors.pointColor,
                   ),
                 ),
-                SizedBox(height: 16),
+                SizedBox(height: 20),
                 Text(
                   AppLocalizations.of(context)!.noSavedPosts,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 16,
+                    fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
                   ),
                 ),
-                SizedBox(height: 6),
+                SizedBox(height: 8),
                 Text(
                   AppLocalizations.of(context)!.saveInterestingPosts,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 13,
+                    fontSize: 15,
                     color: Color(0xFF6B7280),
                   ),
                 ),

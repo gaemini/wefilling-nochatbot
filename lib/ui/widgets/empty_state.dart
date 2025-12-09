@@ -205,37 +205,35 @@ class AppEmptyState extends StatelessWidget {
   /// 일러스트 또는 아이콘 빌드
   Widget _buildIllustration(ColorScheme colorScheme) {
     if (illustration != null) {
-      return Center(child: illustration!);
+      return illustration!;
     }
 
-      // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
-    return Center(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0.0, end: 1.0),
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeOutBack,
-        builder: (context, value, child) {
-          return Transform.scale(
-            scale: value,
-            child: Opacity(
-              opacity: UIUtils.safeOpacity(value),
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.1),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.2),
-                    width: 2,
-                  ),
+    // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOutBack,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: Opacity(
+            opacity: UIUtils.safeOpacity(value),
+            child: Container(
+              width: 120,
+              height: 120,
+              decoration: BoxDecoration(
+                color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.1),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.2),
+                  width: 2,
                 ),
-                child: Icon(icon, size: 48, color: AppColors.pointColor),
               ),
+              child: Icon(icon, size: 48, color: AppColors.pointColor),
             ),
-          );
-        },
-      ),
+          ),
+        );
+      },
     );
   }
 

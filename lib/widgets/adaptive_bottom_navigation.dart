@@ -6,14 +6,18 @@ import 'notification_badge.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
-  final IconData icon;
-  final IconData selectedIcon;
+  final IconData? icon;
+  final IconData? selectedIcon;
+  final String? iconImagePath; // 이미지 경로 추가
+  final String? selectedIconImagePath; // 선택된 이미지 경로 추가
   final String label;
   final int? badgeCount; // 배지 카운트 추가
 
   const BottomNavigationItem({
-    required this.icon,
-    required this.selectedIcon,
+    this.icon,
+    this.selectedIcon,
+    this.iconImagePath,
+    this.selectedIconImagePath,
     required this.label,
     this.badgeCount,
   });
@@ -170,12 +174,28 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   fontSize: 8,
                   top: -5, // 더 위로 이동
                   right: -8, // 더 오른쪽으로 이동 (아이콘을 덜 가림)
-                  child: Icon(
-                    isSelected ? item.selectedIcon : item.icon,
-                    size: iconSize,
-                    color: isSelected ? selectedColor : unselectedColor,
-                    weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                  ),
+                  child: item.iconImagePath != null
+                      ? Image.asset(
+                          isSelected
+                              ? (item.selectedIconImagePath ?? item.iconImagePath!)
+                              : item.iconImagePath!,
+                          width: iconSize,
+                          height: iconSize,
+                          color: isSelected ? selectedColor : unselectedColor,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.person,
+                              size: iconSize,
+                              color: isSelected ? selectedColor : unselectedColor,
+                            );
+                          },
+                        )
+                      : Icon(
+                          isSelected ? item.selectedIcon : item.icon,
+                          size: iconSize,
+                          color: isSelected ? selectedColor : unselectedColor,
+                          weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                        ),
                 ),
               ),
             ),

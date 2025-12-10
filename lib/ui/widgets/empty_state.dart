@@ -208,7 +208,7 @@ class AppEmptyState extends StatelessWidget {
       return illustration!;
     }
 
-    // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
+      // 일관된 디자인의 아이콘 컨테이너 (애니메이션 추가)
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0.0, end: 1.0),
       duration: const Duration(milliseconds: 600),

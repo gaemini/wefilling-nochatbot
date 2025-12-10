@@ -177,18 +177,18 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    const Text(
-                      '환영합니다! 프로필을 설정해주세요.',
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
+              const Text(
+                '환영합니다! 프로필을 설정해주세요.',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
                         color: Colors.white,
                         letterSpacing: -0.5,
                         height: 1.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
+                ),
+                textAlign: TextAlign.center,
+              ),
                   ],
                 ),
               ),
@@ -199,16 +199,16 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
                 child: const Text(
-                  '닉네임',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    '닉네임',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                     letterSpacing: -0.2,
                   ),
-                ),
-              ),
+                    ),
+                  ),
 
               // 닉네임 입력
               Container(
@@ -228,43 +228,43 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                   ],
                 ),
                 child: TextFormField(
-                  controller: _nicknameController,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.2,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: '두리안',
-                    hintStyle: const TextStyle(
+                    controller: _nicknameController,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1E293B),
+                    letterSpacing: -0.2,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '두리안',
+                      hintStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
                       color: Color(0xFFCBD5E1),
                       letterSpacing: -0.2,
-                    ),
+                        ),
                     prefixIcon: Icon(
                       Icons.person_outline,
-                      color: AppColors.pointColor,
+                          color: AppColors.pointColor,
                       size: 22,
-                    ),
+                        ),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 18,
+                      ),
                     ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return '닉네임을 입력해주세요';
+                      }
+                      if (value.length < 2 || value.length > 20) {
+                        return '닉네임은 2~20자 사이로 입력해주세요';
+                      }
+                      return null;
+                    },
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return '닉네임을 입력해주세요';
-                    }
-                    if (value.length < 2 || value.length > 20) {
-                      return '닉네임은 2~20자 사이로 입력해주세요';
-                    }
-                    return null;
-                  },
-                ),
               ),
               const SizedBox(height: 24),
 
@@ -272,11 +272,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
                 child: const Text(
-                  '국적',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
+                    '국적',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                     letterSpacing: -0.2,
                   ),
@@ -291,7 +291,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                   border: Border.all(
                     color: const Color(0xFFE2E8F0),
                     width: 1,
-                  ),
+                        ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.04),
@@ -299,54 +299,54 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                       offset: const Offset(0, 2),
                     ),
                   ],
-                ),
+                      ),
                 child: DropdownButtonFormField<String>(
                   decoration: InputDecoration(
                     prefixIcon: Icon(
                       Icons.public,
-                      color: AppColors.pointColor,
+                          color: AppColors.pointColor,
                       size: 22,
-                    ),
+                        ),
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                       horizontal: 20,
                       vertical: 18,
-                    ),
-                  ),
-                  value: _selectedNationality,
-                  icon: const Icon(
-                    Icons.keyboard_arrow_down,
-                    color: Color(0xFF64748B),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                  ),
-                  items: CountryFlagHelper.allCountries.map((country) {
-                    final currentLanguage = Localizations.localeOf(context).languageCode;
-                    return DropdownMenuItem(
-                      value: country.korean,
-                      child: Text(
-                        country.getLocalizedName(currentLanguage),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    );
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() {
-                        _selectedNationality = value;
-                      });
-                    }
-                  },
-                ),
+                    ),
+                    value: _selectedNationality,
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down,
+                      color: Color(0xFF64748B),
+                    ),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1E293B),
+                    ),
+                    items: CountryFlagHelper.allCountries.map((country) {
+                      final currentLanguage = Localizations.localeOf(context).languageCode;
+                      return DropdownMenuItem(
+                        value: country.korean,
+                        child: Text(
+                          country.getLocalizedName(currentLanguage),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        setState(() {
+                          _selectedNationality = value;
+                        });
+                      }
+                    },
+                  ),
               ),
               const SizedBox(height: 32),
 

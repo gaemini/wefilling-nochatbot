@@ -103,9 +103,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 40),
                 child: AppEmptyState(
-                  icon: IconStyles.group,
-                  title: AppLocalizations.of(context)!.createFirstCategory,
-                  description: AppLocalizations.of(context)!.createFirstCategoryDescription,
+              icon: IconStyles.group,
+              title: AppLocalizations.of(context)!.createFirstCategory,
+              description: AppLocalizations.of(context)!.createFirstCategoryDescription,
                   // ctaText 및 onCtaPressed 제거하여 "Create New Category" 버튼 숨김
                 ),
               ),

@@ -191,11 +191,11 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                           },
                         )
                       : Icon(
-                          isSelected ? item.selectedIcon : item.icon,
-                          size: iconSize,
-                          color: isSelected ? selectedColor : unselectedColor,
-                          weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                        ),
+                    isSelected ? item.selectedIcon : item.icon,
+                    size: iconSize,
+                    color: isSelected ? selectedColor : unselectedColor,
+                    weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                  ),
                 ),
               ),
             ),

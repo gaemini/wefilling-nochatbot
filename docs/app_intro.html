@@ -1,45 +1,359 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Wefilling - 함께하는 대학 생활 커뮤니티</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wefilling | 사람과 사람 사이를 채우다</title>
+  <meta name="description" content="카테고리로 관계를 나누고, 부담 없이 연결되는 소셜 플랫폼 Wefilling." />
   <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      line-height: 1.6;
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 24px;
-      background: #f9fafb;
-      color: #111827;
+    :root{
+      --bg:#0b1220;
+      --card:#0f1b33;
+      --text:#eaf0ff;
+      --muted:#b9c6ea;
+      --line:rgba(255,255,255,.10);
+      --accent:#4990E2;
+      --accent2:#7aaeff;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius:18px;
+      --max: 1100px;
     }
-    h1 { font-size: 28px; margin-bottom: 8px; color: #111827; }
-    h2 { margin-top: 24px; font-size: 20px; }
-    .tagline { color: #4b5563; margin-bottom: 16px; }
-    ul { margin-left: 20px; }
-    li { margin-bottom: 6px; }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, sans-serif;
+      background: radial-gradient(1000px 600px at 20% 0%, rgba(73,144,226,.25), transparent 60%),
+                  radial-gradient(1000px 600px at 90% 10%, rgba(122,174,255,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      line-height:1.6;
+    }
+    a{color:inherit}
+    .wrap{max-width:var(--max); margin:0 auto; padding:26px 18px 80px}
+    header{
+      display:flex; align-items:center; justify-content:space-between;
+      gap:12px; position:sticky; top:0; backdrop-filter: blur(10px);
+      background: linear-gradient(to bottom, rgba(11,18,32,.85), rgba(11,18,32,.35));
+      border-bottom:1px solid var(--line);
+      padding:14px 18px;
+      z-index:10;
+    }
+    .brand{
+      display:flex; align-items:center; gap:10px; text-decoration:none;
+    }
+    .logo{
+      width:34px; height:34px; border-radius:10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: var(--shadow);
+    }
+    nav{display:flex; gap:14px; flex-wrap:wrap; justify-content:flex-end}
+    nav a{
+      text-decoration:none; color:var(--muted); font-size:14px;
+      padding:8px 10px; border-radius:10px;
+    }
+    nav a:hover{background:rgba(255,255,255,.06); color:var(--text)}
+    .hero{
+      padding:54px 0 26px;
+      display:grid; grid-template-columns: 1.15fr .85fr; gap:18px;
+      align-items:center;
+    }
+    @media (max-width: 860px){
+      .hero{grid-template-columns: 1fr; padding-top:34px}
+      nav{display:none}
+    }
+    .tag{
+      display:inline-flex; gap:8px; align-items:center;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      padding:8px 12px; border-radius:999px;
+      color:var(--muted); font-size:14px;
+    }
+    h1{margin:14px 0 10px; font-size:44px; line-height:1.15}
+    @media (max-width: 520px){h1{font-size:36px}}
+    .sub{color:var(--muted); font-size:16px; max-width: 58ch}
+    .cta{display:flex; gap:10px; flex-wrap:wrap; margin-top:18px}
+    .btn{
+      display:inline-flex; align-items:center; justify-content:center; gap:8px;
+      border-radius:14px; padding:12px 14px; text-decoration:none;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      font-weight:600;
+    }
+    .btn.primary{
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border:none;
+    }
+    .btn:hover{transform: translateY(-1px)}
+    .panel{
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      border-radius: var(--radius);
+      padding:18px;
+      box-shadow: var(--shadow);
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap:12px;
+      margin-top:12px;
+    }
+    .card{
+      grid-column: span 4;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      border-radius: var(--radius);
+      padding:16px;
+      min-height: 130px;
+    }
+    .card h3{margin:0 0 8px; font-size:16px}
+    .card p{margin:0; color:var(--muted); font-size:14px}
+    @media (max-width: 860px){
+      .card{grid-column: span 6}
+    }
+    @media (max-width: 520px){
+      .card{grid-column: span 12}
+    }
+    section{margin-top:34px}
+    .sec-title{
+      display:flex; align-items:baseline; justify-content:space-between;
+      gap:10px;
+      margin:0 0 10px;
+    }
+    .sec-title h2{margin:0; font-size:22px}
+    .sec-title span{color:var(--muted); font-size:14px}
+    .kicker{color:var(--muted); margin:0}
+    .list{margin:10px 0 0; padding:0 0 0 16px; color:var(--muted)}
+    .list li{margin:6px 0}
+    .hr{height:1px; background:var(--line); margin:22px 0}
+    footer{
+      margin-top:40px;
+      border-top:1px solid var(--line);
+      padding-top:18px;
+      color:var(--muted);
+      font-size:13px;
+      display:flex; flex-wrap:wrap; gap:10px; justify-content:space-between;
+    }
+    .pill{
+      display:inline-flex; align-items:center; gap:8px;
+      border:1px solid var(--line);
+      background: rgba(255,255,255,.04);
+      padding:10px 12px; border-radius: 14px;
+      color:var(--muted);
+    }
   </style>
 </head>
+
 <body>
-  <h1>Wefilling</h1>
-  <p class="tagline">함께하면 즐거운 대학 생활 - 친구를 만들고 모임에 참여하세요.</p>
+  <header>
+    <a class="brand" href="#top" aria-label="Wefilling Home">
+      <div class="logo" aria-hidden="true"></div>
+      <div>
+        <div style="font-weight:800; letter-spacing:.2px;">Wefilling</div>
+        <div style="font-size:12px; color:var(--muted); margin-top:2px;">사람과 사람 사이를 채우다</div>
+      </div>
+    </a>
+    <nav>
+      <a href="#why">왜 Wefilling</a>
+      <a href="#how">어떻게 작동하나</a>
+      <a href="#features">핵심 기능</a>
+      <a href="#trust">신뢰 기반</a>
+      <a href="#growth">확장 전략</a>
+      <a href="#biz">비즈니스</a>
+    </nav>
+  </header>
 
-  <h2>앱 소개</h2>
-  <p>Wefilling(위필링)은 대학생을 위한 소셜 커뮤니티 앱입니다. 친구를 만들고, 모임에
-     참여하고, 일상을 공유하면서 캠퍼스 생활을 더 풍부하게 만들어 보세요.</p>
+  <main class="wrap" id="top">
+    <!-- HERO -->
+    <div class="hero">
+      <div>
+        <div class="tag">관계 맥락 기반 소셜 플랫폼 · 카테고리로 부담을 줄이다</div>
+        <h1>카테고리로 관계를 나누고,<br/>부담 없이 연결되는 SNS</h1>
+        <p class="sub">
+          Wefilling은 ‘학교/팀플/동아리/친구/가족’처럼 관계의 맥락을 카테고리로 정리하고,
+          그 맥락에 맞게 프로필과 공개 범위를 선택할 수 있도록 설계된 소셜 네트워킹 플랫폼입니다.
+        </p>
+        <div class="cta">
+          <a class="btn primary" href="#features">기능 한눈에 보기</a>
+          <a class="btn" href="#growth">확장 로드맵</a>
+          <a class="btn" href="#" aria-label="Download on Google Play">Google Play(준비중)</a>
+          <a class="btn" href="#" aria-label="Download on App Store">App Store(준비중)</a>
+        </div>
 
-  <h2>주요 기능</h2>
-  <ul>
-    <li><strong>한양대 이메일 인증</strong>으로 신뢰할 수 있는 사용자만 참여</li>
-    <li><strong>모임 생성·참여</strong> (스터디, 식사, 카페, 문화 활동 등)</li>
-    <li><strong>친구 및 친구 카테고리 관리</strong>로 관계를 그룹별로 정리</li>
-    <li><strong>게시판 & 후기</strong>로 경험과 정보를 자유롭게 공유</li>
-    <li><strong>알림 기능</strong>으로 모임 신청, 친구 요청 등 중요한 소식을 바로 확인</li>
-  </ul>
+        <div class="hr"></div>
 
-  <h2>문의</h2>
-  <p>앱 관련 문의는 아래 이메일로 연락해 주세요.<br />
-     <strong>Email:</strong> wefilling@gmail.com</p>
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <div class="pill">3~4명 스몰 모임 중심으로 ‘첫 만남’ 부담을 낮춤</div>
+          <div class="pill">학교 메일 인증 + 국적 표시로 신뢰 기반 연결</div>
+          <div class="pill">관계 카테고리 기반으로 게시글 공개 범위를 명확히</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <p class="kicker" style="margin-bottom:10px;">
+          Wefilling이 해결하려는 것
+        </p>
+        <p style="margin:0; color:var(--text); font-weight:700;">
+          “애매한 관계”에서 말 걸기·공유하기가 어려운 구조
+        </p>
+        <p style="margin:10px 0 0; color:var(--muted); font-size:14px;">
+          기존 SNS는 이미 친한 관계 중심으로 굳어지거나, 익명 커뮤니티는 신뢰 기반 연결이 어렵습니다.
+          Wefilling은 관계의 맥락을 먼저 정리해, 연결과 공유가 자연스럽게 이어지도록 설계했습니다.
+        </p>
+
+        <div class="hr"></div>
+
+        <p class="kicker">현재 운영 방향</p>
+        <ul class="list">
+          <li>서비스 안정화와 사용자 경험(UX) 개선</li>
+          <li>관계/행동 데이터를 기반으로 추천·광고 효율을 높일 준비</li>
+          <li>캠퍼스 기반 확산 → 다문화 사용자 데이터 축적 → 해외 대학 확장</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- WHY -->
+    <section id="why">
+      <div class="sec-title">
+        <h2>왜 Wefilling인가</h2>
+        <span>관계의 맥락이 없어서 생기는 피로</span>
+      </div>
+      <div class="panel">
+        <p style="margin:0; color:var(--muted);">
+          같은 사람이더라도 ‘팀플에서의 나’, ‘동아리에서의 나’, ‘친한 친구 앞의 나’는 다릅니다.
+          그런데 하나의 피드와 하나의 정체성으로만 소통하면, 공유 전부터 신경 쓸 것이 많아지고 결국 “아무 것도 안 올리는” 방향으로 굳어집니다.
+          Wefilling은 이 구조를 ‘카테고리’로 해결합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- HOW -->
+    <section id="how">
+      <div class="sec-title">
+        <h2>어떻게 작동하나</h2>
+        <span>카테고리 → 공개범위 → 연결</span>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <h3>1) 관계를 카테고리로 정리</h3>
+          <p>학교/팀플/동아리/친구 등 맥락을 먼저 분리해 관계 관리를 단순화합니다.</p>
+        </div>
+        <div class="card">
+          <h3>2) 공개범위를 맥락에 맞게</h3>
+          <p>게시글·모임을 올릴 때 ‘누구에게 보여줄지’를 자연스럽게 선택할 수 있습니다.</p>
+        </div>
+        <div class="card">
+          <h3>3) 작은 연결부터 시작</h3>
+          <p>3~4명 스몰 모임 구조로 첫 만남의 심리적 장벽을 낮춥니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- FEATURES -->
+    <section id="features">
+      <div class="sec-title">
+        <h2>핵심 기능</h2>
+        <span>실사용 흐름 중심</span>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>Friends Category</h3>
+          <p>관계 카테고리 관리로, 같은 플랫폼 안에서 ‘관계 맥락’을 유지합니다.</p>
+        </div>
+        <div class="card">
+          <h3>게시글 · 공개범위 설정</h3>
+          <p>부담을 줄이는 공개범위 선택으로, 잡다한 이야기·질문·도움 요청이 자연스러워집니다.</p>
+        </div>
+        <div class="card">
+          <h3>Direct Message</h3>
+          <p>친구/익명 DM 흐름으로, 게시글에서 대화로 이어지는 전환을 지원합니다.</p>
+        </div>
+
+        <div class="card">
+          <h3>Meeting</h3>
+          <p>스터디·식사·카페·문화 등 목적 기반 소규모 모임을 빠르게 만들고 참여합니다.</p>
+        </div>
+        <div class="card">
+          <h3>Meeting Review</h3>
+          <p>‘기록 + 공유’로 모임 경험이 축적되고, 관계가 끊기지 않게 이어집니다.</p>
+        </div>
+        <div class="card">
+          <h3>My Profile</h3>
+          <p>닉네임·국적·한 줄 소개, 그리고 언어 선택(한국어/영어)로 다문화 사용성을 강화합니다.</p>
+        </div>
+
+        <div class="card">
+          <h3>Notification</h3>
+          <p>관계 카테고리와 흐름에 맞춘 알림 설계로 중요한 소통이 묻히지 않게 합니다.</p>
+        </div>
+        <div class="card">
+          <h3>Advertisement</h3>
+          <p>사용 경험을 해치지 않는 배치와 맥락 기반 타게팅을 전제로 광고 수익을 확장합니다.</p>
+        </div>
+        <div class="card">
+          <h3>로드맵(운영 과제)</h3>
+          <p>스토어 등록, 안정성 테스트 등 정식 배포 완성도를 단계적으로 끌어올립니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRUST -->
+    <section id="trust">
+      <div class="sec-title">
+        <h2>신뢰 기반 커뮤니티 설계</h2>
+        <span>학교 인증과 정보 표시</span>
+      </div>
+      <div class="panel">
+        <p style="margin:0; color:var(--muted);">
+          Wefilling은 “누구나 들어올 수 있는 익명 공간”이 아니라, 캠퍼스 기반의 신뢰를 바탕으로 확산되는 구조를 지향합니다.
+          학교 메일 인증과 국적 표시를 통해 연결의 불확실성을 낮추고, 다문화 환경에서도 안전하게 소통할 수 있는 기본 조건을 제공합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- GROWTH -->
+    <section id="growth">
+      <div class="sec-title">
+        <h2>확장 전략</h2>
+        <span>캠퍼스 → 다문화 → 해외 대학</span>
+      </div>
+      <div class="panel">
+        <p style="margin:0; color:var(--muted);">
+          초기에는 ERICA 중심으로 사용자 밀도와 활동성을 확보하고, 다문화 사용자 데이터가 자연스럽게 축적되는 환경에서
+          서비스의 ‘관계 맥락’ 설계를 고도화합니다. 이후에는 대학 이메일 도메인 기반 확장 구조로 해외 대학으로 진입하는 방식의
+          검증 중심 확장을 추진합니다.
+        </p>
+      </div>
+    </section>
+
+    <!-- BUSINESS -->
+    <section id="biz">
+      <div class="sec-title">
+        <h2>비즈니스 모델</h2>
+        <span>광고 중심 · 확장형 수익 구조</span>
+      </div>
+      <div class="panel">
+        <p style="margin:0; color:var(--muted);">
+          Wefilling은 유료 구독을 핵심 수익 구조로 두지 않고, 무료 이용을 기본으로 사용자 기반과 데이터 밀도를 먼저 확보합니다.
+          핵심 수익원은 관계 카테고리, 콘텐츠 유형, 모임 주제, 지역·국적 정보 등 ‘맥락 데이터’를 활용한 광고 모델이며,
+          서비스 확장(캠퍼스→글로벌)이 곧 광고 시장 확장으로 연결되는 구조를 지향합니다.
+        </p>
+      </div>
+    </section>
+
+    <footer>
+      <div>© <span id="y"></span> Wefilling. All rights reserved.</div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a href="#" style="text-decoration:none;">Privacy</a>
+        <a href="#" style="text-decoration:none;">Terms</a>
+        <a href="mailto:wefilling@gmail.com" style="text-decoration:none;">Contact</a>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    document.getElementById("y").textContent = new Date().getFullYear();
+  </script>
 </body>
 </html>

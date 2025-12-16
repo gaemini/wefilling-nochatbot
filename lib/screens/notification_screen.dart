@@ -20,6 +20,7 @@ import 'review_detail_screen.dart';
 import '../services/review_service.dart';
 import '../models/review_post.dart';
 import '../utils/logger.dart';
+import 'dm_chat_screen.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -342,6 +343,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> _navigateToDM(AppNotification notification) async {
     try {
       final conversationId = notification.data?['conversationId'];
+      final otherUserId = notification.actorId;
       
       if (conversationId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -350,11 +352,26 @@ class _NotificationScreenState extends State<NotificationScreen> {
         return;
       }
 
-      // DM 목록 화면으로 이동 (MainScreen의 DM 탭)
+      // DM 알림은 해당 대화방으로 바로 이동
+      // - otherUserId가 없는(구버전 알림 등) 경우에만 DM 탭으로 이동
+      if (otherUserId != null && otherUserId.isNotEmpty) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DMChatScreen(
+              conversationId: conversationId,
+              otherUserId: otherUserId,
+            ),
+          ),
+        );
+        return;
+      }
+
+      // fallback: DM 목록 화면으로 이동 (MainScreen의 DM 탭 인덱스 = 2)
       Navigator.pushAndRemoveUntil(
         context,
         MaterialPageRoute(
-          builder: (context) => const MainScreen(initialTabIndex: 3), // DM 탭 인덱스
+          builder: (context) => const MainScreen(initialTabIndex: 2),
         ),
         (route) => false,
       );

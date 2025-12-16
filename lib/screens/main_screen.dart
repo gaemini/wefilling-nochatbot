@@ -309,8 +309,9 @@ class _MainScreenState extends State<MainScreen> {
                 ],
               ),
             ),
+            // 오른쪽 정렬을 위해 Spacer는 항상 유지
+            const Spacer(),
             if (_selectedIndex <= 1) ...[
-              const Spacer(),
               // 검색창 (고정 폭)
               GestureDetector(
                 onTap: () => _navigateToSearchPage(),

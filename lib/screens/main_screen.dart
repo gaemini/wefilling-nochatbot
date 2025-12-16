@@ -310,86 +310,73 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
             if (_selectedIndex <= 1) ...[
-              const SizedBox(width: 12),
-              // 검색창 (가변 폭) - 정보게시판용
-              Expanded(
+              const Spacer(),
+              // 검색창 (고정 폭)
+              GestureDetector(
+                onTap: () => _navigateToSearchPage(),
                 child: Container(
+                  width: 180,
                   height: 36,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
+                    color: const Color(0xFFF5F6F8),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(
                       color: Colors.grey.shade200,
                       width: 0.5,
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
                   ),
-                  child: GestureDetector(
-                    onTap: () => _navigateToSearchPage(),
-                    child: Container(
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF5F6F8),
-                        borderRadius: BorderRadius.circular(18),
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 12),
+                      const Icon(
+                        Icons.search,
+                        color: Colors.black54,
+                        size: 18,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.search,
-                            color: Colors.black54,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
+                      Expanded(
+                        child: Center(
+                          child: Text(
                             _getSearchHint(),
                             style: const TextStyle(
                               color: Colors.black54,
                               fontSize: 13,
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
+                      const SizedBox(width: 12),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
             ],
+            // 알림 아이콘
+            StreamBuilder<int>(
+              stream: _notificationService.getUnreadNotificationCount(),
+              builder: (context, snapshot) {
+                final unreadCount = snapshot.data ?? 0;
+
+                return NotificationBadge(
+                  count: unreadCount,
+                  child: AppIconButton(
+                    icon: Icons.notifications_outlined,
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationScreen(),
+                        ),
+                      );
+                    },
+                    semanticLabel: '알림',
+                    visualDensity: VisualDensity.compact,
+                  ),
+                );
+              },
+            ),
           ],
         ),
-        actions: [
-          // 알림 아이콘
-          StreamBuilder<int>(
-            stream: _notificationService.getUnreadNotificationCount(),
-            builder: (context, snapshot) {
-              final unreadCount = snapshot.data ?? 0;
-
-              return NotificationBadge(
-                count: unreadCount,
-                child: AppIconButton(
-                  icon: Icons.notifications_outlined,
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationScreen(),
-                      ),
-                    );
-                  },
-                  semanticLabel: '알림',
-                ),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
       ),
       body: _screens[_selectedIndex],
 

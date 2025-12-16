@@ -33,6 +33,9 @@ class AuthProvider with ChangeNotifier {
   // 로그아웃 진행 상태 추적
   String? _logoutStatus;
   
+  // FCM 초기화 완료 플래그 (세션 내 중복 방지)
+  bool _fcmInitialized = false;
+  
   // 스트림 정리를 위한 콜백 리스트
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
@@ -162,6 +165,9 @@ class AuthProvider with ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+    
+    // FCM 초기화 (자동 로그인/앱 재시작 시에도 토큰 등록 보장)
+    await _initializeFCMIfNeeded();
   }
 
   // 구글 로그인
@@ -1235,6 +1241,31 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
+  Future<void> _initializeFCMIfNeeded() async {
+    // 이미 초기화되었거나 사용자가 없으면 스킵
+    if (_fcmInitialized || _user == null || _userData == null) {
+      return;
+    }
+    
+    // 이메일 인증이 완료된 사용자만 FCM 초기화
+    final emailVerified = _userData!['emailVerified'] == true;
+    if (!emailVerified) {
+      Logger.log('📱 FCM 초기화 스킵: 이메일 인증 미완료');
+      return;
+    }
+    
+    try {
+      Logger.log('📱 자동 로그인 감지 - FCM 초기화 시작: ${_user!.uid}');
+      await FCMService().initialize(_user!.uid);
+      _fcmInitialized = true;
+      Logger.log('✅ FCM 자동 초기화 완료');
+    } catch (e) {
+      Logger.error('⚠️ FCM 자동 초기화 실패 (계속 진행): $e');
+      // 실패해도 앱 사용에는 지장 없음 (best-effort)
+    }
+  }
+
   // 로그아웃
   Future<void> signOut() async {
     try {
@@ -1270,6 +1301,7 @@ class AuthProvider with ChangeNotifier {
       _userData = null;
       _isLoading = false;
       _logoutStatus = null;
+      _fcmInitialized = false; // FCM 플래그 리셋
       Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
     }

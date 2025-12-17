@@ -337,8 +337,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             post.title,
             style: theme.textTheme.titleMedium?.copyWith(
               color: colorScheme.onSurface,
+              fontFamily: 'Pretendard',
               fontWeight: FontWeight.w700,
-              fontSize: 16,
+              fontSize: 18,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,

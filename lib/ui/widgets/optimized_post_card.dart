@@ -209,7 +209,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           borderRadius: BorderRadius.circular(AppTheme.radiusL),
           onTap: widget.onTap,
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(12),  // 상하좌우 모두 12px로 통일
+
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

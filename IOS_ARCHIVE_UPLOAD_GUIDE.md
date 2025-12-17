@@ -226,3 +226,4 @@ Archive 생성 완료 후:
 4. ✅ TestFlight 또는 App Store 제출 준비 완료
 
 **현재 상태**: 코드 수정 완료, Archive 생성 및 업로드 준비 완료
+

@@ -349,3 +349,4 @@ https://gaemini.github.io/wefilling-nochatbot/
 6. ✅ 심사 제출 준비 완료
 
 **다음 단계**: 스크린샷 준비 후 심사 제출
+

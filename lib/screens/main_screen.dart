@@ -307,51 +307,52 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                   ),
                 ],
-              ),
             ),
-            // 오른쪽 정렬을 위해 Spacer는 항상 유지
-            const Spacer(),
-            if (_selectedIndex <= 1) ...[
-              // 검색창 (고정 폭)
-              GestureDetector(
-                onTap: () => _navigateToSearchPage(),
-                child: Container(
-                  width: 180,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F6F8),
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: Colors.grey.shade200,
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 12),
-                      const Icon(
-                        Icons.search,
-                        color: Colors.black54,
-                        size: 18,
+          ),
+            const SizedBox(width: 12),
+            if (_selectedIndex <= 1)
+              // 검색창 (반응형)
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _navigateToSearchPage(),
+                  child: Container(
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F6F8),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.grey.shade200,
+                        width: 0.5,
                       ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            _getSearchHint(),
-                            style: const TextStyle(
-                              color: Colors.black54,
-                              fontSize: 13,
+                    ),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 12),
+                        const Icon(
+                          Icons.search,
+                          color: Colors.black54,
+                          size: 18,
+                        ),
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              _getSearchHint(),
+                              style: const TextStyle(
+                                color: Colors.black54,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                    ],
+                        const SizedBox(width: 12),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-            ],
+              )
+            else
+              const Spacer(),
+            const SizedBox(width: 12),
             // 알림 아이콘
             StreamBuilder<int>(
               stream: _notificationService.getUnreadNotificationCount(),

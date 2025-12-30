@@ -67,6 +67,40 @@ class AuthService {
     }
   }
 
+  // 이메일/비밀번호 회원가입
+  Future<UserCredential?> signUpWithEmail(String email, String password) async {
+    try {
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      Logger.error('이메일 회원가입 오류: ${e.code}', e);
+      rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
+    } catch (e) {
+      Logger.error('이메일 회원가입 오류', e);
+      return null;
+    }
+  }
+
+  // 이메일/비밀번호 로그인
+  Future<UserCredential?> signInWithEmail(String email, String password) async {
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      Logger.error('이메일 로그인 오류: ${e.code}', e);
+      rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
+    } catch (e) {
+      Logger.error('이메일 로그인 오류', e);
+      return null;
+    }
+  }
+
   // 로그아웃
   Future<void> signOut() async {
     await _googleSignIn.signOut();

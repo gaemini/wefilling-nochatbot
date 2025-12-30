@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
+import '../screens/email_signup_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
 
@@ -159,116 +160,18 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
         return;
       }
 
-      // 인증 성공 시 로그인 방법 선택 다이얼로그 표시
+      // 인증 성공 시 이메일 가입 화면으로 이동
       if (verified && mounted) {
         setState(() {
           _isLoading = false;
         });
         
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            contentPadding: const EdgeInsets.all(24),
-            title: Text(
-              AppLocalizations.of(context)!.verificationSuccess ?? "",
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 20,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF1E293B),
-              ),
-              textAlign: TextAlign.center,
-            ),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(
-                  Icons.check_circle_outline,
-                  size: 64,
-                  color: Color(0xFF10B981),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.chooseLoginMethod,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    color: Color(0xFF64748B),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 24),
-                // Apple 버튼
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      _continueWithApple();
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: const Icon(Icons.apple, size: 22),
-                    label: Text(
-                      AppLocalizations.of(context)!.continueWithApple,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                // Google 버튼
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(dialogContext);
-                      _continueWithGoogle();
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1E293B),
-                      side: const BorderSide(color: Color(0xFFE2E8F0), width: 1.5),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon: Container(
-                      width: 22,
-                      height: 22,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                      child: CustomPaint(
-                        painter: GoogleLogoPainter(),
-                      ),
-                    ),
-                    label: Text(
-                      AppLocalizations.of(context)!.continueWithGoogle ?? "",
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+        // EmailSignUpScreen으로 이동하며 인증된 한양메일 전달
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmailSignUpScreen(
+              verifiedHanyangEmail: _emailController.text.trim(),
             ),
           ),
         );

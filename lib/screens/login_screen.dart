@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
 import '../screens/main_screen.dart';
 import '../screens/hanyang_email_verification_screen.dart';
+import '../screens/email_login_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -441,6 +442,62 @@ class _LoginScreenState extends State<LoginScreen>
                                                 color: Colors.black87,
                                               ),
                                             ),
+                                            const SizedBox(width: 4),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+
+                                    const SizedBox(height: 16),
+
+                                    // 이메일 로그인 버튼
+                                    MaterialButton(
+                                      onPressed:
+                                          authProvider.isLoading
+                                              ? null
+                                              : () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) => const EmailLoginScreen(),
+                                                    ),
+                                                  );
+                                                },
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                      color: Colors.white,
+                                      elevation: 2,
+                                      highlightElevation: 4,
+                                      disabledColor: Colors.grey.shade200,
+                                      padding: EdgeInsets.zero,
+                                      child: Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 12,
+                                          horizontal: 16,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(30),
+                                          border: Border.all(color: Colors.grey.shade300),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          children: [
+                                            Icon(
+                                              Icons.email_outlined,
+                                              size: 20,
+                                              color: Colors.black87,
+                                            ),
+                                            const SizedBox(width: 12),
+                                          Text(
+                                            AppLocalizations.of(context)!.emailLogin,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
                                             const SizedBox(width: 4),
                                           ],
                                         ),

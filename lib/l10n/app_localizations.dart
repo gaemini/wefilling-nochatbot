@@ -4543,6 +4543,192 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'모임 찾기'**
   String get searchMeetupsHint;
+
+  /// No description provided for @emailLoginTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일로 로그인'**
+  String get emailLoginTitle;
+
+  /// No description provided for @emailLoginDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'등록된 이메일과 비밀번호로 로그인해주세요.'**
+  String get emailLoginDescription;
+
+  /// No description provided for @emailSignUpTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일로 회원가입'**
+  String get emailSignUpTitle;
+
+  /// No description provided for @emailSignUpDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인에 사용할 이메일과 비밀번호를 설정해주세요.'**
+  String get emailSignUpDescription;
+
+  /// No description provided for @emailId.
+  ///
+  /// In ko, this message translates to:
+  /// **'아이디(이메일)'**
+  String get emailId;
+
+  /// No description provided for @passwordHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'8자 이상'**
+  String get passwordHint;
+
+  /// No description provided for @passwordPlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호 입력'**
+  String get passwordPlaceholder;
+
+  /// No description provided for @passwordInputHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'8자 이상 입력'**
+  String get passwordInputHint;
+
+  /// No description provided for @confirmPasswordPlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호를 한 번 더 입력'**
+  String get confirmPasswordPlaceholder;
+
+  /// No description provided for @confirmPasswordHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호를 다시 입력해주세요'**
+  String get confirmPasswordHint;
+
+  /// No description provided for @emailHelperText.
+  ///
+  /// In ko, this message translates to:
+  /// **'자주 사용하는 이메일을 입력하세요'**
+  String get emailHelperText;
+
+  /// No description provided for @invalidEmailFormat.
+  ///
+  /// In ko, this message translates to:
+  /// **'올바른 이메일 형식이 아닙니다'**
+  String get invalidEmailFormat;
+
+  /// No description provided for @emailAlreadyUsed.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미 사용 중인 이메일입니다'**
+  String get emailAlreadyUsed;
+
+  /// No description provided for @passwordLengthRequirement.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호는 8자 이상이어야 합니다'**
+  String get passwordLengthRequirement;
+
+  /// No description provided for @signUpComplete.
+  ///
+  /// In ko, this message translates to:
+  /// **'회원가입 완료'**
+  String get signUpComplete;
+
+  /// No description provided for @loginFailedGeneric.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.'**
+  String get loginFailedGeneric;
+
+  /// No description provided for @loginErrorGeneric.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인 중 오류가 발생했습니다'**
+  String get loginErrorGeneric;
+
+  /// No description provided for @errorUserNotFound.
+  ///
+  /// In ko, this message translates to:
+  /// **'등록되지 않은 이메일입니다.'**
+  String get errorUserNotFound;
+
+  /// No description provided for @errorWrongPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호가 올바르지 않습니다.'**
+  String get errorWrongPassword;
+
+  /// No description provided for @errorInvalidEmail.
+  ///
+  /// In ko, this message translates to:
+  /// **'유효하지 않은 이메일 형식입니다.'**
+  String get errorInvalidEmail;
+
+  /// No description provided for @errorUserDisabled.
+  ///
+  /// In ko, this message translates to:
+  /// **'비활성화된 계정입니다. 관리자에게 문의하세요.'**
+  String get errorUserDisabled;
+
+  /// No description provided for @errorTooManyRequests.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.'**
+  String get errorTooManyRequests;
+
+  /// No description provided for @errorInvalidCredential.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 또는 비밀번호가 올바르지 않습니다.'**
+  String get errorInvalidCredential;
+
+  /// No description provided for @errorOperationNotAllowed.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 로그인 방식은 현재 비활성화되어 있습니다. Firebase 콘솔에서 활성화해주세요.'**
+  String get errorOperationNotAllowed;
+
+  /// No description provided for @pleaseEnterPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호를 입력해주세요'**
+  String get pleaseEnterPassword;
+
+  /// No description provided for @passwordMustBe8Chars.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호는 8자 이상이어야 합니다'**
+  String get passwordMustBe8Chars;
+
+  /// No description provided for @passwordsDoNotMatch.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호가 일치하지 않습니다'**
+  String get passwordsDoNotMatch;
+
+  /// No description provided for @pleaseEnterEmail.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일을 입력해주세요'**
+  String get pleaseEnterEmail;
+
+  /// No description provided for @validEmailFormat.
+  ///
+  /// In ko, this message translates to:
+  /// **'유효한 이메일 형식이 아닙니다'**
+  String get validEmailFormat;
+
+  /// No description provided for @emailAlreadyInUse.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.'**
+  String get emailAlreadyInUse;
+
+  /// No description provided for @weakPassword.
+  ///
+  /// In ko, this message translates to:
+  /// **'비밀번호가 너무 약합니다. 더 강력한 비밀번호를 사용해주세요.'**
+  String get weakPassword;
 }
 
 class _AppLocalizationsDelegate

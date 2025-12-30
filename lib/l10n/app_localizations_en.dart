@@ -2423,4 +2423,106 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get searchMeetupsHint => 'Find groups';
+
+  @override
+  String get emailLoginTitle => 'Email Login';
+
+  @override
+  String get emailLoginDescription =>
+      'Please log in with your registered email and password.';
+
+  @override
+  String get emailSignUpTitle => 'Email Sign Up';
+
+  @override
+  String get emailSignUpDescription =>
+      'Please set up your email and password for login.';
+
+  @override
+  String get emailId => 'Email ID';
+
+  @override
+  String get passwordHint => '8 characters or more';
+
+  @override
+  String get passwordPlaceholder => 'Enter password';
+
+  @override
+  String get passwordInputHint => '8 characters or more';
+
+  @override
+  String get confirmPasswordPlaceholder => 'Re-enter password';
+
+  @override
+  String get confirmPasswordHint => 'Please re-enter your password';
+
+  @override
+  String get emailHelperText => 'Enter your frequently used email';
+
+  @override
+  String get invalidEmailFormat => 'Invalid email format';
+
+  @override
+  String get emailAlreadyUsed => 'This email is already in use';
+
+  @override
+  String get passwordLengthRequirement =>
+      'Password must be at least 8 characters';
+
+  @override
+  String get signUpComplete => 'Complete Sign Up';
+
+  @override
+  String get loginFailedGeneric =>
+      'Login failed. Please check your email and password.';
+
+  @override
+  String get loginErrorGeneric => 'An error occurred during login';
+
+  @override
+  String get errorUserNotFound => 'Email not registered.';
+
+  @override
+  String get errorWrongPassword => 'Incorrect password.';
+
+  @override
+  String get errorInvalidEmail => 'Invalid email format.';
+
+  @override
+  String get errorUserDisabled =>
+      'This account has been disabled. Please contact support.';
+
+  @override
+  String get errorTooManyRequests =>
+      'Too many login attempts. Please try again later.';
+
+  @override
+  String get errorInvalidCredential => 'Invalid email or password.';
+
+  @override
+  String get errorOperationNotAllowed =>
+      'The given sign-in provider is disabled for this Firebase project. Enable it in the Firebase console, under the sign-in method tab of the Auth section.';
+
+  @override
+  String get pleaseEnterPassword => 'Please enter password';
+
+  @override
+  String get passwordMustBe8Chars => 'Password must be at least 8 characters';
+
+  @override
+  String get passwordsDoNotMatch => 'Passwords do not match';
+
+  @override
+  String get pleaseEnterEmail => 'Please enter email';
+
+  @override
+  String get validEmailFormat => 'Invalid email format';
+
+  @override
+  String get emailAlreadyInUse =>
+      'This email is already in use. Please use a different email.';
+
+  @override
+  String get weakPassword =>
+      'Password is too weak. Please use a stronger password.';
 }

@@ -13,8 +13,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/fcm_service.dart';
+import '../services/auth_service.dart';
 import '../config/app_config.dart';
-import '../utils/logger.dart';
 import '../utils/logger.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -22,6 +22,7 @@ class AuthProvider with ChangeNotifier {
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
+  final AuthService _authService = AuthService();
 
   User? _user;
   bool _isLoading = true;
@@ -458,6 +459,138 @@ class AuthProvider with ChangeNotifier {
       Logger.error('   에러 타입: ${e.runtimeType}');
       Logger.error('   에러 내용: $e');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 이메일/비밀번호 회원가입
+  Future<bool> signUpWithEmail({
+    required String email,
+    required String password,
+    required String hanyangEmail,
+  }) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      Logger.log('📧 이메일 회원가입 시작: $email');
+
+      // AuthService를 통해 Firebase Auth 계정 생성
+      final userCredential = await _authService.signUpWithEmail(email, password);
+
+      if (userCredential == null || userCredential.user == null) {
+        Logger.error('이메일 회원가입 실패: userCredential이 null입니다');
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      _user = userCredential.user;
+      Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
+
+      // Firestore에 사용자 문서 생성 (한양메일 정보 포함)
+      await _firestore.collection('users').doc(_user!.uid).set({
+        'uid': _user!.uid,
+        'email': email,
+        'hanyangEmail': hanyangEmail, // 인증받은 한양메일 저장
+        'emailVerified': true, // 한양메일 인증 완료
+        'displayName': '',
+        'photoURL': '',
+        'nickname': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+      });
+
+      Logger.log('✅ Firestore 사용자 문서 생성 완료');
+
+      await _loadUserData();
+      return true;
+    } on FirebaseAuthException catch (e) {
+      Logger.error('이메일 회원가입 오류 (FirebaseAuthException): ${e.code}', e);
+      _isLoading = false;
+      notifyListeners();
+      rethrow; // UI에서 구체적으로 처리
+    } catch (e) {
+      Logger.error('이메일 회원가입 오류: $e');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // 이메일/비밀번호 로그인
+  Future<bool> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      Logger.log('📧 이메일 로그인 시작: $email');
+
+      // AuthService를 통해 Firebase Auth 로그인
+      final userCredential = await _authService.signInWithEmail(email, password);
+
+      if (userCredential == null || userCredential.user == null) {
+        Logger.error('이메일 로그인 실패: userCredential이 null입니다');
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      _user = userCredential.user;
+      Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
+
+      // Firestore에서 사용자 문서 확인
+      final docSnapshot = await _firestore
+          .collection('users')
+          .doc(_user!.uid)
+          .get();
+
+      if (!docSnapshot.exists) {
+        Logger.error('❌ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
+        await _auth.signOut();
+        _user = null;
+        _userData = null;
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+
+      // 기존 사용자 정보 업데이트
+      final docExists = await _updateExistingUserDocument();
+      
+      if (!docExists) {
+        Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
+        await _auth.signOut();
+        _user = null;
+        _userData = null;
+        _isLoading = false;
+        notifyListeners();
+        return false;
+      }
+      
+      await _loadUserData();
+      
+      // FCM 초기화
+      try {
+        await FCMService().initialize(_user!.uid);
+        Logger.log('✅ FCM 초기화 완료');
+      } catch (e) {
+        Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
+      }
+
+      return _user != null;
+    } on FirebaseAuthException catch (e) {
+      Logger.error('이메일 로그인 오류 (FirebaseAuthException): ${e.code}', e);
+      _isLoading = false;
+      notifyListeners();
+      rethrow; // UI에서 구체적으로 처리
+    } catch (e) {
+      Logger.error('이메일 로그인 오류: $e');
       _isLoading = false;
       notifyListeners();
       return false;

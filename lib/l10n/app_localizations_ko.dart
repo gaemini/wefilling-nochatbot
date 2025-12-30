@@ -2359,4 +2359,98 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get searchMeetupsHint => '모임 찾기';
+
+  @override
+  String get emailLoginTitle => '이메일로 로그인';
+
+  @override
+  String get emailLoginDescription => '등록된 이메일과 비밀번호로 로그인해주세요.';
+
+  @override
+  String get emailSignUpTitle => '이메일로 회원가입';
+
+  @override
+  String get emailSignUpDescription => '로그인에 사용할 이메일과 비밀번호를 설정해주세요.';
+
+  @override
+  String get emailId => '아이디(이메일)';
+
+  @override
+  String get passwordHint => '8자 이상';
+
+  @override
+  String get passwordPlaceholder => '비밀번호 입력';
+
+  @override
+  String get passwordInputHint => '8자 이상 입력';
+
+  @override
+  String get confirmPasswordPlaceholder => '비밀번호를 한 번 더 입력';
+
+  @override
+  String get confirmPasswordHint => '비밀번호를 다시 입력해주세요';
+
+  @override
+  String get emailHelperText => '자주 사용하는 이메일을 입력하세요';
+
+  @override
+  String get invalidEmailFormat => '올바른 이메일 형식이 아닙니다';
+
+  @override
+  String get emailAlreadyUsed => '이미 사용 중인 이메일입니다';
+
+  @override
+  String get passwordLengthRequirement => '비밀번호는 8자 이상이어야 합니다';
+
+  @override
+  String get signUpComplete => '회원가입 완료';
+
+  @override
+  String get loginFailedGeneric => '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.';
+
+  @override
+  String get loginErrorGeneric => '로그인 중 오류가 발생했습니다';
+
+  @override
+  String get errorUserNotFound => '등록되지 않은 이메일입니다.';
+
+  @override
+  String get errorWrongPassword => '비밀번호가 올바르지 않습니다.';
+
+  @override
+  String get errorInvalidEmail => '유효하지 않은 이메일 형식입니다.';
+
+  @override
+  String get errorUserDisabled => '비활성화된 계정입니다. 관리자에게 문의하세요.';
+
+  @override
+  String get errorTooManyRequests => '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.';
+
+  @override
+  String get errorInvalidCredential => '이메일 또는 비밀번호가 올바르지 않습니다.';
+
+  @override
+  String get errorOperationNotAllowed =>
+      '이 로그인 방식은 현재 비활성화되어 있습니다. Firebase 콘솔에서 활성화해주세요.';
+
+  @override
+  String get pleaseEnterPassword => '비밀번호를 입력해주세요';
+
+  @override
+  String get passwordMustBe8Chars => '비밀번호는 8자 이상이어야 합니다';
+
+  @override
+  String get passwordsDoNotMatch => '비밀번호가 일치하지 않습니다';
+
+  @override
+  String get pleaseEnterEmail => '이메일을 입력해주세요';
+
+  @override
+  String get validEmailFormat => '유효한 이메일 형식이 아닙니다';
+
+  @override
+  String get emailAlreadyInUse => '이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.';
+
+  @override
+  String get weakPassword => '비밀번호가 너무 약합니다. 더 강력한 비밀번호를 사용해주세요.';
 }

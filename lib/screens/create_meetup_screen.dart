@@ -459,7 +459,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          AppLocalizations.of(context)!.optionalField ?? '(선택)',
+                          AppLocalizations.of(context)!.optionalField,
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.w400,
@@ -691,7 +691,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             },
                             validator: (value) {
                               if (value == null || value.isEmpty) {
-                                return '시간을 선택해주세요';
+                                return AppLocalizations.of(context)!.pleaseSelectTime;
                               }
                               return null;
                             },
@@ -1209,9 +1209,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                       ScaffoldMessenger.of(
                                         context,
                                       ).showSnackBar(
-                                        const SnackBar(
+                                        SnackBar(
                                           content: Text(
-                                            '모임 생성에 실패했습니다. 다시 시도해주세요.',
+                                            AppLocalizations.of(context)!.meetupCreateFailed,
                                           ),
                                         ),
                                       );

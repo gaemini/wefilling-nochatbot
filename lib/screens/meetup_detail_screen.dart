@@ -367,7 +367,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error ?? '오류'}: $e')));
+        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
@@ -557,7 +557,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                               if (mounted) {
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: URL을 열 수 없습니다'),
+                                    content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
                                   ),
                                 );
                               }
@@ -732,7 +732,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: URL을 열 수 없습니다'),
+                              content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
                             ),
                           );
                         }
@@ -1193,7 +1193,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: $e'),
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -1913,7 +1913,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       Logger.error('❌ 후기 확인 이동 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
         );
       }
     } finally {
@@ -2218,7 +2218,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
       Logger.error('❌ 후기 응답 처리 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error ?? "오류"}: $e')),
+          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
         );
       }
     }
@@ -2591,7 +2591,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         });
         
         // 에러 메시지를 더 명확하게 표시
-        String errorMessage = AppLocalizations.of(context)!.error ?? "오류";
+        String errorMessage = AppLocalizations.of(context)!.error;
         if (e.toString().contains('로그인이 필요합니다')) {
           errorMessage = AppLocalizations.of(context)!.loginRequired ?? "";
         } else if (e.toString().contains('후기를 찾을 수 없습니다')) {

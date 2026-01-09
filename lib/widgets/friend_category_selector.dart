@@ -20,7 +20,7 @@ class FriendCategorySelector extends StatelessWidget {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Text(
-          '친구 그룹이 없습니다. 친구 관리에서 그룹을 만들어보세요.',
+          AppLocalizations.of(context)!.noFriendGroupsYet,
           style: TextStyle(
             color: Colors.grey[600],
             fontSize: 14,

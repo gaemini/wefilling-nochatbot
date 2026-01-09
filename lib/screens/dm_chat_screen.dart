@@ -143,7 +143,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 잘못된 대화방 ID입니다'),
+              content: Text('${AppLocalizations.of(context)!.error}: 잘못된 대화방 ID입니다'),
               duration: const Duration(seconds: 3),
             ),
           );
@@ -221,7 +221,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
-                content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 대화방 참여자가 아닙니다'),
+                content: Text('${AppLocalizations.of(context)!.error}: 대화방 참여자가 아닙니다'),
                 duration: const Duration(seconds: 2),
               ),
             );
@@ -244,7 +244,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.error ?? "오류" + ': 접근 권한이 없습니다'),
+              content: Text('${AppLocalizations.of(context)!.error}: 접근 권한이 없습니다'),
               duration: const Duration(seconds: 2),
             ),
           );

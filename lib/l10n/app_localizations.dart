@@ -140,6 +140,12 @@ abstract class AppLocalizations {
   /// **'오프라인 상태에서 로그아웃되었습니다'**
   String get offlineLogout;
 
+  /// No description provided for @loggingOut.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그아웃 중...'**
+  String get loggingOut;
+
   /// No description provided for @email.
   ///
   /// In ko, this message translates to:
@@ -4729,6 +4735,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'비밀번호가 너무 약합니다. 더 강력한 비밀번호를 사용해주세요.'**
   String get weakPassword;
+
+  /// No description provided for @pleaseSelectTime.
+  ///
+  /// In ko, this message translates to:
+  /// **'시간을 선택해주세요'**
+  String get pleaseSelectTime;
+
+  /// No description provided for @meetupCreateFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 생성에 실패했습니다. 다시 시도해주세요.'**
+  String get meetupCreateFailed;
 }
 
 class _AppLocalizationsDelegate

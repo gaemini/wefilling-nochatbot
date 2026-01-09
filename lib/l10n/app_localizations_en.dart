@@ -31,6 +31,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get offlineLogout => 'Logged out in offline mode';
 
   @override
+  String get loggingOut => 'Logging out...';
+
+  @override
   String get email => 'Email';
 
   @override
@@ -2525,4 +2528,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get weakPassword =>
       'Password is too weak. Please use a stronger password.';
+
+  @override
+  String get pleaseSelectTime => 'Please select a time';
+
+  @override
+  String get meetupCreateFailed => 'Failed to create meetup. Please try again.';
 }

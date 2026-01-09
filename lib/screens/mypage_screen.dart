@@ -1316,7 +1316,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                 ),
                                 const SizedBox(height: 16),
                                 Text(
-                                  '로그아웃 중...',
+                                  AppLocalizations.of(context)!.loggingOut,
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.grey.shade700,

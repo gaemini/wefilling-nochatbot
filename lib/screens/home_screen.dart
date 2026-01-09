@@ -987,7 +987,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      meetup.hostNickname ?? '익명',
+                      meetup.hostNickname ?? AppLocalizations.of(context)!.anonymous,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,
@@ -1228,7 +1228,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(
-          isParticipating ? '나가기' : '참여하기',
+          isParticipating
+              ? AppLocalizations.of(context)!.leaveMeetup
+              : AppLocalizations.of(context)!.joinMeetup,
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 12,
@@ -1389,7 +1391,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
             imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
             imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
             content: reviewData['content'] ?? '',
-            authorName: reviewData['authorName'] ?? '익명',
+            authorName: reviewData['authorName'] ?? AppLocalizations.of(context)!.anonymous,
           ),
         ),
       );
@@ -1456,7 +1458,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error ?? '오류'}: $e'),
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 2),
           ),

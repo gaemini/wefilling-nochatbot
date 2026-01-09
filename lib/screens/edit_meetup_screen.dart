@@ -366,7 +366,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    AppLocalizations.of(context)!.optionalField ?? '(선택)',
+                    AppLocalizations.of(context)!.optionalField,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 13,

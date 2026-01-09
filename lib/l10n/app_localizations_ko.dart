@@ -30,6 +30,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get offlineLogout => '오프라인 상태에서 로그아웃되었습니다';
 
   @override
+  String get loggingOut => '로그아웃 중...';
+
+  @override
   String get email => '이메일';
 
   @override
@@ -2453,4 +2456,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get weakPassword => '비밀번호가 너무 약합니다. 더 강력한 비밀번호를 사용해주세요.';
+
+  @override
+  String get pleaseSelectTime => '시간을 선택해주세요';
+
+  @override
+  String get meetupCreateFailed => '모임 생성에 실패했습니다. 다시 시도해주세요.';
 }

@@ -2462,4 +2462,74 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get meetupCreateFailed => '모임 생성에 실패했습니다. 다시 시도해주세요.';
+
+  @override
+  String get postTypeSectionTitle => '게시글 유형';
+
+  @override
+  String get postTypeTextLabel => '일반';
+
+  @override
+  String get postTypePollLabel => '투표';
+
+  @override
+  String get postTypePollHelper => '투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.';
+
+  @override
+  String get pollQuestionHint => '투표 질문을 입력하세요';
+
+  @override
+  String get pollOptionsTitle => '투표 선택지';
+
+  @override
+  String pollOptionHint(int index) {
+    return '선택지 $index';
+  }
+
+  @override
+  String pollAddOptionLabel(int current, int max) {
+    return '선택지 추가 ($current/$max)';
+  }
+
+  @override
+  String get pollVoteLabel => '투표';
+
+  @override
+  String pollParticipantsCount(int count) {
+    return '$count명 참여';
+  }
+
+  @override
+  String get pollVoteButton => '투표하기';
+
+  @override
+  String get pollVoteSuccess => '투표가 완료되었습니다.';
+
+  @override
+  String get pollVoteFailed => '투표에 실패했습니다.';
+
+  @override
+  String get pollLoginToVote => '로그인 후 투표할 수 있어요.';
+
+  @override
+  String get pollVoteToSeeResults => '투표 후 결과를 확인할 수 있어요.';
+
+  @override
+  String get moreOptions => '더보기';
+
+  @override
+  String pollVotesUnit(int count) {
+    return '$count명';
+  }
+
+  @override
+  String get categorySelectAtLeastOne => '카테고리를 최소 1개 이상 선택해주세요.';
+
+  @override
+  String get postImageUploading => '이미지를 업로드 중입니다. 잠시만 기다려주세요...';
+
+  @override
+  String totalImageSizeWarning(String sizeMB) {
+    return '경고: 총 이미지 크기가 ${sizeMB}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.';
+  }
 }

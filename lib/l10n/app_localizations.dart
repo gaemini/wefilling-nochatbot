@@ -4747,6 +4747,126 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'모임 생성에 실패했습니다. 다시 시도해주세요.'**
   String get meetupCreateFailed;
+
+  /// No description provided for @postTypeSectionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 유형'**
+  String get postTypeSectionTitle;
+
+  /// No description provided for @postTypeTextLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'일반'**
+  String get postTypeTextLabel;
+
+  /// No description provided for @postTypePollLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표'**
+  String get postTypePollLabel;
+
+  /// No description provided for @postTypePollHelper.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.'**
+  String get postTypePollHelper;
+
+  /// No description provided for @pollQuestionHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표 질문을 입력하세요'**
+  String get pollQuestionHint;
+
+  /// No description provided for @pollOptionsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표 선택지'**
+  String get pollOptionsTitle;
+
+  /// No description provided for @pollOptionHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택지 {index}'**
+  String pollOptionHint(int index);
+
+  /// No description provided for @pollAddOptionLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택지 추가 ({current}/{max})'**
+  String pollAddOptionLabel(int current, int max);
+
+  /// No description provided for @pollVoteLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표'**
+  String get pollVoteLabel;
+
+  /// No description provided for @pollParticipantsCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명 참여'**
+  String pollParticipantsCount(int count);
+
+  /// No description provided for @pollVoteButton.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표하기'**
+  String get pollVoteButton;
+
+  /// No description provided for @pollVoteSuccess.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표가 완료되었습니다.'**
+  String get pollVoteSuccess;
+
+  /// No description provided for @pollVoteFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표에 실패했습니다.'**
+  String get pollVoteFailed;
+
+  /// No description provided for @pollLoginToVote.
+  ///
+  /// In ko, this message translates to:
+  /// **'로그인 후 투표할 수 있어요.'**
+  String get pollLoginToVote;
+
+  /// No description provided for @pollVoteToSeeResults.
+  ///
+  /// In ko, this message translates to:
+  /// **'투표 후 결과를 확인할 수 있어요.'**
+  String get pollVoteToSeeResults;
+
+  /// No description provided for @moreOptions.
+  ///
+  /// In ko, this message translates to:
+  /// **'더보기'**
+  String get moreOptions;
+
+  /// No description provided for @pollVotesUnit.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명'**
+  String pollVotesUnit(int count);
+
+  /// No description provided for @categorySelectAtLeastOne.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리를 최소 1개 이상 선택해주세요.'**
+  String get categorySelectAtLeastOne;
+
+  /// No description provided for @postImageUploading.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지를 업로드 중입니다. 잠시만 기다려주세요...'**
+  String get postImageUploading;
+
+  /// No description provided for @totalImageSizeWarning.
+  ///
+  /// In ko, this message translates to:
+  /// **'경고: 총 이미지 크기가 {sizeMB}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.'**
+  String totalImageSizeWarning(String sizeMB);
 }
 
 class _AppLocalizationsDelegate

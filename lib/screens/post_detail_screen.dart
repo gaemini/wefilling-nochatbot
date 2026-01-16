@@ -18,6 +18,7 @@ import 'dart:math' as math;
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
+import '../ui/widgets/poll_post_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
@@ -473,7 +474,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     color: const Color(0xFF111827),
                   ),
                   title: Text(
-                    _isSaved ? '저장 취소' : '게시글 저장',
+                    _isSaved
+                        ? (AppLocalizations.of(context)!.unsave)
+                        : (AppLocalizations.of(context)!.savePost),
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontWeight: FontWeight.w600,
@@ -493,8 +496,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       Icons.delete_outline,
                       color: Color(0xFFEF4444),
                     ),
-                    title: const Text(
-                      '게시글 삭제',
+                    title: Text(
+                      AppLocalizations.of(context)!.deletePost ?? "",
                       style: TextStyle(
                         fontFamily: 'Pretendard',
                         fontWeight: FontWeight.w600,
@@ -1151,7 +1154,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
-            tooltip: '더보기',
+            tooltip: AppLocalizations.of(context)!.moreOptions,
             onPressed: _openPostActionsSheet,
           ),
         ],
@@ -1388,6 +1391,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
                   ],
+
+                  // 투표형 게시글: 통계 아래, 캡션 위에 투표 UI 삽입
+                  if (_currentPost.type == 'poll')
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: PollPostWidget(postId: _currentPost.id),
+                    ),
 
                   // 캡션(본문) 위치: 통계 아래, 댓글 위 (스크린샷 스타일)
                   Padding(

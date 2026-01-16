@@ -31,6 +31,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentFocusNode = FocusNode();
   final List<File> _selectedImages = [];
   final PostService _postService = PostService();
+  final List<TextEditingController> _pollOptionControllers = [];
   
   // 친구 카테고리 관련
   final _friendCategoryService = FriendCategoryService();
@@ -44,6 +45,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   String _visibility = 'public'; // 'public' 또는 'category'
   bool _isAnonymous = false; // 익명 여부
   List<String> _selectedCategoryIds = []; // 선택된 카테고리 ID 목록
+  
+  // 게시글 타입 (일반/투표)
+  String _postType = 'text'; // 'text' | 'poll'
 
   @override
   void initState() {
@@ -57,6 +61,38 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     
     // 친구 카테고리 로드
     _loadFriendCategories();
+
+    // 투표 선택지 기본 2개 생성
+    _ensureMinimumPollOptions();
+  }
+
+  void _ensureMinimumPollOptions() {
+    if (_pollOptionControllers.isNotEmpty) return;
+    _addPollOption();
+    _addPollOption();
+  }
+
+  void _addPollOption() {
+    if (_pollOptionControllers.length >= 8) return;
+    final c = TextEditingController();
+    c.addListener(_checkCanSubmit);
+    _pollOptionControllers.add(c);
+    _checkCanSubmit();
+  }
+
+  void _removePollOption(int index) {
+    if (_pollOptionControllers.length <= 2) return;
+    final c = _pollOptionControllers.removeAt(index);
+    c.removeListener(_checkCanSubmit);
+    c.dispose();
+    _checkCanSubmit();
+  }
+
+  List<String> _getCleanedPollOptions() {
+    return _pollOptionControllers
+        .map((c) => c.text.trim())
+        .where((t) => t.isNotEmpty)
+        .toList();
   }
 
   // 친구 카테고리 로드
@@ -74,10 +110,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   // 제목과 본문이 모두 입력되었는지 확인
   void _checkCanSubmit() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
+    final pollOptions = _getCleanedPollOptions();
 
     setState(() {
-      // 제목 입력 제거: 텍스트가 있거나 이미지가 있으면 등록 가능
-      _canSubmit = contentNotEmpty || _selectedImages.isNotEmpty;
+      if (_postType == 'poll') {
+        // 투표: 질문(본문) + 선택지 2개 이상 필수, 이미지 첨부는 선택
+        _canSubmit = contentNotEmpty && pollOptions.length >= 2 && pollOptions.length <= 8;
+      } else {
+        // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
+        _canSubmit = contentNotEmpty || _selectedImages.isNotEmpty;
+      }
     });
   }
 
@@ -85,6 +127,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void dispose() {
     _contentController.dispose();
     _contentFocusNode.dispose();
+    for (final c in _pollOptionControllers) {
+      c.dispose();
+    }
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
@@ -123,7 +168,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '경고: 총 이미지 크기가 ${sizeInMB.toStringAsFixed(1)}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.',
+              AppLocalizations.of(context)!.totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
             ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
@@ -137,8 +182,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     // 카테고리별 공개인 경우 카테고리 선택 여부 확인
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('카테고리를 최소 1개 이상 선택해주세요.'),
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.categorySelectAtLeastOne),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 3),
         ),
@@ -162,8 +207,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         if (_selectedImages.isNotEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('이미지를 업로드 중입니다. 잠시만 기다려주세요...'),
+              SnackBar(
+                content: Text(AppLocalizations.of(context)!.postImageUploading),
                 duration: Duration(seconds: 5),
               ),
             );
@@ -178,6 +223,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           visibility: _visibility,
           isAnonymous: _isAnonymous,
           visibleToCategoryIds: _selectedCategoryIds,
+          type: _postType,
+          pollOptions: _postType == 'poll' ? _getCleanedPollOptions() : const [],
         );
 
         if (success) {
@@ -314,6 +361,97 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 작성 타입 선택 (일반/투표)
+              Container(
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16.0),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      AppLocalizations.of(context)!.postTypeSectionTitle,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: Text(
+                              AppLocalizations.of(context)!.postTypeTextLabel,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
+                            value: 'text',
+                            groupValue: _postType,
+                            onChanged: (value) {
+                              setState(() {
+                                _postType = value!;
+                              });
+                              _checkCanSubmit();
+                            },
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            activeColor: AppColors.pointColor,
+                          ),
+                        ),
+                        Expanded(
+                          child: RadioListTile<String>(
+                            title: Text(
+                              AppLocalizations.of(context)!.postTypePollLabel,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF374151),
+                              ),
+                            ),
+                            value: 'poll',
+                            groupValue: _postType,
+                            onChanged: (value) {
+                              setState(() {
+                                _postType = value!;
+                                _ensureMinimumPollOptions();
+                              });
+                              _checkCanSubmit();
+                            },
+                            contentPadding: EdgeInsets.zero,
+                            dense: true,
+                            activeColor: AppColors.pointColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (_postType == 'poll') ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        AppLocalizations.of(context)!.postTypePollHelper,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
               // 상단 Author 정보 영역 제거 (요구사항: 작성 화면 UI 단순화)
               // 공개 범위 선택
               Container(
@@ -604,6 +742,88 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   ),
                 ),
               const SizedBox(height: 16),
+
+              // 투표 선택지 입력 (투표 모드일 때만)
+              if (_postType == 'poll') ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  margin: const EdgeInsets.only(bottom: 16.0),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        AppLocalizations.of(context)!.pollOptionsTitle,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...List.generate(_pollOptionControllers.length, (index) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: _pollOptionControllers[index],
+                                  decoration: InputDecoration(
+                                    hintText: AppLocalizations.of(context)!.pollOptionHint(index + 1),
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (_pollOptionControllers.length > 2)
+                                IconButton(
+                                  onPressed: () => _removePollOption(index),
+                                  icon: const Icon(Icons.remove_circle_outline, color: Color(0xFFEF4444)),
+                                ),
+                            ],
+                          ),
+                        );
+                      }),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _pollOptionControllers.length >= 8
+                                  ? null
+                                  : () {
+                                      _addPollOption();
+                                    },
+                              icon: const Icon(Icons.add),
+                              label: Text(
+                                AppLocalizations.of(context)!.pollAddOptionLabel(
+                                  _pollOptionControllers.length,
+                                  8,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.pointColor,
+                                side: const BorderSide(color: Color(0xFFE5E7EB)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+
               // 내용 입력 필드 - 고정 높이로 시작하고 내용에 따라 스크롤
               Container(
                 height: 200, // 고정 높이 설정
@@ -621,7 +841,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   controller: _contentController,
                   focusNode: _contentFocusNode,
                   decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.enterContent,
+                    hintText: _postType == 'poll'
+                        ? AppLocalizations.of(context)!.pollQuestionHint
+                        : AppLocalizations.of(context)!.enterContent,
                     hintStyle: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,

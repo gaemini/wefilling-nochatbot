@@ -244,7 +244,9 @@ service cloud.firestore {
          // 좋아요 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy']) ||
          // 조회수 필드만 변경하는 경우 누구나 가능 (읽기 권한이 있으면)
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']));
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount']) ||
+         // 투표 카운트 업데이트 (1인 1표 로직은 앱/트랜잭션에서 처리)
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pollOptions', 'pollTotalVotes']));
       
       // 게시글 삭제: 작성자만 가능 (userId='deleted'는 삭제 불가)
       allow delete: if request.auth != null && 
@@ -263,6 +265,40 @@ service cloud.firestore {
         allow delete: if request.auth != null 
           && resource.data.userId != 'deleted'
           && request.auth.uid == resource.data.userId;
+      }
+
+      // 투표 참여(1인 1표): posts/{postId}/pollVotes/{uid}
+      match /pollVotes/{voteId} {
+        // 이 게시글을 "볼 수 있는지" (기존 posts 읽기 규칙과 동일)
+        function canReadThisPost() {
+          let postPath = /databases/$(database)/documents/posts/$(postId);
+          let post = get(postPath);
+          return exists(postPath) &&
+            (
+              (!post.data.keys().hasAny(['visibility']) || post.data.visibility == 'public') ||
+              (post.data.visibility == 'category' &&
+                (
+                  request.auth.uid == post.data.userId ||
+                  (post.data.keys().hasAny(['allowedUserIds']) && request.auth.uid in post.data.allowedUserIds)
+                )
+              )
+            );
+        }
+
+        // 본인만 자신의 투표 상태 읽기
+        allow read: if request.auth != null && request.auth.uid == voteId && canReadThisPost();
+
+        // 본인만 투표 생성 가능
+        // - 일부 계정 플로우에서 users 문서의 emailVerified 조건 때문에 투표가 막힐 수 있어,
+        //   MVP에서는 인증된 사용자라면 투표를 허용합니다.
+        allow create: if request.auth != null
+          && canReadThisPost()
+          && request.auth.uid == voteId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.optionId is string;
+
+        // 수정/삭제 금지 (MVP: 투표 변경/취소 불가)
+        allow update, delete: if false;
       }
     }
     

@@ -1117,4 +1117,63 @@
   "weakPassword": "비밀번호가 너무 약합니다. 더 강력한 비밀번호를 사용해주세요.",
   "pleaseSelectTime": "시간을 선택해주세요",
   "meetupCreateFailed": "모임 생성에 실패했습니다. 다시 시도해주세요."
+  ,
+  "postTypeSectionTitle": "게시글 유형",
+  "postTypeTextLabel": "일반",
+  "postTypePollLabel": "투표",
+  "postTypePollHelper": "투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.",
+  "pollQuestionHint": "투표 질문을 입력하세요",
+  "pollOptionsTitle": "투표 선택지",
+  "pollOptionHint": "선택지 {index}",
+  "@pollOptionHint": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "pollAddOptionLabel": "선택지 추가 ({current}/{max})",
+  "@pollAddOptionLabel": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteLabel": "투표",
+  "pollParticipantsCount": "{count}명 참여",
+  "@pollParticipantsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteButton": "투표하기",
+  "pollVoteSuccess": "투표가 완료되었습니다.",
+  "pollVoteFailed": "투표에 실패했습니다.",
+  "pollLoginToVote": "로그인 후 투표할 수 있어요.",
+  "pollVoteToSeeResults": "투표 후 결과를 확인할 수 있어요.",
+  "moreOptions": "더보기",
+  "pollVotesUnit": "{count}명",
+  "@pollVotesUnit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "categorySelectAtLeastOne": "카테고리를 최소 1개 이상 선택해주세요.",
+  "postImageUploading": "이미지를 업로드 중입니다. 잠시만 기다려주세요...",
+  "totalImageSizeWarning": "경고: 총 이미지 크기가 {sizeMB}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.",
+  "@totalImageSizeWarning": {
+    "placeholders": {
+      "sizeMB": {
+        "type": "String"
+      }
+    }
+  }
 }

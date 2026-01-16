@@ -199,6 +199,39 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     return const SizedBox.shrink();
   }
 
+  /// 투표형 게시글 배지
+  Widget _buildPollIndicator(Post post) {
+    if (post.type != 'poll') return const SizedBox.shrink();
+    final l10n = AppLocalizations.of(context)!;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.how_to_vote_outlined,
+            size: DesignTokens.iconSmall,
+            color: AppColors.pointColor,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            l10n.pollVoteLabel,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.pointColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -271,19 +304,23 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     int likes = post.likes;
                     int commentCount = post.commentCount;
                     int viewCount = post.viewCount;
+                    int pollTotalVotes = post.pollTotalVotes;
                     List<String> likedBy = post.likedBy;
 
                     final data = snapshot.data?.data();
                     if (data != null) {
-                      likes = (data['likes'] ?? likes) is int
-                          ? (data['likes'] as int)
-                          : likes;
-                      commentCount = (data['commentCount'] ?? commentCount) is int
-                          ? (data['commentCount'] as int)
-                          : commentCount;
-                      viewCount = (data['viewCount'] ?? viewCount) is int
-                          ? (data['viewCount'] as int)
-                          : viewCount;
+                      final dynamic rawLikes = data['likes'];
+                      if (rawLikes is int) likes = rawLikes;
+
+                      final dynamic rawCommentCount = data['commentCount'];
+                      if (rawCommentCount is int) commentCount = rawCommentCount;
+
+                      final dynamic rawViewCount = data['viewCount'];
+                      if (rawViewCount is int) viewCount = rawViewCount;
+
+                      final dynamic rawPollTotalVotes = data['pollTotalVotes'];
+                      if (rawPollTotalVotes is int) pollTotalVotes = rawPollTotalVotes;
+
                       likedBy = List<String>.from(data['likedBy'] ?? likedBy);
                     }
 
@@ -292,6 +329,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       commentCount: commentCount,
                       viewCount: viewCount,
                       likedBy: likedBy,
+                      pollTotalVotes: pollTotalVotes,
                     );
 
                     return _buildPostMeta(livePost, theme, colorScheme);
@@ -441,7 +479,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             ),
             
             // 공개 범위 배지를 오른쪽 상단에 배치
-            _buildVisibilityIndicator(post),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (post.type == 'poll') ...[
+                  _buildPollIndicator(post),
+                  const SizedBox(width: 6),
+                ],
+                _buildVisibilityIndicator(post),
+              ],
+            ),
           ],
         ),
         

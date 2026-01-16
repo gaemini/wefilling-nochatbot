@@ -2534,4 +2534,75 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get meetupCreateFailed => 'Failed to create meetup. Please try again.';
+
+  @override
+  String get postTypeSectionTitle => 'Post Type';
+
+  @override
+  String get postTypeTextLabel => 'Text';
+
+  @override
+  String get postTypePollLabel => 'Poll';
+
+  @override
+  String get postTypePollHelper =>
+      'Polls are one vote per person. You can add up to 8 options.';
+
+  @override
+  String get pollQuestionHint => 'Enter a poll question';
+
+  @override
+  String get pollOptionsTitle => 'Poll Options';
+
+  @override
+  String pollOptionHint(int index) {
+    return 'Option $index';
+  }
+
+  @override
+  String pollAddOptionLabel(int current, int max) {
+    return 'Add option ($current/$max)';
+  }
+
+  @override
+  String get pollVoteLabel => 'Poll';
+
+  @override
+  String pollParticipantsCount(int count) {
+    return '$count participated';
+  }
+
+  @override
+  String get pollVoteButton => 'Vote';
+
+  @override
+  String get pollVoteSuccess => 'Your vote has been submitted.';
+
+  @override
+  String get pollVoteFailed => 'Failed to vote.';
+
+  @override
+  String get pollLoginToVote => 'Please log in to vote.';
+
+  @override
+  String get pollVoteToSeeResults => 'Vote to see results.';
+
+  @override
+  String get moreOptions => 'More';
+
+  @override
+  String pollVotesUnit(int count) {
+    return '$count votes';
+  }
+
+  @override
+  String get categorySelectAtLeastOne => 'Please select at least one category.';
+
+  @override
+  String get postImageUploading => 'Uploading images. Please wait...';
+
+  @override
+  String totalImageSizeWarning(String sizeMB) {
+    return 'Warning: Total image size is ${sizeMB}MB. Posting may take a while.';
+  }
 }

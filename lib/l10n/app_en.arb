@@ -1121,4 +1121,63 @@
   "weakPassword": "Password is too weak. Please use a stronger password.",
   "pleaseSelectTime": "Please select a time",
   "meetupCreateFailed": "Failed to create meetup. Please try again."
+  ,
+  "postTypeSectionTitle": "Post Type",
+  "postTypeTextLabel": "Text",
+  "postTypePollLabel": "Poll",
+  "postTypePollHelper": "Polls are one vote per person. You can add up to 8 options.",
+  "pollQuestionHint": "Enter a poll question",
+  "pollOptionsTitle": "Poll Options",
+  "pollOptionHint": "Option {index}",
+  "@pollOptionHint": {
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "pollAddOptionLabel": "Add option ({current}/{max})",
+  "@pollAddOptionLabel": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteLabel": "Poll",
+  "pollParticipantsCount": "{count} participated",
+  "@pollParticipantsCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pollVoteButton": "Vote",
+  "pollVoteSuccess": "Your vote has been submitted.",
+  "pollVoteFailed": "Failed to vote.",
+  "pollLoginToVote": "Please log in to vote.",
+  "pollVoteToSeeResults": "Vote to see results.",
+  "moreOptions": "More",
+  "pollVotesUnit": "{count} votes",
+  "@pollVotesUnit": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "categorySelectAtLeastOne": "Please select at least one category.",
+  "postImageUploading": "Uploading images. Please wait...",
+  "totalImageSizeWarning": "Warning: Total image size is {sizeMB}MB. Posting may take a while.",
+  "@totalImageSizeWarning": {
+    "placeholders": {
+      "sizeMB": {
+        "type": "String"
+      }
+    }
+  }
 }

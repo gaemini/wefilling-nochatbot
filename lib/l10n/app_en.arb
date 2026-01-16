@@ -209,7 +209,7 @@
   "selectedGroupOnly": "Only friends in selected group can see this meetup",
   "selectedFriendGroupOnly": "Selected Friend Group Only",
   "noGroup": "No Group",
-  "groupSettings": "Group Settings",
+  "groupSettings": "Category Settings",
   "selectCategoriesToShare": "Select categories to share",
   "friendCategories": "Friend Categories",
   "noFriendCategories": "No friend categories created. Please create a category first.",
@@ -372,7 +372,7 @@
   "viewProfile": "View Profile",
   "removeFriendAction": "Remove Friend",
   "blockAction": "Block",
-  "groupSettingsFor": "{name}'s Group Settings",
+  "groupSettingsFor": "{name}'s Category Settings",
   "@groupSettingsFor": {
     "placeholders": {
       "name": {

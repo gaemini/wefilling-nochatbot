@@ -34,7 +34,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   // 게시글 카드 외부 여백(첨부 이미지처럼 좌우 여백을 더 주고, 카드 간 간격도 안정적으로)
   static const EdgeInsets _boardPostCardMargin =
-      EdgeInsets.symmetric(horizontal: 12, vertical: 4);
+      EdgeInsets.symmetric(horizontal: 12, vertical: 2);
   // 카드 내부 패딩(기본 12 유지, 필요 시 여기서만 조정)
   static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
   

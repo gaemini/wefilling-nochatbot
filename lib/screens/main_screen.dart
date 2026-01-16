@@ -9,7 +9,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
-import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
@@ -371,7 +370,7 @@ class _MainScreenState extends State<MainScreen> {
                         ),
                       );
                     },
-                    semanticLabel: '알림',
+                    semanticLabel: AppLocalizations.of(context)!.notifications,
                     visualDensity: VisualDensity.compact,
                   ),
                 );
@@ -386,6 +385,7 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: StreamBuilder<int>(
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, snapshot) {
+          final l10n = AppLocalizations.of(context)!;
           Logger.log('📊 StreamBuilder 상태:');
           Logger.log('  - hasData: ${snapshot.hasData}');
           Logger.error('  - hasError: ${snapshot.hasError}');
@@ -404,27 +404,27 @@ class _MainScreenState extends State<MainScreen> {
               BottomNavigationItem(
                 icon: Icons.menu,
                 selectedIcon: Icons.menu,
-                label: '게시글',
+                label: l10n.board,
               ),
               BottomNavigationItem(
                 icon: Icons.groups_outlined,
                 selectedIcon: Icons.groups,
-                label: '모임',
+                label: l10n.meetup,
               ),
               BottomNavigationItem(
                 icon: Icons.change_history_outlined,
                 selectedIcon: Icons.change_history,
-                label: '카테고리',
+                label: l10n.category,
               ),
               BottomNavigationItem(
                 icon: Icons.person_outline,
                 selectedIcon: Icons.person,
-                label: '내 정보',
+                label: l10n.myPage,
               ),
               BottomNavigationItem(
                 icon: Icons.chat_bubble_outline,
                 selectedIcon: Icons.chat_bubble,
-                label: 'DM',
+                label: l10n.dm,
                 badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
               ),
             ],

@@ -1355,7 +1355,7 @@ abstract class AppLocalizations {
   /// No description provided for @groupSettings.
   ///
   /// In ko, this message translates to:
-  /// **'그룹 설정'**
+  /// **'카테고리 설정'**
   String get groupSettings;
 
   /// No description provided for @selectCategoriesToShare.
@@ -2171,7 +2171,7 @@ abstract class AppLocalizations {
   /// No description provided for @groupSettingsFor.
   ///
   /// In ko, this message translates to:
-  /// **'{name}님의 그룹 설정'**
+  /// **'{name}님의 카테고리 설정'**
   String groupSettingsFor(String name);
 
   /// No description provided for @notInAnyGroup.

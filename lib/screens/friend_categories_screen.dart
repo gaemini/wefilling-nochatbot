@@ -517,13 +517,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           children: icons.map((iconData) {
             final iconName = iconData['name'] as String;
             final isSelected = iconName == selectedIcon;
-            // 아이콘별 기본 여백이 달라 시각적으로 크기가 달라 보일 수 있어,
-            // 세모/사각형은 조금 더 키워 동일한 인지 크기로 맞춘다.
-            final iconSize = switch (iconName) {
-              'shape_triangle' => 32.0,
-              'shape_square' => 28.0,
-              _ => 24.0,
-            };
+            // 모든 도형을 동일한 캔버스(CustomPaint)로 그리므로 크기 통일 가능
+            const iconSize = 26.0;
             
             return GestureDetector(
               onTap: () => onIconSelected(iconName),

@@ -642,7 +642,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noGroup => 'No Group';
 
   @override
-  String get groupSettings => 'Group Settings';
+  String get groupSettings => 'Category Settings';
 
   @override
   String get selectCategoriesToShare => 'Select categories to share';
@@ -1097,7 +1097,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String groupSettingsFor(String name) {
-    return '$name\'s Group Settings';
+    return '$name\'s Category Settings';
   }
 
   @override

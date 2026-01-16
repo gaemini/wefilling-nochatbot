@@ -637,7 +637,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noGroup => '그룹 없음';
 
   @override
-  String get groupSettings => '그룹 설정';
+  String get groupSettings => '카테고리 설정';
 
   @override
   String get selectCategoriesToShare => '공개할 카테고리 선택';
@@ -1077,7 +1077,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String groupSettingsFor(String name) {
-    return '$name님의 그룹 설정';
+    return '$name님의 카테고리 설정';
   }
 
   @override

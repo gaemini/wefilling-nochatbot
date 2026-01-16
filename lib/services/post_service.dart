@@ -25,6 +25,55 @@ class PostService {
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
 
+  List<PollOption> _parsePollOptions(dynamic raw) {
+    try {
+      if (raw is! List) return const [];
+      final options = <PollOption>[];
+      for (final item in raw) {
+        if (item is Map) {
+          options.add(PollOption.fromMap(Map<String, dynamic>.from(item)));
+        }
+      }
+      return options;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Post _buildPostFromFirestore(String id, Map<String, dynamic> data) {
+    DateTime createdAt = DateTime.now();
+    final rawCreatedAt = data['createdAt'];
+    if (rawCreatedAt is Timestamp) {
+      createdAt = rawCreatedAt.toDate();
+    } else if (rawCreatedAt is int) {
+      createdAt = DateTime.fromMillisecondsSinceEpoch(rawCreatedAt);
+    }
+
+    return Post(
+      id: id,
+      title: data['title'] ?? '',
+      content: data['content'] ?? '',
+      author: data['authorNickname'] ?? '익명',
+      authorNationality: data['authorNationality'] ?? '알 수 없음',
+      authorPhotoURL: data['authorPhotoURL'] ?? '',
+      category: data['category'] ?? '일반',
+      createdAt: createdAt,
+      userId: data['userId'] ?? '',
+      commentCount: data['commentCount'] ?? 0,
+      likes: data['likes'] ?? 0,
+      viewCount: data['viewCount'] ?? 0,
+      likedBy: List<String>.from(data['likedBy'] ?? []),
+      imageUrls: List<String>.from(data['imageUrls'] ?? []),
+      visibility: data['visibility'] ?? 'public',
+      isAnonymous: data['isAnonymous'] ?? false,
+      visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+      allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
+      type: data['type'] ?? 'text',
+      pollOptions: _parsePollOptions(data['pollOptions']),
+      pollTotalVotes: data['pollTotalVotes'] ?? 0,
+    );
+  }
+
   // 이미지를 포함한 게시글 추가
   Future<bool> addPost(
     String title,
@@ -33,6 +82,8 @@ class PostService {
     String visibility = 'public', // 공개 범위
     bool isAnonymous = false, // 익명 여부
     List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
+    String type = 'text', // 'text' | 'poll'
+    List<String> pollOptions = const [], // type == 'poll'일 때만 사용
   }) async {
     try {
       final user = _auth.currentUser;
@@ -133,7 +184,7 @@ class PostService {
       }
 
       // 게시글 데이터 생성
-      final postData = {
+      final Map<String, dynamic> postData = {
         'userId': user.uid,
         'authorNickname': nickname,
         'authorNationality': nationality, // 작성자 국적 추가
@@ -151,6 +202,36 @@ class PostService {
         'likedBy': [],
         'commentCount': 0,
       };
+
+      // 투표형 게시글 데이터
+      if (type == 'poll') {
+        final cleaned = pollOptions
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+
+        if (content.trim().isEmpty) {
+          throw Exception('투표 질문이 비어있습니다');
+        }
+        if (cleaned.length < 2) {
+          throw Exception('투표 선택지는 최소 2개 이상 필요합니다');
+        }
+        if (cleaned.length > 8) {
+          throw Exception('투표 선택지는 최대 8개까지 가능합니다');
+        }
+
+        postData['type'] = 'poll';
+        postData['pollOptions'] = List.generate(cleaned.length, (i) {
+          return {
+            'id': '$i',
+            'text': cleaned[i],
+            'votes': 0,
+          };
+        });
+        postData['pollTotalVotes'] = 0;
+      } else {
+        postData['type'] = 'text';
+      }
 
       // Firestore 데이터 저장 로깅
       Logger.log('게시글 저장: title=${title}, imageUrls=${imageUrls.length}개');
@@ -172,6 +253,77 @@ class PostService {
     }
   }
 
+  /// 투표 참여 (1인 1표, 마감 없음)
+  /// - posts/{postId}의 pollOptions/pollTotalVotes를 트랜잭션으로 업데이트
+  /// - posts/{postId}/pollVotes/{uid} 문서를 생성하여 중복 투표를 방지
+  Future<bool> voteOnPoll(String postId, String optionId) async {
+    final user = _auth.currentUser;
+    if (user == null) return false;
+
+    try {
+      final postRef = _firestore.collection('posts').doc(postId);
+      final voteRef = postRef.collection('pollVotes').doc(user.uid);
+
+      await _firestore.runTransaction((tx) async {
+        final postSnap = await tx.get(postRef);
+        if (!postSnap.exists) {
+          throw Exception('게시글이 존재하지 않습니다');
+        }
+
+        final data = postSnap.data() as Map<String, dynamic>;
+        final type = data['type'] ?? 'text';
+        if (type != 'poll') {
+          throw Exception('투표형 게시글이 아닙니다');
+        }
+
+        final voteSnap = await tx.get(voteRef);
+        if (voteSnap.exists) {
+          throw Exception('이미 투표했습니다');
+        }
+
+        final rawOptions = data['pollOptions'];
+        if (rawOptions is! List) {
+          throw Exception('투표 선택지 데이터가 올바르지 않습니다');
+        }
+
+        bool found = false;
+        final updatedOptions = rawOptions.map((item) {
+          if (item is! Map) return item;
+          final m = Map<String, dynamic>.from(item);
+          if (m['id']?.toString() == optionId) {
+            found = true;
+            final currentVotes = (m['votes'] is int) ? (m['votes'] as int) : 0;
+            m['votes'] = currentVotes + 1;
+          }
+          return m;
+        }).toList();
+
+        if (!found) {
+          throw Exception('선택지를 찾을 수 없습니다');
+        }
+
+        final currentTotal =
+            (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+
+        tx.update(postRef, {
+          'pollOptions': updatedOptions,
+          'pollTotalVotes': currentTotal + 1,
+        });
+
+        tx.set(voteRef, {
+          'userId': user.uid,
+          'optionId': optionId,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      });
+
+      return true;
+    } catch (e) {
+      Logger.error('투표 참여 오류: $e');
+      return false;
+    }
+  }
+
   // 모든 게시글 가져오기
   Stream<List<Post>> getAllPosts() {
     final user = _auth.currentUser;
@@ -185,28 +337,7 @@ class PostService {
 
       final posts = snapshot.docs.map((doc) {
         final data = doc.data();
-        final post = Post(
-          id: doc.id,
-          title: data['title'] ?? '',
-          content: data['content'] ?? '',
-          author: data['authorNickname'] ?? '익명',
-          authorNationality: data['authorNationality'] ?? '알 수 없음',
-          authorPhotoURL: data['authorPhotoURL'] ?? '',
-          createdAt: data['createdAt'] != null
-              ? (data['createdAt'] as Timestamp).toDate()
-              : DateTime.now(),
-          userId: data['userId'] ?? '',
-          commentCount: data['commentCount'] ?? 0,
-          likes: data['likes'] ?? 0,
-          viewCount: data['viewCount'] ?? 0,
-          likedBy: List<String>.from(data['likedBy'] ?? []),
-          imageUrls: List<String>.from(data['imageUrls'] ?? []),
-          visibility: data['visibility'] ?? 'public',
-          isAnonymous: data['isAnonymous'] ?? false,
-          visibleToCategoryIds:
-              List<String>.from(data['visibleToCategoryIds'] ?? []),
-          allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
-        );
+        final post = _buildPostFromFirestore(doc.id, data);
 
         // 비공개 게시글 로그
         if (post.visibility == 'category') {
@@ -293,28 +424,7 @@ class PostService {
         "PostService.getPostById - 게시글 데이터: ${data['id']} | 작성자: ${data['authorNickname']} | 국적: ${data['authorNationality'] ?? '없음'}",
       );
 
-      return Post(
-        id: doc.id,
-        title: data['title'] ?? '',
-        content: data['content'] ?? '',
-        author: data['authorNickname'] ?? '익명',
-        authorNationality: data['authorNationality'] ?? '알 수 없음',
-        authorPhotoURL: data['authorPhotoURL'] ?? '',
-        createdAt: data['createdAt'] != null
-            ? (data['createdAt'] as Timestamp).toDate()
-            : DateTime.now(),
-        userId: data['userId'] ?? '',
-        commentCount: data['commentCount'] ?? 0,
-        viewCount: data['viewCount'] ?? 0,
-        likes: data['likes'] ?? 0,
-        likedBy: List<String>.from(data['likedBy'] ?? []),
-        imageUrls: List<String>.from(data['imageUrls'] ?? []),
-        visibility: data['visibility'] ?? 'public',
-        isAnonymous: data['isAnonymous'] ?? false,
-        visibleToCategoryIds:
-            List<String>.from(data['visibleToCategoryIds'] ?? []),
-        allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
-      );
+      return _buildPostFromFirestore(doc.id, data);
     } catch (e) {
       Logger.error('게시글 조회 오류: $e');
       return null;
@@ -546,28 +656,7 @@ class PostService {
       final posts = snapshot.docs.map((doc) {
         try {
           final data = doc.data();
-          final post = Post(
-            id: doc.id,
-            title: data['title'] ?? '제목 없음',
-            content: data['content'] ?? '내용 없음',
-            author: data['authorNickname'] ?? '알 수 없음',
-            authorNationality: data['authorNationality'] ?? '',
-            authorPhotoURL: data['authorPhotoURL'] ?? '',
-            category: data['category'] ?? '일반',
-            createdAt:
-                (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-            userId: data['userId'] ?? '',
-            commentCount: data['commentCount'] ?? 0,
-            likes: data['likes'] ?? 0,
-            viewCount: data['viewCount'] ?? 0,
-            likedBy: List<String>.from(data['likedBy'] ?? []),
-            imageUrls: List<String>.from(data['imageUrls'] ?? []),
-            visibility: data['visibility'] ?? 'public',
-            isAnonymous: data['isAnonymous'] ?? false,
-            visibleToCategoryIds:
-                List<String>.from(data['visibleToCategoryIds'] ?? []),
-            allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
-          );
+          final post = _buildPostFromFirestore(doc.id, data);
 
           // 비공개 게시글 로그
           if (post.visibility == 'category') {
@@ -594,6 +683,9 @@ class PostService {
             isAnonymous: false,
             visibleToCategoryIds: [],
             likes: 0,
+            type: 'text',
+            pollOptions: const [],
+            pollTotalVotes: 0,
           );
         }
       }).toList();
@@ -732,29 +824,7 @@ class PostService {
               if (title.contains(lowercaseQuery) ||
                   content.contains(lowercaseQuery) ||
                   author.contains(lowercaseQuery)) {
-                return Post(
-                  id: doc.id,
-                  title: data['title'] ?? '제목 없음',
-                  content: data['content'] ?? '내용 없음',
-                  author: data['authorNickname'] ?? '알 수 없음',
-                  authorNationality: data['authorNationality'] ?? '',
-                  authorPhotoURL: data['authorPhotoURL'] ?? '',
-                  category: data['category'] ?? '일반',
-                  createdAt: (data['createdAt'] as Timestamp?)?.toDate() ??
-                      DateTime.now(),
-                  userId: data['userId'] ?? '',
-                  commentCount: data['commentCount'] ?? 0,
-                  viewCount: data['viewCount'] ?? 0,
-                  likes: data['likes'] ?? 0,
-                  likedBy: List<String>.from(data['likedBy'] ?? []),
-                  imageUrls: List<String>.from(data['imageUrls'] ?? []),
-                  visibility: data['visibility'] ?? 'public',
-                  isAnonymous: data['isAnonymous'] ?? false,
-                  visibleToCategoryIds:
-                      List<String>.from(data['visibleToCategoryIds'] ?? []),
-                  allowedUserIds:
-                      List<String>.from(data['allowedUserIds'] ?? []),
-                );
+                return _buildPostFromFirestore(doc.id, data);
               }
               return null;
             } catch (e) {
@@ -849,28 +919,7 @@ class PostService {
 
           if (postDoc.exists) {
             final data = postDoc.data()!;
-            savedPosts.add(Post(
-              id: postDoc.id,
-              title: data['title'] ?? '제목 없음',
-              content: data['content'] ?? '내용 없음',
-              author: data['authorNickname'] ?? '알 수 없음',
-              authorNationality: data['authorNationality'] ?? '',
-              authorPhotoURL: data['authorPhotoURL'] ?? '',
-              category: data['category'] ?? '일반',
-              createdAt:
-                  (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-              userId: data['userId'] ?? '',
-              commentCount: data['commentCount'] ?? 0,
-              likes: data['likes'] ?? 0,
-              viewCount: data['viewCount'] ?? 0,
-              likedBy: List<String>.from(data['likedBy'] ?? []),
-              imageUrls: List<String>.from(data['imageUrls'] ?? []),
-              visibility: data['visibility'] ?? 'public',
-              isAnonymous: data['isAnonymous'] ?? false,
-              visibleToCategoryIds:
-                  List<String>.from(data['visibleToCategoryIds'] ?? []),
-              allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
-            ));
+            savedPosts.add(_buildPostFromFirestore(postDoc.id, data));
           }
         } catch (e) {
           Logger.error('저장된 게시글 로드 오류: $e');

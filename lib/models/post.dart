@@ -9,6 +9,38 @@ import 'package:intl/intl.dart';
 import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
 
+class PollOption {
+  final String id;
+  final String text;
+  final int votes;
+
+  const PollOption({
+    required this.id,
+    required this.text,
+    this.votes = 0,
+  });
+
+  PollOption copyWith({String? id, String? text, int? votes}) {
+    return PollOption(
+      id: id ?? this.id,
+      text: text ?? this.text,
+      votes: votes ?? this.votes,
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    return {'id': id, 'text': text, 'votes': votes};
+  }
+
+  factory PollOption.fromMap(Map<String, dynamic> map) {
+    return PollOption(
+      id: map['id']?.toString() ?? '',
+      text: map['text']?.toString() ?? '',
+      votes: (map['votes'] is int) ? (map['votes'] as int) : 0,
+    );
+  }
+}
+
 class Post {
   final String id;
   final String title;
@@ -24,6 +56,13 @@ class Post {
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
+  
+  // 게시글 타입 (기본: text)
+  final String type; // 'text' | 'poll'
+
+  // 투표형 게시글 데이터 (type == 'poll'일 때 사용)
+  final List<PollOption> pollOptions;
+  final int pollTotalVotes;
   
   // 공개 범위 관련 필드
   final String visibility; // 'public' 또는 'category'
@@ -50,6 +89,9 @@ class Post {
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
+    this.type = 'text',
+    this.pollOptions = const [],
+    this.pollTotalVotes = 0,
     this.visibility = 'public', // 공개 범위 (기본값: 전체 공개)
     this.isAnonymous = false, // 익명 여부 (기본값: 실명)
     this.visibleToCategoryIds = const [], // 공개할 카테고리 목록 (기본값: 빈 리스트)
@@ -140,6 +182,9 @@ class Post {
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
+    String? type,
+    List<PollOption>? pollOptions,
+    int? pollTotalVotes,
     String? visibility,
     bool? isAnonymous,
     List<String>? visibleToCategoryIds,
@@ -160,6 +205,9 @@ class Post {
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
+      type: type ?? this.type,
+      pollOptions: pollOptions ?? this.pollOptions,
+      pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
       visibility: visibility ?? this.visibility,
       isAnonymous: isAnonymous ?? this.isAnonymous,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
@@ -184,6 +232,9 @@ class Post {
       'likes': likes,
       'likedBy': likedBy,
       'imageUrls': imageUrls,
+      'type': type,
+      'pollOptions': pollOptions.map((o) => o.toMap()).toList(),
+      'pollTotalVotes': pollTotalVotes,
       'visibility': visibility,
       'isAnonymous': isAnonymous,
       'visibleToCategoryIds': visibleToCategoryIds,
@@ -193,6 +244,14 @@ class Post {
 
   // Map에서 Post 객체 생성 (캐싱용)
   factory Post.fromMap(Map<String, dynamic> map, String id) {
+    final dynamic rawPollOptions = map['pollOptions'];
+    final List<PollOption> parsedPollOptions = (rawPollOptions is List)
+        ? rawPollOptions
+            .whereType<Map>()
+            .map((m) => PollOption.fromMap(Map<String, dynamic>.from(m)))
+            .toList()
+        : const [];
+
     return Post(
       id: id,
       title: map['title'] ?? '',
@@ -210,6 +269,9 @@ class Post {
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),
+      type: map['type'] ?? 'text',
+      pollOptions: parsedPollOptions,
+      pollTotalVotes: map['pollTotalVotes'] ?? 0,
       visibility: map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
       visibleToCategoryIds: List<String>.from(map['visibleToCategoryIds'] ?? []),

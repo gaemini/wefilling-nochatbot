@@ -26,7 +26,6 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  final _titleController = TextEditingController();
   final _contentController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _contentFocusNode = FocusNode();
@@ -50,7 +49,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void initState() {
     super.initState();
     // 텍스트 컨트롤러에 리스너 추가
-    _titleController.addListener(_checkCanSubmit);
     _contentController.addListener(_checkCanSubmit);
     // 포커스 노드에 리스너 추가
     _contentFocusNode.addListener(() {
@@ -75,17 +73,16 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   // 제목과 본문이 모두 입력되었는지 확인
   void _checkCanSubmit() {
-    final titleNotEmpty = _titleController.text.trim().isNotEmpty;
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
 
     setState(() {
-      _canSubmit = titleNotEmpty && contentNotEmpty;
+      // 제목 입력 제거: 텍스트가 있거나 이미지가 있으면 등록 가능
+      _canSubmit = contentNotEmpty || _selectedImages.isNotEmpty;
     });
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
     _contentController.dispose();
     _contentFocusNode.dispose();
     _categoriesSubscription?.cancel();
@@ -106,6 +103,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
       // 이미지 선택 후 용량 확인 및 경고
       _checkImagesSize();
+
+      // 이미지 선택만으로도 등록 가능 상태가 바뀔 수 있음
+      _checkCanSubmit();
     }
   }
 
@@ -172,7 +172,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
         // PostService를 사용하여 게시글 저장
         final success = await _postService.addPost(
-          _titleController.text.trim(),
+          '', // 제목 입력 제거
           _contentController.text.trim(),
           imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
           visibility: _visibility,
@@ -232,14 +232,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     setState(() {
       _selectedImages.removeAt(index);
     });
+    _checkCanSubmit();
   }
 
   @override
   Widget build(BuildContext context) {
-    // 현재 유저의 닉네임 가져오기
-    final authProvider = Provider.of<AuthProvider>(context);
-    final nickname = authProvider.userData?['nickname'] ?? '익명';
-    final photoURL = authProvider.user?.photoURL;
+    // AuthProvider는 익명/공개범위 등 동작에 사용되므로 유지 (상단 Author UI는 제거)
+    Provider.of<AuthProvider>(context);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -315,81 +314,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 작성자 정보 표시
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                margin: const EdgeInsets.only(bottom: 16.0),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFE5E7EB),
-                      ),
-                      child: photoURL != null
-                          ? ClipOval(
-                              child: Image.network(
-                                photoURL,
-                                width: 40,
-                                height: 40,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
-                                  Icons.person,
-                                  size: 20,
-                                  color: Color(0xFF6B7280),
-                                ),
-                              ),
-                            )
-                          : const Icon(
-                              Icons.person,
-                              size: 20,
-                              color: Color(0xFF6B7280),
-                            ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      nickname,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                    const Spacer(),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        AppLocalizations.of(context)!.author,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          color: AppColors.pointColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
+              // 상단 Author 정보 영역 제거 (요구사항: 작성 화면 UI 단순화)
               // 공개 범위 선택
               Container(
                 padding: const EdgeInsets.all(16),
@@ -599,48 +524,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 ),
               ),
               
-              // 제목 입력 필드
-              TextField(
-                controller: _titleController,
-                decoration: InputDecoration(
-                  hintText: AppLocalizations.of(context)!.enterTitle,
-                  hintStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w400,
-                    color: Color(0xFF9CA3AF),
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: AppColors.pointColor,
-                      width: 2,
-                    ),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 16,
-                  ),
-                  fillColor: Colors.white,
-                  filled: true,
-                ),
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF111827),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const SizedBox(height: 16),
+              // 제목 입력 필드 제거 (요구사항: 제목 없이 작성)
+              const SizedBox(height: 8),
               // 이미지 첨부 버튼
               ElevatedButton.icon(
                 onPressed: _selectImages,

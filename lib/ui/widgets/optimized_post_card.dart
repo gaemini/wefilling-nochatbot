@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/post.dart';
 import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
@@ -23,6 +24,8 @@ class OptimizedPostCard extends StatefulWidget {
   final VoidCallback onTap;
   final bool preloadImage;
   final bool useGlassmorphism;
+  final EdgeInsetsGeometry margin;
+  final EdgeInsetsGeometry contentPadding;
 
   const OptimizedPostCard({
     super.key,
@@ -31,6 +34,8 @@ class OptimizedPostCard extends StatefulWidget {
     required this.onTap,
     this.preloadImage = false,
     this.useGlassmorphism = false,
+    this.margin = const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    this.contentPadding = const EdgeInsets.all(12),
   });
 
   factory OptimizedPostCard.glassmorphism({
@@ -59,11 +64,20 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final DMService _dmService = DMService();
   bool _isSaved = false;
   bool _isLoading = false;
+  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _postDocStream;
+
+  // 카드/이미지 라운드 (스크린샷 기준으로 조금 더 둥글게)
+  static const double _cardRadius = 6;
+  static const double _imageRadius = 6;
 
   @override
   void initState() {
     super.initState();
     _checkSavedStatus();
+    _postDocStream = FirebaseFirestore.instance
+        .collection('posts')
+        .doc(widget.post.id)
+        .snapshots();
   }
 
   Future<void> _checkSavedStatus() async {
@@ -190,26 +204,28 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final post = widget.post;
+    final unifiedText = _getUnifiedBodyText(post);
+    final headlineText = unifiedText.split('\n').first.trim();
 
     // 그림자 로직 제거 - 색상으로만 구분
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      margin: widget.margin,
       decoration: BoxDecoration(
         color: Colors.white, // 모든 게시글 흰색 배경
-        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        borderRadius: BorderRadius.circular(_cardRadius),
         // 그림자 없음
         // 그라데이션 없음
         // 테두리 없음
       ),
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(AppTheme.radiusL),
+        borderRadius: BorderRadius.circular(_cardRadius),
         child: InkWell(
-          borderRadius: BorderRadius.circular(AppTheme.radiusL),
+          borderRadius: BorderRadius.circular(_cardRadius),
           onTap: widget.onTap,
           child: Padding(
-            padding: const EdgeInsets.all(12),  // 상하좌우 모두 12px로 통일
+            padding: widget.contentPadding,  // 외부에서 제어 가능 (기본값은 기존과 동일)
 
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -217,19 +233,110 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 // 작성자 정보와 제목을 한 줄에 표시
                 _buildAuthorInfoWithTitle(post, theme, colorScheme),
 
+                // 스크린샷처럼 이미지 카드의 텍스트는 한 줄만(제목 영역은 없고, 내용의 첫 줄만 노출)
+                if (post.imageUrls.isNotEmpty && headlineText.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    headlineText,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: const Color(0xFF111827),
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      height: 1.25,
+                      letterSpacing: -0.2,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+
                 // 이미지 (있는 경우)
                 if (post.imageUrls.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   _buildPostImages(post.imageUrls),
+                ] else ...[
+                  // 이미지가 없는 글은 본문 미리보기를 2줄로 고정해 카드 높이의 통일감을 맞춤
+                  const SizedBox(height: 10),
+                  _buildTextOnlyPreview(unifiedText, theme, colorScheme),
                 ],
 
                 const SizedBox(height: 12),
 
                 // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
-                _buildPostMeta(post, theme, colorScheme),
+                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _postDocStream,
+                  builder: (context, snapshot) {
+                    // 기본값은 리스트에서 받은 post를 사용
+                    int likes = post.likes;
+                    int commentCount = post.commentCount;
+                    int viewCount = post.viewCount;
+                    List<String> likedBy = post.likedBy;
+
+                    final data = snapshot.data?.data();
+                    if (data != null) {
+                      likes = (data['likes'] ?? likes) is int
+                          ? (data['likes'] as int)
+                          : likes;
+                      commentCount = (data['commentCount'] ?? commentCount) is int
+                          ? (data['commentCount'] as int)
+                          : commentCount;
+                      viewCount = (data['viewCount'] ?? viewCount) is int
+                          ? (data['viewCount'] as int)
+                          : viewCount;
+                      likedBy = List<String>.from(data['likedBy'] ?? likedBy);
+                    }
+
+                    final livePost = post.copyWith(
+                      likes: likes,
+                      commentCount: commentCount,
+                      viewCount: viewCount,
+                      likedBy: likedBy,
+                    );
+
+                    return _buildPostMeta(livePost, theme, colorScheme);
+                  },
+                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 기존 title이 남아있는 게시글은 title을 본문 앞에 붙여 "본문처럼" 처리
+  String _getUnifiedBodyText(Post post) {
+    final t = post.title.trim();
+    final c = post.content.trim();
+    if (t.isEmpty) return c;
+    if (c.isEmpty) return t;
+    return '$t\n$c';
+  }
+
+  /// 이미지가 없는 게시글(텍스트만)의 본문 미리보기: 2줄 고정 + overflow는 ...
+  /// - 1줄인 경우에도 높이를 유지해 카드 높이가 들쭉날쭉하지 않게 함
+  Widget _buildTextOnlyPreview(String preview, ThemeData theme, ColorScheme colorScheme) {
+    final trimmed = preview.trim();
+    if (trimmed.isEmpty) return const SizedBox.shrink();
+
+    // 디자인상 안정적인 높이(2줄)를 확보하기 위한 최소 높이
+    // (폰트 크기/line-height 변동을 고려해 약간 여유를 둠)
+    const double twoLineMinHeight = 40;
+
+    return SizedBox(
+      height: twoLineMinHeight,
+      child: Text(
+        trimmed,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: const Color(0xFF111827),
+          fontFamily: 'Pretendard',
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+          letterSpacing: -0.2,
         ),
       ),
     );
@@ -298,9 +405,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       Flexible(
                         child: Text(
                           authorName,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            color: colorScheme.onSurface,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
                             fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                            height: 1.05,
+                            letterSpacing: -0.2,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -308,9 +419,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       ),
                       const SizedBox(width: 6),
                       // 국적 표시 (항상)
-                      CountryFlagCircle(
-                        nationality: post.authorNationality,
-                        size: 20,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: CountryFlagCircle(
+                          nationality: post.authorNationality,
+                          // 닉네임과 시각적 크기를 맞추기 위해 국기 이모지를 조금 더 키움
+                          size: 22,
+                        ),
                       ),
                     ],
                   ),
@@ -330,21 +445,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           ],
         ),
         
-        // 게시글 제목 (프로필 아래에 표시)
-        if (post.title.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text(
-            post.title,
-            style: theme.textTheme.titleMedium?.copyWith(
-              color: colorScheme.onSurface,
-              fontFamily: 'Pretendard',
-              fontWeight: FontWeight.w700,
-              fontSize: 18,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+        // 제목 영역 제거 (요구사항: 제목을 없애고, 기존 title은 본문으로 인식)
       ],
     );
   }
@@ -353,130 +454,170 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget _buildPostImages(List<String> imageUrls) {
     if (imageUrls.isEmpty) return const SizedBox.shrink();
 
-    if (imageUrls.length == 1) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Image.network(
-            imageUrls.first,
-            fit: BoxFit.cover,
-            loadingBuilder: (context, child, loadingProgress) {
-              if (loadingProgress == null) return child;
-              return Container(
+    // 스크린샷처럼 한 번에 보이는 이미지가 더 크게 보이도록 비율을 더 세로로 조정 (4:3)
+    // 여러 장 첨부되더라도 첫 장만 표시하고, 오른쪽 상단에 "여러 장" 아이콘 배지를 표시
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_imageRadius),
+      child: Stack(
+        children: [
+          AspectRatio(
+            aspectRatio: 4 / 3,
+            child: Image.network(
+              imageUrls.first,
+              fit: BoxFit.cover,
+              loadingBuilder: (context, child, loadingProgress) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  color: Colors.grey[300],
+                  child: const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                );
+              },
+              errorBuilder: (_, __, ___) => Container(
                 color: Colors.grey[300],
-                child: const Center(
-                  child: CircularProgressIndicator(),
-                ),
-              );
-            },
-            errorBuilder: (_, __, ___) => Container(
-              color: Colors.grey[300],
-              child: const Icon(Icons.image_not_supported),
+                child: const Icon(Icons.image_not_supported),
+              ),
             ),
           ),
-        ),
-      );
-    }
-
-    // 여러 이미지의 경우 그리드로 표시
-    return SizedBox(
-      height: 120,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: imageUrls.length,
-        itemBuilder: (context, index) {
-          return Container(
-            width: 120,
-            margin: EdgeInsets.only(right: index < imageUrls.length - 1 ? 8 : 0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                imageUrls[index],
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: Colors.grey[300],
-                  child: const Icon(Icons.image_not_supported),
+          if (imageUrls.length > 1)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.35),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '1/${imageUrls.length}',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    height: 1,
+                  ),
                 ),
               ),
             ),
-          );
-        },
+        ],
       ),
     );
   }
 
   /// 게시글 메타 정보 빌드
   Widget _buildPostMeta(Post post, ThemeData theme, ColorScheme colorScheme) {
-    return Row(
-      children: [
-        // 좋아요 수
-        if (post.likes > 0) ...[
-          Icon(
-            IconStyles.favoriteFilled,
-            size: 16,
-            color: BrandColors.error,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '${post.likes}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isLikedByMe = currentUser != null && post.isLikedByUser(currentUser.uid);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 화면 폭에 따라 자연스럽게 좁아지는 고정 폭/간격
+        final w = constraints.maxWidth;
+        // 기존 값이 넓게 보여서 더 촘촘하게 조정
+        final itemWidth = w < 330 ? 32.0 : 36.0; // 좋아요/댓글
+        final eyeWidth = w < 330 ? 36.0 : 40.0; // 조회수(숫자 자리 여유 조금)
+        final gap = w < 330 ? 4.0 : 6.0;
+        const iconSize = 15.0;
+
+        Widget metaItem({
+          required IconData icon,
+          required bool active,
+          required int count,
+          required Color activeColor,
+          required Color inactiveColor,
+          required double width,
+        }) {
+          return SizedBox(
+            width: width,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  size: iconSize,
+                  color: active ? activeColor : inactiveColor,
+                ),
+                const SizedBox(width: 3),
+                if (count > 0)
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$count',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ),
-          const SizedBox(width: 16),
-        ],
-        
-        // 댓글 수
-        if (post.commentCount > 0) ...[
-          Icon(
-            Icons.chat_bubble_outline,
-            size: DesignTokens.iconSmall,
-            color: BrandColors.neutral500,
-          ),
-          const SizedBox(width: 4),
-          Text(
-            '${post.commentCount}',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+          );
+        }
+
+        return Row(
+          children: [
+            // 좋아요 (아이콘 위치 고정, 숫자는 0이면 숨김, 빨간색은 '내가 눌렀을 때만')
+            metaItem(
+              icon: isLikedByMe ? Icons.favorite : Icons.favorite_border,
+              active: isLikedByMe,
+              count: post.likes,
+              activeColor: BrandColors.error,
+              inactiveColor: BrandColors.neutral500,
+              width: itemWidth,
             ),
-          ),
-          const SizedBox(width: 16),
-        ],
-        
-        // 조회수
-        Icon(
-          Icons.remove_red_eye_outlined,
-          size: 16,
-          color: BrandColors.neutral500,
-        ),
-        const SizedBox(width: 4),
-        Text(
-          '${post.viewCount}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-        
-        const Spacer(),
-        
-        // 카테고리 (있는 경우, '일반'은 제외)
-        if (post.category.isNotEmpty && post.category != '일반')
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
+            SizedBox(width: gap),
+
+            // 댓글 (아이콘 위치 고정, 숫자는 0이면 숨김)
+            metaItem(
+              icon: Icons.chat_bubble_outline,
+              active: false,
+              count: post.commentCount,
+              activeColor: BrandColors.neutral500,
+              inactiveColor: BrandColors.neutral500,
+              width: itemWidth,
             ),
-            child: Text(
-              post.category,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w500,
+            SizedBox(width: gap),
+
+            // 조회수 (아이콘 위치 고정, 숫자는 0이면 숨김)
+            metaItem(
+              icon: Icons.remove_red_eye_outlined,
+              active: false,
+              count: post.viewCount,
+              activeColor: BrandColors.neutral500,
+              inactiveColor: BrandColors.neutral500,
+              width: eyeWidth,
+            ),
+
+            const Spacer(),
+
+            // 카테고리 (있는 경우, '일반'은 제외)
+            if (post.category.isNotEmpty && post.category != '일반')
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  post.category,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.onPrimaryContainer,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
-            ),
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 

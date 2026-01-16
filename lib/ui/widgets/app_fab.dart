@@ -59,7 +59,8 @@ class AppFab extends StatelessWidget {
     bool enabled = true,
   }) {
     return AppFab(
-      icon: IconStyles.article,
+      // 게시글 작성 버튼은 "+" 형태로 (요구사항)
+      icon: IconStyles.add,
       onPressed: onPressed,
       semanticLabel: '새 글 작성하기',
       tooltip: '글쓰기',

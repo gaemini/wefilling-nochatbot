@@ -91,6 +91,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       });
     }
   }
+
+  /// 기존 title이 남아있는 게시글은 title을 본문 앞에 붙여 "본문처럼" 처리
+  String _getUnifiedBodyText(Post post) {
+    final t = post.title.trim();
+    final c = post.content.trim();
+    if (t.isEmpty) return c;
+    if (c.isEmpty) return t;
+    return '$t\n$c';
+  }
+
+  /// 상세 화면에서 보여줄 "첫 줄(제목처럼)"과 "나머지(캡션 본문)" 분리
+  ({String headline, String body}) _splitHeadlineAndBody(String unifiedText) {
+    final trimmed = unifiedText.trim();
+    if (trimmed.isEmpty) return (headline: '', body: '');
+    final parts = trimmed.split('\n');
+    final headline = parts.first.trim();
+    final body = parts.length <= 1 ? '' : parts.sublist(1).join('\n').trim();
+    return (headline: headline, body: body);
+  }
   
   @override
   void dispose() {
@@ -119,6 +138,102 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     });
+  }
+
+  // 상세 화면 하단 메타(하트/댓글/조회) - 카드와 유사한 촘촘한 간격
+  Widget _buildStatsRow({
+    required int likes,
+    required int commentCount,
+    required int viewCount,
+    required bool isLiked,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final w = constraints.maxWidth;
+        // 첨부 이미지 기준: 아이콘은 조금 더 크고, 그룹 간격은 더 넉넉하게
+        final itemWidth = w < 330 ? 42.0 : 48.0;
+        final eyeWidth = w < 330 ? 50.0 : 56.0;
+        final gap = w < 330 ? 10.0 : 12.0;
+        const iconSize = 20.0;
+
+        Widget metaItem({
+          required Widget iconWidget,
+          required int count,
+          required double width,
+        }) {
+          return SizedBox(
+            width: width,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                iconWidget,
+                const SizedBox(width: 6),
+                if (count > 0)
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '$count',
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.grey[700],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        }
+
+        return Row(
+          children: [
+            metaItem(
+              width: itemWidth,
+              count: likes,
+              iconWidget: InkWell(
+                onTap: _isTogglingLike ? null : _toggleLike,
+                customBorder: const CircleBorder(),
+                child: Padding(
+                  // 아이콘 주변 여백을 과하게 키우지 않도록 최소화
+                  padding: const EdgeInsets.all(1),
+                  child: Icon(
+                    isLiked ? Icons.favorite : Icons.favorite_border,
+                    size: iconSize,
+                    color: isLiked ? Colors.red : Colors.grey[700],
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(width: gap),
+            metaItem(
+              width: itemWidth,
+              count: commentCount,
+              iconWidget: Icon(
+                Icons.chat_bubble_outline,
+                size: iconSize,
+                color: Colors.grey[700],
+              ),
+            ),
+            SizedBox(width: gap),
+            metaItem(
+              width: eyeWidth,
+              count: viewCount,
+              iconWidget: Icon(
+                Icons.remove_red_eye_outlined,
+                size: iconSize,
+                color: Colors.grey[700],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // 조회수 증가 메서드
@@ -336,6 +451,69 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         );
       }
     }
+  }
+
+  void _openPostActionsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: Icon(
+                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                    color: const Color(0xFF111827),
+                  ),
+                  title: Text(
+                    _isSaved ? '저장 취소' : '게시글 저장',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  onTap: _isTogglingSave
+                      ? null
+                      : () {
+                          Navigator.pop(context);
+                          _toggleSave();
+                        },
+                ),
+                if (_isAuthor)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Color(0xFFEF4444),
+                    ),
+                    title: const Text(
+                      '게시글 삭제',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    onTap: _isDeleting
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            _deletePost();
+                          },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   // 게시글 새로고침
@@ -971,47 +1149,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         centerTitle: true,
         actions: [
-          // 게시글 저장 버튼
-          _isTogglingSave
-              ? Container(
-                  margin: const EdgeInsets.all(14.0),
-                  width: DesignTokens.icon,
-                  height: DesignTokens.icon,
-                child: const CircularProgressIndicator(
-                  strokeWidth: 2,
-                    color: Color(0xFF111827),
-                ),
-              )
-              : IconButton(
-                icon: Icon(
-                  _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    color: const Color(0xFF111827),
-                    size: DesignTokens.icon,
-                ),
-                  tooltip: _isSaved ? '저장 취소' : '게시글 저장',
-                onPressed: _toggleSave,
-              ),
-          // 게시글 삭제 버튼 (작성자인 경우에만)
-          if (_isAuthor)
-            _isDeleting
-                ? Container(
-                    margin: const EdgeInsets.all(14.0),
-                    width: DesignTokens.icon,
-                    height: DesignTokens.icon,
-                  child: const CircularProgressIndicator(
-                      color: Color(0xFFEF4444),
-                    strokeWidth: 2,
-                  ),
-                )
-                : IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: Color(0xFFEF4444),
-                      size: DesignTokens.icon,
-                    ),
-                    tooltip: '게시글 삭제',
-                  onPressed: _deletePost,
-                ),
+          IconButton(
+            icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
+            tooltip: '더보기',
+            onPressed: _openPostActionsSheet,
+          ),
         ],
       ),
       body: Column(
@@ -1071,27 +1213,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     _currentPost.isAnonymous ? AppLocalizations.of(context)!.anonymous : _currentPost.author,
                                     style: const TextStyle(
                                       fontFamily: 'Pretendard',
-                                      fontSize: 14,
+                                      fontSize: 16,
                                       fontWeight: FontWeight.w600,
                                       color: Colors.black,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
                                   if (_currentPost.authorNationality.isNotEmpty)
-                                    CountryFlagCircle(
-                                      nationality: _currentPost.authorNationality,
-                                      size: 16,
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 1),
+                                      child: CountryFlagCircle(
+                                        nationality: _currentPost.authorNationality,
+                                        // 카드(`optimized_post_card.dart`)와 동일한 크기
+                                        // (CountryFlagCircle 내부에서 size * 1.2로 렌더링됨)
+                                        size: 22,
+                                      ),
                                     ),
                                 ],
-                              ),
-                              // 시간
-                              Text(
-                                _currentPost.getFormattedTime(context),
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 12,
-                                  color: Colors.grey[600],
-                                ),
                               ),
                             ],
                           ),
@@ -1100,28 +1238,45 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
-                  // 제목 (Pretendard Bold - 모바일 UI 원칙 준수)
-                  if (_currentPost.title.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        DesignTokens.s16,
-                        DesignTokens.s8,
-                        DesignTokens.s16,
-                        8, // 제목 하단 간격 축소 (이미지 없을 때 본문과 가까이)
-                      ),
-                      child: Text(
-                        _currentPost.title,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700, // Bold
-                          color: Colors.black,
-                          height: 1.3,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
+                  // 제목 영역 제거 (요구사항: 제목 없이 작성, 기존 title은 본문으로 인식)
+                  // 제목(첫 줄) + 시간(날짜) 표시 위치를 스크린샷처럼 "제목 아래 시간"으로 배치
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Builder(
+                      builder: (context) {
+                        final split = _splitHeadlineAndBody(_getUnifiedBodyText(_currentPost));
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (split.headline.isNotEmpty)
+                              Text(
+                                split.headline,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111827),
+                                  height: 1.25,
+                                  letterSpacing: -0.2,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _currentPost.getFormattedTime(context),
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                  ],
+                  ),
 
                   // 이미지 유무에 따라 레이아웃 분기
                   if (_currentPost.imageUrls.isNotEmpty) ...[
@@ -1166,55 +1321,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               );
                             },
                           ),
-                          // 이미지 인디케이터 (점 형식으로 하단 중앙에 표시)
-                          if (_currentPost.imageUrls.length > 1 && _showPageIndicator)
+                          // 다중 이미지 배지: 카드와 동일한 1/N 형태로 우상단에 표시
+                          if (_currentPost.imageUrls.length > 1)
                             Positioned(
-                              bottom: 12,
-                              left: 0,
-                              right: 0,
-                              child: Center(
-                                child: AnimatedOpacity(
-                                  opacity: _showPageIndicator ? 1.0 : 0.0,
-                                  duration: const Duration(milliseconds: 300),
-                                child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              top: 8,
+                              right: 8,
+                              child: Container(
+                                padding: const EdgeInsets.all(5),
                                 decoration: BoxDecoration(
-                                  color: UIUtils.safeColorWithOpacity(Colors.black, 0.55),
-                                  borderRadius: BorderRadius.circular(20),
+                                  color: Colors.black.withOpacity(0.35),
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    // 점 인디케이터
-                                    Row(
-                                      children: List.generate(
-                                        _currentPost.imageUrls.length,
-                                        (i) => Container(
-                                          width: 6,
-                                          height: 6,
-                                          margin: const EdgeInsets.symmetric(horizontal: 3),
-                                          decoration: BoxDecoration(
-                                            shape: BoxShape.circle,
-                                            color: i == _currentImageIndex 
-                                                ? Colors.white 
-                                                : UIUtils.safeColorWithOpacity(Colors.white, 0.47),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    // 숫자 표시
-                                    Text(
-                                      '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                ),
+                                child: Text(
+                                  '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    height: 1,
+                                  ),
                                 ),
                               ),
                             ),
@@ -1224,275 +1350,119 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                     // 액션 버튼들과 좋아요 수 표시 (이미지 바로 아래)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 0), // 위쪽 여백 12 → 6으로 절반 감소
+                    // 첨부 이미지처럼 이미지와 아이콘 줄 사이 간격을 확보
+                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 액션 버튼들
-                        Row(
-                          children: [
-                            // 좋아요 버튼
-                            SizedBox(
-                              width: 24, 
-                              height: 24,
-                              child: IconButton(
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(),
-                                icon: Icon(
-                                  _isLiked ? Icons.favorite : Icons.favorite_border,
-                                  color: _isLiked ? Colors.red : Colors.black,
-                                  size: DesignTokens.icon,
-                                ),
-                                onPressed: _isTogglingLike ? null : _toggleLike,
-                                splashRadius: 20,
-                              ),
-                            ),
-                            
-                            const SizedBox(width: 24), // 하트와 DM 사이 간격 증가
-                            
-                            // DM 버튼 (본인 글이 아닌 경우만)
-                            if (FirebaseAuth.instance.currentUser != null &&
-                                _currentPost.userId != FirebaseAuth.instance.currentUser!.uid) ...[
-                              SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  icon: Transform.rotate(
-                                    angle: -math.pi / 4,
-                                    child: const Icon(
-                                      Icons.send_rounded,
-                                      color: Colors.black,
-                                      size: DesignTokens.icon,
-                                    ),
-                                  ),
-                                  onPressed: _openDMFromDetail,
-                                  splashRadius: 20,
-                                ),
-                              ),
-                              const SizedBox(width: 24), // DM과 조회수 사이 간격 증가
-                            ],
-                              
-                            // 조회수 표시
-                            Icon(
-                              Icons.remove_red_eye_outlined,
-                              color: Colors.grey[600],
-                              size: DesignTokens.icon,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${_currentPost.viewCount}',
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
+                        _buildStatsRow(
+                          likes: _currentPost.likes,
+                          commentCount: _currentPost.commentCount,
+                          viewCount: _currentPost.viewCount,
+                          isLiked: _isLiked,
                         ),
-                        
-                        // 좋아요 수 표시 (간격 조절)
-                        if (_currentPost.likes > 0) ...[
-                          const SizedBox(height: 6), // 하트 아이콘과 likes 텍스트 사이 간격
-                          Text(
-                            '${_currentPost.likes} likes',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black,
-                            ),
-                          ),
-                          const SizedBox(height: 6), // 아래쪽 여백 12 → 6으로 절반 감소
-                        ],
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),
 
-                    // 본문 영역 (이미지가 있을 때)
-                  Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: DesignTokens.s16,
-                        vertical: 18, // 12 → 18 (1.5배)
-                      ),
-                    child: Text(
-                      _currentPost.content,
-                      style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16, // 15 → 16 (가독성 개선)
-                          height: 1.6,
-                          color: Colors.black, // 검은색으로 변경 ✨
-                          fontWeight: FontWeight.w500, // w400 → w500 (조금 더 굵게) ✨
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
+                    // 본문은 캡션 위치(통계 아래, 댓글 위)로 이동
                   ] else ...[
                     // === 이미지가 없는 경우: 제목 → 본문 → 좋아요 ===
-                    // 본문 영역 (제목 바로 아래 배치)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        DesignTokens.s16,
-                        8, // 위쪽 여백 (제목과의 간격)
-                        DesignTokens.s16,
-                        0, // 아래쪽 여백 제거
-                      ),
-                      child: Text(
-                        _currentPost.content,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16, // 15 → 16 (가독성 개선)
-                          height: 1.6,
-                          color: Colors.black, // 검은색으로 변경 ✨
-                          fontWeight: FontWeight.w500, // w400 → w500 (조금 더 굵게) ✨
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 48), // 본문과 아이콘 사이 간격을 크게 늘림
+                    const SizedBox(height: 8),
                     
                     // 액션 버튼들과 좋아요 수 표시 (본문 바로 아래)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 0), // 위쪽 패딩 제거하여 간격 명확히
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // 액션 버튼들
-                          Row(
-                            children: [
-                              // 좋아요 버튼
-                              SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: IconButton(
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                  icon: Icon(
-                                    _isLiked ? Icons.favorite : Icons.favorite_border,
-                                    color: _isLiked ? Colors.red : Colors.black,
-                                    size: DesignTokens.icon,
-                                  ),
-                                  onPressed: _isTogglingLike ? null : _toggleLike,
-                                  splashRadius: 20,
-                                ),
-                              ),
-                              
-                              const SizedBox(width: 24), // 하트와 DM 사이 간격 증가
-                              
-                              // DM 버튼 (본인 글이 아닌 경우만)
-                              if (FirebaseAuth.instance.currentUser != null &&
-                                  _currentPost.userId != FirebaseAuth.instance.currentUser!.uid) ...[
-                                SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: IconButton(
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(),
-                                    icon: Transform.rotate(
-                                      angle: -math.pi / 4,
-                                      child: const Icon(
-                                        Icons.send_rounded,
-                                        color: Colors.black,
-                                        size: DesignTokens.icon,
-                                      ),
-                                    ),
-                                    onPressed: _openDMFromDetail,
-                                    splashRadius: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 24), // DM과 조회수 사이 간격 증가
-                              ],
-                                
-                              // 조회수 표시
-                              Icon(
-                                Icons.remove_red_eye_outlined,
-                                color: Colors.grey[600],
-                                size: DesignTokens.icon,
-                              ),
-                              const SizedBox(width: 6),
-                              Text(
-                                '${_currentPost.viewCount}',
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
+                          _buildStatsRow(
+                            likes: _currentPost.likes,
+                            commentCount: _currentPost.commentCount,
+                            viewCount: _currentPost.viewCount,
+                            isLiked: _isLiked,
                           ),
-                          
-                          // 좋아요 수 표시 (간격 조절)
-                          if (_currentPost.likes > 0) ...[
-                            const SizedBox(height: 6), // 하트 아이콘과 likes 텍스트 사이 간격
-                            Text(
-                              '${_currentPost.likes} likes',
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.black,
-                              ),
-                            ),
-                            const SizedBox(height: 6), // 아래쪽 여백 12 → 6으로 절반 감소
-                          ],
+                          const SizedBox(height: 8),
                         ],
                       ),
                     ),
                   ],
 
-                  // 댓글 섹션 타이틀 (간격 조정)
-                  SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 24), // 이미지 없을 때 16 → 8로 절반 감소
-                  Container(
-                    padding: const EdgeInsets.only(top: 16, bottom: 8, left: 16, right: 16), // Padding added
-                    decoration: BoxDecoration(
-                      border: Border(
-                        top: BorderSide(color: Colors.grey.shade200, width: 1),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.comments,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF111827),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: StreamBuilder<List<Comment>>(
-                            stream: _commentService.getCommentsByPostId(
-                              _currentPost.id,
+                  // 캡션(본문) 위치: 통계 아래, 댓글 위 (스크린샷 스타일)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Builder(
+                      builder: (context) {
+                        final split = _splitHeadlineAndBody(_getUnifiedBodyText(_currentPost));
+                        final body = split.body;
+                        if (body.isEmpty) return const SizedBox.shrink();
+
+                        final displayName = _currentPost.isAnonymous
+                            ? AppLocalizations.of(context)!.anonymous
+                            : _currentPost.author;
+
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.grey[200],
+                              ),
+                              child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
+                                  ? ClipOval(
+                                      child: Image.network(
+                                        _currentPost.authorPhotoURL,
+                                        width: 28,
+                                        height: 28,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.person,
+                                          color: Colors.grey[600],
+                                          size: 16,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.person,
+                                      color: Colors.grey[600],
+                                      size: 16,
+                                    ),
                             ),
-                            builder: (context, snapshot) {
-                              final count = snapshot.data?.length ?? 0;
-                              return Text(
-                                '$count',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.grey.shade700,
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: RichText(
+                                text: TextSpan(
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 14,
+                                    height: 1.35,
+                                    color: Color(0xFF111827),
+                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: '$displayName ',
+                                      style: const TextStyle(fontWeight: FontWeight.w700),
+                                    ),
+                                    TextSpan(
+                                      text: body,
+                                      style: const TextStyle(fontWeight: FontWeight.w500),
+                                    ),
+                                  ],
                                 ),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
+
+                  // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
+                  SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),
 
                   // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                   StreamBuilder<List<Comment>>(

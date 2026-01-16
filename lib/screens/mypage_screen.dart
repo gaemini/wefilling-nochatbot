@@ -27,7 +27,7 @@ import 'post_detail_screen.dart';
 import 'saved_posts_screen.dart';
 import 'login_screen.dart';
 import 'review_detail_screen.dart';
-import 'main_screen.dart';
+import 'friends_page.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -1267,11 +1267,23 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   // 각 통계 항목 클릭 시 해당 페이지로 이동하는 메서드들
   void _navigateToFriendsPage() {
-    // 친구 탭으로 이동 (하단바 유지)
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const MainScreen(initialTabIndex: 4), // 친구 탭 인덱스
+        builder: (context) => Scaffold(
+          backgroundColor: const Color(0xFFEBEBEB),
+          appBar: AppBar(
+            title: Text(AppLocalizations.of(context)!.friends),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
+            foregroundColor: const Color(0xFF111827),
+            elevation: 0,
+          ),
+          body: const SafeArea(
+            top: false,
+            child: FriendsPage(),
+          ),
+        ),
       ),
     );
   }

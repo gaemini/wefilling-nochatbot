@@ -21,7 +21,7 @@ import '../widgets/notification_badge.dart';
 import 'ad_showcase_screen.dart';
 import 'board_screen.dart';
 import 'dm_list_screen.dart';
-import 'friends_main_page.dart';
+import 'friend_categories_screen.dart';
 import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
@@ -104,9 +104,9 @@ class _MainScreenState extends State<MainScreen> {
         BoardScreen(searchQuery: _searchController.text),
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
         MeetupHomePage(initialMeetupId: _pendingMeetupId),
-        const DMListScreen(),
+        const FriendCategoriesScreen(),
         const MyPageScreen(),
-        const FriendsMainPage(),
+        const DMListScreen(),
       ];
   // 프로덕션 배포: 디버그 헬퍼 제거
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
@@ -402,30 +402,30 @@ class _MainScreenState extends State<MainScreen> {
             onItemTapped: _onItemTapped,
             items: [
               BottomNavigationItem(
-                icon: Icons.article_outlined, // 게시판 아이콘 변경 (DM과 구분)
-                selectedIcon: Icons.article,
-                label: AppLocalizations.of(context)!.board ?? '게시판',
+                icon: Icons.menu,
+                selectedIcon: Icons.menu,
+                label: '게시글',
               ),
               BottomNavigationItem(
                 icon: Icons.groups_outlined,
                 selectedIcon: Icons.groups,
-                label: AppLocalizations.of(context)!.meetup ?? '모임',
+                label: '모임',
               ),
               BottomNavigationItem(
-                icon: Icons.chat_bubble_outline,
-                selectedIcon: Icons.chat_bubble,
-                label: AppLocalizations.of(context)!.dm ?? 'DM',
-                badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
+                icon: Icons.change_history_outlined,
+                selectedIcon: Icons.change_history,
+                label: '카테고리',
               ),
               BottomNavigationItem(
                 icon: Icons.person_outline,
                 selectedIcon: Icons.person,
-                label: AppLocalizations.of(context)!.myPage ?? '마이페이지',
+                label: '내 정보',
               ),
               BottomNavigationItem(
-                icon: Icons.people_outline,
-                selectedIcon: Icons.people,
-                label: AppLocalizations.of(context)!.friends ?? '친구',
+                icon: Icons.chat_bubble_outline,
+                selectedIcon: Icons.chat_bubble,
+                label: 'DM',
+                badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
               ),
             ],
           );

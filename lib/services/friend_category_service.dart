@@ -160,9 +160,6 @@ class FriendCategoryService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      // 기존에 다른 카테고리에 있다면 제거
-      await removeFriendFromAllCategories(friendId);
-
       // 새 카테고리에 추가
       await _firestore
           .collection('friend_categories')
@@ -175,6 +172,26 @@ class FriendCategoryService {
       return true;
     } catch (e) {
       Logger.error('친구 카테고리 추가 오류: $e');
+      return false;
+    }
+  }
+
+  // 카테고리의 친구 목록을 일괄 설정
+  Future<bool> updateCategoryFriendIds({
+    required String categoryId,
+    required List<String> friendIds,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      await _firestore.collection('friend_categories').doc(categoryId).update({
+        'friendIds': friendIds,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      return true;
+    } catch (e) {
+      Logger.error('카테고리 친구 목록 업데이트 오류: $e');
       return false;
     }
   }
@@ -341,16 +358,24 @@ class FriendCategoryService {
       final category = FriendCategory.fromFirestore(categoryDoc);
       if (category.friendIds.isEmpty) return;
 
-      // 기본 카테고리 찾기 (첫 번째 카테고리를 기본으로 사용)
-      final defaultCategorySnapshot = await _firestore
+      // 기본 카테고리 찾기 (인덱스 없이 동작하도록 orderBy를 피하고 클라이언트에서 정렬)
+      final allCategoriesSnapshot = await _firestore
           .collection('friend_categories')
           .where('userId', isEqualTo: user.uid)
-          .orderBy('createdAt')
-          .limit(1)
           .get();
 
-      if (defaultCategorySnapshot.docs.isNotEmpty) {
-        final defaultCategoryId = defaultCategorySnapshot.docs.first.id;
+      if (allCategoriesSnapshot.docs.isNotEmpty) {
+        final categories = allCategoriesSnapshot.docs
+            .map((doc) => FriendCategory.fromFirestore(doc))
+            .toList()
+          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+        // 삭제 대상 카테고리를 제외한 가장 오래된 카테고리를 기본으로 사용
+        final defaultCategory = categories.firstWhere(
+          (c) => c.id != categoryId,
+          orElse: () => categories.first,
+        );
+        final defaultCategoryId = defaultCategory.id;
         
         // 친구들을 기본 카테고리로 이동
         await _firestore

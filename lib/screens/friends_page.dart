@@ -14,10 +14,12 @@ import '../ui/widgets/app_icon_button.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../design/tokens.dart';
+import '../constants/app_constants.dart';
 import 'friend_profile_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
+import '../ui/widgets/shape_icon.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -231,181 +233,256 @@ class _FriendsPageState extends State<FriendsPage> {
   void _showFriendOptions(UserProfile friend) {
     showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder:
-          (context) => SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.person, color: Colors.blue),
-                  title: Text(AppLocalizations.of(context)!.viewProfile ?? ""),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _navigateToProfile(friend);
-                  },
+          (sheetContext) {
+            final l10n = AppLocalizations.of(sheetContext)!;
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      friend.displayName,
+                      style: TypographyStyles.headlineMedium.copyWith(
+                        color: BrandColors.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (friend.nickname != null &&
+                        friend.nickname!.isNotEmpty &&
+                        friend.nickname != friend.displayName) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        friend.nickname!,
+                        style: TypographyStyles.bodyLarge.copyWith(
+                          color: BrandColors.textSecondary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    _ActionTile(
+                      icon: Icons.person_outline,
+                      iconColor: BrandColors.info,
+                      title: l10n.viewProfile ?? "",
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _navigateToProfile(friend);
+                      },
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.category_outlined,
+                      iconColor: AppColors.pointColor,
+                      title: l10n.groupSettings ?? "",
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _showGroupSelectionDialog(friend);
+                      },
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.person_remove_outlined,
+                      iconColor: BrandColors.warning,
+                      title: l10n.removeFriendAction ?? "",
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _unfriend(friend);
+                      },
+                    ),
+                    const Divider(height: 1),
+                    _ActionTile(
+                      icon: Icons.block,
+                      iconColor: BrandColors.error,
+                      title: l10n.blockAction ?? "",
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        _blockUser(friend);
+                      },
+                    ),
+                  ],
                 ),
-                ListTile(
-                  leading: const Icon(Icons.group, color: Colors.green),
-                  title: Text(AppLocalizations.of(context)!.groupSettings ?? ""),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showGroupSelectionDialog(friend);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(
-                    Icons.person_remove,
-                    color: Colors.orange,
-                  ),
-                  title: Text(AppLocalizations.of(context)!.removeFriendAction ?? ""),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _unfriend(friend);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.block, color: Colors.red),
-                  title: Text(AppLocalizations.of(context)!.blockAction ?? ""),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _blockUser(friend);
-                  },
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
     );
   }
 
   /// 그룹 선택 다이얼로그 표시
   void _showGroupSelectionDialog(UserProfile friend) {
-    // 현재 친구가 속한 그룹 찾기
-    String? currentCategoryId;
-    for (final category in _friendCategories) {
-      if (category.friendIds.contains(friend.uid)) {
-        currentCategoryId = category.id;
-        break;
-      }
-    }
+    final initialSelected = _friendCategories
+        .where((c) => c.friendIds.contains(friend.uid))
+        .map((c) => c.id)
+        .toSet();
+    final selected = Set<String>.from(initialSelected);
 
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppLocalizations.of(context)!.groupSettingsFor(friend.displayNameOrNickname) ?? ""),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 그룹 없음 옵션
-              RadioListTile<String?>(
-                title: Text(AppLocalizations.of(context)!.noGroup ?? ""),
-                subtitle: Text(AppLocalizations.of(context)!.notInAnyGroup ?? ""),
-                value: null,
-                groupValue: currentCategoryId,
-                onChanged: (value) {
-                  Navigator.pop(context);
-                  _assignToGroup(friend, null);
-                },
-                contentPadding: EdgeInsets.zero,
-              ),
-              
-              const Divider(),
-              
-              // 친구 그룹 목록
-              if (_friendCategories.isEmpty)
-                Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    AppLocalizations.of(context)!.noFriendGroupsYet,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.grey,
-                      fontSize: 13,
-                    ),
-                  ),
-                )
-              else
-                ...(_friendCategories.map((category) {
-                  return RadioListTile<String?>(
-                    title: Text(category.name),
-                    subtitle: Text(
-                      AppLocalizations.of(context)!.friendsInGroup(category.friendIds.length),
-                    ),
-                    value: category.id,
-                    groupValue: currentCategoryId,
-                    onChanged: (value) {
-                      Navigator.pop(context);
-                      _assignToGroup(friend, value);
-                    },
-                    contentPadding: EdgeInsets.zero,
-                    secondary: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: _parseColor(category.color).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: _parseColor(category.color).withOpacity(0.3),
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setState) {
+          final l10n = AppLocalizations.of(sheetContext)!;
+          final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+
+          return SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.groupSettingsFor(friend.displayNameOrNickname) ?? "",
+                        style: TypographyStyles.headlineMedium.copyWith(
+                          color: BrandColors.textPrimary,
                         ),
                       ),
-                      child: Icon(
-                        _parseIcon(category.iconName),
-                        color: _parseColor(category.color),
-                        size: 20,
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close, color: Color(0xFF6B7280)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                if (_friendCategories.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        l10n.noFriendGroupsYet,
+                        style: TypographyStyles.bodyLarge.copyWith(
+                          color: BrandColors.textSecondary,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ),
-                  );
-                })),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-          ),
-        ],
+                  )
+                else
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _friendCategories.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final category = _friendCategories[i];
+                      final checked = selected.contains(category.id);
+                      final color = _parseColor(category.color);
+
+                      return CheckboxListTile(
+                        value: checked,
+                        onChanged: (v) {
+                          setState(() {
+                            if (v == true) {
+                              selected.add(category.id);
+                            } else {
+                              selected.remove(category.id);
+                            }
+                          });
+                        },
+                        title: Text(category.name, style: TypographyStyles.titleMedium),
+                        subtitle: Text(
+                          l10n.friendsInGroup(category.friendIds.length),
+                          style: TypographyStyles.bodySmall.copyWith(
+                            color: BrandColors.textSecondary,
+                          ),
+                        ),
+                        // 아이콘만 보이도록 (배경/테두리 제거)
+                        secondary: SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: Center(
+                            child: Icon(
+                              _parseIcon(category.iconName),
+                              color: color,
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        controlAffinity: ListTileControlAffinity.leading,
+                      );
+                    },
+                  ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6B7280),
+                          side: const BorderSide(color: Color(0xFFE5E7EB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(l10n.cancel ?? ""),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.pointColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () async {
+                          Navigator.pop(sheetContext);
+                          await _applyCategorySelection(friend, initialSelected, selected);
+                        },
+                        child: Text(l10n.save),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
 
-  /// 친구를 그룹에 배정
-  Future<void> _assignToGroup(UserProfile friend, String? categoryId) async {
+  Future<void> _applyCategorySelection(
+    UserProfile friend,
+    Set<String> before,
+    Set<String> after,
+  ) async {
     try {
-      bool success = false;
-      
-      if (categoryId == null) {
-        // 모든 그룹에서 제거
-        for (final category in _friendCategories) {
-          if (category.friendIds.contains(friend.uid)) {
-            await _categoryService.removeFriendFromCategory(
-              categoryId: category.id,
-              friendId: friend.uid,
-            );
-          }
-        }
-        success = true;
-        _showSnackBar(AppLocalizations.of(context)!.removedFromAllGroups(friend.displayNameOrNickname), Colors.blue);
-      } else {
-        // 선택한 그룹에 추가 (기존 그룹에서는 자동으로 제거됨)
-        success = await _categoryService.addFriendToCategory(
-          categoryId: categoryId,
-          friendId: friend.uid,
-        );
-        
-        if (success) {
-          final selectedCategory = _friendCategories.firstWhere((cat) => cat.id == categoryId);
-          _showSnackBar(
-            AppLocalizations.of(context)!.addedToGroup(friend.displayNameOrNickname, selectedCategory.name),
-            Colors.green
-          );
-        }
+      final toAdd = after.difference(before);
+      final toRemove = before.difference(after);
+
+      for (final categoryId in toAdd) {
+        await _categoryService.addFriendToCategory(categoryId: categoryId, friendId: friend.uid);
       }
-      
-      if (!success && categoryId != null) {
-        _showSnackBar(AppLocalizations.of(context)!.groupAssignmentFailed, Colors.red);
+      for (final categoryId in toRemove) {
+        await _categoryService.removeFriendFromCategory(categoryId: categoryId, friendId: friend.uid);
       }
+
+      _showSnackBar(AppLocalizations.of(context)!.save, Colors.green);
     } catch (e) {
       Logger.error('그룹 배정 오류: $e');
       _showSnackBar(AppLocalizations.of(context)!.errorOccurred, Colors.red);
@@ -427,6 +504,31 @@ class _FriendsPageState extends State<FriendsPage> {
   /// 아이콘 이름을 IconData로 변환
   IconData _parseIcon(String iconName) {
     switch (iconName) {
+      case 'shape_circle':
+        return Icons.circle;
+      case 'shape_square':
+        return Icons.stop;
+      case 'shape_star':
+        return Icons.star;
+      case 'shape_cross':
+        return Icons.add;
+      case 'shape_circle_filled':
+        return Icons.circle;
+      case 'shape_circle_outline':
+        return Icons.radio_button_unchecked;
+      case 'shape_square_filled':
+        return Icons.stop;
+      case 'shape_square_outline':
+        return Icons.crop_square;
+      case 'shape_triangle':
+        // 채워진 삼각형 느낌으로 통일
+        return Icons.navigation;
+      case 'shape_star_filled':
+        return Icons.star;
+      case 'shape_star_outline':
+        return Icons.star_border;
+      case 'shape_heart':
+        return Icons.favorite;
       case 'school':
         return Icons.school;
       case 'groups':
@@ -450,55 +552,80 @@ class _FriendsPageState extends State<FriendsPage> {
     }
   }
 
-  /// 친구 그룹 배지 빌드
-  Widget _buildGroupBadge(UserProfile friend) {
-    // 친구가 속한 그룹 찾기
-    FriendCategory? friendCategory;
-    for (final category in _friendCategories) {
-      if (category.friendIds.contains(friend.uid)) {
-        friendCategory = category;
-        break;
-      }
-    }
+  /// 친구 카테고리 뱃지들 UI 최적화
+  /// - 카드에서는 최대 2개만 노출하고, 더 많으면 +N 요약 배지로 표시
+  /// - 카드 폭에 따라 Wrap으로 자연스럽게 줄바꿈(카드 높이 유동)
+  /// - 텍스트는 말줄임 + 내부 요소(아이콘/텍스트) 가운데 정렬
+  Widget _buildGroupBadges(UserProfile friend) {
+    final categories = _friendCategories
+        .where((c) => c.friendIds.contains(friend.uid))
+        .toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
 
-    if (friendCategory == null) {
-      return const SizedBox.shrink(); // 그룹에 속하지 않으면 표시하지 않음
-    }
+    if (categories.isEmpty) return const SizedBox.shrink();
 
-    final color = _parseColor(friendCategory.color);
-    
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10, // 6 -> 10 (67% 증가)
-        vertical: 5, // 2 -> 5 (150% 증가)
-      ),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15), // 0.1 -> 0.15 (배경 조금 더 진하게)
-        borderRadius: BorderRadius.circular(12), // 8 -> 12
-        border: Border.all(
-          color: color.withOpacity(0.4), // 0.3 -> 0.4 (테두리 조금 더 진하게)
-          width: 1, // 0.5 -> 1
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            _parseIcon(friendCategory.iconName),
-            size: 16, // 12 -> 16 (33% 증가)
-            color: color,
+    const maxVisible = 2;
+
+    final visible = categories.take(maxVisible).toList();
+    final remaining = categories.length - visible.length;
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      alignment: WrapAlignment.start,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final cat in visible)
+          _CategoryBadge(
+            color: _parseColor(cat.color),
+            iconName: cat.iconName,
+            label: cat.name,
           ),
-          const SizedBox(width: 6), // 3 -> 6 (100% 증가)
-          Text(
-            friendCategory.name,
-            style: TextStyle(
-              fontSize: 13, // 10 -> 13 (30% 증가)
-              color: color,
-              fontWeight: FontWeight.w600, // w500 -> w600 (더 진하게)
+        if (remaining > 0)
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _showAllCategoriesSheet(categories),
+            child: _OverflowBadge(label: '+$remaining'),
+          ),
+      ],
+    );
+  }
+
+  void _showAllCategoriesSheet(List<FriendCategory> categories) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  AppLocalizations.of(context)!.category,
+                  style: TypographyStyles.titleMedium,
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: categories
+                      .map<Widget>(
+                        (cat) => _CategoryBadge(
+                          color: _parseColor(cat.color),
+                          iconName: cat.iconName,
+                          label: cat.name,
+                        ),
+                      )
+                      .toList(),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -654,6 +781,17 @@ class _FriendsPageState extends State<FriendsPage> {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: DesignTokens.radiusM,
+            border: Border.all(
+              color: const Color(0xFFF3F4F6),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: InkWell(
             onTap: () => _navigateToProfile(friend),
@@ -662,39 +800,43 @@ class _FriendsPageState extends State<FriendsPage> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // 프로필 이미지
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: BrandColors.neutral200,
-                    ),
-                    child: friend.hasProfileImage
-                        ? ClipOval(
-                            child: Image.network(
-                              friend.photoURL!,
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
-                                Icons.person_outline,
-                                size: 22,
-                                color: BrandColors.textTertiary,
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: BrandColors.neutral200,
+                      ),
+                      child: friend.hasProfileImage
+                          ? ClipOval(
+                              child: Image.network(
+                                friend.photoURL!,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  Icons.person_outline,
+                                  size: 22,
+                                  color: BrandColors.textTertiary,
+                                ),
                               ),
+                            )
+                          : Icon(
+                              Icons.person_outline,
+                              size: 24,
+                              color: BrandColors.textTertiary,
                             ),
-                          )
-                        : Icon(
-                            Icons.person_outline,
-                            size: 24,
-                            color: BrandColors.textTertiary,
-                          ),
+                    ),
                   ),
 
                   const SizedBox(width: 12),
 
-                  // 사용자 정보
+                  // 사용자 정보 + 카테고리 배지 (줄바꿈 허용)
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -702,9 +844,7 @@ class _FriendsPageState extends State<FriendsPage> {
                       children: [
                         Text(
                           friend.displayNameOrNickname,
-                          style: TypographyStyles.titleMedium.copyWith(
-                            fontSize: 14,
-                          ),
+                          style: TypographyStyles.titleMedium.copyWith(fontSize: 14),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -721,8 +861,7 @@ class _FriendsPageState extends State<FriendsPage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ],
-                        if (friend.nationality != null &&
-                            friend.nationality!.isNotEmpty) ...[
+                        if (friend.nationality != null && friend.nationality!.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Row(
                             mainAxisSize: MainAxisSize.min,
@@ -736,8 +875,9 @@ class _FriendsPageState extends State<FriendsPage> {
                               Flexible(
                                 child: Text(
                                   CountryFlagHelper.getCountryInfo(friend.nationality!)?.getLocalizedName(
-                                    Localizations.localeOf(context).languageCode
-                                  ) ?? friend.nationality!,
+                                        Localizations.localeOf(context).languageCode,
+                                      ) ??
+                                      friend.nationality!,
                                   style: const TextStyle(
                                     fontFamily: 'Pretendard',
                                     fontSize: 11,
@@ -751,28 +891,28 @@ class _FriendsPageState extends State<FriendsPage> {
                             ],
                           ),
                         ],
+                        const SizedBox(height: 8),
+                        _buildGroupBadges(friend),
                       ],
                     ),
                   ),
-
-                  const SizedBox(width: 8),
-
-                  // 그룹 배지만 표시 (친구 상태 배지 제거)
-                  _buildGroupBadge(friend),
                   
                   // 메뉴 버튼 (맨 오른쪽 상단에 배치)
-                  IconButton(
-                    icon: Icon(
-                      Icons.more_vert,
-                      color: BrandColors.textTertiary,
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: IconButton(
+                      icon: Icon(
+                        Icons.more_vert,
+                        color: BrandColors.textTertiary,
+                      ),
+                      iconSize: 20,
+                      padding: const EdgeInsets.all(6),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      onPressed: () => _showFriendOptions(friend),
                     ),
-                    iconSize: 20,
-                    padding: const EdgeInsets.all(6),
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    onPressed: () => _showFriendOptions(friend),
                   ),
                 ],
               ),
@@ -814,6 +954,146 @@ class _FriendsPageState extends State<FriendsPage> {
             child: Text(AppLocalizations.of(context)!.retryAction ?? ""),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryBadge extends StatelessWidget {
+  final Color color;
+  final String? iconName;
+  final String label;
+
+  const _CategoryBadge({
+    required this.color,
+    required this.iconName,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      // 기존 대비 절반 수준으로 컴팩트하게
+      constraints: const BoxConstraints(minHeight: 24, maxWidth: 88),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.35), width: 1),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ShapeIcon(
+                iconName: iconName ?? 'group',
+                color: color,
+                size: 12,
+              ),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    height: 1.1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OverflowBadge extends StatelessWidget {
+  final String label;
+
+  const _OverflowBadge({
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 24, maxWidth: 64),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF6B7280),
+              height: 1.1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final VoidCallback onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: Center(
+                child: Icon(icon, color: iconColor, size: 26),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: TypographyStyles.titleMedium.copyWith(
+                  color: BrandColors.textPrimary,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

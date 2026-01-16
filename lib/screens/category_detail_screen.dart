@@ -1,8 +1,7 @@
 // lib/screens/category_detail_screen.dart
-// 카테고리 상세 화면 - 해당 카테고리의 친구 목록 표시
+// 카테고리 상세 화면 - 전체 친구 목록에서 포함/미포함을 체크로 편집 후 저장
 
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/friend_category.dart';
 import '../models/user_profile.dart';
 import '../design/tokens.dart';
@@ -12,6 +11,11 @@ import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../constants/app_constants.dart';
+import 'package:provider/provider.dart';
+import '../providers/relationship_provider.dart';
+import '../providers/auth_provider.dart';
+import '../services/friend_category_service.dart';
+import '../ui/widgets/shape_icon.dart';
 
 class CategoryDetailScreen extends StatefulWidget {
   final FriendCategory category;
@@ -26,55 +30,107 @@ class CategoryDetailScreen extends StatefulWidget {
 }
 
 class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  bool _isLoading = true;
-  List<UserProfile> _friends = [];
+  final FriendCategoryService _categoryService = FriendCategoryService();
+  final TextEditingController _searchController = TextEditingController();
+
+  bool _isSaving = false;
+
+  String _searchQuery = '';
+
+  late final Set<String> _originalFriendIds;
+  late Set<String> _selectedFriendIds;
 
   @override
   void initState() {
     super.initState();
-    _loadFriends();
+    _originalFriendIds = widget.category.friendIds.toSet();
+    _selectedFriendIds = Set<String>.from(_originalFriendIds);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureFriendsLoaded();
+    });
   }
 
-  Future<void> _loadFriends() async {
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _categoryService.dispose();
+    super.dispose();
+  }
+
+  bool get _hasChanges => _selectedFriendIds.length != _originalFriendIds.length ||
+      !_selectedFriendIds.containsAll(_originalFriendIds);
+
+  void _ensureFriendsLoaded() {
     try {
-      setState(() {
-        _isLoading = true;
-      });
+      final authProvider = context.read<AuthProvider>();
+      final relationshipProvider = context.read<RelationshipProvider>();
+      relationshipProvider.setAuthProvider(authProvider);
 
-      final List<UserProfile> friends = [];
-      final List<String> missingUserIds = [];
-
-      Logger.log('🔍 카테고리 친구 로드: ${widget.category.name}');
-      Logger.log('  - category.friendIds: ${widget.category.friendIds.length}개');
-
-      // 카테고리에 속한 친구들의 정보 가져오기
-      for (final friendId in widget.category.friendIds) {
-        final doc = await _firestore.collection('users').doc(friendId).get();
-        if (doc.exists) {
-          friends.add(UserProfile.fromFirestore(doc));
-          Logger.log('  ✅ 로드 성공: $friendId');
-        } else {
-          missingUserIds.add(friendId);
-          Logger.log('  ❌ 사용자 문서 없음: $friendId');
-        }
-      }
-
-      Logger.log('📊 로드 결과:');
-      Logger.log('  - 성공: ${friends.length}명');
-      Logger.error('  - 실패: ${missingUserIds.length}명');
-
-      if (mounted) {
-        setState(() {
-          _friends = friends;
-          _isLoading = false;
-        });
+      // loadFriends()는 stream 구독만 걸고 즉시 반환될 수 있으므로,
+      // 이 화면은 provider를 구독(Consumer)해서 데이터 도착 시 자동 리빌드되도록 한다.
+      if (relationshipProvider.friends.isEmpty && !relationshipProvider.isLoading) {
+        relationshipProvider.loadFriends();
       }
     } catch (e) {
       Logger.error('❌ 친구 목록 로드 오류: $e');
+    }
+  }
+
+  List<UserProfile> _computeFilteredFriends(List<UserProfile> friends) {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return friends;
+    return friends.where((f) {
+      final dn = f.displayNameOrNickname.toLowerCase();
+      final displayName = f.displayName.toLowerCase();
+      final nickname = (f.nickname ?? '').toLowerCase();
+      return dn.contains(q) || displayName.contains(q) || nickname.contains(q);
+    }).toList();
+  }
+
+  Future<void> _save() async {
+    if (_isSaving || !_hasChanges) return;
+
+    try {
+      setState(() {
+        _isSaving = true;
+      });
+
+      final success = await _categoryService.updateCategoryFriendIds(
+        categoryId: widget.category.id,
+        friendIds: _selectedFriendIds.toList(),
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        _originalFriendIds
+          ..clear()
+          ..addAll(_selectedFriendIds);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.save)),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(AppLocalizations.of(context)!.errorOccurred),
+            backgroundColor: BrandColors.error,
+          ),
+        );
+      }
+    } catch (e) {
+      Logger.error('카테고리 저장 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.errorOccurred),
+          backgroundColor: BrandColors.error,
+        ),
+      );
+    } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
+          _isSaving = false;
         });
       }
     }
@@ -84,8 +140,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   Widget build(BuildContext context) {
     // 색상 안전하게 파싱 (null 체크 포함)
     final color = _parseColor(widget.category.color ?? '#6366F1');
-    // 아이콘 안전하게 파싱 (null 체크 포함)
-    final icon = _parseIcon(widget.category.iconName ?? 'group');
+    final iconName = widget.category.iconName ?? 'group';
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -100,18 +155,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _safeColorWithOpacity(color, 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                color: color,
-                size: 20,
-              ),
-            ),
+            // 배경/테두리 없이 도형 아이콘만 표시
+            ShapeIcon(iconName: iconName, color: color, size: 28),
             const SizedBox(width: 12),
             Expanded(
               child: Text(
@@ -127,81 +172,150 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
             ),
           ],
         ),
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.pointColor))
-          : _friends.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 48.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.noFriendsInCategory,
-                          style: TypographyStyles.headlineMedium.copyWith(
-                            color: BrandColors.textPrimary,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                        const SizedBox(height: DesignTokens.s12),
-                        Text(
-                          AppLocalizations.of(context)!.addFriendsToCategory,
-                          style: TypographyStyles.bodyLarge.copyWith(
-                            color: BrandColors.textSecondary,
-                            height: 1.5,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
+        actions: [
+          TextButton(
+            onPressed: (_hasChanges && !_isSaving) ? _save : null,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(
+                    AppLocalizations.of(context)!.save,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.w700,
+                      color: (_hasChanges && !_isSaving)
+                          ? AppColors.pointColor
+                          : const Color(0xFF9CA3AF),
                     ),
                   ),
-                )
-              : Column(
+          ),
+        ],
+      ),
+      body: Consumer<RelationshipProvider>(
+        builder: (context, relationshipProvider, _) {
+          final friends = List<UserProfile>.from(relationshipProvider.friends)
+            ..sort((a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
+          final filteredFriends = _computeFilteredFriends(friends);
+
+          if (relationshipProvider.isLoading && friends.isEmpty) {
+            return const Center(
+              child: CircularProgressIndicator(color: AppColors.pointColor),
+            );
+          }
+
+          if (friends.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 48.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // 친구 수 표시
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      color: const Color(0xFFF9FAFB),
-                      child: Text(
-                        AppLocalizations.of(context)!.friendsInGroup(_friends.length),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          color: Color(0xFF6B7280),
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    Text(
+                      AppLocalizations.of(context)!.noFriendsInCategory,
+                      style: TypographyStyles.headlineMedium.copyWith(
+                        color: BrandColors.textPrimary,
                       ),
+                      textAlign: TextAlign.center,
                     ),
-                    
-                    // 친구 목록
-                    Expanded(
-                      child: Builder(
-                        builder: (context) {
-                          // 안드로이드 하단 네비게이션 바 높이 감지
-                          final bottomPadding = MediaQuery.of(context).padding.bottom;
-                          
-                          return ListView.builder(
-                            padding: EdgeInsets.only(
-                              top: 8,
-                              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
-                            ),
-                            itemCount: _friends.length,
-                            itemBuilder: (context, index) {
-                              final friend = _friends[index];
-                              return _buildFriendCard(friend, color);
-                            },
-                          );
-                        },
+                    const SizedBox(height: DesignTokens.s12),
+                    Text(
+                      AppLocalizations.of(context)!.addFriendsToCategory,
+                      style: TypographyStyles.bodyLarge.copyWith(
+                        color: BrandColors.textSecondary,
+                        height: 1.5,
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ],
                 ),
+              ),
+            );
+          }
+
+          return Column(
+            children: [
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                color: const Color(0xFFF9FAFB),
+                child: Text(
+                  AppLocalizations.of(context)!.friendsInGroup(_selectedFriendIds.length),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    color: Color(0xFF6B7280),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+
+              // 검색바
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextField(
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: AppLocalizations.of(context)!.searchByFriendName,
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() => _searchQuery = '');
+                            },
+                          )
+                        : null,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(25),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey[100],
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                ),
+              ),
+
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    final bottomPadding = MediaQuery.of(context).padding.bottom;
+                    return ListView.builder(
+                      padding: EdgeInsets.only(
+                        top: 8,
+                        bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+                      ),
+                      itemCount: filteredFriends.length,
+                      itemBuilder: (context, index) {
+                        final friend = filteredFriends[index];
+                        final isSelected = _selectedFriendIds.contains(friend.uid);
+                        return _buildFriendRow(
+                          friend: friend,
+                          categoryColor: color,
+                          isSelected: isSelected,
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
-  Widget _buildFriendCard(UserProfile friend, Color categoryColor) {
+  Widget _buildFriendRow({
+    required UserProfile friend,
+    required Color categoryColor,
+    required bool isSelected,
+  }) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -210,12 +324,34 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
       ),
       child: InkWell(
-        onTap: () => _navigateToProfile(friend),
+        onTap: () {
+          setState(() {
+            if (isSelected) {
+              _selectedFriendIds.remove(friend.uid);
+            } else {
+              _selectedFriendIds.add(friend.uid);
+            }
+          });
+        },
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
             children: [
+              Checkbox(
+                value: isSelected,
+                activeColor: AppColors.pointColor,
+                onChanged: (v) {
+                  setState(() {
+                    if (v == true) {
+                      _selectedFriendIds.add(friend.uid);
+                    } else {
+                      _selectedFriendIds.remove(friend.uid);
+                    }
+                  });
+                },
+              ),
+
               // 프로필 이미지
               Container(
                 width: 48,
@@ -314,29 +450,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 ),
               ),
 
-              // 카테고리 배지
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: _safeColorWithOpacity(categoryColor, 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: _safeColorWithOpacity(categoryColor, 0.3),
-                    width: 1,
-                  ),
-                ),
-                child: Text(
-                  widget.category.name,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 11,
-                    color: categoryColor,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+                onPressed: () => _navigateToProfile(friend),
               ),
             ],
           ),
@@ -406,6 +522,19 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     }
 
     final iconMap = {
+      'shape_circle': Icons.circle,
+      'shape_square': Icons.stop,
+      'shape_star': Icons.star,
+      'shape_cross': Icons.add,
+      'shape_circle_filled': Icons.circle,
+      'shape_circle_outline': Icons.radio_button_unchecked,
+      'shape_square_filled': Icons.stop,
+      'shape_square_outline': Icons.crop_square,
+      // 채워진 삼각형 느낌으로 통일
+      'shape_triangle': Icons.navigation,
+      'shape_star_filled': Icons.star,
+      'shape_star_outline': Icons.star_border,
+      'shape_heart': Icons.favorite,
       'school': Icons.school,
       'groups': Icons.groups,
       'palette': Icons.palette,

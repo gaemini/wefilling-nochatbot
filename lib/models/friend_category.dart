@@ -98,25 +98,25 @@ class DefaultFriendCategories {
       'name': '대학 친구',
       'description': '',
       'color': '#4A90E2',
-      'iconName': 'school',
+      'iconName': 'shape_circle',
     },
     {
       'name': '동아리',
       'description': '',
       'color': '#6BC9A5',
-      'iconName': 'groups',
+      'iconName': 'shape_square',
     },
     {
       'name': '취미 친구',
       'description': '',
       'color': '#FF8C42',
-      'iconName': 'palette',
+      'iconName': 'shape_triangle',
     },
     {
       'name': '스터디 그룹',
       'description': '',
       'color': '#9B59B6',
-      'iconName': 'book',
+      'iconName': 'shape_star',
     },
   ];
 }

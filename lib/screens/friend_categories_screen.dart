@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
+import '../ui/widgets/shape_icon.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/app_fab.dart';
@@ -14,6 +15,18 @@ import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+
+class _CategoryDraft {
+  final String name;
+  final String color;
+  final String iconName;
+
+  const _CategoryDraft({
+    required this.name,
+    required this.color,
+    required this.iconName,
+  });
+}
 
 class FriendCategoriesScreen extends StatefulWidget {
   const FriendCategoriesScreen({super.key});
@@ -142,8 +155,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   Widget _buildCategoryCard(FriendCategory category) {
     // 색상 안전하게 파싱 (null 체크 포함)
     final color = _parseColor(category.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}');
-    // 아이콘 안전하게 파싱 (null 체크 포함)
-    final icon = _parseIcon(category.iconName ?? 'group');
+    final iconName = _normalizeIconName(category.iconName);
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -164,21 +176,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       ),
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
+        // 아이콘만 보이도록 (배경/테두리 제거) - 크기만 유지
+        leading: SizedBox(
           width: 46,
           height: 46,
-          decoration: BoxDecoration(
-            color: _safeColorWithOpacity(color, 0.1),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: _safeColorWithOpacity(color, 0.3),
-              width: 1,
-            ),
-          ),
-          child: Icon(
-            icon,
-            color: color,
-            size: 22,
+          child: Center(
+            child: ShapeIcon(iconName: iconName, color: color, size: 34),
           ),
         ),
         title: Text(
@@ -271,162 +274,171 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     _showCategoryDialog(category: category);
   }
 
-  void _showCategoryDialog({FriendCategory? category}) {
+  Future<void> _showCategoryDialog({FriendCategory? category}) async {
     if (!mounted) return;
     
     final isEdit = category != null;
     final nameController = TextEditingController(text: category?.name ?? '');
     String selectedColor = category?.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}';
-    String selectedIcon = category?.iconName ?? 'group';
+    String selectedIcon = _normalizeIconName(category?.iconName);
 
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text(
-            isEdit ? (AppLocalizations.of(context)!.editCategory ?? "") : AppLocalizations.of(context)!.newCategory,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF111827),
-            ),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(
-                    labelText: AppLocalizations.of(context)!.categoryName,
-                    hintText: AppLocalizations.of(context)!.categoryNameHint,
-                    labelStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF6B7280),
-                    ),
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF9CA3AF),
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildColorPicker(selectedColor, (color) {
-                  setState(() {
-                    selectedColor = color;
-                  });
-                }),
-                const SizedBox(height: 16),
-                _buildIconPicker(selectedIcon, (icon) {
-                  setState(() {
-                    selectedIcon = icon;
-                  });
-                }),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(
-                AppLocalizations.of(context)!.cancel ?? "",
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onPressed: () async {
-                final name = nameController.text.trim();
-                if (name.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(AppLocalizations.of(context)!.enterCategoryName ?? "")),
-                  );
-                  return;
-                }
-
-                bool success;
-                if (isEdit) {
-                  success = await _categoryService.updateCategory(
-                    categoryId: category!.id,
-                    name: name,
-                    description: '',
-                    color: selectedColor,
-                    iconName: selectedIcon,
-                  );
-                } else {
-                  final categoryId = await _categoryService.createCategory(
-                    name: name,
-                    description: '',
-                    color: selectedColor,
-                    iconName: selectedIcon,
-                  );
-                  success = categoryId != null;
-                }
-
-                if (success) {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isEdit ? (AppLocalizations.of(context)!.categoryUpdated ?? "") : AppLocalizations.of(context)!.categoryCreated),
-                    ),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(isEdit ? (AppLocalizations.of(context)!.categoryUpdateFailed ?? "") : AppLocalizations.of(context)!.categoryCreateFailed),
-                    ),
-                  );
-                }
-              },
-              child: Text(
-                isEdit ? (AppLocalizations.of(context)!.editAction ?? "") : AppLocalizations.of(context)!.create,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
+    try {
+      final draft = await showModalBottomSheet<_CategoryDraft>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.white,
+        showDragHandle: true,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
-      ),
-    );
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sheetContext, setState) {
+            final l10n = AppLocalizations.of(sheetContext)!;
+            final bottomInset = MediaQuery.of(sheetContext).viewInsets.bottom;
+            final bottomSafeArea = MediaQuery.of(sheetContext).viewPadding.bottom;
+
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, bottomInset + bottomSafeArea + 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isEdit ? (l10n.editCategory ?? "") : l10n.newCategory,
+                          style: TypographyStyles.headlineMedium.copyWith(
+                            color: BrandColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                      labelText: l10n.categoryName,
+                      hintText: l10n.categoryNameHint,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: AppColors.pointColor,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildColorPicker(selectedColor, (color) {
+                    setState(() => selectedColor = color);
+                  }),
+                  const SizedBox(height: 16),
+                  _buildIconPicker(selectedIcon, (icon) {
+                    setState(() => selectedIcon = icon);
+                  }),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF6B7280),
+                            side: const BorderSide(color: Color(0xFFE5E7EB)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text(l10n.cancel ?? ""),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.pointColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          onPressed: () {
+                            final name = nameController.text.trim();
+                            if (name.isEmpty) {
+                              ScaffoldMessenger.of(sheetContext).showSnackBar(
+                                SnackBar(content: Text(l10n.enterCategoryName ?? "")),
+                              );
+                              return;
+                            }
+                            Navigator.pop(
+                              sheetContext,
+                              _CategoryDraft(
+                                name: name,
+                                color: selectedColor,
+                                iconName: selectedIcon,
+                              ),
+                            );
+                          },
+                          child: Text(isEdit ? (l10n.editAction ?? "") : l10n.create),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+
+      if (!mounted || draft == null) return;
+
+      bool success;
+      if (isEdit) {
+        success = await _categoryService.updateCategory(
+          categoryId: category!.id,
+          name: draft.name,
+          description: '',
+          color: draft.color,
+          iconName: draft.iconName,
+        );
+      } else {
+        final categoryId = await _categoryService.createCategory(
+          name: draft.name,
+          description: '',
+          color: draft.color,
+          iconName: draft.iconName,
+        );
+        success = categoryId != null;
+      }
+
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? (isEdit ? (l10n.categoryUpdated ?? "") : l10n.categoryCreated)
+                : (isEdit ? (l10n.categoryUpdateFailed ?? "") : l10n.categoryCreateFailed),
+          ),
+        ),
+      );
+    } finally {
+      nameController.dispose();
+    }
   }
 
   Widget _buildColorPicker(String selectedColor, Function(String) onColorSelected) {
@@ -478,14 +490,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
 
   Widget _buildIconPicker(String selectedIcon, Function(String) onIconSelected) {
     const icons = [
-      {'name': 'group', 'icon': Icons.group},
-      {'name': 'school', 'icon': Icons.school},
-      {'name': 'work', 'icon': Icons.work},
-      {'name': 'palette', 'icon': Icons.palette},
-      {'name': 'sports', 'icon': Icons.sports_soccer},
-      {'name': 'music', 'icon': Icons.music_note},
-      {'name': 'book', 'icon': Icons.book},
-      {'name': 'home', 'icon': Icons.home},
+      {'name': 'shape_circle'},
+      {'name': 'shape_triangle'},
+      {'name': 'shape_square'},
+      {'name': 'shape_star'},
+      {'name': 'shape_heart'},
+      {'name': 'shape_cross'},
     ];
 
     return Column(
@@ -506,8 +516,14 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           runSpacing: 8,
           children: icons.map((iconData) {
             final iconName = iconData['name'] as String;
-            final icon = iconData['icon'] as IconData;
             final isSelected = iconName == selectedIcon;
+            // 아이콘별 기본 여백이 달라 시각적으로 크기가 달라 보일 수 있어,
+            // 세모/사각형은 조금 더 키워 동일한 인지 크기로 맞춘다.
+            final iconSize = switch (iconName) {
+              'shape_triangle' => 32.0,
+              'shape_square' => 28.0,
+              _ => 24.0,
+            };
             
             return GestureDetector(
               onTap: () => onIconSelected(iconName),
@@ -526,12 +542,15 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
                     width: isSelected ? 2 : 1,
                   ),
                 ),
-                child: Icon(
-                  icon,
-                  color: isSelected 
-                      ? AppColors.pointColor 
-                      : const Color(0xFF6B7280),
-                  size: 24,
+                child: Center(
+                  // 정삼각형은 커스텀 페인터로 렌더링
+                  child: ShapeIcon(
+                    iconName: iconName,
+                    color: isSelected
+                        ? AppColors.pointColor
+                        : const Color(0xFF6B7280),
+                    size: iconSize,
+                  ),
                 ),
               ),
             );
@@ -709,6 +728,30 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     }
 
     switch (iconName) {
+      case 'shape_circle':
+        return Icons.circle;
+      case 'shape_square':
+        return Icons.stop;
+      case 'shape_star':
+        return Icons.star;
+      case 'shape_cross':
+        return Icons.add;
+      case 'shape_circle_filled':
+        return Icons.circle;
+      case 'shape_circle_outline':
+        return Icons.radio_button_unchecked;
+      case 'shape_square_filled':
+        return Icons.stop;
+      case 'shape_square_outline':
+        return Icons.crop_square;
+      case 'shape_triangle':
+        return Icons.navigation;
+      case 'shape_star_filled':
+        return Icons.star;
+      case 'shape_star_outline':
+        return Icons.star_border;
+      case 'shape_heart':
+        return Icons.favorite;
       case 'school':
         return Icons.school;
       case 'work':
@@ -728,6 +771,35 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       default:
         Logger.error('⚠️ 알 수 없는 아이콘 이름: $iconName, 기본 아이콘 사용');
         return Icons.group;
+    }
+  }
+
+  String _normalizeIconName(String? iconName) {
+    const allowed = {
+      'shape_triangle',
+      'shape_circle',
+      'shape_square',
+      'shape_star',
+      'shape_heart',
+      'shape_cross',
+    };
+
+    if (iconName == null || iconName.isEmpty) return 'shape_circle';
+    if (allowed.contains(iconName)) return iconName;
+
+    // 구버전(8개) 아이콘 키 → 새 6개 키로 매핑
+    switch (iconName) {
+      case 'shape_circle_filled':
+      case 'shape_circle_outline':
+        return 'shape_circle';
+      case 'shape_square_filled':
+      case 'shape_square_outline':
+        return 'shape_square';
+      case 'shape_star_filled':
+      case 'shape_star_outline':
+        return 'shape_star';
+      default:
+        return 'shape_circle';
     }
   }
 }

@@ -462,12 +462,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (context) {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어/하이픈 포함 가능)
+        final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
+        final canSendDM = currentUser != null &&
+            _currentPost.userId.isNotEmpty &&
+            _currentPost.userId != 'deleted' &&
+            _currentPost.userId != currentUser.uid &&
+            uidPattern.hasMatch(_currentPost.userId);
+
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // DM 보내기 (기존 기능을 케밥 메뉴로 이동)
+                if (canSendDM)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: Color(0xFF111827),
+                    ),
+                    title: Text(
+                      AppLocalizations.of(context)!.directMessage,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _openDMFromDetail();
+                    },
+                  ),
                 ListTile(
                   leading: Icon(
                     _isSaved ? Icons.bookmark : Icons.bookmark_border,

@@ -21,10 +21,10 @@ import '../utils/logger.dart';
 import '../widgets/country_flag_circle.dart';
 import 'profile_edit_screen.dart';
 import 'user_meetups_screens.dart';
-import 'user_posts_screen.dart';
 import 'notification_settings_screen.dart';
 import 'account_settings_screen.dart';
 import 'post_detail_screen.dart';
+import 'saved_posts_screen.dart';
 import 'login_screen.dart';
 import 'review_detail_screen.dart';
 import 'main_screen.dart';
@@ -83,13 +83,13 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     ),
                     tabs: [
                       Tab(
-                        icon: Icon(Icons.grid_on_rounded, size: 16),
-                        text: AppLocalizations.of(context)!.reviews,
+                        icon: Icon(Icons.article_outlined, size: 16),
+                        text: AppLocalizations.of(context)!.posts,
                         height: 48,
                       ),
                       Tab(
-                        icon: Icon(Icons.bookmark_border_rounded, size: 16),
-                        text: AppLocalizations.of(context)!.saved,
+                        icon: Icon(Icons.grid_on_rounded, size: 16),
+                        text: AppLocalizations.of(context)!.reviews,
                         height: 48,
                       ),
                     ],
@@ -101,8 +101,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           body: TabBarView(
             controller: _tabController,
             children: [
+              _buildUserPosts(),
               _buildReviewGrid(),
-              _buildSavedPosts(),
             ],
           ),
         ),
@@ -240,65 +240,32 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
               _buildStatItem(
+                AppLocalizations.of(context)!.posts,
+                isPosts: true,
+                icon: Icons.article,
+                color: AppColors.pointColor,
+                showIcon: false,
+                onTap: null,
+              ),
+              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
+              _buildStatItem(
                 AppLocalizations.of(context)!.friends, 
                 isFriends: true, 
                 icon: Icons.people, 
                 color: AppColors.pointColor,
+                showIcon: false,
                 onTap: () => _navigateToFriendsPage(),
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
-                AppLocalizations.of(context)!.joinedMeetups, 
-                isJoined: true, 
-                icon: Icons.groups, 
+                AppLocalizations.of(context)!.reviews,
+                icon: Icons.grid_on_rounded,
                 color: AppColors.pointColor,
-                onTap: () => _navigateToUserMeetups(),
-              ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(
-                AppLocalizations.of(context)!.writtenPosts, 
-                isPosts: true, 
-                icon: Icons.article, 
-                color: AppColors.pointColor,
-                onTap: () => _navigateToUserPosts(),
+                showIcon: false,
+                countStream: _reviewService.getUserReviews().map((list) => list.length),
+                onTap: null,
               ),
             ],
-          ),
-          
-          const SizedBox(height: 20),
-          
-          // 프로필 편집 버튼
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ProfileEditScreen(),
-                  ),
-                ).then((_) {
-                  setState(() {});
-                });
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE5E7EB),
-                foregroundColor: const Color(0xFF111827),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Text(
-                AppLocalizations.of(context)!.profileEdit,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
           ),
         ],
       ),
@@ -577,13 +544,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     );
   }
 
-  Widget _buildSavedPosts() {
+  Widget _buildUserPosts() {
     // 실제 로그인된 사용자 ID 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.user?.uid;
     
     // 로그인되지 않은 경우 로그인 유도 메시지 표시
     if (currentUserId == null || currentUserId.isEmpty) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -605,7 +573,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 8),
             Text(
-              AppLocalizations.of(context)!.loginToViewSavedPosts,
+              isKo
+                  ? '게시글을 보려면 로그인해주세요'
+                  : 'Please login to view posts',
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 14,
@@ -618,7 +588,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     }
     
     return StreamBuilder<List<Post>>(
-      stream: _postService.getSavedPosts(),
+      stream: _userStatsService.getUserPosts(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Center(
@@ -662,9 +632,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           );
         }
         
-        final savedPosts = snapshot.data ?? [];
+        final posts = snapshot.data ?? [];
         
-        if (savedPosts.isEmpty) {
+        if (posts.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -676,28 +646,19 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    Icons.bookmark_border_rounded,
+                    Icons.article_outlined,
                     size: 48,
                     color: AppColors.pointColor,
                   ),
                 ),
                 SizedBox(height: 20),
                 Text(
-                  AppLocalizations.of(context)!.noSavedPosts,
+                  AppLocalizations.of(context)!.noWrittenPosts,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 20,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF111827),
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  AppLocalizations.of(context)!.saveInterestingPosts,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -707,14 +668,14 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         
         return ListView.builder(
           padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemCount: savedPosts.length,
+          itemCount: posts.length,
           itemBuilder: (context, index) {
-            final post = savedPosts[index];
+            final post = posts[index];
             return Container(
-              margin: EdgeInsets.only(bottom: 12),
+              margin: EdgeInsets.only(bottom: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(6),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.04),
@@ -727,14 +688,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 color: Colors.transparent,
                 child: InkWell(
                   onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => PostDetailScreen(post: post),
-                      ),
-                    );
+                    _openPostDetail(post.id);
                   },
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(6),
                   child: Padding(
                     padding: EdgeInsets.all(16),
                     child: Row(
@@ -748,11 +704,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                             color: post.imageUrls.isNotEmpty 
                                 ? Colors.transparent 
                                 : Color(0xFFF3F4F6),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: post.imageUrls.isNotEmpty
                               ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(8),
+                                  borderRadius: BorderRadius.circular(6),
                                   child: Image.network(
                                     post.imageUrls.first,
                                     fit: BoxFit.cover,
@@ -787,7 +743,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFF111827),
-                                  height: 1.4,
+                                  height: 1.25,
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -797,30 +754,67 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                 post.content,
                                 style: TextStyle(
                                   fontFamily: 'Pretendard',
-                                  fontSize: 14,
-                                  color: Color(0xFF6B7280),
-                                  height: 1.5,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111827),
+                                  height: 1.35,
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               SizedBox(height: 8),
+                              Row(
+                                children: [
                               Text(
-                                '${post.author} • ${_getTimeAgo(post.createdAt)}',
-                                style: TextStyle(
+                                    post.getFormattedTime(context),
+                                    style: const TextStyle(
                                   fontFamily: 'Pretendard',
                                   fontSize: 12,
                                   color: Color(0xFF9CA3AF),
-                                ),
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  if (post.likes > 0) ...[
+                                    const Icon(
+                                      Icons.favorite,
+                                      size: 16,
+                                      color: Color(0xFFEF4444),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${post.likes}',
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        color: Color(0xFF6B7280),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                  ],
+                                  if (post.commentCount > 0) ...[
+                                    const Icon(
+                                      Icons.chat_bubble_outline,
+                                      size: 16,
+                                      color: AppColors.pointColor,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      '${post.commentCount}',
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        color: Color(0xFF6B7280),
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ],
                           ),
-                        ),
-                        // 북마크 아이콘
-                        Icon(
-                          Icons.bookmark,
-                          color: Color(0xFF10B981),
-                          size: 20,
                         ),
                       ],
                     ),
@@ -832,6 +826,32 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         );
       },
     );
+  }
+
+  Future<void> _openPostDetail(String postId) async {
+    try {
+      final fetched = await _postService.getPostById(postId);
+      if (!mounted) return;
+
+      if (fetched == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
+        );
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PostDetailScreen(post: fetched),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+      );
+    }
   }
   
   String _getTimeAgo(DateTime dateTime) {
@@ -863,6 +883,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     bool isPosts = false,
     required IconData icon,
     required Color color,
+    bool showIcon = true,
+    Stream<int>? countStream,
     VoidCallback? onTap,
   }) {
     return Expanded(
@@ -874,16 +896,19 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              if (showIcon) ...[
               Icon(icon, size: 24, color: color),
               const SizedBox(height: 8),
+              ],
               StreamBuilder<int>(
-                stream: isFriends
-                    ? _relationshipService.getFriendCount()
-                    : isJoined
-                        ? _userStatsService.getJoinedMeetupCount()
-                        : isPosts
-                            ? _userStatsService.getUserPostCount()
-                            : _userStatsService.getHostedMeetupCount(),
+                stream: countStream ??
+                    (isFriends
+                        ? _relationshipService.getFriendCount()
+                        : isJoined
+                            ? _userStatsService.getJoinedMeetupCount()
+                            : isPosts
+                                ? _userStatsService.getUserPostCount()
+                                : _userStatsService.getHostedMeetupCount()),
                 builder: (context, snapshot) {
                   return Text(
                     '${snapshot.data ?? 0}',
@@ -1115,6 +1140,39 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
                 const SizedBox(height: 20),
+                // 프로필 편집 (화면 버튼 대신 설정 시트에서 제공)
+                _buildMenuItem(
+                  context,
+                  AppLocalizations.of(context)!.profileEdit,
+                  Icons.edit_rounded,
+                  () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      this.context,
+                      MaterialPageRoute(
+                        builder: (context) => const ProfileEditScreen(),
+                      ),
+                    ).then((_) {
+                      if (mounted) setState(() {});
+                    });
+                  },
+                ),
+                _buildMenuItem(
+                  context,
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '저장된 게시글'
+                      : 'Saved Posts',
+                  Icons.bookmark_border_rounded,
+                  () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      this.context,
+                      MaterialPageRoute(
+                        builder: (context) => const SavedPostsScreen(),
+                      ),
+                    );
+                  },
+                ),
                 // 내 모임 메뉴 숨김 처리
                 // _buildMenuItem(context, AppLocalizations.of(context)!.myMeetups, Icons.group_rounded, () {
                 //   Navigator.pop(context);
@@ -1125,16 +1183,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 //   ),
                 // );
                 // }),
-                // 내 게시글 메뉴 숨김 처리
-                // _buildMenuItem(context, AppLocalizations.of(context)!.myPosts, Icons.article_rounded, () {
-                //   Navigator.pop(context);
-                // Navigator.push(
-                //   context,
-                //   MaterialPageRoute(
-                //     builder: (context) => const UserPostsScreen(),
-                //   ),
-                // );
-                // }),
+                // 내 게시글 메뉴 숨김 처리 (기존 UserPostsScreen 페이지 제거됨)
                 _buildMenuItem(context, AppLocalizations.of(context)!.notificationSettings, Icons.notifications_rounded, () {
                   Navigator.pop(context);
                 Navigator.push(
@@ -1236,14 +1285,6 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     );
   }
 
-  void _navigateToUserPosts() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const UserPostsScreen(),
-      ),
-    );
-  }
 
   void _showLogoutConfirmDialog(BuildContext context, AuthProvider authProvider) {
     // 햅틱 피드백 - 중요한 액션임을 알림

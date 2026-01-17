@@ -12,16 +12,37 @@ admin.initializeApp();
 // Firestore 인스턴스
 const db = admin.firestore();
 
-// Gmail SMTP 설정 (명시적 설정)
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 465,
-  secure: true, // use SSL
-  auth: {
-    user: 'wefilling@gmail.com',
-    pass: functions.config().gmail?.password || process.env.GMAIL_PASSWORD,
-  },
-});
+// ===== Gmail Config Helpers =====
+const DEFAULT_GMAIL_USER = 'wefilling@gmail.com';
+const PLACEHOLDER_GMAIL_PASSWORD = '여기에16자리앱비밀번호입력';
+
+function getGmailUser(): string {
+  const user = (functions.config().gmail?.user || process.env.GMAIL_USER || DEFAULT_GMAIL_USER).toString().trim();
+  return user || DEFAULT_GMAIL_USER;
+}
+
+function getGmailPasswordSanitized(): string | null {
+  const raw = functions.config().gmail?.password || process.env.GMAIL_PASSWORD;
+  if (!raw) return null;
+  const sanitized = raw.toString().replace(/\s+/g, '');
+  if (!sanitized) return null;
+  // 레포/문서에 남아있는 placeholder 값이 설정된 경우, 실제 미설정으로 취급
+  if (sanitized === PLACEHOLDER_GMAIL_PASSWORD) return null;
+  return sanitized;
+}
+
+function createGmailTransporter() {
+  const pass = getGmailPasswordSanitized();
+  const user = getGmailUser();
+  if (!pass) return null;
+  // Gmail SMTP 설정 (명시적 설정)
+  return nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 465,
+    secure: true, // use SSL
+    auth: { user, pass },
+  });
+}
 
 export { initializeAds } from './initAds';
 
@@ -34,14 +55,20 @@ const ADMIN_EMAIL = 'wefilling@gmail.com';
 // 관리자에게 이메일 전송 헬퍼 함수
 async function sendAdminEmail(subject: string, htmlContent: string): Promise<void> {
   try {
-    const gmailPassword = functions.config().gmail?.password || process.env.GMAIL_PASSWORD;
+    const gmailPassword = getGmailPasswordSanitized();
     if (!gmailPassword) {
       console.warn('⚠️ Gmail 비밀번호 미설정 - 관리자 이메일 전송 스킵');
       return;
     }
 
+    const transporter = createGmailTransporter();
+    if (!transporter) {
+      console.warn('⚠️ Gmail 트랜스포터 생성 실패 - 관리자 이메일 전송 스킵');
+      return;
+    }
+
     const mailOptions = {
-      from: `Wefilling Admin <wefilling@gmail.com>`,
+      from: `Wefilling Admin <${getGmailUser()}>`,
       to: ADMIN_EMAIL,
       subject,
       html: htmlContent,
@@ -791,15 +818,14 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     }
 
     // Gmail 비밀번호가 설정되어 있는지 확인 (미설정이면 실패 처리)
-    const gmailPassword = functions.config().gmail?.password || process.env.GMAIL_PASSWORD;
+    const gmailPassword = getGmailPasswordSanitized();
     if (!gmailPassword) {
       throw new functions.https.HttpsError(
         'failed-precondition',
-        '메일 발송 설정이 누락되어 인증메일을 보낼 수 없습니다. 관리자에게 문의해주세요.'
+        '메일 발송 설정이 누락되어 인증메일을 보낼 수 없습니다. (Gmail 앱 비밀번호 미설정)'
       );
     }
-    // Gmail 앱 비밀번호는 표시 시 공백이 포함되므로 안전하게 제거
-    const sanitizedPassword = gmailPassword.replace(/\s+/g, '');
+    const gmailUser = getGmailUser();
 
     // 4자리 랜덤 인증번호 생성 (메일 발송 가능할 때만 생성/저장)
     const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
@@ -821,7 +847,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     // 안전하게 현재 설정으로 트랜스포터 생성
     const mailTransporter = nodemailer.createTransport({
       service: 'gmail',
-      auth: { user: 'wefilling@gmail.com', pass: sanitizedPassword },
+      auth: { user: gmailUser, pass: gmailPassword },
     });
 
     // 자격 증명 사전 검증: 설정 오류(EAUTH 등) 즉시 감지
@@ -885,7 +911,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
         </div>`;
 
     const mailOptions = {
-      from: 'wefilling@gmail.com',
+      from: gmailUser,
       to: email,
       subject,
       html: isKo ? htmlKo : htmlEn,
@@ -1836,9 +1862,16 @@ export const reportUser = functions.https.onCall(async (data, context) => {
 
     // 이메일 발송
     try {
+      const transporter = createGmailTransporter();
+      if (!transporter) {
+        console.warn('⚠️ Gmail 비밀번호 미설정 - 신고 이메일 발송 스킵');
+        // 이메일 발송 실패해도 신고는 접수되도록 함
+        return { success: true, message: '신고가 접수되었습니다.' };
+      }
+
       const mailOptions = {
-        from: 'wefilling@gmail.com',
-        to: 'wefilling@gmail.com',
+        from: getGmailUser(),
+        to: ADMIN_EMAIL,
         subject: '[Wefilling] 신고요청이 왔습니다',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -1889,6 +1922,7 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
     try {
       const reportData = snapshot.data();
       const reportId = context.params.reportId;
+      const projectId = process.env.GCLOUD_PROJECT || 'unknown-project';
       
       console.log(`📢 새 신고 접수: ${reportId}`);
 
@@ -1907,7 +1941,7 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
       }
 
       const mailOptions = {
-        from: 'wefilling@gmail.com',
+        from: getGmailUser(),
         to: ADMIN_EMAIL,
         subject: `[Wefilling] 신고 접수 알림 (${targetType})`,
         html: `
@@ -1924,7 +1958,7 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
               <p><strong>접수 시간:</strong> ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</p>
             </div>
             <div style="text-align: center;">
-              <a href="https://console.firebase.google.com/u/0/project/wefilling-2025/firestore/data/~2Freports~2F${reportId}" 
+              <a href="https://console.firebase.google.com/u/0/project/${projectId}/firestore/data/~2Freports~2F${reportId}" 
                  style="background-color: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
                 Firestore에서 확인하기
               </a>
@@ -1932,6 +1966,12 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
           </div>
         `,
       };
+
+      const transporter = createGmailTransporter();
+      if (!transporter) {
+        console.warn('⚠️ Gmail 비밀번호 미설정 - 관리자 신고 알림 메일 스킵');
+        return null;
+      }
 
       // 메일 서버 연결 테스트
       try {

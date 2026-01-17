@@ -12,7 +12,7 @@ Gmail SMTP 인증 정보가 없어서 이메일을 전송할 수 없습니다.
 ### 1. Gmail 앱 비밀번호 생성
 
 1. https://myaccount.google.com/apppasswords 접속
-2. Google 계정 로그인 (hanyangwatson@gmail.com)
+2. Google 계정 로그인 (**wefilling@gmail.com**)
 3. 2단계 인증이 활성화되어 있어야 합니다
    - 활성화 안 되어있으면: https://myaccount.google.com/security 에서 2단계 인증 활성화
 4. "앱 비밀번호" 페이지에서:
@@ -32,6 +32,7 @@ cd /Users/chajaemin/Desktop/wefilling-nochatbot
 
 # Gmail 비밀번호 설정 (공백 제거한 16자리 비밀번호 입력)
 firebase functions:config:set gmail.password="여기에16자리비밀번호입력"
+firebase functions:config:set gmail.user="wefilling@gmail.com"
 
 # 설정 확인
 firebase functions:config:get

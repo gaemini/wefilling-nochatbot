@@ -71,6 +71,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   String? _replyToUserName; // 직전 부모 댓글 작성자 닉네임
   String? _replyTargetCommentId; // 하이라이트할 댓글 ID (시각적 피드백용)
 
+  // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
+  late final Stream<List<Comment>> _commentsStream;
+  StreamSubscription<List<Comment>>? _commentsCountSub;
+
   @override
   void initState() {
     super.initState();
@@ -91,6 +95,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _showPageIndicatorTemporarily();
       });
     }
+
+    // 댓글 스트림 구독: 댓글 수를 실시간으로 UI에 반영
+    _commentsStream =
+        _commentService.getCommentsWithReplies(_currentPost.id).asBroadcastStream();
+    _commentsCountSub = _commentsStream.listen((comments) {
+      if (!mounted) return;
+      final newCount = comments.length;
+      if (_currentPost.commentCount == newCount) return;
+      setState(() {
+        _currentPost = _currentPost.copyWith(commentCount: newCount);
+      });
+    });
   }
 
   /// 기존 title이 남아있는 게시글은 title을 본문 앞에 붙여 "본문처럼" 처리
@@ -119,6 +135,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _commentFocusNode.dispose();
     _imagePageController.dispose();
     _indicatorTimer?.cancel(); // Timer 정리
+    _commentsCountSub?.cancel();
     super.dispose();
   }
   
@@ -1505,7 +1522,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
                   // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
                   StreamBuilder<List<Comment>>(
-                    stream: _commentService.getCommentsWithReplies(_currentPost.id),
+                    stream: _commentsStream,
                     builder: (context, snapshot) {
                       if (snapshot.connectionState == ConnectionState.waiting &&
                           !snapshot.hasData) {

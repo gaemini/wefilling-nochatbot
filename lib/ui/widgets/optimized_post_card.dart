@@ -22,6 +22,8 @@ class OptimizedPostCard extends StatefulWidget {
   final Post post;
   final int index;
   final VoidCallback onTap;
+  /// 수동 새로고침 시 계산한 댓글 수를 카드에 우선 반영하기 위한 오버라이드 값
+  final int? externalCommentCountOverride;
   final bool preloadImage;
   final bool useGlassmorphism;
   final EdgeInsetsGeometry margin;
@@ -32,6 +34,7 @@ class OptimizedPostCard extends StatefulWidget {
     required this.post,
     required this.index,
     required this.onTap,
+    this.externalCommentCountOverride,
     this.preloadImage = false,
     this.useGlassmorphism = false,
     this.margin = const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -302,7 +305,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   builder: (context, snapshot) {
                     // 기본값은 리스트에서 받은 post를 사용
                     int likes = post.likes;
-                    int commentCount = post.commentCount;
+                    int commentCount =
+                        widget.externalCommentCountOverride ?? post.commentCount;
                     int viewCount = post.viewCount;
                     int pollTotalVotes = post.pollTotalVotes;
                     List<String> likedBy = post.likedBy;
@@ -312,8 +316,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       final dynamic rawLikes = data['likes'];
                       if (rawLikes is int) likes = rawLikes;
 
-                      final dynamic rawCommentCount = data['commentCount'];
-                      if (rawCommentCount is int) commentCount = rawCommentCount;
+                      // 외부 오버라이드가 없을 때만 Firestore commentCount를 사용
+                      if (widget.externalCommentCountOverride == null) {
+                        final dynamic rawCommentCount = data['commentCount'];
+                        if (rawCommentCount is int) commentCount = rawCommentCount;
+                      }
 
                       final dynamic rawViewCount = data['viewCount'];
                       if (rawViewCount is int) viewCount = rawViewCount;

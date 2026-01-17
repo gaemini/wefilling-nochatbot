@@ -146,11 +146,10 @@ class CommentService {
         Logger.log('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
       }
 
-      // 댓글 수 업데이트 (게시글/리뷰/모임 모두 시도, 실패해도 무시)
-      await _updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId);
-      
-      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
-      await _updateMeetupCommentCount(postId);
+      // 댓글 수 정합성 보정:
+      // - posts/meetups의 commentCount는 Cloud Functions 트리거가 담당 (rules 이슈/중복 방지)
+      // - 리뷰 프로필(users/{uid}/posts/{postId}) commentCount만 클라이언트에서 보정
+      unawaited(_updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
 
       return true;
     } catch (e) {
@@ -171,19 +170,7 @@ class CommentService {
 
       final commentCount = querySnapshot.docs.length;
 
-      // 1) posts/{postId}가 존재하면 업데이트
-      try {
-        final postDoc = await _firestore.collection('posts').doc(postId).get();
-        if (postDoc.exists) {
-          await _firestore.collection('posts').doc(postId).update({
-            'commentCount': commentCount,
-          });
-        }
-      } catch (e) {
-        // 권한/존재하지 않음 → 무시
-      }
-
-      // 2) 리뷰 프로필 문서(users/{uid}/posts/{postId}) 업데이트 (권한 실패 시 무시)
+      // 리뷰 프로필 문서(users/{uid}/posts/{postId}) 업데이트 (권한 실패 시 무시)
       if (reviewOwnerUserId != null && reviewOwnerUserId.isNotEmpty) {
         try {
           await _firestore
@@ -231,6 +218,43 @@ class CommentService {
       Logger.error('캐시된 댓글 가져오기 실패: $e');
       return [];
     }
+  }
+
+  /// 여러 게시글의 댓글 수를 한 번에 조회합니다. (수동 새로고침용)
+  /// - Firestore whereIn(최대 10개) 제한 때문에 내부에서 청크 처리합니다.
+  /// - 반환: { postId: count }
+  Future<Map<String, int>> fetchCommentCountsForPostIds(List<String> postIds) async {
+    final ids = postIds.where((e) => e.trim().isNotEmpty).toSet().toList();
+    if (ids.isEmpty) return {};
+
+    const chunkSize = 10;
+    final result = <String, int>{};
+
+    for (int i = 0; i < ids.length; i += chunkSize) {
+      final chunk = ids.sublist(i, i + chunkSize > ids.length ? ids.length : i + chunkSize);
+      try {
+        final snap = await _firestore
+            .collection('comments')
+            .where('postId', whereIn: chunk)
+            .get();
+
+        for (final doc in snap.docs) {
+          final data = doc.data();
+          final postId = data['postId']?.toString();
+          if (postId == null || postId.isEmpty) continue;
+          result[postId] = (result[postId] ?? 0) + 1;
+        }
+
+        // whereIn 대상이지만 댓글이 0개인 경우도 0으로 채움
+        for (final id in chunk) {
+          result[id] = result[id] ?? 0;
+        }
+      } catch (e) {
+        Logger.error('댓글 수 일괄 조회 오류: $e');
+      }
+    }
+
+    return result;
   }
 
   // 게시글의 모든 댓글 가져오기
@@ -303,12 +327,9 @@ class CommentService {
 
       // 댓글 삭제
       await _firestore.collection('comments').doc(commentId).delete();
-
-      // 게시글 문서의 댓글 수 업데이트
-      await _updateCommentCount(postId);
       
-      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
-      await _updateMeetupCommentCount(postId);
+      // 댓글 수 정합성 보정 (리뷰 프로필용)
+      unawaited(_updateCommentCount(postId));
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
@@ -439,12 +460,9 @@ class CommentService {
       }
       
       await batch.commit();
-
-      // 게시글 댓글 수 업데이트
-      await _updateCommentCount(postId);
       
-      // 모임 댓글인지 확인하고 모임 댓글수도 업데이트
-      await _updateMeetupCommentCount(postId);
+      // 댓글 수 정합성 보정 (리뷰 프로필용)
+      unawaited(_updateCommentCount(postId));
 
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {

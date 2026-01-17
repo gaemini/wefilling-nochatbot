@@ -11,6 +11,43 @@ class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  /// 후기 검색 (Future 버전)
+  /// - 컬렉션 `reviews`를 최신순으로 가져온 뒤 클라이언트에서 필터링합니다.
+  /// - 검색 기준: meetupTitle / content / authorName
+  Future<List<ReviewPost>> searchReviewsAsync(String query) async {
+    try {
+      final q = query.trim();
+      if (q.isEmpty) return [];
+
+      final lowercaseQuery = q.toLowerCase();
+      final snapshot =
+          await _firestore.collection('reviews').orderBy('createdAt', descending: true).get();
+
+      final results = <ReviewPost>[];
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          final meetupTitle = (data['meetupTitle'] as String? ?? '').toLowerCase();
+          final content = (data['content'] as String? ?? '').toLowerCase();
+          final authorName = (data['authorName'] as String? ?? '').toLowerCase();
+
+          if (meetupTitle.contains(lowercaseQuery) ||
+              content.contains(lowercaseQuery) ||
+              authorName.contains(lowercaseQuery)) {
+            results.add(ReviewPost.fromMap({'id': doc.id, ...data}));
+          }
+        } catch (e) {
+          Logger.error('후기 검색 파싱 오류: $e');
+        }
+      }
+
+      return results;
+    } catch (e) {
+      Logger.error('후기 검색 오류: $e');
+      return [];
+    }
+  }
+
   // 사용자의 후기 게시글 스트림 가져오기
   Stream<List<ReviewPost>> getUserReviews() {
     final user = _auth.currentUser;

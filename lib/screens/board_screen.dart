@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../constants/app_constants.dart';
 import '../services/post_service.dart';
+import '../services/comment_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
@@ -18,9 +19,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 
 class BoardScreen extends StatefulWidget {
-  final String? searchQuery;
-  
-  const BoardScreen({super.key, this.searchQuery});
+  const BoardScreen({super.key});
 
   @override
   State<BoardScreen> createState() => _BoardScreenState();
@@ -28,9 +27,13 @@ class BoardScreen extends StatefulWidget {
 
 class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStateMixin {
   final PostService _postService = PostService();
-  final TextEditingController _searchController = TextEditingController();
-  bool _isSearching = false;
+  final CommentService _commentService = CommentService();
   late TabController _tabController;
+
+  // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
+  final Map<String, int> _commentCountOverrides = {};
+  bool _didAutoRefreshTodayCommentCounts = false;
+  bool _didAutoRefreshAllCommentCounts = false;
 
   // 게시글 카드 외부 여백(첨부 이미지처럼 좌우 여백을 더 주고, 카드 간 간격도 안정적으로)
   static const EdgeInsets _boardPostCardMargin =
@@ -56,37 +59,29 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _searchController.addListener(_onSearchChanged);
-    // 외부에서 전달된 검색어가 있으면 설정
-    if (widget.searchQuery != null && widget.searchQuery!.isNotEmpty) {
-      _searchController.text = widget.searchQuery!;
-      _isSearching = true;
-    }
+  }
+
+  Future<void> _refreshCommentCountsForPosts(List<Post> posts) async {
+    // 너무 많은 카드에 대해 매번 집계하면 느려질 수 있어, 상위 N개만 갱신
+    const maxTargets = 40;
+    final ids = posts.map((p) => p.id).toSet().take(maxTargets).toList();
+    if (ids.isEmpty) return;
+
+    final counts = await _commentService.fetchCommentCountsForPostIds(ids);
+    if (!mounted) return;
+    setState(() {
+      _commentCountOverrides.addAll(counts);
+    });
   }
 
   @override
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _tabController.dispose();
-    _searchController.removeListener(_onSearchChanged);
-    _searchController.dispose();
     _todayScrollController.dispose();
     _allScrollController.dispose();
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
-  }
-
-  void _onSearchChanged() {
-    setState(() {
-      _isSearching = _searchController.text.isNotEmpty;
-    });
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() {
-      _isSearching = false;
-    });
   }
 
 
@@ -179,15 +174,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
         List<Post> posts = snapshot.data ?? [];
 
-        // 검색 필터링
-        if (_isSearching && _searchController.text.isNotEmpty) {
-          final searchQuery = _searchController.text.toLowerCase();
-          posts = posts.where((post) {
-            return post.title.toLowerCase().contains(searchQuery) ||
-                post.content.toLowerCase().contains(searchQuery);
-          }).toList();
-        }
-
         // 오늘 날짜의 게시글만 필터링
         final now = DateTime.now();
         final today = DateTime(now.year, now.month, now.day);
@@ -199,6 +185,15 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           );
           return postDate.isAtSameMomentAs(today);
         }).toList();
+
+        // 앱 첫 진입 시(초기 로드) 자동으로 댓글 수 재집계 1회 수행
+        if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
+          _didAutoRefreshTodayCommentCounts = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _refreshCommentCountsForPosts(todayPosts);
+          });
+        }
 
         // 조기 반환: 빈 상태
         if (todayPosts.isEmpty) {
@@ -323,8 +318,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
           onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
+        await _refreshCommentCountsForPosts(todayPosts);
           },
           child: ListView.builder(
             key: const PageStorageKey('board_today_list'),
@@ -349,6 +343,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
                 post: post,
             index: postIndex,
                 onTap: () => _navigateToPostDetail(post),
+            externalCommentCountOverride: _commentCountOverrides[post.id],
             preloadImage: postIndex < 3,
             margin: _boardPostCardMargin,
             contentPadding: _boardPostCardContentPadding,
@@ -376,13 +371,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
         List<Post> posts = snapshot.data ?? [];
 
-        // 검색 필터링
-        if (_isSearching && _searchController.text.isNotEmpty) {
-          final searchQuery = _searchController.text.toLowerCase();
-          posts = posts.where((post) {
-            return post.title.toLowerCase().contains(searchQuery) ||
-                post.content.toLowerCase().contains(searchQuery);
-          }).toList();
+        // 앱 첫 진입 시(초기 로드) 자동으로 댓글 수 재집계 1회 수행
+        if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
+          _didAutoRefreshAllCommentCounts = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _refreshCommentCountsForPosts(posts);
+          });
         }
 
         // 조기 반환: 빈 상태
@@ -470,13 +465,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-            child: _isSearching
-                ? AppEmptyState.noSearchResults(
-              context: context,
-              searchQuery: _searchController.text,
-              onClearSearch: _clearSearch,
-                  )
-                : AppEmptyState.noPosts(
+            child: AppEmptyState.noPosts(
               onCreatePost: () {
                 Navigator.push(
                   context,
@@ -504,8 +493,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
           onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
+        await _refreshCommentCountsForPosts(posts);
           },
       child: ListView.builder(
         key: const PageStorageKey('board_all_list'),
@@ -557,6 +545,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             post: groupPosts[i],
             index: i,
             onTap: () => _navigateToPostDetail(groupPosts[i]),
+            externalCommentCountOverride: _commentCountOverrides[groupPosts[i].id],
             preloadImage: i < 3,
             margin: _boardPostCardMargin,
             contentPadding: _boardPostCardContentPadding,

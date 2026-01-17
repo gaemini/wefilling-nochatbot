@@ -575,6 +575,18 @@ export const onCommentCreated = functions.firestore
       const commenterName = comment.authorNickname || 'User';
       if (!postId) return null;
 
+      // ✅ 댓글 수 업데이트 (posts / meetups)
+      // - Firestore rules로 인해 클라이언트가 commentCount를 업데이트할 수 없는 케이스가 있어
+      //   서버(Admin SDK)에서 안전하게 반영한다.
+      // - 존재하는 문서에만 적용 (not-found는 무시)
+      const inc = admin.firestore.FieldValue.increment(1);
+      try {
+        await db.collection('posts').doc(postId).update({ commentCount: inc });
+      } catch (_) {}
+      try {
+        await db.collection('meetups').doc(postId).update({ commentCount: inc });
+      } catch (_) {}
+
       const postDoc = await db.collection('posts').doc(postId).get();
       if (!postDoc.exists) return null;
       const post = postDoc.data()!;
@@ -608,6 +620,30 @@ export const onCommentCreated = functions.firestore
       return null;
     } catch (error) {
       console.error('onCommentCreated 오류:', error);
+      return null;
+    }
+  });
+
+// 댓글 삭제 시 게시글/모임 댓글 수 감소
+export const onCommentDeleted = functions.firestore
+  .document('comments/{commentId}')
+  .onDelete(async (snapshot, context) => {
+    try {
+      const comment = snapshot.data();
+      const postId = comment?.postId;
+      if (!postId) return null;
+
+      const dec = admin.firestore.FieldValue.increment(-1);
+      try {
+        await db.collection('posts').doc(postId).update({ commentCount: dec });
+      } catch (_) {}
+      try {
+        await db.collection('meetups').doc(postId).update({ commentCount: dec });
+      } catch (_) {}
+
+      return null;
+    } catch (error) {
+      console.error('onCommentDeleted 오류:', error);
       return null;
     }
   });

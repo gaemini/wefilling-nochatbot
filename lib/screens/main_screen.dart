@@ -24,7 +24,7 @@ import 'friend_categories_screen.dart';
 import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
-import 'search_result_page.dart';
+import 'unified_search_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -44,8 +44,6 @@ class _MainScreenState extends State<MainScreen> {
   late int _selectedIndex; // 초기값은 initState에서 설정
   final NotificationService _notificationService = NotificationService();
   final DMService _dmService = DMService();
-  final TextEditingController _searchController = TextEditingController();
-  bool _isSearching = false;
   late VoidCallback _cleanupCallback;
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
 
@@ -94,13 +92,12 @@ class _MainScreenState extends State<MainScreen> {
 
     // 서비스 정리
     _notificationService.dispose();
-    _searchController.dispose();
     super.dispose();
   }
 
   // 화면 목록 - 검색어를 전달할 수 있도록 수정
   List<Widget> get _screens => [
-        BoardScreen(searchQuery: _searchController.text),
+        const BoardScreen(),
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
         MeetupHomePage(initialMeetupId: _pendingMeetupId),
         const FriendCategoriesScreen(),
@@ -127,48 +124,14 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _onSearchChanged() {
-    setState(() {
-      _isSearching = _searchController.text.isNotEmpty;
-    });
-  }
-
-  void _clearSearch() {
-    _searchController.clear();
-    setState(() {
-      _isSearching = false;
-    });
-  }
-
-  String _getSearchHint() {
-    switch (_selectedIndex) {
-      case 0:
-        return AppLocalizations.of(context)!.searchPostsHint ?? "스토리 찾기";
-      case 1:
-        return AppLocalizations.of(context)!.searchMeetupsHint ?? "모임 찾기";
-      default:
-        return AppLocalizations.of(context)!.search ?? "";
-    }
-  }
-
-  String _getBoardType() {
-    switch (_selectedIndex) {
-      case 0:
-        return 'info'; // 게시판
-      case 1:
-        return 'meeting'; // 모임
-      default:
-        return 'info';
-    }
-  }
-
   void _navigateToSearchPage() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => SearchResultPage(
-          boardType: _getBoardType(),
-          initialQuery: _searchController.text,
+        builder: (context) => UnifiedSearchScreen(
+          // 0: 이름, 1: 게시글, 2: 모임 ...
+          initialTabIndex: _selectedIndex == 0 ? 1 : 2,
+          initialQuery: null,
         ),
       ),
     );
@@ -308,50 +271,17 @@ class _MainScreenState extends State<MainScreen> {
                 ],
             ),
           ),
-            const SizedBox(width: 12),
-            if (_selectedIndex <= 1)
-              // 검색창 (반응형)
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => _navigateToSearchPage(),
-                  child: Container(
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F6F8),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: Colors.grey.shade200,
-                        width: 0.5,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const SizedBox(width: 12),
-                        const Icon(
-                          Icons.search,
-                          color: Colors.black54,
-                          size: 18,
-                        ),
-                        Expanded(
-                          child: Center(
-                            child: Text(
-                              _getSearchHint(),
-                              style: const TextStyle(
-                                color: Colors.black54,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              const Spacer(),
-            const SizedBox(width: 12),
+            const Spacer(),
+            // 돋보기 아이콘 (게시글/모임 탭에서만 표시)
+            if (_selectedIndex <= 1) ...[
+              AppIconButton(
+                icon: Icons.search,
+                onPressed: _navigateToSearchPage,
+                semanticLabel: AppLocalizations.of(context)!.search,
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 4),
+            ],
             // 알림 아이콘
             StreamBuilder<int>(
               stream: _notificationService.getUnreadNotificationCount(),

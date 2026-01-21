@@ -2,7 +2,9 @@
 // 게시글 검색 결과 카드 위젯
 
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/post.dart';
+import '../providers/auth_provider.dart';
 import '../screens/post_detail_screen.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
@@ -32,6 +34,8 @@ class PostSearchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final currentUserId = context.read<AuthProvider>().user?.uid;
+    final isLiked = currentUserId != null && post.isLikedByUser(currentUserId);
     
     return InkWell(
       onTap: () {
@@ -119,9 +123,9 @@ class PostSearchCard extends StatelessWidget {
                 children: [
                   // 좋아요수
                   Icon(
-                    IconStyles.favoriteFilled,
+                    isLiked ? IconStyles.favoriteFilled : IconStyles.favorite,
                     size: DesignTokens.iconSmall,
-                    color: BrandColors.error,
+                    color: isLiked ? BrandColors.error : BrandColors.textTertiary,
                   ),
                   SizedBox(width: DesignTokens.s4),
                   Text(

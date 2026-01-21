@@ -43,6 +43,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   late final TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
   Timer? _debounceTimer;
 
   final PostService _postService = PostService();
@@ -72,6 +73,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       if (mounted) setState(() {});
     });
 
+    _searchFocusNode.addListener(() {
+      // placeholder(중앙 정렬) 노출/숨김용
+      if (mounted) setState(() {});
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _initializeRelationshipProvider();
 
@@ -89,6 +95,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -351,6 +358,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   Widget _buildSearchField(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final showCenteredPlaceholder =
+        _searchController.text.trim().isEmpty && !_searchFocusNode.hasFocus;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Container(
@@ -358,29 +367,68 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           color: const Color(0xFFF5F6F8),
           borderRadius: BorderRadius.circular(22),
         ),
-        child: TextField(
-          controller: _searchController,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: l10n.enterSearchQuery,
-            hintStyle: const TextStyle(color: Colors.black54, fontSize: 14),
-            prefixIcon: const Icon(Icons.search, color: Colors.black54, size: 20),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? GestureDetector(
-                    onTap: () {
-                      _searchController.clear();
-                      _clearAllResults();
-                      FocusScope.of(context).unfocus();
-                    },
-                    child: const Icon(Icons.clear, color: Colors.black54, size: 18),
-                  )
-                : null,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-          style: const TextStyle(fontSize: 14),
-          textInputAction: TextInputAction.search,
-          onChanged: _onQueryChanged,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Row(
+              children: [
+                const SizedBox(
+                  width: 44,
+                  child: Center(
+                    child: Icon(Icons.search, color: Colors.black54, size: 20),
+                  ),
+                ),
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    focusNode: _searchFocusNode,
+                    autofocus: true,
+                    textAlign: TextAlign.start, // 입력은 항상 왼쪽부터
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                    ),
+                    style: const TextStyle(fontSize: 14),
+                    textInputAction: TextInputAction.search,
+                    onChanged: _onQueryChanged,
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: _searchController.text.isNotEmpty
+                      ? GestureDetector(
+                          onTap: () {
+                            _searchController.clear();
+                            _clearAllResults();
+                            FocusScope.of(context).unfocus();
+                          },
+                          child: const Icon(
+                            Icons.clear,
+                            color: Colors.black54,
+                            size: 18,
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+            if (showCenteredPlaceholder)
+              IgnorePointer(
+                child: Padding(
+                  // 좌/우 아이콘 영역을 제외하고 가운데 배치
+                  padding: const EdgeInsets.symmetric(horizontal: 44),
+                  child: Text(
+                    l10n.enterSearchQuery,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.black54, fontSize: 14),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -394,11 +442,13 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Icon(icon, size: 72, color: Colors.grey.shade300),
           const SizedBox(height: 18),
           Text(
             title,
+            textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,

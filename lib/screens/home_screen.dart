@@ -543,13 +543,13 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         fontFamily: 'Pretendard',
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: isSelected
-                            ? AppColors.pointColor
-                            : index == 6 // 일요일
-                                ? const Color(0xFFEF4444)
-                                : index == 5 // 토요일
-                                    ? const Color(0xFF3B82F6)
-                                    : const Color(0xFF6B7280),
+                        // 날짜 선택 여부와 무관하게 요일 이니셜 색상은 고정
+                        // (선택 강조는 날짜 원형 배경으로만 표현)
+                        color: index == 6 // 일요일
+                            ? const Color(0xFFEF4444)
+                            : index == 5 // 토요일
+                                ? const Color(0xFF3B82F6)
+                                : const Color(0xFF6B7280),
                       ),
                     ),
 

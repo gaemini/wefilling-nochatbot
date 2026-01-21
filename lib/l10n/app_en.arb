@@ -1125,7 +1125,7 @@
   "postTypeSectionTitle": "Post Type",
   "postTypeTextLabel": "Text",
   "postTypePollLabel": "Poll",
-  "postTypePollHelper": "Polls are one vote per person. You can add up to 8 options.",
+  "postTypePollHelper": "Polls are one vote per person.",
   "pollQuestionHint": "Enter a poll question",
   "pollOptionsTitle": "Poll Options",
   "pollOptionHint": "Option {index}",

@@ -45,7 +45,7 @@ class UserTile extends StatelessWidget {
               Expanded(child: _buildUserInfo(context)),
 
               // 액션 버튼
-              _buildActionButton(),
+              _buildActionButton(context),
             ],
           ),
         ),
@@ -135,7 +135,7 @@ class UserTile extends StatelessWidget {
   }
 
   /// 액션 버튼 위젯
-  Widget _buildActionButton() {
+  Widget _buildActionButton(BuildContext context) {
     if (isLoading) {
       return const SizedBox(
         width: 24,
@@ -144,8 +144,31 @@ class UserTile extends StatelessWidget {
       );
     }
 
+    String _labelForStatus(BuildContext context, RelationshipStatus status) {
+      final l10n = AppLocalizations.of(context);
+      if (l10n == null) return '';
+      switch (status) {
+        case RelationshipStatus.none:
+          // 친구요청 보내기
+          return l10n.friendRequest;
+        case RelationshipStatus.pendingOut:
+          // 요청 취소
+          return l10n.cancelFriendRequest;
+        case RelationshipStatus.pendingIn:
+          // 받은 요청(수락은 요청 페이지에서 진행)
+          return l10n.accept;
+        case RelationshipStatus.friends:
+          return l10n.removeFriendAction;
+        case RelationshipStatus.blocked:
+          return l10n.unblock;
+        case RelationshipStatus.blockedBy:
+          return l10n.blockedUser;
+      }
+    }
+
     // 차단당한 상태는 버튼 비활성화
     if (relationshipStatus == RelationshipStatus.blockedBy) {
+      final label = _labelForStatus(context, relationshipStatus);
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -153,7 +176,7 @@ class UserTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
         ),
         child: Text(
-          '차단됨',
+          label.isNotEmpty ? label : 'Blocked',
           style: TextStyle(fontSize: 12, color: Colors.grey[600]),
         ),
       );
@@ -173,7 +196,7 @@ class UserTile extends StatelessWidget {
         minimumSize: const Size(90, 40),
       ),
       child: Text(
-        relationshipStatus.actionButtonText,
+        _labelForStatus(context, relationshipStatus),
         style: const TextStyle(
           fontFamily: 'Pretendard',
           fontSize: 13,

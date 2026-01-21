@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
+import '../providers/relationship_provider.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/post_service.dart';
@@ -47,6 +48,18 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+
+    // ✅ 마이페이지에서도 친구요청 뱃지/상태가 즉시 갱신되도록 관계 스트림 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final authProvider = context.read<AuthProvider>();
+        final relationshipProvider = context.read<RelationshipProvider>();
+        relationshipProvider.setAuthProvider(authProvider);
+        await relationshipProvider.initialize();
+      } catch (_) {
+        // 초기화 실패는 UI를 막지 않음 (배지는 0으로 표시됨)
+      }
+    });
   }
   
   @override
@@ -248,13 +261,18 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 onTap: null,
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(
-                AppLocalizations.of(context)!.friends, 
-                isFriends: true, 
-                icon: Icons.people, 
-                color: AppColors.pointColor,
-                showIcon: false,
-                onTap: () => _navigateToFriendsPage(),
+              Consumer<RelationshipProvider>(
+                builder: (context, provider, _) {
+                  return _buildStatItem(
+                    AppLocalizations.of(context)!.friends,
+                    isFriends: true,
+                    icon: Icons.people,
+                    color: AppColors.pointColor,
+                    showIcon: false,
+                    badgeCount: provider.incomingRequests.length,
+                    onTap: () => _navigateToFriendsPage(),
+                  );
+                },
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
@@ -885,6 +903,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     required Color color,
     bool showIcon = true,
     Stream<int>? countStream,
+    int badgeCount = 0,
     VoidCallback? onTap,
   }) {
     return Expanded(
@@ -893,45 +912,75 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
             children: [
-              if (showIcon) ...[
-              Icon(icon, size: 24, color: color),
-              const SizedBox(height: 8),
-              ],
-              StreamBuilder<int>(
-                stream: countStream ??
-                    (isFriends
-                        ? _relationshipService.getFriendCount()
-                        : isJoined
-                            ? _userStatsService.getJoinedMeetupCount()
-                            : isPosts
-                                ? _userStatsService.getUserPostCount()
-                                : _userStatsService.getHostedMeetupCount()),
-                builder: (context, snapshot) {
-                  return Text(
-                    '${snapshot.data ?? 0}',
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (showIcon) ...[
+                    Icon(icon, size: 24, color: color),
+                    const SizedBox(height: 8),
+                  ],
+                  StreamBuilder<int>(
+                    stream: countStream ??
+                        (isFriends
+                            ? _relationshipService.getFriendCount()
+                            : isJoined
+                                ? _userStatsService.getJoinedMeetupCount()
+                                : isPosts
+                                    ? _userStatsService.getUserPostCount()
+                                    : _userStatsService.getHostedMeetupCount()),
+                    builder: (context, snapshot) {
+                      return Text(
+                        '${snapshot.data ?? 0}',
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF111827),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    label,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF111827),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF6B7280),
                     ),
-                  );
-                },
+                    textAlign: TextAlign.center,
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  color: Color(0xFF6B7280),
+              if (badgeCount > 0)
+                Positioned(
+                  top: -6,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : badgeCount.toString(),
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
                 ),
-                textAlign: TextAlign.center,
-              ),
             ],
           ),
         ),

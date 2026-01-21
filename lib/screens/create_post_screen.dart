@@ -68,23 +68,11 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   void _ensureMinimumPollOptions() {
     if (_pollOptionControllers.isNotEmpty) return;
-    _addPollOption();
-    _addPollOption();
-  }
-
-  void _addPollOption() {
-    if (_pollOptionControllers.length >= 8) return;
-    final c = TextEditingController();
-    c.addListener(_checkCanSubmit);
-    _pollOptionControllers.add(c);
-    _checkCanSubmit();
-  }
-
-  void _removePollOption(int index) {
-    if (_pollOptionControllers.length <= 2) return;
-    final c = _pollOptionControllers.removeAt(index);
-    c.removeListener(_checkCanSubmit);
-    c.dispose();
+    for (int i = 0; i < 2; i++) {
+      final c = TextEditingController();
+      c.addListener(_checkCanSubmit);
+      _pollOptionControllers.add(c);
+    }
     _checkCanSubmit();
   }
 
@@ -114,8 +102,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
     setState(() {
       if (_postType == 'poll') {
-        // 투표: 질문(본문) + 선택지 2개 이상 필수, 이미지 첨부는 선택
-        _canSubmit = contentNotEmpty && pollOptions.length >= 2 && pollOptions.length <= 8;
+        // 투표: 질문(본문) + 선택지 2개(고정) 필수, 이미지 첨부는 선택
+        _canSubmit = contentNotEmpty && pollOptions.length == 2;
       } else {
         // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
         _canSubmit = contentNotEmpty || _selectedImages.isNotEmpty;
@@ -784,41 +772,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              if (_pollOptionControllers.length > 2)
-                                IconButton(
-                                  onPressed: () => _removePollOption(index),
-                                  icon: const Icon(Icons.remove_circle_outline, color: Color(0xFFEF4444)),
-                                ),
                             ],
                           ),
                         );
                       }),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _pollOptionControllers.length >= 8
-                                  ? null
-                                  : () {
-                                      _addPollOption();
-                                    },
-                              icon: const Icon(Icons.add),
-                              label: Text(
-                                AppLocalizations.of(context)!.pollAddOptionLabel(
-                                  _pollOptionControllers.length,
-                                  8,
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.pointColor,
-                                side: const BorderSide(color: Color(0xFFE5E7EB)),
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),

@@ -650,40 +650,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   /// 날짜 헤더 빌드
   Widget _buildDateHeader(String dateLabel) {
-    // '오늘'은 표시하지 않음
-    if (dateLabel == 'today') {
-      return const SizedBox.shrink();
-    }
-    
-    String displayLabel;
-    
-    switch (dateLabel) {
-      case 'yesterday':
-        displayLabel = AppLocalizations.of(context)!.yesterday ?? '어제';
-        break;
-      case 'thisWeek':
-        displayLabel = AppLocalizations.of(context)!.thisWeek ?? '이번 주';
-        break;
-      default: // 'previous'
-        displayLabel = AppLocalizations.of(context)!.previous ?? '이전';
-    }
-    
-    // 테두리 없이 폰트로만 구분
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 12), // 좌우 패딩 동일하게
-      child: Center( // 가운데 정렬 ✨
-        child: Text(
-            displayLabel,
-            style: const TextStyle(
-            fontFamily: 'Pretendard',
-            color: Color(0xFF18181B), // 진한 검은색 (N-900)
-            fontSize: 20, // 크게
-            fontWeight: FontWeight.bold, // 매우 진하게
-            letterSpacing: -0.5,
-            ),
-          ),
-      ),
-    );
+    // All 탭에서 날짜 구분(어제/이전 등) 텍스트 라벨을 표시하지 않음
+    return const SizedBox.shrink();
   }
 
   /// 전체 목록에서의 인덱스 찾기

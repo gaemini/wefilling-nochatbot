@@ -216,8 +216,8 @@ class PostService {
         if (cleaned.length < 2) {
           throw Exception('투표 선택지는 최소 2개 이상 필요합니다');
         }
-        if (cleaned.length > 8) {
-          throw Exception('투표 선택지는 최대 8개까지 가능합니다');
+        if (cleaned.length > 2) {
+          throw Exception('투표 선택지는 최대 2개까지 가능합니다');
         }
 
         postData['type'] = 'poll';

@@ -20,6 +20,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/shape_icon.dart';
+import 'requests_page.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -642,6 +643,79 @@ class _FriendsPageState extends State<FriendsPage> {
           children: [
             // 검색바
             _buildSearchBar(),
+
+            // ✅ 들어온 친구요청 안내 배너 (친구 탭에서도 바로 확인 가능)
+            Consumer<RelationshipProvider>(
+              builder: (context, provider, child) {
+                final incomingCount = provider.incomingRequests.length;
+                if (incomingCount <= 0) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RequestsPage()),
+                      );
+                    },
+                    borderRadius: DesignTokens.radiusM,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: DesignTokens.radiusM,
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEEF2FF),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.mail_outline,
+                              color: AppColors.pointColor,
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              '친구 요청이 ${incomingCount > 99 ? '99+' : incomingCount.toString()}개 있어요',
+                              style: TypographyStyles.titleMedium.copyWith(fontSize: 14),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              incomingCount > 99 ? '99+' : incomingCount.toString(),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
 
             // 친구 목록
             Expanded(

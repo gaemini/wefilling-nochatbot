@@ -2473,7 +2473,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postTypePollLabel => '투표';
 
   @override
-  String get postTypePollHelper => '투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.';
+  String get postTypePollHelper => '투표는 1인 1표로 참여할 수 있어요.';
 
   @override
   String get pollQuestionHint => '투표 질문을 입력하세요';

@@ -93,6 +93,13 @@ class FriendRequest {
   factory FriendRequest.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>;
 
+    // 서버 타임스탬프(serverTimestamp)는 로컬 캐시 단계에서 null일 수 있어
+    // 안전하게 DateTime으로 변환한다.
+    DateTime safeToDate(dynamic value, {DateTime? fallback}) {
+      if (value is Timestamp) return value.toDate();
+      return fallback ?? DateTime.now();
+    }
+
     return FriendRequest(
       id: doc.id,
       fromUid: data['fromUid'] ?? '',
@@ -100,8 +107,8 @@ class FriendRequest {
       status: FriendRequestStatusExtension.fromString(
         data['status'] ?? 'PENDING',
       ),
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: (data['updatedAt'] as Timestamp).toDate(),
+      createdAt: safeToDate(data['createdAt']),
+      updatedAt: safeToDate(data['updatedAt'], fallback: safeToDate(data['createdAt'])),
     );
   }
 

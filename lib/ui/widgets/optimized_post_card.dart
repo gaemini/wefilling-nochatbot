@@ -16,6 +16,7 @@ import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
 import '../../utils/logger.dart';
+import 'poll_post_widget.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -202,38 +203,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     return const SizedBox.shrink();
   }
 
-  /// 투표형 게시글 배지
-  Widget _buildPollIndicator(Post post) {
-    if (post.type != 'poll') return const SizedBox.shrink();
-    final l10n = AppLocalizations.of(context)!;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.how_to_vote_outlined,
-            size: DesignTokens.iconSmall,
-            color: AppColors.pointColor,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            l10n.pollVoteLabel,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: AppColors.pointColor,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  // 투표 배지는 제거됨: 카드 본문에 투표 항목을 직접 노출한다.
 
   @override
   Widget build(BuildContext context) {
@@ -295,6 +265,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   // 이미지가 없는 글은 본문 미리보기를 2줄로 고정해 카드 높이의 통일감을 맞춤
                   const SizedBox(height: 10),
                   _buildTextOnlyPreview(unifiedText, theme, colorScheme),
+                ],
+
+                // ✅ 투표형 게시글: 카드 안에서 바로 투표 항목 표시 (배지 대신)
+                if (post.type == 'poll') ...[
+                  const SizedBox(height: 12),
+                  PollPostWidget(postId: post.id),
                 ],
 
                 const SizedBox(height: 12),
@@ -489,10 +465,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (post.type == 'poll') ...[
-                  _buildPollIndicator(post),
-                  const SizedBox(width: 6),
-                ],
                 _buildVisibilityIndicator(post),
               ],
             ),

@@ -13,6 +13,7 @@ import '../models/post.dart';
 import '../models/relationship_status.dart';
 import '../models/user_profile.dart';
 import '../providers/auth_provider.dart';
+import '../providers/relationship_provider.dart';
 import '../services/dm_service.dart';
 import '../services/feature_flag_service.dart';
 import '../services/post_service.dart';
@@ -20,6 +21,7 @@ import '../services/profile_grid_adapter_service.dart';
 import '../services/relationship_service.dart';
 import '../services/content_filter_service.dart';
 import '../widgets/highlight_reels.dart';
+import '../widgets/notification_badge.dart';
 import '../widgets/post_grid.dart';
 import '../widgets/profile_action_buttons.dart';
 import '../widgets/profile_header.dart';
@@ -28,6 +30,7 @@ import 'dm_chat_screen.dart';
 import 'post_detail_screen.dart';
 import 'profile_edit_screen.dart';
 import 'requests_page.dart';
+import 'friends_main_page.dart';
 import '../utils/logger.dart';
 
 class ProfileGridScreen extends StatefulWidget {
@@ -69,6 +72,17 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    // ✅ 프로필(특히 내 프로필)에서도 친구요청 배지가 즉시 갱신되도록 관계 스트림 초기화
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        final authProvider = context.read<AuthProvider>();
+        final relationshipProvider = context.read<RelationshipProvider>();
+        relationshipProvider.setAuthProvider(authProvider);
+        await relationshipProvider.initialize();
+      } catch (_) {}
+    });
+
     _checkFeatureFlag();
     _checkBlockStatus();
     _loadProfileData();
@@ -438,6 +452,44 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       backgroundColor: Colors.transparent,
       elevation: 0,
       actions: [
+        if (_isOwnProfile)
+          Consumer<RelationshipProvider>(
+            builder: (context, provider, _) {
+              final incoming = provider.incomingRequests.length;
+              return NotificationBadge(
+                count: incoming,
+                size: 16,
+                fontSize: 9,
+                top: -2,
+                right: -2,
+                child: IconButton(
+                  icon: const Icon(Icons.people_outline),
+                  tooltip: AppLocalizations.of(context)?.friends ?? 'Friends',
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => Scaffold(
+                          backgroundColor: const Color(0xFFEBEBEB),
+                          appBar: AppBar(
+                            title: Text(AppLocalizations.of(context)?.friends ?? 'Friends'),
+                            backgroundColor: Colors.white,
+                            surfaceTintColor: Colors.white,
+                            foregroundColor: const Color(0xFF111827),
+                            elevation: 0,
+                          ),
+                          body: const SafeArea(
+                            top: false,
+                            child: FriendsMainPage(),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
         if (_isOwnProfile)
           IconButton(
             icon: const Icon(Icons.menu),

@@ -2545,8 +2545,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postTypePollLabel => 'Poll';
 
   @override
-  String get postTypePollHelper =>
-      'Polls are one vote per person. You can add up to 8 options.';
+  String get postTypePollHelper => 'Polls are one vote per person.';
 
   @override
   String get pollQuestionHint => 'Enter a poll question';

@@ -1121,7 +1121,7 @@
   "postTypeSectionTitle": "게시글 유형",
   "postTypeTextLabel": "일반",
   "postTypePollLabel": "투표",
-  "postTypePollHelper": "투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.",
+  "postTypePollHelper": "투표는 1인 1표로 참여할 수 있어요.",
   "pollQuestionHint": "투표 질문을 입력하세요",
   "pollOptionsTitle": "투표 선택지",
   "pollOptionHint": "선택지 {index}",

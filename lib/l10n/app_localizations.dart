@@ -4769,7 +4769,7 @@ abstract class AppLocalizations {
   /// No description provided for @postTypePollHelper.
   ///
   /// In ko, this message translates to:
-  /// **'투표는 1인 1표로 참여할 수 있어요. 선택지는 최대 8개까지 가능합니다.'**
+  /// **'투표는 1인 1표로 참여할 수 있어요.'**
   String get postTypePollHelper;
 
   /// No description provided for @pollQuestionHint.

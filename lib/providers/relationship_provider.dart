@@ -187,6 +187,19 @@ class RelationshipProvider with ChangeNotifier {
         await updateRelationshipStatus(fromUid);
         // 받은 요청 목록에서 제거
         _incomingRequests.removeWhere((req) => req.fromUid == fromUid);
+
+        // 친구 목록 즉시 반영(스트림 반영 전 UX 개선)
+        try {
+          if (!_friends.any((f) => f.uid == fromUid)) {
+            final profile = await _relationshipService.getUserProfile(fromUid);
+            if (profile != null) {
+              _friends = [..._friends, profile];
+            }
+          }
+        } catch (_) {
+          // 실패해도 Firestore friends 스트림이 최종 정합성을 보장
+        }
+
         notifyListeners();
       }
       return success;

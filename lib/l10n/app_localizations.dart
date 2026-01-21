@@ -1220,6 +1220,12 @@ abstract class AppLocalizations {
   /// **'친구 요청'**
   String get friendRequests;
 
+  /// No description provided for @checkFriendRequests.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 요청 확인하기'**
+  String get checkFriendRequests;
+
   /// No description provided for @friendsList.
   ///
   /// In ko, this message translates to:

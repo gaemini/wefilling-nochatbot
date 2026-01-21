@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../constants/app_constants.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/friend_request.dart';
@@ -158,60 +159,85 @@ class _RequestsPageState extends State<RequestsPage>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFEBEBEB), // 게시판과 동일한 회색 배경
-      child: !_isInitialized
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-              // 헤더 영역 (높이 통일 - 검색창과 동일)
-              Container(
-                height: 60, // 검색 탭과 동일한 높이
-                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12), // TabBar 높이 48에 맞춤
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.1),
-                      spreadRadius: 1,
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
+    return Scaffold(
+      backgroundColor: const Color(0xFFEBEBEB), // 게시판과 동일한 회색 배경
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          AppLocalizations.of(context)!.requests,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF111827),
+          ),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          onPressed: () => Navigator.of(context).maybePop(),
+        ),
+      ),
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: !_isInitialized
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  // 헤더 영역 (높이 통일 - 검색창과 동일)
+                  Container(
+                    height: 60, // 검색 탭과 동일한 높이
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 12,
+                    ), // TabBar 높이 48에 맞춤
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  labelColor: Colors.black,
-                  unselectedLabelColor: Colors.grey,
-                  indicatorColor: Colors.blue,
-                  indicatorWeight: 2.0,
-                  dividerColor: Colors.transparent, // TabBar 하단 구분선 제거
-                  labelStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    child: TabBar(
+                      controller: _tabController,
+                      labelColor: Colors.black,
+                      unselectedLabelColor: Colors.grey,
+                      indicatorColor: AppColors.pointColor,
+                      indicatorWeight: 2.0,
+                      dividerColor: Colors.transparent, // TabBar 하단 구분선 제거
+                      labelStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.normal,
+                      ),
+                      tabs: [
+                        Tab(text: AppLocalizations.of(context)!.receivedRequests),
+                        Tab(text: AppLocalizations.of(context)!.sentRequests),
+                      ],
+                    ),
                   ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.normal,
+                  // 탭 내용
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildIncomingRequestsTab(),
+                        _buildOutgoingRequestsTab(),
+                      ],
+                    ),
                   ),
-                  tabs: [
-                    Tab(text: AppLocalizations.of(context)!.receivedRequests),
-                    Tab(text: AppLocalizations.of(context)!.sentRequests),
-                  ],
-                ),
+                ],
               ),
-              // 탭 내용
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    _buildIncomingRequestsTab(),
-                    _buildOutgoingRequestsTab(),
-                  ],
-                ),
-              ),
-              ],
-            ),
+      ),
     );
   }
 
@@ -331,6 +357,9 @@ class _RequestsPageState extends State<RequestsPage>
 
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
+    const actionPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
+    const actionMinSize = Size(76, 36);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -382,6 +411,8 @@ class _RequestsPageState extends State<RequestsPage>
                     style: TypographyStyles.titleMedium.copyWith(
                       fontSize: 15,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -401,11 +432,15 @@ class _RequestsPageState extends State<RequestsPage>
                 // 수락 버튼
                 ElevatedButton(
                   onPressed: () => _acceptRequest(request.fromUid),
-                  style: ComponentStyles.primaryButton.copyWith(
-                    padding: WidgetStateProperty.all(
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.pointColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: actionPadding,
+                    minimumSize: actionMinSize,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    minimumSize: WidgetStateProperty.all(const Size(60, 36)),
                   ),
                   child: Text(
                     AppLocalizations.of(context)!.accept,
@@ -418,15 +453,18 @@ class _RequestsPageState extends State<RequestsPage>
                 // 거절 버튼
                 OutlinedButton(
                   onPressed: () => _rejectRequest(request.fromUid),
-                  style: ComponentStyles.secondaryButton.copyWith(
-                    padding: WidgetStateProperty.all(
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.pointColor,
+                    side: BorderSide(color: AppColors.pointColor, width: 1.5),
+                    padding: actionPadding,
+                    minimumSize: actionMinSize,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    minimumSize: WidgetStateProperty.all(const Size(60, 36)),
                   ),
                   child: Text(
                     AppLocalizations.of(context)!.reject,
-                    style: TypographyStyles.labelMedium,
+                    style: TypographyStyles.labelMedium.copyWith(color: AppColors.pointColor),
                   ),
                 ),
               ],
@@ -439,6 +477,9 @@ class _RequestsPageState extends State<RequestsPage>
 
   /// 보낸 요청 타일
   Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
+    const actionPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
+    const actionMinSize = Size(76, 36);
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       decoration: BoxDecoration(
@@ -490,6 +531,8 @@ class _RequestsPageState extends State<RequestsPage>
                     style: TypographyStyles.titleMedium.copyWith(
                       fontSize: 15,
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                   if (user.nickname != null &&
                       user.nickname != user.displayName &&
@@ -500,6 +543,8 @@ class _RequestsPageState extends State<RequestsPage>
                       style: TypographyStyles.bodySmall.copyWith(
                         color: BrandColors.textSecondary,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                   const SizedBox(height: 4),
@@ -517,18 +562,18 @@ class _RequestsPageState extends State<RequestsPage>
             OutlinedButton(
               onPressed: () => _cancelRequest(request.toUid),
               style: OutlinedButton.styleFrom(
-                foregroundColor: BrandColors.warning,
-                side: BorderSide(color: BrandColors.warning),
-                minimumSize: const Size(60, 36),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                foregroundColor: AppColors.pointColor,
+                side: BorderSide(color: AppColors.pointColor, width: 1.5),
+                padding: actionPadding,
+                minimumSize: actionMinSize,
                 shape: RoundedRectangleBorder(
-                  borderRadius: DesignTokens.radiusM,
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               child: Text(
                 AppLocalizations.of(context)!.cancelAction,
                 style: TypographyStyles.labelMedium.copyWith(
-                  color: BrandColors.warning,
+                  color: AppColors.pointColor,
                 ),
               ),
             ),

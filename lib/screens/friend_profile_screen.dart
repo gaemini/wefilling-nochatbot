@@ -44,6 +44,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  // 통계 숫자 깜빡임/0 표시 방지용 캐시
+  final Map<String, int> _statCountCache = {};
 
   @override
   void initState() {
@@ -267,11 +269,26 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem(AppLocalizations.of(context)!.friends, widget.userId, isFriends: true, icon: Icons.people, color: AppColors.pointColor),
+              _buildStatItem(
+                AppLocalizations.of(context)!.friends,
+                widget.userId,
+                cacheKey: 'friend_profile_friends',
+                isFriends: true,
+              ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.joinedMeetups, widget.userId, isJoined: true, icon: Icons.groups, color: AppColors.pointColor),
+              _buildStatItem(
+                AppLocalizations.of(context)!.joinedMeetups,
+                widget.userId,
+                cacheKey: 'friend_profile_joined_meetups',
+                isJoined: true,
+              ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(AppLocalizations.of(context)!.writtenPosts, widget.userId, isPosts: true, icon: Icons.article, color: AppColors.pointColor),
+              _buildStatItem(
+                AppLocalizations.of(context)!.writtenPosts,
+                widget.userId,
+                cacheKey: 'friend_profile_written_posts',
+                isPosts: true,
+              ),
             ],
           ),
           
@@ -336,17 +353,14 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget _buildStatItem(
     String label,
     String userId, {
+    required String cacheKey,
     bool isJoined = false,
     bool isPosts = false,
     bool isFriends = false,
-    required IconData icon,
-    required Color color,
   }) {
     return Expanded(
       child: Column(
         children: [
-          Icon(icon, size: 24, color: color),
-          const SizedBox(height: 8),
           StreamBuilder<int>(
             stream: isFriends
                 ? _userStatsService.getFriendCountForUser(userId)
@@ -355,15 +369,49 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     : isPosts
                         ? _userStatsService.getUserPostCountForUser(userId)
                         : _userStatsService.getHostedMeetupCountForUser(userId),
+            initialData: _statCountCache[cacheKey],
             builder: (context, snapshot) {
-              return Text(
-                '${snapshot.data ?? 0}',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF111827),
-                  fontSize: 24,
-                ),
+              // 데이터 도착 전 0을 먼저 보여주지 않고(어색함), 캐시/플레이스홀더를 사용
+              final int? live = snapshot.data;
+              if (live != null) {
+                _statCountCache[cacheKey] = live;
+              }
+
+              final int? value = live ?? _statCountCache[cacheKey];
+              final Widget countWidget = value != null
+                  ? Text(
+                      '$value',
+                      key: ValueKey<String>('count_$cacheKey:$value'),
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF111827),
+                        fontSize: 20,
+                      ),
+                    )
+                  : const Text(
+                      '—',
+                      key: ValueKey<String>('count_loading'),
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF9CA3AF),
+                        fontSize: 20,
+                      ),
+                    );
+
+              return AnimatedSwitcher(
+                duration: const Duration(milliseconds: 220),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final fade = FadeTransition(opacity: animation, child: child);
+                  return ScaleTransition(
+                    scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                    child: fade,
+                  );
+                },
+                child: countWidget,
               );
             },
           ),
@@ -374,7 +422,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               fontFamily: 'Pretendard',
               color: Color(0xFF6B7280),
               fontSize: 12,
-              fontWeight: FontWeight.w500,
+              fontWeight: FontWeight.w400,
             ),
             textAlign: TextAlign.center,
           ),

@@ -575,6 +575,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendRequests => 'Friend Requests';
 
   @override
+  String get checkFriendRequests => 'Check friend requests';
+
+  @override
   String get friendsList => 'Friends';
 
   @override

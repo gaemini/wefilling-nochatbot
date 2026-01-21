@@ -236,15 +236,6 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 ),
               ),
               
-              // 설정 아이콘 (오른쪽)
-              IconButton(
-                icon: const Icon(Icons.settings, color: Color(0xFF9CA3AF), size: 28),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                onPressed: () {
-                  _showSettingsBottomSheet(context);
-                },
-              ),
             ],
           ),
           
@@ -918,109 +909,118 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (showIcon) ...[
-                    Icon(icon, size: 24, color: color),
-                    const SizedBox(height: 8),
-                  ],
-                  StreamBuilder<int>(
-                    stream: countStream ??
-                        (isFriends
-                            ? _relationshipService.getFriendCount()
-                            : isJoined
-                                ? _userStatsService.getJoinedMeetupCount()
-                                : isPosts
-                                    ? _userStatsService.getUserPostCount()
-                                    : _userStatsService.getHostedMeetupCount()),
-                    initialData: _statCountCache[cacheKey],
-                    builder: (context, snapshot) {
-                      // 데이터 도착 전에는 0을 보여주지 말고(어색함), 캐시/플레이스홀더를 사용
-                      final int? live = snapshot.data;
-                      if (live != null) {
-                        _statCountCache[cacheKey] = live;
-                      }
+              if (showIcon) ...[
+                Icon(icon, size: 24, color: color),
+                const SizedBox(height: 8),
+              ],
+              StreamBuilder<int>(
+                stream: countStream ??
+                    (isFriends
+                        ? _relationshipService.getFriendCount()
+                        : isJoined
+                            ? _userStatsService.getJoinedMeetupCount()
+                            : isPosts
+                                ? _userStatsService.getUserPostCount()
+                                : _userStatsService.getHostedMeetupCount()),
+                initialData: _statCountCache[cacheKey],
+                builder: (context, snapshot) {
+                  // 데이터 도착 전에는 0을 보여주지 말고(어색함), 캐시/플레이스홀더를 사용
+                  final int? live = snapshot.data;
+                  if (live != null) {
+                    _statCountCache[cacheKey] = live;
+                  }
 
-                      final int? value = live ?? _statCountCache[cacheKey];
-                      final Widget countWidget = value != null
-                          ? Text(
-                              '$value',
-                              key: ValueKey<String>('count_$cacheKey:$value'),
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
-                            )
-                          : Text(
-                              '—',
-                              key: ValueKey<String>('count_$cacheKey:loading'),
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 20,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF9CA3AF),
-                              ),
-                            );
+                  final int? value = live ?? _statCountCache[cacheKey];
+                  final Widget countWidget = value != null
+                      ? Text(
+                          '$value',
+                          key: ValueKey<String>('count_$cacheKey:$value'),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111827),
+                          ),
+                        )
+                      : Text(
+                          '—',
+                          key: ValueKey<String>('count_$cacheKey:loading'),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 20,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        );
 
-                      return AnimatedSwitcher(
+                  // 배지를 "영역 오른쪽 끝"이 아니라 "숫자" 기준으로 붙여 자연스럽게 보이도록
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedSwitcher(
                         duration: const Duration(milliseconds: 220),
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
                         transitionBuilder: (child, animation) {
-                          final fade = FadeTransition(opacity: animation, child: child);
+                          final fade =
+                              FadeTransition(opacity: animation, child: child);
                           return ScaleTransition(
-                            scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                            scale: Tween<double>(begin: 0.98, end: 1.0)
+                                .animate(animation),
                             child: fade,
                           );
                         },
                         child: countWidget,
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF6B7280),
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-              if (badgeCount > 0)
-                Positioned(
-                  top: -6,
-                  right: -4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEF4444),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
-                    child: Text(
-                      badgeCount > 99 ? '99+' : badgeCount.toString(),
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
                       ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+                      if (badgeCount > 0)
+                        Positioned(
+                          top: -10,
+                          right: -14,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEF4444),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Text(
+                              badgeCount > 99 ? '99+' : badgeCount.toString(),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF6B7280),
                 ),
+                textAlign: TextAlign.center,
+              ),
             ],
           ),
         ),
@@ -1599,6 +1599,265 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                       ),
                     ],
               ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// 마이페이지 설정 시트 (상단 앱바/내 프로필 어디서든 재사용 가능)
+class MyPageSettingsSheet {
+  static void show(
+    BuildContext context, {
+    VoidCallback? onProfileUpdated,
+  }) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final rootContext = context;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                _menuItem(
+                  sheetContext,
+                  AppLocalizations.of(sheetContext)!.profileEdit,
+                  Icons.edit_rounded,
+                  () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      rootContext,
+                      MaterialPageRoute(
+                        builder: (_) => const ProfileEditScreen(),
+                      ),
+                    ).then((_) {
+                      if (onProfileUpdated != null) onProfileUpdated();
+                    });
+                  },
+                ),
+                _menuItem(
+                  sheetContext,
+                  Localizations.localeOf(sheetContext).languageCode == 'ko'
+                      ? '저장된 게시글'
+                      : 'Saved Posts',
+                  Icons.bookmark_border_rounded,
+                  () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      rootContext,
+                      MaterialPageRoute(builder: (_) => const SavedPostsScreen()),
+                    );
+                  },
+                ),
+                _menuItem(
+                  sheetContext,
+                  AppLocalizations.of(sheetContext)!.notificationSettings,
+                  Icons.notifications_rounded,
+                  () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      rootContext,
+                      MaterialPageRoute(
+                        builder: (_) => const NotificationSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _menuItem(
+                  sheetContext,
+                  AppLocalizations.of(sheetContext)!.accountSettings,
+                  Icons.settings_rounded,
+                  () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      rootContext,
+                      MaterialPageRoute(builder: (_) => const AccountSettingsScreen()),
+                    );
+                  },
+                ),
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  height: 1,
+                  color: const Color(0xFFE5E7EB),
+                ),
+                _menuItem(
+                  sheetContext,
+                  AppLocalizations.of(sheetContext)!.logout ?? "",
+                  Icons.logout_rounded,
+                  () async {
+                    HapticFeedback.lightImpact();
+                    Navigator.pop(sheetContext);
+                    _showLogoutConfirmDialog(rootContext, authProvider);
+                  },
+                  color: const Color(0xFFEF4444),
+                ),
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  static Widget _menuItem(
+    BuildContext context,
+    String title,
+    IconData icon,
+    VoidCallback onTap, {
+    Color? color,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
+        child: Row(
+          children: [
+            Icon(
+              icon,
+              color: color ?? const Color(0xFF111827),
+              size: 24,
+            ),
+            const SizedBox(width: 16),
+            Text(
+              title,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: color ?? const Color(0xFF111827),
+              ),
+            ),
+            const Spacer(),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9CA3AF),
+              size: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static void _showLogoutConfirmDialog(
+    BuildContext context,
+    AuthProvider authProvider,
+  ) {
+    HapticFeedback.mediumImpact();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return Consumer<AuthProvider>(
+          builder: (context, authProvider, _) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.logout_rounded,
+                    color: BrandColors.error,
+                    size: 24,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    AppLocalizations.of(context)!.logout ?? "",
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+              content: authProvider.isLoading
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 32,
+                          height: 32,
+                          child: CircularProgressIndicator(strokeWidth: 3),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(AppLocalizations.of(context)!.loggingOut),
+                      ],
+                    )
+                  : Text(
+                      AppLocalizations.of(context)!.logoutConfirm ?? "",
+                      textAlign: TextAlign.center,
+                    ),
+              actions: authProvider.isLoading
+                  ? []
+                  : [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: BrandColors.error,
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          HapticFeedback.heavyImpact();
+                          try {
+                            await authProvider.signOut();
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                              Navigator.of(dialogContext).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                  builder: (_) => const LoginScreen(
+                                    showLogoutSuccess: true,
+                                  ),
+                                ),
+                                (route) => false,
+                              );
+                            }
+                          } catch (_) {
+                            if (dialogContext.mounted) {
+                              Navigator.pop(dialogContext);
+                              Navigator.of(dialogContext).pushAndRemoveUntil(
+                                MaterialPageRoute(
+                                  builder: (_) => const LoginScreen(
+                                    showLogoutSuccess: true,
+                                  ),
+                                ),
+                                (route) => false,
+                              );
+                            }
+                          }
+                        },
+                        child: Text(AppLocalizations.of(context)!.logout ?? ""),
+                      ),
+                    ],
             );
           },
         );

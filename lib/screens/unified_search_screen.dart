@@ -1,34 +1,29 @@
 // lib/screens/unified_search_screen.dart
-// 통합 검색 화면 - 탭별(이름/게시글/모임/후기/카테고리)로 검색 결과 분리
+// 통합 검색 화면 - 탭별(이름/게시글/모임)로 검색 결과 분리
 
 import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/meetup.dart';
 import '../models/post.dart';
-import '../models/review_post.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
-import '../models/friend_category.dart';
 import '../providers/relationship_provider.dart';
-import '../screens/category_detail_screen.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../screens/notification_screen.dart';
 import '../screens/post_detail_screen.dart';
-import '../screens/review_detail_screen.dart';
-import '../services/friend_category_service.dart';
 import '../services/meetup_service.dart';
 import '../services/post_service.dart';
-import '../services/review_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
-  /// 0: 이름(유저), 1: 게시글, 2: 모임, 3: 후기, 4: 카테고리
+  /// 0: 이름(유저), 1: 게시글, 2: 모임
   final int initialTabIndex;
   final String? initialQuery;
 
@@ -44,7 +39,7 @@ class UnifiedSearchScreen extends StatefulWidget {
 
 class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     with SingleTickerProviderStateMixin {
-  static const _tabCount = 5;
+  static const _tabCount = 3;
 
   late final TabController _tabController;
   final TextEditingController _searchController = TextEditingController();
@@ -52,22 +47,17 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
   final PostService _postService = PostService();
   final MeetupService _meetupService = MeetupService();
-  final ReviewService _reviewService = ReviewService();
-  final FriendCategoryService _categoryService = FriendCategoryService();
 
   bool _relationshipInitialized = false;
 
   bool _isLoadingPosts = false;
   bool _isLoadingMeetups = false;
-  bool _isLoadingReviews = false;
 
   String? _postsError;
   String? _meetupsError;
-  String? _reviewsError;
 
   List<Post> _postResults = const [];
   List<Meetup> _meetupResults = const [];
-  List<ReviewPost> _reviewResults = const [];
 
   @override
   void initState() {
@@ -99,7 +89,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     _tabController.removeListener(_onTabChanged);
     _tabController.dispose();
     _searchController.dispose();
-    _categoryService.dispose();
     super.dispose();
   }
 
@@ -141,13 +130,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     setState(() {
       _postsError = null;
       _meetupsError = null;
-      _reviewsError = null;
       _postResults = const [];
       _meetupResults = const [];
-      _reviewResults = const [];
       _isLoadingPosts = false;
       _isLoadingMeetups = false;
-      _isLoadingReviews = false;
     });
   }
 
@@ -164,12 +150,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         return;
       case 2:
         await _searchMeetups(q);
-        return;
-      case 3:
-        await _searchReviews(q);
-        return;
-      case 4:
-        // 카테고리는 StreamBuilder에서 필터링
         return;
     }
   }
@@ -220,28 +200,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         _meetupResults = const [];
         _isLoadingMeetups = false;
         _meetupsError = e.toString();
-      });
-    }
-  }
-
-  Future<void> _searchReviews(String query) async {
-    setState(() {
-      _isLoadingReviews = true;
-      _reviewsError = null;
-    });
-    try {
-      final reviews = await _reviewService.searchReviewsAsync(query);
-      if (!mounted) return;
-      setState(() {
-        _reviewResults = reviews;
-        _isLoadingReviews = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _reviewResults = const [];
-        _isLoadingReviews = false;
-        _reviewsError = e.toString();
       });
     }
   }
@@ -386,10 +344,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         return isKo ? '게시글' : 'Posts';
       case 2:
         return isKo ? '모임' : 'Meetups';
-      case 3:
-        return AppLocalizations.of(context)!.reviews;
-      case 4:
-        return AppLocalizations.of(context)!.category;
       default:
         return '';
     }
@@ -501,10 +455,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           _buildSearchField(context),
           TabBar(
             controller: _tabController,
-            isScrollable: true,
+            isScrollable: false,
             labelColor: Colors.black,
             unselectedLabelColor: Colors.grey.shade600,
-            indicatorColor: Colors.blue,
+            indicatorColor: AppColors.pointColor,
             indicatorWeight: 2.5,
             tabs: List.generate(
               _tabCount,
@@ -519,8 +473,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                 _buildUsersTab(),
                 _buildPostsTab(),
                 _buildMeetupsTab(),
-                _buildReviewsTab(),
-                _buildCategoriesTab(),
               ],
             ),
           ),
@@ -775,229 +727,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               ],
             ),
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildReviewsTab() {
-    final q = _searchController.text.trim();
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
-
-    if (q.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search,
-        title: isKo ? '후기를 검색해보세요' : 'Search reviews',
-        subtitle: isKo ? '모임명/내용/작성자 기준으로\n후기를 찾아볼 수 있어요' : 'Search by meetup/title/content/author',
-      );
-    }
-
-    if (_isLoadingReviews) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_reviewsError != null) {
-      return _buildEmptyPrompt(
-        icon: Icons.error_outline,
-        title: AppLocalizations.of(context)!.error,
-        subtitle: _reviewsError!,
-      );
-    }
-
-    if (_reviewResults.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search_off,
-        title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _reviewResults.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final review = _reviewResults[index];
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => ReviewDetailScreen(review: review)),
-            );
-          },
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.grey.shade200,
-                  backgroundImage: review.authorProfileImage.isNotEmpty
-                      ? NetworkImage(review.authorProfileImage)
-                      : null,
-                  child: review.authorProfileImage.isEmpty
-                      ? Icon(Icons.person, size: 18, color: Colors.grey.shade500)
-                      : null,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              review.meetupTitle,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.black,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            review.getFormattedTime(context),
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        review.authorName,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      if (review.content.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          review.content,
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade800, height: 1.35),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCategoriesTab() {
-    final q = _searchController.text.trim().toLowerCase();
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
-
-    return StreamBuilder<List<FriendCategory>>(
-      stream: _categoryService.getCategoriesStream(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-
-        final all = snapshot.data ?? const [];
-        final filtered = q.isEmpty
-            ? all
-            : all.where((c) {
-                final name = c.name.toLowerCase();
-                final desc = (c.description ?? '').toLowerCase();
-                return name.contains(q) || desc.contains(q);
-              }).toList();
-
-        if (q.isEmpty) {
-          return _buildEmptyPrompt(
-            icon: Icons.search,
-            title: isKo ? '카테고리를 검색해보세요' : 'Search categories',
-            subtitle: isKo ? '카테고리 이름으로 검색하여\n빠르게 찾아갈 수 있어요' : 'Search by category name',
-          );
-        }
-
-        if (filtered.isEmpty) {
-          return _buildEmptyPrompt(
-            icon: Icons.search_off,
-            title: AppLocalizations.of(context)!.noSearchResults,
-            subtitle: '"${_searchController.text.trim()}"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
-          );
-        }
-
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: filtered.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) {
-            final category = filtered[index];
-            return InkWell(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => CategoryDetailScreen(category: category)),
-                );
-              },
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.category_outlined, color: Colors.blue.shade600),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            category.name,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.black,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          if ((category.description ?? '').isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              category.description ?? '',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(
-                      '${category.friendIds.length}',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
         );
       },
     );

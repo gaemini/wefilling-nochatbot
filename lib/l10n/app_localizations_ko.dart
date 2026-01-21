@@ -571,6 +571,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendRequests => '친구 요청';
 
   @override
+  String get checkFriendRequests => '친구 요청 확인하기';
+
+  @override
   String get friendsList => '친구';
 
   @override

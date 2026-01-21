@@ -7,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../models/meetup_participant.dart';
 import '../utils/logger.dart';
 
 class UserStatsService {
@@ -56,20 +57,14 @@ class UserStatsService {
       return Stream.value(0);
     }
 
+    // 참가 시스템이 meetup_participants 컬렉션(승인/대기/거절) 기반으로 동작하므로,
+    // 실제 참여(approved)된 기록만 집계한다.
     return _firestore
-        .collection('meetups')
-        .where('participants', arrayContains: user.uid)
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
-          // 주최하지 않은 모임만 필터링
-          final filteredDocs =
-              snapshot.docs.where((doc) {
-                final data = doc.data();
-                return data['userId'] != user.uid;
-              }).toList();
-
-          return filteredDocs.length;
-        });
+        .map((snapshot) => snapshot.docs.length);
   }
 
   // 사용자가 주최한 모임 목록
@@ -308,20 +303,14 @@ class UserStatsService {
 
   // 특정 사용자가 참여한 모임 수 (주최한 모임 제외)
   Stream<int> getJoinedMeetupCountForUser(String userId) {
+    // 참가 시스템이 meetup_participants 컬렉션 기반이므로,
+    // 해당 사용자의 approved 참여 기록만 집계한다.
     return _firestore
-        .collection('meetups')
-        .where('participants', arrayContains: userId)
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: userId)
+        .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
-        .map((snapshot) {
-          // 주최하지 않은 모임만 필터링
-          final filteredDocs =
-              snapshot.docs.where((doc) {
-                final data = doc.data();
-                return data['userId'] != userId;
-              }).toList();
-
-          return filteredDocs.length;
-        });
+        .map((snapshot) => snapshot.docs.length);
   }
 
   // 특정 사용자가 작성한 게시글 수
@@ -335,10 +324,10 @@ class UserStatsService {
 
   // 특정 사용자의 친구 수
   Stream<int> getFriendCountForUser(String userId) {
+    // 친구 관계는 friendships 컬렉션에 저장되며, 문서에는 양쪽 uid가 uids 배열로 들어있다.
     return _firestore
-        .collection('relationships')
-        .where('userId', isEqualTo: userId)
-        .where('status', isEqualTo: 'accepted')
+        .collection('friendships')
+        .where('uids', arrayContains: userId)
         .snapshots()
         .map((snapshot) => snapshot.docs.length);
   }

@@ -282,6 +282,19 @@ class _MainScreenState extends State<MainScreen> {
               ),
               const SizedBox(width: 4),
             ],
+            // 마이페이지 탭일 때: 설정 버튼을 먼저 표시 (알림 아이콘과 위치 교체)
+            if (_selectedIndex == 3) ...[
+              const SizedBox(width: 4),
+              AppIconButton(
+                icon: Icons.settings_outlined,
+                onPressed: () {
+                  MyPageSettingsSheet.show(context);
+                },
+                semanticLabel: AppLocalizations.of(context)!.settings,
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 4),
+            ],
             // 알림 아이콘
             StreamBuilder<int>(
               stream: _notificationService.getUnreadNotificationCount(),

@@ -659,7 +659,7 @@ class _FriendsPageState extends State<FriendsPage> {
             Consumer<RelationshipProvider>(
               builder: (context, provider, child) {
                 final incomingCount = provider.incomingRequests.length;
-                if (incomingCount <= 0) return const SizedBox.shrink();
+                final hasIncoming = incomingCount > 0;
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                   child: InkWell(
@@ -695,29 +695,32 @@ class _FriendsPageState extends State<FriendsPage> {
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              '친구 요청이 ${incomingCount > 99 ? '99+' : incomingCount.toString()}개 있어요',
+                              hasIncoming
+                                  ? '친구 요청이 ${incomingCount > 99 ? '99+' : incomingCount.toString()}개 있어요'
+                                  : AppLocalizations.of(context)!.checkFriendRequests,
                               style: TypographyStyles.titleMedium.copyWith(fontSize: 14),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEF4444),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              incomingCount > 99 ? '99+' : incomingCount.toString(),
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
+                          if (hasIncoming)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEF4444),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                incomingCount > 99 ? '99+' : incomingCount.toString(),
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
                               ),
                             ),
-                          ),
                           const SizedBox(width: 6),
                           const Icon(Icons.chevron_right, color: Color(0xFF9CA3AF)),
                         ],

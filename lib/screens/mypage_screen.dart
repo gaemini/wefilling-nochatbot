@@ -43,6 +43,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   final PostService _postService = PostService();
   final RelationshipService _relationshipService = RelationshipService();
   late TabController _tabController;
+  // 통계 숫자(Posts/Friends/Reviews 등) 깜빡임 방지용 마지막 값 캐시
+  final Map<String, int> _statCountCache = {};
   
   @override
   void initState() {
@@ -906,6 +908,10 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     int badgeCount = 0,
     VoidCallback? onTap,
   }) {
+    // 라벨/타입 기반으로 캐시 키 생성 (언어 변경에도 안정적으로 유지되도록 플래그 조합 사용)
+    final cacheKey =
+        'stat_${isFriends ? 'friends' : isJoined ? 'joined' : isPosts ? 'posts' : 'other'}_${showIcon ? 'icon' : 'noicon'}_${icon.codePoint}';
+
     return Expanded(
       child: InkWell(
         onTap: onTap,
@@ -932,15 +938,49 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                                 : isPosts
                                     ? _userStatsService.getUserPostCount()
                                     : _userStatsService.getHostedMeetupCount()),
+                    initialData: _statCountCache[cacheKey],
                     builder: (context, snapshot) {
-                      return Text(
-                        '${snapshot.data ?? 0}',
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF111827),
-                        ),
+                      // 데이터 도착 전에는 0을 보여주지 말고(어색함), 캐시/플레이스홀더를 사용
+                      final int? live = snapshot.data;
+                      if (live != null) {
+                        _statCountCache[cacheKey] = live;
+                      }
+
+                      final int? value = live ?? _statCountCache[cacheKey];
+                      final Widget countWidget = value != null
+                          ? Text(
+                              '$value',
+                              key: ValueKey<String>('count_$cacheKey:$value'),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            )
+                          : Text(
+                              '—',
+                              key: ValueKey<String>('count_$cacheKey:loading'),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 20,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            );
+
+                      return AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) {
+                          final fade = FadeTransition(opacity: animation, child: child);
+                          return ScaleTransition(
+                            scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                            child: fade,
+                          );
+                        },
+                        child: countWidget,
                       );
                     },
                   ),

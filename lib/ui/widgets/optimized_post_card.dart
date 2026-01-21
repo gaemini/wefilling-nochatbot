@@ -5,9 +5,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/post.dart';
-import '../../utils/image_utils.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/post_service.dart';
@@ -68,7 +66,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final DMService _dmService = DMService();
   bool _isSaved = false;
   bool _isLoading = false;
-  late final Stream<DocumentSnapshot<Map<String, dynamic>>> _postDocStream;
 
   // 카드/이미지 라운드 (스크린샷 기준으로 조금 더 둥글게)
   static const double _cardRadius = 6;
@@ -78,10 +75,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   void initState() {
     super.initState();
     _checkSavedStatus();
-    _postDocStream = FirebaseFirestore.instance
-        .collection('posts')
-        .doc(widget.post.id)
-        .snapshots();
   }
 
   Future<void> _checkSavedStatus() async {
@@ -276,47 +269,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 const SizedBox(height: 12),
 
                 // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
-                StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                  stream: _postDocStream,
-                  builder: (context, snapshot) {
-                    // 기본값은 리스트에서 받은 post를 사용
-                    int likes = post.likes;
-                    int commentCount =
-                        widget.externalCommentCountOverride ?? post.commentCount;
-                    int viewCount = post.viewCount;
-                    int pollTotalVotes = post.pollTotalVotes;
-                    List<String> likedBy = post.likedBy;
-
-                    final data = snapshot.data?.data();
-                    if (data != null) {
-                      final dynamic rawLikes = data['likes'];
-                      if (rawLikes is int) likes = rawLikes;
-
-                      // 외부 오버라이드가 없을 때만 Firestore commentCount를 사용
-                      if (widget.externalCommentCountOverride == null) {
-                        final dynamic rawCommentCount = data['commentCount'];
-                        if (rawCommentCount is int) commentCount = rawCommentCount;
-                      }
-
-                      final dynamic rawViewCount = data['viewCount'];
-                      if (rawViewCount is int) viewCount = rawViewCount;
-
-                      final dynamic rawPollTotalVotes = data['pollTotalVotes'];
-                      if (rawPollTotalVotes is int) pollTotalVotes = rawPollTotalVotes;
-
-                      likedBy = List<String>.from(data['likedBy'] ?? likedBy);
-                    }
-
-                    final livePost = post.copyWith(
-                      likes: likes,
-                      commentCount: commentCount,
-                      viewCount: viewCount,
-                      likedBy: likedBy,
-                      pollTotalVotes: pollTotalVotes,
-                    );
-
-                    return _buildPostMeta(livePost, theme, colorScheme);
-                  },
+                _buildPostMeta(
+                  post.copyWith(
+                    commentCount:
+                        widget.externalCommentCountOverride ?? post.commentCount,
+                  ),
+                  theme,
+                  colorScheme,
                 ),
               ],
             ),

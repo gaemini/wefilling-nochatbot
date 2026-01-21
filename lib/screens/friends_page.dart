@@ -36,6 +36,7 @@ class _FriendsPageState extends State<FriendsPage> {
   List<FriendCategory> _friendCategories = [];
   bool _isInitialized = false;
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
+  RelationshipProvider? _relationshipProvider;
 
   @override
   void initState() {
@@ -44,7 +45,10 @@ class _FriendsPageState extends State<FriendsPage> {
       // AuthProvider 연결
       final authProvider = context.read<AuthProvider>();
       final relationshipProvider = context.read<RelationshipProvider>();
+      _relationshipProvider = relationshipProvider;
       relationshipProvider.setAuthProvider(authProvider);
+      // provider 변화(친구 목록 갱신 등)에 맞춰 검색 결과도 함께 동기화
+      relationshipProvider.addListener(_handleRelationshipProviderChanged);
       
       _initializeData();
     });
@@ -55,7 +59,14 @@ class _FriendsPageState extends State<FriendsPage> {
     _searchController.dispose();
     _categoriesSubscription?.cancel();
     _categoryService.dispose();
+    _relationshipProvider?.removeListener(_handleRelationshipProviderChanged);
     super.dispose();
+  }
+
+  void _handleRelationshipProviderChanged() {
+    if (!mounted) return;
+    // provider.friends가 바뀌면 현재 검색어 기준으로 재필터링
+    _filterFriends(_searchController.text);
   }
 
   /// 데이터 초기화
@@ -721,14 +732,6 @@ class _FriendsPageState extends State<FriendsPage> {
             Expanded(
               child: Consumer<RelationshipProvider>(
               builder: (context, provider, child) {
-                // provider의 friends가 변경되면 필터링된 목록도 업데이트
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (mounted && (_filteredFriends.length != provider.friends.length ||
-                      _searchController.text.trim().isEmpty)) {
-                    _filterFriends(_searchController.text);
-                  }
-                });
-
                 // 로딩 중일 때 스켈레톤 표시
                 if (provider.isLoading && !_isInitialized) {
                   return AppSkeletonList.listItems(

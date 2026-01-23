@@ -39,6 +39,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   final FriendCategoryService _categoryService = FriendCategoryService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late VoidCallback _cleanupCallback;
+  AuthProvider? _authProvider;
 
   @override
   void initState() {
@@ -48,22 +49,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     _cleanupCallback = () {
       _categoryService.dispose();
     };
-    
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.registerStreamCleanup(_cleanupCallback);
-    });
+
+    // initState에서 listen:false로 읽는 것은 안전하며,
+    // post-frame 콜백에서 (이미 dispose된) context를 조회하는 레이스를 제거한다.
+    _authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _authProvider?.registerStreamCleanup(_cleanupCallback);
   }
 
   @override
   void dispose() {
     // AuthProvider에서 콜백 제거
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.unregisterStreamCleanup(_cleanupCallback);
-    } catch (e) {
-      Logger.error('AuthProvider 콜백 제거 오류: $e');
-    }
+    // dispose에서는 context로 ancestor lookup을 하지 않는다.
+    _authProvider?.unregisterStreamCleanup(_cleanupCallback);
     
     // 서비스 정리
     _categoryService.dispose();
@@ -279,6 +276,19 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     
     final isEdit = category != null;
     final nameController = TextEditingController(text: category?.name ?? '');
+    var _nameControllerDisposed = false;
+    void _disposeNameControllerSafely() {
+      if (_nameControllerDisposed) return;
+      _nameControllerDisposed = true;
+      // BottomSheet는 닫힐 때 애니메이션 프레임이 남아 있을 수 있어,
+      // pop 직후 컨트롤러를 dispose하면 TextField가 아직 접근하는 타이밍 레이스가 생길 수 있다.
+      // 두 번의 post-frame 이후 dispose하여 안전하게 정리한다.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          nameController.dispose();
+        });
+      });
+    }
     String selectedColor = category?.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}';
     String selectedIcon = _normalizeIconName(category?.iconName);
 
@@ -437,14 +447,20 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ),
       );
     } finally {
-      nameController.dispose();
+      _disposeNameControllerSafely();
     }
   }
 
   Widget _buildColorPicker(String selectedColor, Function(String) onColorSelected) {
+    // 빨주노초파남보 (7색 고정)
     final colors = [
-      '#${AppColors.pointColor.value.toRadixString(16).substring(2)}', '#6BC9A5', '#FF8C42', '#9B59B6', '#E74C3C',
-      '#F39C12', '#27AE60', '#3498DB', '#8E44AD', '#95A5A6',
+      '#FF3B30', // 빨강
+      '#FF9500', // 주황
+      '#FFCC00', // 노랑
+      '#34C759', // 초록
+      '#007AFF', // 파랑
+      '#5856D6', // 남색
+      '#AF52DE', // 보라
     ];
 
     return Column(
@@ -494,8 +510,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       {'name': 'shape_triangle'},
       {'name': 'shape_square'},
       {'name': 'shape_star'},
-      {'name': 'shape_heart'},
-      {'name': 'shape_cross'},
     ];
 
     return Column(
@@ -729,8 +743,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         return Icons.stop;
       case 'shape_star':
         return Icons.star;
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
       case 'shape_cross':
-        return Icons.add;
+        return Icons.circle;
       case 'shape_circle_filled':
         return Icons.circle;
       case 'shape_circle_outline':
@@ -745,8 +760,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         return Icons.star;
       case 'shape_star_outline':
         return Icons.star_border;
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
       case 'shape_heart':
-        return Icons.favorite;
+        return Icons.circle;
       case 'school':
         return Icons.school;
       case 'work':
@@ -775,12 +791,15 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
       'shape_circle',
       'shape_square',
       'shape_star',
-      'shape_heart',
-      'shape_cross',
     };
 
     if (iconName == null || iconName.isEmpty) return 'shape_circle';
     if (allowed.contains(iconName)) return iconName;
+
+    // 더 이상 제공하지 않는 아이콘은 원으로 폴백
+    if (iconName == 'shape_heart' || iconName == 'shape_cross') {
+      return 'shape_circle';
+    }
 
     // 구버전(8개) 아이콘 키 → 새 6개 키로 매핑
     switch (iconName) {

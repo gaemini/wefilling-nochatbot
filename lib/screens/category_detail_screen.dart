@@ -525,7 +525,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       'shape_circle': Icons.circle,
       'shape_square': Icons.stop,
       'shape_star': Icons.star,
-      'shape_cross': Icons.add,
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
+      'shape_cross': Icons.circle,
       'shape_circle_filled': Icons.circle,
       'shape_circle_outline': Icons.radio_button_unchecked,
       'shape_square_filled': Icons.stop,
@@ -534,7 +535,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       'shape_triangle': Icons.navigation,
       'shape_star_filled': Icons.star,
       'shape_star_outline': Icons.star_border,
-      'shape_heart': Icons.favorite,
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
+      'shape_heart': Icons.circle,
       'school': Icons.school,
       'groups': Icons.groups,
       'palette': Icons.palette,

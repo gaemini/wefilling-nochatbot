@@ -90,6 +90,11 @@ class _CirclePainter extends _BaseShapePainter {
 class _SquarePainter extends _BaseShapePainter {
   const _SquarePainter({required super.color});
 
+  // 네모는 면적감이 커서 상대적으로 커 보이므로
+  // 다른 도형(특히 원)과의 체감 크기를 맞추기 위해 패딩을 조금 늘려 줄인다.
+  @override
+  double get pad => 0.12;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
@@ -126,6 +131,11 @@ class _EquilateralTrianglePainter extends _BaseShapePainter {
 class _StarPainter extends _BaseShapePainter {
   const _StarPainter({required super.color});
 
+  // 별은 내부 여백(음영)이 커서 상대적으로 작아 보이므로
+  // 원/사각형 대비 체감 크기를 맞추기 위해 패딩을 줄여 크게 렌더링한다.
+  @override
+  double get pad => 0.04;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
@@ -134,7 +144,8 @@ class _StarPainter extends _BaseShapePainter {
     final cx = size.width / 2;
     final cy = size.height / 2;
     final outerR = (size.width - p * 2) / 2;
-    final innerR = outerR * 0.5;
+    // 별의 중앙 오목함을 조금 줄여 면적감을 확보
+    final innerR = outerR * 0.56;
 
     final path = Path();
     const points = 5;
@@ -159,6 +170,11 @@ class _StarPainter extends _BaseShapePainter {
 class _HeartPainter extends _BaseShapePainter {
   const _HeartPainter({required super.color});
 
+  // 하트는 곡선 형태로 인해 여백이 크게 느껴져 작아 보이므로
+  // 별과 동일하게 패딩을 줄여 체감 크기를 맞춘다.
+  @override
+  double get pad => 0.02;
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint =
@@ -170,10 +186,37 @@ class _HeartPainter extends _BaseShapePainter {
     final y = p;
 
     final path = Path();
-    // 간단한 하트 베지어(정규화)
-    path.moveTo(x + w / 2, y + h);
-    path.cubicTo(x + w * 1.05, y + h * 0.62, x + w * 0.92, y + h * 0.18, x + w / 2, y + h * 0.32);
-    path.cubicTo(x + w * 0.08, y + h * 0.18, x - w * 0.05, y + h * 0.62, x + w / 2, y + h);
+    // 하트 베지어(정규화)
+    // - 위쪽 홈(notch)과 아래쪽 뾰족함을 살리기 위해
+    //   "둥근" 컨트롤 포인트를 줄이고 곡률 변화를 크게 준다.
+    // - 캔버스 밖으로 튀지 않도록 컨트롤 포인트는 [x, x+w] 범위 내로 유지.
+    final cx = x + w / 2;
+    final bottomY = y + h;
+    final notchY = y + h * 0.28;
+
+    path.moveTo(cx, bottomY);
+    // 오른쪽 반쪽: 아래 → 오른쪽 볼록 → 위쪽 홈
+    path.cubicTo(
+      x + w * 0.60, y + h * 0.86,
+      x + w * 0.98, y + h * 0.58,
+      x + w * 0.84, y + h * 0.36,
+    );
+    path.cubicTo(
+      x + w * 0.72, y + h * 0.14,
+      x + w * 0.56, y + h * 0.10,
+      cx, notchY,
+    );
+    // 왼쪽 반쪽: 위쪽 홈 → 왼쪽 볼록 → 아래
+    path.cubicTo(
+      x + w * 0.44, y + h * 0.10,
+      x + w * 0.28, y + h * 0.14,
+      x + w * 0.16, y + h * 0.36,
+    );
+    path.cubicTo(
+      x + w * 0.02, y + h * 0.58,
+      x + w * 0.40, y + h * 0.86,
+      cx, bottomY,
+    );
     path.close();
 
     canvas.drawPath(path, paint);

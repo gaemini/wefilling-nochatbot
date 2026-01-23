@@ -46,6 +46,7 @@ class _MainScreenState extends State<MainScreen> {
   final DMService _dmService = DMService();
   late VoidCallback _cleanupCallback;
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
+  AuthProvider? _authProvider;
 
   @override
   void initState() {
@@ -61,12 +62,16 @@ class _MainScreenState extends State<MainScreen> {
       _notificationService.dispose();
     };
 
+    // initState에서 listen:false로 읽는 것은 안전하며,
+    // post-frame 콜백에서 (이미 dispose된) context를 조회하는 레이스를 제거한다.
+    _authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _authProvider?.registerStreamCleanup(_cleanupCallback);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.registerStreamCleanup(_cleanupCallback);
+      if (!mounted) return;
 
       // 로그인 실패(회원가입 필요) 후 메인으로 돌아온 경우 안내 표시
-      if (authProvider.consumeSignupRequiredFlag()) {
+      if (_authProvider?.consumeSignupRequiredFlag() == true) {
         _showSignupRequiredBanner();
       }
 
@@ -83,12 +88,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     // AuthProvider에서 콜백 제거
-    try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      authProvider.unregisterStreamCleanup(_cleanupCallback);
-    } catch (e) {
-      Logger.error('MainScreen AuthProvider 콜백 제거 오류: $e');
-    }
+    // dispose에서는 context로 ancestor lookup을 하지 않는다.
+    _authProvider?.unregisterStreamCleanup(_cleanupCallback);
 
     // 서비스 정리
     _notificationService.dispose();

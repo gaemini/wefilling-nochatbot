@@ -522,8 +522,9 @@ class _FriendsPageState extends State<FriendsPage> {
         return Icons.stop;
       case 'shape_star':
         return Icons.star;
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
       case 'shape_cross':
-        return Icons.add;
+        return Icons.circle;
       case 'shape_circle_filled':
         return Icons.circle;
       case 'shape_circle_outline':
@@ -539,8 +540,9 @@ class _FriendsPageState extends State<FriendsPage> {
         return Icons.star;
       case 'shape_star_outline':
         return Icons.star_border;
+      // 하트/십자가는 더 이상 사용하지 않음(기존 데이터는 원으로 폴백)
       case 'shape_heart':
-        return Icons.favorite;
+        return Icons.circle;
       case 'school':
         return Icons.school;
       case 'groups':

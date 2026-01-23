@@ -273,6 +273,9 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     // 작성자 정보
                     _buildAuthorHeader(review, l10n),
                     
+                    // 게시글 내용 (이미지 위에 표시)
+                    _buildContent(review, l10n),
+                    
                     // 이미지
                     _buildImage(review),
                     
@@ -281,9 +284,6 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
                     
                     // 좋아요 수
                     _buildLikeCount(review, l10n),
-                    
-                    // 모임 제목 + 후기 내용
-                    _buildContent(review, l10n),
                     
                     // 작성 시간
                     _buildTimestamp(review),

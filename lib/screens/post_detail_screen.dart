@@ -109,13 +109,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
-  /// 기존 title이 남아있는 게시글은 title을 본문 앞에 붙여 "본문처럼" 처리
+  /// 게시글 본문 가져오기 (제목 필드는 더 이상 사용하지 않음)
   String _getUnifiedBodyText(Post post) {
-    final t = post.title.trim();
-    final c = post.content.trim();
-    if (t.isEmpty) return c;
-    if (c.isEmpty) return t;
-    return '$t\n$c';
+    // 제목 없이 본문만 사용 (제목 필드는 폐기됨)
+    return post.content.trim();
   }
 
   /// 상세 화면에서 보여줄 "첫 줄(제목처럼)"과 "나머지(캡션 본문)" 분리
@@ -1287,43 +1284,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
-                  // 제목 영역 제거 (요구사항: 제목 없이 작성, 기존 title은 본문으로 인식)
-                  // 제목(첫 줄) + 시간(날짜) 표시 위치를 스크린샷처럼 "제목 아래 시간"으로 배치
+                  // 게시글 본문 (전체 내용을 한 번에 표시)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-                    child: Builder(
-                      builder: (context) {
-                        final split = _splitHeadlineAndBody(_getUnifiedBodyText(_currentPost));
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (split.headline.isNotEmpty)
-                              Text(
-                                split.headline,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF111827),
-                                  height: 1.25,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            const SizedBox(height: 4),
-                            Text(
-                              _currentPost.getFormattedTime(context),
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 전체 본문 표시 (줄바꿈 포함)
+                        Text(
+                          _getUnifiedBodyText(_currentPost),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF111827),
+                            height: 1.35,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        // 시간 표시
+                        Text(
+                          _currentPost.getFormattedTime(context),
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
 
@@ -1445,77 +1435,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       child: PollPostWidget(postId: _currentPost.id),
                     ),
 
-                  // 캡션(본문) 위치: 통계 아래, 댓글 위 (스크린샷 스타일)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-                    child: Builder(
-                      builder: (context) {
-                        final split = _splitHeadlineAndBody(_getUnifiedBodyText(_currentPost));
-                        final body = split.body;
-                        if (body.isEmpty) return const SizedBox.shrink();
-
-                        final displayName = _currentPost.isAnonymous
-                            ? AppLocalizations.of(context)!.anonymous
-                            : _currentPost.author;
-
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: Colors.grey[200],
-                              ),
-                              child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
-                                  ? ClipOval(
-                                      child: Image.network(
-                                        _currentPost.authorPhotoURL,
-                                        width: 28,
-                                        height: 28,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Icon(
-                                          Icons.person,
-                                          color: Colors.grey[600],
-                                          size: 16,
-                                        ),
-                                      ),
-                                    )
-                                  : Icon(
-                                      Icons.person,
-                                      color: Colors.grey[600],
-                                      size: 16,
-                                    ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: RichText(
-                                text: TextSpan(
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 14,
-                                    height: 1.35,
-                                    color: Color(0xFF111827),
-                                  ),
-                                  children: [
-                                    TextSpan(
-                                      text: '$displayName ',
-                                      style: const TextStyle(fontWeight: FontWeight.w700),
-                                    ),
-                                    TextSpan(
-                                      text: body,
-                                      style: const TextStyle(fontWeight: FontWeight.w500),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
 
                   // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
                   SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),

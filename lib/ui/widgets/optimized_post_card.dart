@@ -70,6 +70,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   // 카드/이미지 라운드 (스크린샷 기준으로 조금 더 둥글게)
   static const double _cardRadius = 6;
   static const double _imageRadius = 6;
+  static const String _overflowSuffix = '\u00A0\u00A0....'; // 2칸 + ....
 
   @override
   void initState() {
@@ -205,6 +206,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final post = widget.post;
     final unifiedText = _getUnifiedBodyText(post);
     final headlineText = unifiedText.split('\n').first.trim();
+    final hasMoreThanFirstLine = _hasMoreExplicitLines(unifiedText, maxVisibleLines: 1);
 
     // 그림자 로직 제거 - 색상으로만 구분
 
@@ -235,18 +237,27 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 // 스크린샷처럼 이미지 카드의 텍스트는 한 줄만(제목 영역은 없고, 내용의 첫 줄만 노출)
                 if (post.imageUrls.isNotEmpty && headlineText.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  Text(
-                    headlineText,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: const Color(0xFF111827),
-                      fontFamily: 'Pretendard',
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
-                      height: 1.25,
-                      letterSpacing: -0.2,
-                    ),
+                  _buildSmartEllipsizedText(
+                    text: headlineText,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    // 이미지 카드(1줄)에서는 "다음 줄이 존재"하면 무조건 더 있음을 표시
+                    forceSuffix: hasMoreThanFirstLine,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                          color: const Color(0xFF111827),
+                          fontFamily: 'Pretendard',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          height: 1.25,
+                          letterSpacing: -0.2,
+                        ) ??
+                        const TextStyle(
+                          color: Color(0xFF111827),
+                          fontFamily: 'Pretendard',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
+                          height: 1.25,
+                          letterSpacing: -0.2,
+                        ),
                   ),
                 ],
 
@@ -285,40 +296,135 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
-  /// 기존 title이 남아있는 게시글은 title을 본문 앞에 붙여 "본문처럼" 처리
+  /// 게시글 본문 가져오기 (제목 필드는 더 이상 사용하지 않음)
   String _getUnifiedBodyText(Post post) {
-    final t = post.title.trim();
-    final c = post.content.trim();
-    if (t.isEmpty) return c;
-    if (c.isEmpty) return t;
-    return '$t\n$c';
+    return post.content.trim();
   }
 
-  /// 이미지가 없는 게시글(텍스트만)의 본문 미리보기: 2줄 고정 + overflow는 ...
-  /// - 1줄인 경우에도 높이를 유지해 카드 높이가 들쭉날쭉하지 않게 함
+  /// 카드 폭을 기준으로 실제 렌더링 폭을 측정해,
+  /// "2칸 + ..."이 항상 보이도록 prefix를 안전하게 잘라 suffix를 붙인다.
+  /// - 줄바꿈(\n)은 유지
+  /// - overflow가 발생하거나(forceSuffix) 더 내용이 있는 경우에만 suffix를 붙임
+  Widget _buildSmartEllipsizedText({
+    required String text,
+    required TextStyle style,
+    required int maxLines,
+    bool forceSuffix = false,
+  }) {
+    final normalized = text.replaceAll('\r\n', '\n');
+    if (normalized.trim().isEmpty) return const SizedBox.shrink();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final dir = Directionality.of(context);
+
+        bool exceeds(String s) {
+          final tp = TextPainter(
+            text: TextSpan(text: s, style: style),
+            textDirection: dir,
+            maxLines: maxLines,
+            ellipsis: null,
+          )..layout(maxWidth: constraints.maxWidth);
+          return tp.didExceedMaxLines;
+        }
+
+        // 원문이 넘치지 않고 강제 표시도 아니면 그대로
+        if (!forceSuffix && !exceeds(normalized)) {
+          return Text(
+            normalized,
+            maxLines: maxLines,
+            overflow: TextOverflow.clip,
+            softWrap: true,
+            style: style,
+          );
+        }
+
+        final base = normalized.replaceAll(RegExp(r'[ \t]+$'), '');
+
+        bool fitsCandidate(String prefix) {
+          final trimmedPrefix = prefix.replaceAll(RegExp(r'[ \t]+$'), '');
+          final candidate = trimmedPrefix.isEmpty ? '...' : '$trimmedPrefix$_overflowSuffix';
+          return !exceeds(candidate);
+        }
+
+        // suffix만으로도 안 들어오면(극단적 폭), 기본 ellipsis로 폴백
+        if (!fitsCandidate('')) {
+          return Text(
+            normalized,
+            maxLines: maxLines,
+            overflow: TextOverflow.ellipsis,
+            softWrap: true,
+            style: style,
+          );
+        }
+
+        int low = 0;
+        int high = base.length;
+        while (low < high) {
+          final mid = (low + high + 1) >> 1;
+          if (fitsCandidate(base.substring(0, mid))) {
+            low = mid;
+          } else {
+            high = mid - 1;
+          }
+        }
+
+        final prefix = base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
+        final finalText = prefix.isEmpty ? '...' : '$prefix$_overflowSuffix';
+
+        return Text(
+          finalText,
+          maxLines: maxLines,
+          overflow: TextOverflow.clip,
+          softWrap: true,
+          style: style,
+        );
+      },
+    );
+  }
+
+  /// 명시적 줄바꿈 기준으로 "더 있는 줄"이 존재하는지 판단
+  bool _hasMoreExplicitLines(String text, {required int maxVisibleLines}) {
+    final raw = text.replaceAll('\r\n', '\n');
+    final lines = raw.split('\n');
+
+    // 뒤쪽 빈 줄 제거
+    int end = lines.length;
+    while (end > 0 && lines[end - 1].trim().isEmpty) {
+      end--;
+    }
+
+    final effectiveCount = end;
+    return effectiveCount > maxVisibleLines;
+  }
+
+  /// 이미지가 없는 게시글(텍스트만)의 본문 미리보기: 2줄 제한 + ... 표시
   Widget _buildTextOnlyPreview(String preview, ThemeData theme, ColorScheme colorScheme) {
     final trimmed = preview.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
-    // 디자인상 안정적인 높이(2줄)를 확보하기 위한 최소 높이
-    // (폰트 크기/line-height 변동을 고려해 약간 여유를 둠)
-    const double twoLineMinHeight = 40;
-
-    return SizedBox(
-      height: twoLineMinHeight,
-      child: Text(
-        trimmed,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium?.copyWith(
+    final style = theme.textTheme.bodyMedium?.copyWith(
           color: const Color(0xFF111827),
           fontFamily: 'Pretendard',
           fontSize: 15,
           fontWeight: FontWeight.w600,
           height: 1.35,
           letterSpacing: -0.2,
-        ),
-      ),
+        ) ??
+        const TextStyle(
+          color: Color(0xFF111827),
+          fontFamily: 'Pretendard',
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          height: 1.35,
+          letterSpacing: -0.2,
+        );
+
+    return _buildSmartEllipsizedText(
+      text: trimmed,
+      style: style,
+      maxLines: 2,
+      forceSuffix: false,
     );
   }
 

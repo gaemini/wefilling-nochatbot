@@ -88,10 +88,11 @@ flutter:
   fonts:
     - family: Roboto
       fonts:
-        - asset: fonts/Roboto-Regular.ttf
-        - asset: fonts/Roboto-Bold.ttf
+        - asset: assets/fonts/Roboto/Roboto-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/Roboto/Roboto-Bold.ttf
           weight: 700
-        - asset: fonts/Roboto-Black.ttf
+        - asset: assets/fonts/Roboto/Roboto-Black.ttf
           weight: 900
     - family: Pretendard
       fonts:
@@ -115,7 +116,7 @@ flutter:
           weight: 900
     - family: HancomMalrangmalrang
       fonts:
-        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Regular.ttf
+        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Regular.otf
           weight: 400
-        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Bold.ttf
+        - asset: assets/fonts/HancomMalrangmalrang/HancomMalangMalang-Bold.otf
           weight: 700

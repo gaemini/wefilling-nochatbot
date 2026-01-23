@@ -256,7 +256,7 @@ class _MainScreenState extends State<MainScreen> {
                     style: TextStyle(
                       fontFamily: 'HancomMalrangmalrang',
                       fontSize: 17,
-                      fontWeight: FontWeight.w900,
+                      fontWeight: FontWeight.w700,
                       color: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
                       letterSpacing: -0.5,
                       shadows: [

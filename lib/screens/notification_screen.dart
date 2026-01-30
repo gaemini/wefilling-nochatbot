@@ -464,7 +464,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final postTitle = data['postTitle'] ?? '';
           return l10n!.newCommentMessage(commenterName, postTitle);
         case 'new_like':
-          final likerName = data['likerName'] ?? '';
+          final bool postIsAnonymous = data['postIsAnonymous'] == true;
+          final likerName = postIsAnonymous ? (l10n?.anonymous ?? '익명') : (data['likerName'] ?? '');
           final postTitle = data['postTitle'] ?? '';
           return l10n!.newLikeMessage(likerName, postTitle);
         case 'comment_like':

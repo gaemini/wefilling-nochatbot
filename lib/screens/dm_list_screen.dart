@@ -4,11 +4,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/conversation.dart';
 import '../models/user_profile.dart';
 import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
+import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
@@ -29,8 +30,10 @@ class DMListScreen extends StatefulWidget {
 class _DMListScreenState extends State<DMListScreen> {
   final DMService _dmService = DMService();
   final RelationshipService _relationshipService = RelationshipService();
+  final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   Set<String> _hiddenConversationIds = {};
+  final Map<String, Stream<DMUserInfo?>> _userInfoStreams = {};
 
   @override
   void initState() {
@@ -341,31 +344,53 @@ class _DMListScreenState extends State<DMListScreen> {
         ? ''
         : conversation.getOtherUserPhoto(_currentUser!.uid);
 
-    // 🔥 실시간 조회: 최신 사용자 정보 가져오기 (일반 DM만)
-    return FutureBuilder<Map<String, String>>(
-      future: _getLatestParticipantInfo(otherUserId, isAnonymous),
-      initialData: {
-        'name': initialName,
-        'photo': initialPhoto,
-      },
-      builder: (context, snapshot) {
-        final rawName = snapshot.data?['name'] ?? initialName;
-        final otherUserName = rawName == 'DELETED_ACCOUNT' ? deletedLabel : rawName;
-        final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
-        
+    // ✅ 사용자 문서 스트림 기반: 최신 프로필/닉네임이 자연스럽게 반영됨
+    if (isCachedDeleted) {
+      // 탈퇴로 확정이면 굳이 user 문서를 구독하지 않음
+      return StreamBuilder<int>(
+        stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
+        initialData: 0,
+        builder: (context, badgeSnapshot) {
+          final unreadCount = badgeSnapshot.data ?? 0;
+          return _buildConversationCardContent(
+            conversation: conversation,
+            displayName: deletedLabel,
+            otherUserPhoto: '',
+            isAnonymous: false,
+            timeString: timeString,
+            unreadCount: unreadCount,
+          );
+        },
+      );
+    }
+
+    final userInfoStream = _userInfoStreams.putIfAbsent(
+      otherUserId,
+      () => _userInfoCacheService.watchUserInfo(otherUserId),
+    );
+
+    final DMUserInfo? initialUserInfo = isAnonymous
+        ? null
+        : DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: initialPhoto);
+
+    return StreamBuilder<DMUserInfo?>(
+      stream: isAnonymous ? null : userInfoStream,
+      initialData: initialUserInfo,
+      builder: (context, userSnapshot) {
+        final info = userSnapshot.data;
+        final otherUserName = info?.nickname ?? deletedLabel;
+        final otherUserPhoto = info?.photoURL ?? '';
         final displayName = isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
 
-        // 🔥 실시간 배지 업데이트 (StreamBuilder)
         return StreamBuilder<int>(
           stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
           initialData: 0,
           builder: (context, badgeSnapshot) {
             final unreadCount = badgeSnapshot.data ?? 0;
-
             return _buildConversationCardContent(
               conversation: conversation,
               displayName: displayName,
-              otherUserPhoto: otherUserPhoto,
+              otherUserPhoto: isAnonymous ? '' : otherUserPhoto,
               isAnonymous: isAnonymous,
               timeString: timeString,
               unreadCount: unreadCount,
@@ -374,43 +399,6 @@ class _DMListScreenState extends State<DMListScreen> {
         );
       },
     );
-  }
-
-  /// 최신 참여자 정보 가져오기 (실시간 조회)
-  Future<Map<String, String>> _getLatestParticipantInfo(
-    String otherUserId,
-    bool isAnonymous,
-  ) async {
-    final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
-    
-    // 익명이면 아무 정보도 반환하지 않음 (빈 문자열)
-    if (isAnonymous) {
-      return {'name': '', 'photo': ''};
-    }
-    
-    try {
-      // 항상 서버에서 최신 정보 조회
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(otherUserId)
-          .get(const GetOptions(source: Source.server));
-      
-      if (doc.exists) {
-        final data = doc.data()!;
-        return {
-          'name': data['nickname'] ?? data['displayName'] ?? 'User',
-          'photo': data['photoURL'] ?? '',
-        };
-      } else {
-        // 탈퇴한 사용자 처리
-        Logger.log('⚠️ 탈퇴한 사용자: $otherUserId');
-        return {'name': deletedLabel, 'photo': ''};
-      }
-    } catch (e) {
-      Logger.error('⚠️ 사용자 정보 조회 실패: $e');
-      // 오류 발생 시에도 탈퇴한 사용자로 간주
-      return {'name': deletedLabel, 'photo': ''};
-    }
   }
 
   /// 대화방 카드 콘텐츠 빌드 (FutureBuilder 내부용)
@@ -537,26 +525,43 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 프로필 이미지 빌드
   Widget _buildProfileImage(String photoUrl, bool isAnonymous) {
-    return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: const Color(0xFFE5E7EB),
-        image: !isAnonymous && photoUrl.isNotEmpty
-            ? DecorationImage(
-                image: NetworkImage(photoUrl),
-                fit: BoxFit.cover,
-              )
-            : null,
-      ),
-      child: (!isAnonymous && photoUrl.isNotEmpty)
-          ? null
-          : const Icon(
+    if (isAnonymous || photoUrl.isEmpty) {
+      return Container(
+        width: 48,
+        height: 48,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFE5E7EB),
+        ),
+        child: const Icon(
+          Icons.person,
+          size: 24,
+          color: Color(0xFF6B7280),
+        ),
+      );
+    }
+
+    return ClipOval(
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: CachedNetworkImage(
+          key: ValueKey(photoUrl),
+          imageUrl: photoUrl,
+          fit: BoxFit.cover,
+          fadeInDuration: const Duration(milliseconds: 150),
+          fadeOutDuration: const Duration(milliseconds: 150),
+          placeholder: (_, __) => Container(color: const Color(0xFFE5E7EB)),
+          errorWidget: (_, __, ___) => Container(
+            color: const Color(0xFFE5E7EB),
+            child: const Icon(
               Icons.person,
               size: 24,
               color: Color(0xFF6B7280),
             ),
+          ),
+        ),
+      ),
     );
   }
 

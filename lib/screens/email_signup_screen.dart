@@ -104,7 +104,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
         String errorMsg = AppLocalizations.of(context)!.signupFailed;
         
         if (e.code == 'already-exists') {
-          errorMsg = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? '이미 사용 중인 한양메일입니다.';
+          errorMsg = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
         } else {
           errorMsg = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
         }
@@ -149,6 +149,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
       appBar: AppBar(
@@ -271,9 +272,9 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text(
-                            '인증된 한양메일',
-                            style: TextStyle(
+                          Text(
+                            l10n.verifiedHanyangEmailLabel,
+                            style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 12,
                               fontWeight: FontWeight.w500,
@@ -338,12 +339,6 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                   keyboardType: TextInputType.emailAddress,
                   decoration: InputDecoration(
                     hintText: 'example@gmail.com',
-                    helperText: AppLocalizations.of(context)!.emailHelperText,
-                    helperStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      color: Color(0xFF94A3B8),
-                    ),
                     hintStyle: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -377,6 +372,19 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                     }
                     return null;
                   },
+                ),
+              ),
+
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: Text(
+                  AppLocalizations.of(context)!.emailHelperText,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    color: Color(0xFF94A3B8),
+                  ),
                 ),
               ),
 

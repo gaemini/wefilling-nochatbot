@@ -21,11 +21,8 @@ class DateSelector extends StatelessWidget {
       children: List.generate(weekDates.length, (index) {
         final bool isSelected = index == selectedDayIndex;
         final DateTime date = weekDates[index];
-        // 로케일에 따라 요일 이름 선택
-        final locale = Localizations.localeOf(context).languageCode;
-        final String weekday = locale == 'ko'
-            ? ['월', '화', '수', '목', '금', '토', '일'][date.weekday - 1]
-            : weekdayNames[date.weekday - 1];
+        // 요일 이름은 호출 측에서 주입 (Mon~Sun 등)
+        final String weekday = weekdayNames[date.weekday - 1];
 
         return Expanded(
           child: Padding(
@@ -58,18 +55,28 @@ class DateSelector extends StatelessWidget {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      weekday,
-                      style: TextStyle(
-                        color: isSelected
-                            ? Colors.white
-                            : (date.weekday == 7 // 일요일 체크
-                                ? Colors.red
-                                : date.weekday == 6 // 토요일 체크
-                                    ? Colors.blue
-                                    : const Color(0xFF666666)),
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
+                    // 3글자 요일(Mon~Sun)도 오버플로우 없이 표시
+                    SizedBox(
+                      height: 14,
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            weekday,
+                            maxLines: 1,
+                            style: TextStyle(
+                              color: isSelected
+                                  ? Colors.white
+                                  : (date.weekday == 7 // 일요일 체크
+                                      ? Colors.red
+                                      : date.weekday == 6 // 토요일 체크
+                                          ? Colors.blue
+                                          : const Color(0xFF666666)),
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     const SizedBox(height: 4),

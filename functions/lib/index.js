@@ -774,18 +774,21 @@ exports.onPostLiked = functions.firestore
         const likerDoc = await db.collection('users').doc(newLiker).get();
         const likerName = likerDoc.exists ? (((_b = likerDoc.data()) === null || _b === void 0 ? void 0 : _b.nickname) || ((_c = likerDoc.data()) === null || _c === void 0 ? void 0 : _c.displayName) || 'User') : 'User';
         const postTitle = after.title || '';
+        const postIsAnonymous = after.isAnonymous === true;
+        const safeLikerName = postIsAnonymous ? '익명' : likerName;
         await db.collection('notifications').add({
             userId: postAuthorId,
             title: '게시글에 좋아요가 추가되었습니다',
-            message: `${likerName}님이 회원님의 게시글 "${postTitle}"을 좋아합니다.`,
+            message: `${safeLikerName}님이 회원님의 게시글 "${postTitle}"을 좋아합니다.`,
             type: 'new_like',
             postId: context.params.postId,
             actorId: newLiker,
-            actorName: likerName,
+            actorName: safeLikerName,
             data: {
                 postId: context.params.postId,
                 postTitle: postTitle,
-                likerName: likerName,
+                postIsAnonymous: postIsAnonymous,
+                likerName: safeLikerName,
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,

@@ -95,6 +95,78 @@ class StorageService {
     }
   }
 
+  /// 프로필 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
+  /// - 경로: profile_images/{userId}/{uuid}.jpg
+  /// - 업로드마다 파일명이 달라 URL이 바뀌므로, 별도 cache-bust가 필요 없음
+  Future<String?> uploadProfileImage(
+    File imageFile, {
+    required String userId,
+  }) async {
+    try {
+      final compressedFile = await _compressImage(imageFile);
+      if (compressedFile == null) {
+        Logger.error('프로필 이미지 압축 실패');
+        return null;
+      }
+
+      final String fileName = '${_uuid.v4()}.jpg';
+      final String folderPath = 'profile_images/$userId';
+      final String fullPath = '$folderPath/$fileName';
+
+      Logger.log('프로필 이미지 업로드 시작: $fullPath');
+      Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+
+      final Reference ref = _storage.ref().child(folderPath).child(fileName);
+
+      final UploadTask uploadTask = ref.putFile(
+        compressedFile,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {
+            'fileName': fileName,
+            'uploaded': DateTime.now().toString(),
+          },
+        ),
+      );
+
+      TaskSnapshot taskSnapshot;
+      try {
+        taskSnapshot = await uploadTask.timeout(
+          const Duration(seconds: 180),
+          onTimeout: () {
+            uploadTask.cancel();
+            throw TimeoutException('프로필 이미지 업로드 타임아웃', const Duration(seconds: 180));
+          },
+        );
+        Logger.log('프로필 이미지 업로드 완료: $fullPath');
+      } on TimeoutException catch (e) {
+        Logger.error('프로필 이미지 업로드 타임아웃', e);
+        return null;
+      }
+
+      final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
+      Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
+
+      if (compressedFile.path != imageFile.path) {
+        try {
+          await compressedFile.delete();
+        } catch (e) {
+          Logger.error('프로필 임시 파일 삭제 실패: $e');
+        }
+      }
+
+      return downloadUrl;
+    } catch (e) {
+      Logger.error('프로필 이미지 업로드 오류: $e');
+      String errorDetails = '';
+      if (e is FirebaseException) {
+        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
+      }
+      Logger.error('Firebase 오류 상세: $errorDetails');
+      return null;
+    }
+  }
+
   /// DM 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
   /// - 경로: dm_images/{userId}/{conversationId}/{uuid}.jpg
   Future<String?> uploadDmImage(

@@ -47,7 +47,7 @@ class MeetupService {
 
   // 날짜 포맷 문자열 반환 (요일도 포함)
   String getFormattedDate(DateTime date) {
-    final List<String> weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
+    final List<String> weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final int weekdayIndex = date.weekday - 1; // 0: 월요일, 6: 일요일
     return '${date.month}월 ${date.day}일 (${weekdayNames[weekdayIndex]})';
   }

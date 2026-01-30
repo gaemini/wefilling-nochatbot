@@ -103,7 +103,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
         String errorMsg = AppLocalizations.of(context)!.signupFailed;
         
         if (e.code == 'already-exists') {
-          errorMsg = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? '이미 사용 중인 한양메일입니다.';
+          errorMsg = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
         } else {
           errorMsg = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
         }
@@ -155,6 +155,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
       appBar: AppBar(
@@ -164,9 +165,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          '비밀번호 설정',
-          style: TextStyle(
+        title: Text(
+          l10n.passwordSetupTitle,
+          style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -212,9 +213,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                         color: Colors.white,
                       ),
                       const SizedBox(height: 24),
-                      const Text(
-                        '비밀번호 설정',
-                        style: TextStyle(
+                      Text(
+                        l10n.passwordSetupTitle,
+                        style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -228,7 +229,7 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          '안전한 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.',
+                          l10n.passwordSetupDescription,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 15,
@@ -477,9 +478,9 @@ class _PasswordSetupScreenState extends State<PasswordSetupScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
-                          '회원가입 완료',
-                          style: TextStyle(
+                      : Text(
+                          l10n.signUpComplete,
+                          style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 17,
                             fontWeight: FontWeight.w600,

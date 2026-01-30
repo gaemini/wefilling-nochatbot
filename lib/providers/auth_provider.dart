@@ -12,8 +12,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
 import '../services/auth_service.dart';
+import '../services/user_info_cache_service.dart';
 import '../config/app_config.dart';
 import '../utils/logger.dart';
 
@@ -792,6 +794,26 @@ class AuthProvider with ChangeNotifier {
           
           // 🔥 하이브리드 동기화: DM 대화방 업데이트
           await _updateAllConversationsForUser(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null);
+
+          // ✅ 캐시 정리: 이전 프로필 사진이 남아있지 않도록 제거
+          // - 이미지 캐시는 URL 기준이므로 이전 URL을 직접 evict
+          try {
+            final oldUrl = (oldPhotoURL ?? '').toString();
+            final newUrl = finalPhotoURL.toString();
+            if (oldUrl.isNotEmpty && oldUrl != newUrl) {
+              await CachedNetworkImage.evictFromCache(oldUrl);
+              Logger.log('🧹 프로필 이미지 캐시 제거 완료');
+            }
+          } catch (e) {
+            Logger.error('⚠️ 프로필 이미지 캐시 제거 실패(무시): $e');
+          }
+
+          // - 우리 앱의 유저정보 메모리 캐시도 무효화 (Firestore 스트림이 최신으로 재채움)
+          try {
+            UserInfoCacheService().invalidateUser(_user!.uid);
+          } catch (e) {
+            Logger.error('⚠️ UserInfoCache invalidate 실패(무시): $e');
+          }
           
           await _loadUserData();
           return true;

@@ -199,7 +199,15 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             _isUploadingImage = true;
           });
           
-          final profileImageUrl = await _storageService.uploadImage(_selectedImage!);
+          final userId = authProvider.user?.uid;
+          if (userId == null) {
+            throw Exception(AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
+          }
+
+          final profileImageUrl = await _storageService.uploadProfileImage(
+            _selectedImage!,
+            userId: userId,
+          );
           
           setState(() {
             _isUploadingImage = false;

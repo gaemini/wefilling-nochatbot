@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
 import 'password_setup_screen.dart';
 
 class EmailIdSetupScreen extends StatefulWidget {
@@ -51,6 +52,7 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
       appBar: AppBar(
@@ -60,9 +62,9 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          '아이디 설정',
-          style: TextStyle(
+        title: Text(
+          l10n.emailIdSetupTitle,
+          style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -108,9 +110,9 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                         color: Colors.white,
                       ),
                       const SizedBox(height: 24),
-                      const Text(
-                        '아이디 설정',
-                        style: TextStyle(
+                      Text(
+                        l10n.emailIdSetupTitle,
+                        style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 24,
                           fontWeight: FontWeight.w700,
@@ -124,7 +126,7 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Text(
-                          '한양메일 인증이 완료되었습니다.\n로그인에 사용할 이메일을 입력하세요.\n인증한 한양메일이나 다른 이메일 모두 가능합니다.',
+                          l10n.emailIdSetupDescription,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 15,
@@ -166,7 +168,7 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '인증된 한양메일',
+                              l10n.verifiedHanyangEmailLabel,
                               style: TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 12,
@@ -196,9 +198,9 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                 // 아이디(이메일) 입력 레이블
                 Padding(
                   padding: const EdgeInsets.only(left: 4, bottom: 12),
-                  child: const Text(
-                    '로그인 아이디 (이메일 형식)',
-                    style: TextStyle(
+                  child: Text(
+                    l10n.loginEmailLabel,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
@@ -229,8 +231,8 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                     controller: _emailController,
                     keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
-                      hintText: 'pyung0104@gmail.com 또는 pyung0104@hanyang.ac.kr',
-                      helperText: '로그인에 사용할 이메일을 입력하세요',
+                      hintText: 'example@gmail.com / example@hanyang.ac.kr',
+                      helperText: l10n.loginEmailHelper,
                       helperStyle: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 12,
@@ -285,7 +287,7 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                     color: Colors.green.shade700,
                   ),
                   label: Text(
-                    '인증한 한양메일 사용하기',
+                    l10n.useVerifiedHanyangEmail,
                     style: TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 14,
@@ -330,7 +332,7 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          '• 로그인에 사용할 이메일을 입력하세요\n• 인증한 한양메일도 사용 가능합니다\n• 다른 이메일 주소도 사용 가능합니다\n• 다음 단계에서 비밀번호를 설정합니다',
+                          l10n.emailIdSetupInfo,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 14,
@@ -360,9 +362,9 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
                     elevation: 2,
                     shadowColor: AppColors.pointColor.withOpacity(0.4),
                   ),
-                  child: const Text(
-                    '다음',
-                    style: TextStyle(
+                  child: Text(
+                    l10n.next,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 17,
                       fontWeight: FontWeight.w600,

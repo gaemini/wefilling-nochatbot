@@ -2466,6 +2466,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get emailHelperText => 'Enter your frequently used email';
 
   @override
+  String get verifiedHanyangEmailLabel => 'Verified Hanyang Email';
+
+  @override
   String get invalidEmailFormat => 'Invalid email format';
 
   @override
@@ -2477,6 +2480,113 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signUpComplete => 'Complete Sign Up';
+
+  @override
+  String get profileSetupTitle => 'Profile Setup';
+
+  @override
+  String get profileSetupWelcome => 'Welcome! Please set up your profile.';
+
+  @override
+  String get profileSetupSuccess => 'Your profile has been set up.';
+
+  @override
+  String get profileSetupFailed =>
+      'Failed to set up your profile.\nPlease return to the login screen and try again.';
+
+  @override
+  String profileSetupError(String error) {
+    return 'An error occurred: $error\nPlease return to the login screen.';
+  }
+
+  @override
+  String get nicknamePlaceholder => 'John Doe';
+
+  @override
+  String get nicknameRequired => 'Please enter a nickname';
+
+  @override
+  String get nicknameLengthHint => 'Nickname must be 2–20 characters';
+
+  @override
+  String get getStarted => 'Get Started';
+
+  @override
+  String get signUpMethodSelectionTitle => 'Choose Sign Up Method';
+
+  @override
+  String get signUpMethodSelectionHeading => 'Choose how you want to sign up';
+
+  @override
+  String get signUpMethodSelectionDescription =>
+      'Hanyang email verification is complete.\nPlease choose your preferred sign up method.';
+
+  @override
+  String get signUpWithApple => 'Sign up with Apple';
+
+  @override
+  String get signUpWithAppleIosOnly => 'Sign up with Apple (iOS only)';
+
+  @override
+  String get signUpWithGoogle => 'Sign up with Google';
+
+  @override
+  String get signUpWithId => 'Sign up with Email';
+
+  @override
+  String get appleSignupIosOnlyError =>
+      'Apple sign up is only available on iOS.';
+
+  @override
+  String get googleSignupLoginFailed => 'Google sign-in failed.';
+
+  @override
+  String get appleSignupLoginFailed => 'Apple sign-in failed.';
+
+  @override
+  String get signupProcessError => 'An error occurred during sign up.';
+
+  @override
+  String googleSignupFailedWithError(String error) {
+    return 'Google sign up failed: $error';
+  }
+
+  @override
+  String appleSignupFailedWithError(String error) {
+    return 'Apple sign up failed: $error';
+  }
+
+  @override
+  String socialAccountAlreadyRegistered(String provider) {
+    return 'This $provider account is already registered.\nPlease sign in from the login screen.';
+  }
+
+  @override
+  String get emailIdSetupTitle => 'Set Login Email';
+
+  @override
+  String get emailIdSetupDescription =>
+      'Hanyang email verification is complete.\nEnter the email you will use to log in.\nYou can use your verified Hanyang email or another email.';
+
+  @override
+  String get loginEmailLabel => 'Login email (email format)';
+
+  @override
+  String get loginEmailHelper => 'Enter the email you will use to log in';
+
+  @override
+  String get useVerifiedHanyangEmail => 'Use verified Hanyang email';
+
+  @override
+  String get emailIdSetupInfo =>
+      '• Enter the email you will use to log in\n• You can also use your verified Hanyang email\n• You may use another email address\n• You will set a password in the next step';
+
+  @override
+  String get passwordSetupTitle => 'Set Password';
+
+  @override
+  String get passwordSetupDescription =>
+      'Set a secure password.\nIt must be at least 8 characters.';
 
   @override
   String get loginFailedGeneric =>

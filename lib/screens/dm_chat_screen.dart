@@ -15,6 +15,7 @@ import '../services/dm_service.dart';
 import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
 import '../services/storage_service.dart';
+import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
@@ -49,10 +50,12 @@ class DMChatScreen extends StatefulWidget {
 class _DMChatScreenState extends State<DMChatScreen> {
   final DMService _dmService = DMService();
   final StorageService _storageService = StorageService();
+  final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
+  Stream<DMUserInfo?>? _otherUserInfoStream;
   
   // 대화방이 없을 수 있으므로 초기에 스트림을 구독하지 않는다.
   Stream<List<DMMessage>>? _messagesStream;
@@ -70,6 +73,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   @override
   void initState() {
     super.initState();
+    _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _checkBlockStatus(); // 차단 상태 확인
     _preloadDmTitleIfAnonymous(); // 익명이면 제목 미리 로드
     _initConversationState();
@@ -539,16 +543,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
     // 실시간으로 사용자 정보 조회 (일반 DM만)
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
-      child: FutureBuilder<Map<String, String>>(
-        future: _getLatestUserInfo(otherUserId, _isAnonymous),
-        initialData: {
-          'name': initialName,
-          'photo': initialPhoto,
-        },
+      child: StreamBuilder<DMUserInfo?>(
+        stream: (_isAnonymous || isCachedDeleted) ? null : _otherUserInfoStream,
+        initialData: (!_isAnonymous && !isCachedDeleted)
+            ? DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: initialPhoto)
+            : null,
         builder: (context, snapshot) {
-          final rawName = snapshot.data?['name'] ?? initialName;
-          final otherUserName = rawName == 'DELETED_ACCOUNT' ? deletedLabel : rawName;
-          final otherUserPhoto = snapshot.data?['photo'] ?? initialPhoto;
+          final info = snapshot.data;
+          final otherUserName = (isCachedDeleted || info == null)
+              ? deletedLabel
+              : (info.nickname == 'DELETED_ACCOUNT' ? deletedLabel : info.nickname);
+          final otherUserPhoto = (isCachedDeleted || info == null) ? '' : info.photoURL;
           
           final primaryTitle = _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
           final secondaryTitle = null;
@@ -568,15 +573,28 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
             title: Row(
               children: [
-                CircleAvatar(
-                  radius: 18,
-                  backgroundColor: Colors.grey[200],
-                  backgroundImage: !_isAnonymous && otherUserPhoto.isNotEmpty
-                      ? NetworkImage(otherUserPhoto)
-                      : null,
-                  child: (!_isAnonymous && otherUserPhoto.isNotEmpty)
-                      ? null
-                      : const Icon(Icons.person, size: 20),
+                ClipOval(
+                  child: SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: (_isAnonymous || otherUserPhoto.isEmpty)
+                        ? Container(
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.person, size: 20),
+                          )
+                        : CachedNetworkImage(
+                            key: ValueKey(otherUserPhoto),
+                            imageUrl: otherUserPhoto,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 150),
+                            fadeOutDuration: const Duration(milliseconds: 150),
+                            placeholder: (_, __) => Container(color: Colors.grey[200]),
+                            errorWidget: (_, __, ___) => Container(
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.person, size: 20),
+                            ),
+                          ),
+                  ),
                 ),
           const SizedBox(width: 12),
           Expanded(
@@ -715,43 +733,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
         },
       ),
     );
-  }
-
-  /// 최신 사용자 정보 가져오기 (실시간 조회)
-  Future<Map<String, String>> _getLatestUserInfo(
-    String otherUserId,
-    bool isAnonymous,
-  ) async {
-    final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
-    
-    // 익명이면 아무 정보도 반환하지 않음 (빈 문자열)
-    if (isAnonymous) {
-      return {'name': '', 'photo': ''};
-    }
-    
-    try {
-      // 항상 서버에서 최신 정보 조회
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(otherUserId)
-          .get(const GetOptions(source: Source.server));
-      
-      if (doc.exists) {
-        final data = doc.data()!;
-        return {
-          'name': data['nickname'] ?? data['displayName'] ?? 'User',
-          'photo': data['photoURL'] ?? '',
-        };
-      } else {
-        // 탈퇴한 사용자 처리
-        Logger.log('⚠️ 탈퇴한 사용자: $otherUserId');
-        return {'name': deletedLabel, 'photo': ''};
-      }
-    } catch (e) {
-      Logger.error('⚠️ 사용자 정보 조회 실패: $e');
-      // 오류 발생 시에도 탈퇴한 사용자로 간주
-      return {'name': deletedLabel, 'photo': ''};
-    }
   }
 
   /// 채팅방 보관(삭제) - 서버 플래그 기반

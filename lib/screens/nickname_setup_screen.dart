@@ -26,6 +26,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
   // 폼 제출
   void _submitForm() async {
     if (_formKey.currentState?.validate() ?? false) {
+      final l10n = AppLocalizations.of(context)!;
       // 🔥 context를 미리 저장 (비동기 작업 전)
       if (!mounted) return;
       final navigator = Navigator.of(context);
@@ -52,10 +53,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         if (success) {
           // 성공 메시지
           messenger.showSnackBar(
-            const SnackBar(
-              content: Text('프로필이 설정되었습니다.'),
+            SnackBar(
+              content: Text(l10n.profileSetupSuccess),
               backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
+              duration: const Duration(seconds: 2),
             ),
           );
 
@@ -66,10 +67,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         } else {
           // 실패 메시지
           messenger.showSnackBar(
-            const SnackBar(
-              content: Text('프로필 설정에 실패했습니다.\n로그인 화면으로 돌아가 다시 시도해주세요.'),
+            SnackBar(
+              content: Text(l10n.profileSetupFailed),
               backgroundColor: Colors.red,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 3),
             ),
           );
           
@@ -83,7 +84,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         if (!mounted) return;
         messenger.showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e\n로그인 화면으로 돌아가주세요.'),
+            content: Text(l10n.profileSetupError(e.toString())),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -112,12 +113,13 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
       appBar: AppBar(
-        title: const Text(
-          '프로필 설정',
-          style: TextStyle(
+        title: Text(
+          l10n.profileSetupTitle,
+          style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
             fontWeight: FontWeight.w600,
@@ -177,18 +179,18 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                       ),
                     ),
                     const SizedBox(height: 24),
-              const Text(
-                '환영합니다! 프로필을 설정해주세요.',
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700,
+                    Text(
+                      l10n.profileSetupWelcome,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
                         color: Colors.white,
                         letterSpacing: -0.5,
                         height: 1.3,
-                ),
-                textAlign: TextAlign.center,
-              ),
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
                   ],
                 ),
               ),
@@ -198,17 +200,17 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               // 닉네임 입력 레이블
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: const Text(
-                    '닉네임',
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
+                child: Text(
+                  l10n.nickname,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                     letterSpacing: -0.2,
                   ),
-                    ),
-                  ),
+                ),
+              ),
 
               // 닉네임 입력
               Container(
@@ -237,7 +239,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                     letterSpacing: -0.2,
                     ),
                     decoration: InputDecoration(
-                      hintText: '두리안',
+                      hintText: l10n.nicknamePlaceholder,
                       hintStyle: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
@@ -257,10 +259,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                     ),
                     validator: (value) {
                       if (value == null || value.trim().isEmpty) {
-                        return '닉네임을 입력해주세요';
+                        return l10n.nicknameRequired;
                       }
                       if (value.length < 2 || value.length > 20) {
-                        return '닉네임은 2~20자 사이로 입력해주세요';
+                        return l10n.nicknameLengthHint;
                       }
                       return null;
                     },
@@ -271,12 +273,12 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               // 국적 입력 레이블
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: const Text(
-                    '국적',
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
+                child: Text(
+                  l10n.nationality,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 15,
-                      fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w600,
                     color: Color(0xFF334155),
                     letterSpacing: -0.2,
                   ),
@@ -374,9 +376,9 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
                             valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           ),
                         )
-                      : const Text(
-                          '시작하기',
-                          style: TextStyle(
+                      : Text(
+                          l10n.getStarted,
+                          style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 17,
                             fontWeight: FontWeight.w600,

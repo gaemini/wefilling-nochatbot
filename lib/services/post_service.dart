@@ -457,6 +457,7 @@ class PostService {
 
       final postTitle = data['title'] ?? '';
       final authorId = data['userId'];
+      final bool postIsAnonymous = data['isAnonymous'] == true;
 
       Logger.log('현재 좋아요 상태: $hasLiked, 사용자 ID: ${user.uid}, 게시글 ID: $postId');
 
@@ -500,6 +501,7 @@ class PostService {
             authorId,
             nickname,
             user.uid,
+            postIsAnonymous: postIsAnonymous,
           );
           Logger.log(notificationSent ? '✅ 알림 전송 성공' : '❌ 알림 전송 실패');
         } else {

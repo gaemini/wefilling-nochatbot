@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
-import '../screens/nickname_setup_screen.dart';
-import '../screens/email_signup_screen.dart';
+import '../screens/signup_method_selection_screen.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
 
@@ -87,7 +86,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       if (mounted) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? "";
+            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
         } else {
@@ -140,7 +139,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       } on FirebaseFunctionsException catch (e) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? "";
+            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
           return;
@@ -166,13 +165,12 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
           _isLoading = false;
         });
         
-        // EmailSignUpScreen으로 이동하며 인증된 한양메일 전달
+        // 가입 방식 선택 화면으로 이동하며 인증된 한양메일 전달
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => EmailSignUpScreen(
-              verifiedHanyangEmail: _emailController.text.trim(),
-            ),
+            builder: (_) => SignUpMethodSelectionScreen(
+                verifiedHanyangEmail: _emailController.text.trim()),
           ),
         );
         return;
@@ -186,136 +184,6 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     } finally {
       if (mounted) {
         setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  // Google로 계속하기
-  Future<void> _continueWithGoogle() async {
-                  try {
-                    setState(() {
-                      _isLoading = true;
-                    });
-      
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-                    
-                    // skipEmailVerifiedCheck=true로 설정하여 회원가입 진행
-                    final loginSuccess = await authProvider.signInWithGoogle(
-                      skipEmailVerifiedCheck: true,
-                    );
-                    
-                    if (mounted && loginSuccess) {
-                      // Google 로그인 성공 후 최종 확정(Callables)
-                      bool completed = false;
-                      try {
-                        completed = await authProvider.completeEmailVerification(
-                          _emailController.text.trim(),
-                        );
-                      } on FirebaseFunctionsException catch (e) {
-                        if (e.code == 'already-exists') {
-                          setState(() {
-                            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? "";
-                          });
-                        } else {
-                          setState(() {
-                            _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
-                          });
-                        }
-                        setState(() { _isLoading = false; });
-                        return;
-                      }
-
-                      if (completed) {
-                        // 닉네임 설정 화면으로 이동
-                        if (mounted) {
-                          Navigator.pushReplacement(
-                            context,
-                            MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
-                          );
-                        }
-                      } else if (mounted) {
-                        setState(() {
-                          _errorMessage = '회원가입 처리 중 오류가 발생했습니다.';
-                          _isLoading = false;
-                        });
-                      }
-                    } else if (mounted) {
-                      setState(() {
-                        _errorMessage = 'Google 로그인에 실패했습니다.';
-                        _isLoading = false;
-                      });
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      setState(() {
-                        _errorMessage = 'Google 로그인 실패: $e';
-                        _isLoading = false;
-                      });
-                    }
-                  }
-  }
-
-  // Apple로 계속하기
-  Future<void> _continueWithApple() async {
-    try {
-      setState(() {
-        _isLoading = true;
-      });
-      
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
-      // skipEmailVerifiedCheck=true로 설정하여 회원가입 진행
-      final loginSuccess = await authProvider.signInWithApple(
-        skipEmailVerifiedCheck: true,
-      );
-      
-      if (mounted && loginSuccess) {
-        // Apple 로그인 성공 후 최종 확정(Callables)
-        bool completed = false;
-        try {
-          completed = await authProvider.completeEmailVerification(
-            _emailController.text.trim(),
-          );
-        } on FirebaseFunctionsException catch (e) {
-          if (e.code == 'already-exists') {
-            setState(() {
-              _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed ?? "";
-            });
-          } else {
-            setState(() {
-              _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
-            });
-          }
-          setState(() { _isLoading = false; });
-        return;
-      }
-
-        if (completed) {
-          // 닉네임 설정 화면으로 이동
-      if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
-            );
-          }
-        } else if (mounted) {
-          setState(() {
-            _errorMessage = '회원가입 처리 중 오류가 발생했습니다.';
-            _isLoading = false;
-          });
-        }
-      } else if (mounted) {
-        setState(() {
-          _errorMessage = 'Apple 로그인에 실패했습니다.';
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = 'Apple 로그인 실패: $e';
           _isLoading = false;
         });
       }
@@ -756,75 +624,3 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   }
 }
 
-// Google 로고를 그리는 CustomPainter
-class GoogleLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..strokeWidth = 2;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-
-    // 파란색 부분 (오른쪽)
-    paint.color = const Color(0xFF4285F4);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -1.57, // -90도 (12시 방향)
-      1.57, // 90도
-      true,
-      paint,
-    );
-
-    // 빨간색 부분 (위쪽)
-    paint.color = const Color(0xFFEA4335);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      -1.57, // -90도
-      -1.57, // -90도
-      true,
-      paint,
-    );
-
-    // 노란색 부분 (왼쪽 아래)
-    paint.color = const Color(0xFFFBBC05);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      1.57, // 90도
-      1.05, // 60도
-      true,
-      paint,
-    );
-
-    // 초록색 부분 (왼쪽 위)
-    paint.color = const Color(0xFF34A853);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      2.62, // 150도
-      0.52, // 30도
-      true,
-      paint,
-    );
-
-    // 중앙 흰색 원 (G 모양을 만들기 위해)
-    paint.color = Colors.white;
-    canvas.drawCircle(center, radius * 0.5, paint);
-
-    // 오른쪽 파란색 막대 (G의 가로선)
-    paint.color = const Color(0xFF4285F4);
-    final rectWidth = radius * 0.5;
-    final rectHeight = radius * 0.35;
-    canvas.drawRect(
-      Rect.fromCenter(
-        center: Offset(center.dx + radius * 0.25, center.dy),
-        width: rectWidth,
-        height: rectHeight,
-      ),
-      paint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}

@@ -37,7 +37,7 @@ class MeetupHomePage extends StatefulWidget {
 class _MeetupHomePageState extends State<MeetupHomePage>
     with SingleTickerProviderStateMixin, PreloadMixin {
   late TabController _tabController;
-  final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
+  final List<String> _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final MeetupService _meetupService = MeetupService();
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
   
@@ -522,10 +522,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           final isSelected = index == _tabController.index;
           final isToday = _isToday(date);
 
-          final locale = Localizations.localeOf(context).languageCode;
-          final weekdayLabel = locale == 'ko'
-              ? ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'][index]
-              : _weekdayNames[index];
+          final weekdayLabel = _weekdayNames[index];
 
           return Expanded(
             child: GestureDetector(
@@ -537,19 +534,28 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                 child: Column(
                   children: [
                     // 요일
-                    Text(
-                      weekdayLabel,
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        // 날짜 선택 여부와 무관하게 요일 이니셜 색상은 고정
-                        // (선택 강조는 날짜 원형 배경으로만 표현)
-                        color: index == 6 // 일요일
-                            ? const Color(0xFFEF4444)
-                            : index == 5 // 토요일
-                                ? const Color(0xFF3B82F6)
-                                : const Color(0xFF6B7280),
+                    SizedBox(
+                      height: 14,
+                      child: Center(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            weekdayLabel,
+                            maxLines: 1,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              // 날짜 선택 여부와 무관하게 요일 이니셜 색상은 고정
+                              // (선택 강조는 날짜 원형 배경으로만 표현)
+                              color: index == 6 // 일요일
+                                  ? const Color(0xFFEF4444)
+                                  : index == 5 // 토요일
+                                      ? const Color(0xFF3B82F6)
+                                      : const Color(0xFF6B7280),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
 

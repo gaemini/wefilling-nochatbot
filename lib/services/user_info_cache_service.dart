@@ -38,6 +38,7 @@ class UserInfoCacheService {
   // 메모리 캐시
   final Map<String, DMUserInfo> _cache = {};
   final Map<String, DateTime> _cacheTimestamps = {};
+  final Map<String, Stream<DMUserInfo?>> _watchStreams = {};
   
   /// 사용자 정보 조회 (캐시 우선, 오래되면 서버 조회)
   /// 
@@ -99,6 +100,46 @@ class UserInfoCacheService {
       return null;
     }
   }
+
+  /// 사용자 정보 실시간 구독 (캐시 자동 갱신)
+  ///
+  /// - Firestore `users/{uid}` 문서를 구독하여 닉네임/프로필 사진이 바뀌면 즉시 반영
+  /// - 스트림에서 받은 최신 값으로 메모리 캐시도 write-through 업데이트
+  /// - 동일 uid에 대해 스트림을 재사용하여 불필요한 재구독/리스너 난립을 방지
+  Stream<DMUserInfo?> watchUserInfo(String userId) {
+    return _watchStreams.putIfAbsent(userId, () {
+      return _firestore
+          .collection('users')
+          .doc(userId)
+          .snapshots(includeMetadataChanges: true)
+          .map((doc) {
+        if (!doc.exists) {
+          // 문서가 없으면(탈퇴 등) 캐시도 제거
+          invalidateUser(userId);
+          return null;
+        }
+
+        final data = doc.data()!;
+        final userInfo = DMUserInfo(
+          uid: userId,
+          nickname: (data['nickname'] ?? data['displayName'] ?? 'User').toString(),
+          photoURL: (data['photoURL'] ?? '').toString(),
+        );
+
+        // write-through 캐시 갱신
+        _cache[userId] = userInfo;
+        _cacheTimestamps[userId] = DateTime.now();
+        return userInfo;
+      }).distinct((prev, next) {
+        // 객체 identity가 아니라 값 기준으로 중복 제거
+        if (prev == null && next == null) return true;
+        if (prev == null || next == null) return false;
+        return prev.nickname == next.nickname && prev.photoURL == next.photoURL;
+      }).handleError((e) {
+        Logger.error('❌ watchUserInfo 오류: userId=$userId, error=$e');
+      });
+    });
+  }
   
   /// 여러 사용자 정보 일괄 조회
   Future<Map<String, DMUserInfo?>> getUserInfoBatch(
@@ -123,6 +164,7 @@ class UserInfoCacheService {
   void clearCache() {
     _cache.clear();
     _cacheTimestamps.clear();
+    _watchStreams.clear();
     Logger.log('🗑️ UserInfoCache 클리어 완료');
   }
   
@@ -130,6 +172,7 @@ class UserInfoCacheService {
   void invalidateUser(String userId) {
     _cache.remove(userId);
     _cacheTimestamps.remove(userId);
+    _watchStreams.remove(userId);
     Logger.log('🗑️ 사용자 캐시 삭제: $userId');
   }
   

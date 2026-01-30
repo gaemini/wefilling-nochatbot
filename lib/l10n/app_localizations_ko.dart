@@ -2400,6 +2400,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get emailHelperText => '자주 사용하는 이메일을 입력하세요';
 
   @override
+  String get verifiedHanyangEmailLabel => '인증된 한양메일';
+
+  @override
   String get invalidEmailFormat => '올바른 이메일 형식이 아닙니다';
 
   @override
@@ -2410,6 +2413,110 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get signUpComplete => '회원가입 완료';
+
+  @override
+  String get profileSetupTitle => '프로필 설정';
+
+  @override
+  String get profileSetupWelcome => '환영합니다! 프로필을 설정해주세요.';
+
+  @override
+  String get profileSetupSuccess => '프로필이 설정되었습니다.';
+
+  @override
+  String get profileSetupFailed => '프로필 설정에 실패했습니다.\n로그인 화면으로 돌아가 다시 시도해주세요.';
+
+  @override
+  String profileSetupError(String error) {
+    return '오류가 발생했습니다: $error\n로그인 화면으로 돌아가주세요.';
+  }
+
+  @override
+  String get nicknamePlaceholder => '홍길동';
+
+  @override
+  String get nicknameRequired => '닉네임을 입력해주세요';
+
+  @override
+  String get nicknameLengthHint => '닉네임은 2~20자 사이로 입력해주세요';
+
+  @override
+  String get getStarted => '시작하기';
+
+  @override
+  String get signUpMethodSelectionTitle => '회원가입 방식 선택';
+
+  @override
+  String get signUpMethodSelectionHeading => '가입 방식을 선택해주세요';
+
+  @override
+  String get signUpMethodSelectionDescription =>
+      '한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.';
+
+  @override
+  String get signUpWithApple => 'Apple로 회원가입';
+
+  @override
+  String get signUpWithAppleIosOnly => 'Apple로 회원가입 (iOS 전용)';
+
+  @override
+  String get signUpWithGoogle => 'Google로 회원가입';
+
+  @override
+  String get signUpWithId => '아이디로 회원가입';
+
+  @override
+  String get appleSignupIosOnlyError => 'Apple 회원가입은 iOS에서만 사용할 수 있습니다.';
+
+  @override
+  String get googleSignupLoginFailed => 'Google 로그인에 실패했습니다.';
+
+  @override
+  String get appleSignupLoginFailed => 'Apple 로그인에 실패했습니다.';
+
+  @override
+  String get signupProcessError => '회원가입 처리 중 오류가 발생했습니다.';
+
+  @override
+  String googleSignupFailedWithError(String error) {
+    return 'Google 회원가입 실패: $error';
+  }
+
+  @override
+  String appleSignupFailedWithError(String error) {
+    return 'Apple 회원가입 실패: $error';
+  }
+
+  @override
+  String socialAccountAlreadyRegistered(String provider) {
+    return '이미 가입된 $provider 계정입니다.\n로그인 화면에서 로그인해주세요.';
+  }
+
+  @override
+  String get emailIdSetupTitle => '아이디 설정';
+
+  @override
+  String get emailIdSetupDescription =>
+      '한양메일 인증이 완료되었습니다.\n로그인에 사용할 이메일을 입력하세요.\n인증한 한양메일이나 다른 이메일 모두 가능합니다.';
+
+  @override
+  String get loginEmailLabel => '로그인 아이디 (이메일 형식)';
+
+  @override
+  String get loginEmailHelper => '로그인에 사용할 이메일을 입력하세요';
+
+  @override
+  String get useVerifiedHanyangEmail => '인증한 한양메일 사용하기';
+
+  @override
+  String get emailIdSetupInfo =>
+      '• 로그인에 사용할 이메일을 입력하세요\n• 인증한 한양메일도 사용 가능합니다\n• 다른 이메일 주소도 사용 가능합니다\n• 다음 단계에서 비밀번호를 설정합니다';
+
+  @override
+  String get passwordSetupTitle => '비밀번호 설정';
+
+  @override
+  String get passwordSetupDescription => '안전한 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.';
 
   @override
   String get loginFailedGeneric => '로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.';

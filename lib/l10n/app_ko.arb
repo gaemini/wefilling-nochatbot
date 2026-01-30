@@ -1096,10 +1096,74 @@
   "confirmPasswordPlaceholder": "비밀번호를 한 번 더 입력",
   "confirmPasswordHint": "비밀번호를 다시 입력해주세요",
   "emailHelperText": "자주 사용하는 이메일을 입력하세요",
+  "verifiedHanyangEmailLabel": "인증된 한양메일",
   "invalidEmailFormat": "올바른 이메일 형식이 아닙니다",
   "emailAlreadyUsed": "이미 사용 중인 이메일입니다",
   "passwordLengthRequirement": "비밀번호는 8자 이상이어야 합니다",
   "signUpComplete": "회원가입 완료",
+
+  "profileSetupTitle": "프로필 설정",
+  "profileSetupWelcome": "환영합니다! 프로필을 설정해주세요.",
+  "profileSetupSuccess": "프로필이 설정되었습니다.",
+  "profileSetupFailed": "프로필 설정에 실패했습니다.\n로그인 화면으로 돌아가 다시 시도해주세요.",
+  "profileSetupError": "오류가 발생했습니다: {error}\n로그인 화면으로 돌아가주세요.",
+  "@profileSetupError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "nicknamePlaceholder": "홍길동",
+  "nicknameRequired": "닉네임을 입력해주세요",
+  "nicknameLengthHint": "닉네임은 2~20자 사이로 입력해주세요",
+  "getStarted": "시작하기",
+
+  "signUpMethodSelectionTitle": "회원가입 방식 선택",
+  "signUpMethodSelectionHeading": "가입 방식을 선택해주세요",
+  "signUpMethodSelectionDescription": "한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.",
+  "signUpWithApple": "Apple로 회원가입",
+  "signUpWithAppleIosOnly": "Apple로 회원가입 (iOS 전용)",
+  "signUpWithGoogle": "Google로 회원가입",
+  "signUpWithId": "아이디로 회원가입",
+  "appleSignupIosOnlyError": "Apple 회원가입은 iOS에서만 사용할 수 있습니다.",
+  "googleSignupLoginFailed": "Google 로그인에 실패했습니다.",
+  "appleSignupLoginFailed": "Apple 로그인에 실패했습니다.",
+  "signupProcessError": "회원가입 처리 중 오류가 발생했습니다.",
+  "googleSignupFailedWithError": "Google 회원가입 실패: {error}",
+  "@googleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "appleSignupFailedWithError": "Apple 회원가입 실패: {error}",
+  "@appleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "socialAccountAlreadyRegistered": "이미 가입된 {provider} 계정입니다.\n로그인 화면에서 로그인해주세요.",
+  "@socialAccountAlreadyRegistered": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+
+  "emailIdSetupTitle": "아이디 설정",
+  "emailIdSetupDescription": "한양메일 인증이 완료되었습니다.\n로그인에 사용할 이메일을 입력하세요.\n인증한 한양메일이나 다른 이메일 모두 가능합니다.",
+  "loginEmailLabel": "로그인 아이디 (이메일 형식)",
+  "loginEmailHelper": "로그인에 사용할 이메일을 입력하세요",
+  "useVerifiedHanyangEmail": "인증한 한양메일 사용하기",
+  "emailIdSetupInfo": "• 로그인에 사용할 이메일을 입력하세요\n• 인증한 한양메일도 사용 가능합니다\n• 다른 이메일 주소도 사용 가능합니다\n• 다음 단계에서 비밀번호를 설정합니다",
+
+  "passwordSetupTitle": "비밀번호 설정",
+  "passwordSetupDescription": "안전한 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.",
   "loginFailedGeneric": "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요.",
   "loginErrorGeneric": "로그인 중 오류가 발생했습니다",
   "errorUserNotFound": "등록되지 않은 이메일입니다.",

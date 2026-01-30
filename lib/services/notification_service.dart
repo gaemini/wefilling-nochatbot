@@ -179,23 +179,31 @@ class NotificationService {
     String postAuthorId,
     String likerName,
     String likerId,
-  ) async {
+    {
+    bool postIsAnonymous = false,
+  }) async {
     // 자기 게시글에 자신이 좋아요를 누른 경우는 알림 제외
     if (postAuthorId == likerId) {
       return true;
     }
 
     try {
+      // 익명 게시글이면 알림에서 '누가 눌렀는지'를 절대 노출하지 않음
+      final safeLikerName = postIsAnonymous ? '익명' : likerName;
       return await createNotification(
         userId: postAuthorId,
         title: '게시글에 좋아요가 추가되었습니다',
-        message: '$likerName님이 회원님의 게시글 "$postTitle"을 좋아합니다.',
+        message: '$safeLikerName님이 회원님의 게시글 "$postTitle"을 좋아합니다.',
         type: NotificationSettingKeys.newLike,
         postId: postId,
         actorId: likerId,
-        actorName: likerName,
+        // 익명 게시글이면 actorName도 안전한 값으로 저장 (푸시/구버전 호환)
+        actorName: safeLikerName,
         data: {
-          'likerName': likerName,
+          // 화면/번역 로직에서 익명 처리에 사용
+          'postIsAnonymous': postIsAnonymous,
+          // 익명 게시글이면 실제 이름 대신 안전한 값만 저장
+          'likerName': safeLikerName,
           'postTitle': postTitle,
         },
       );

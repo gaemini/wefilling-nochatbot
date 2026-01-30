@@ -1100,10 +1100,74 @@
   "confirmPasswordPlaceholder": "Re-enter password",
   "confirmPasswordHint": "Please re-enter your password",
   "emailHelperText": "Enter your frequently used email",
+  "verifiedHanyangEmailLabel": "Verified Hanyang Email",
   "invalidEmailFormat": "Invalid email format",
   "emailAlreadyUsed": "This email is already in use",
   "passwordLengthRequirement": "Password must be at least 8 characters",
   "signUpComplete": "Complete Sign Up",
+
+  "profileSetupTitle": "Profile Setup",
+  "profileSetupWelcome": "Welcome! Please set up your profile.",
+  "profileSetupSuccess": "Your profile has been set up.",
+  "profileSetupFailed": "Failed to set up your profile.\nPlease return to the login screen and try again.",
+  "profileSetupError": "An error occurred: {error}\nPlease return to the login screen.",
+  "@profileSetupError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "nicknamePlaceholder": "John Doe",
+  "nicknameRequired": "Please enter a nickname",
+  "nicknameLengthHint": "Nickname must be 2–20 characters",
+  "getStarted": "Get Started",
+
+  "signUpMethodSelectionTitle": "Choose Sign Up Method",
+  "signUpMethodSelectionHeading": "Choose how you want to sign up",
+  "signUpMethodSelectionDescription": "Hanyang email verification is complete.\nPlease choose your preferred sign up method.",
+  "signUpWithApple": "Sign up with Apple",
+  "signUpWithAppleIosOnly": "Sign up with Apple (iOS only)",
+  "signUpWithGoogle": "Sign up with Google",
+  "signUpWithId": "Sign up with Email",
+  "appleSignupIosOnlyError": "Apple sign up is only available on iOS.",
+  "googleSignupLoginFailed": "Google sign-in failed.",
+  "appleSignupLoginFailed": "Apple sign-in failed.",
+  "signupProcessError": "An error occurred during sign up.",
+  "googleSignupFailedWithError": "Google sign up failed: {error}",
+  "@googleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "appleSignupFailedWithError": "Apple sign up failed: {error}",
+  "@appleSignupFailedWithError": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "socialAccountAlreadyRegistered": "This {provider} account is already registered.\nPlease sign in from the login screen.",
+  "@socialAccountAlreadyRegistered": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+
+  "emailIdSetupTitle": "Set Login Email",
+  "emailIdSetupDescription": "Hanyang email verification is complete.\nEnter the email you will use to log in.\nYou can use your verified Hanyang email or another email.",
+  "loginEmailLabel": "Login email (email format)",
+  "loginEmailHelper": "Enter the email you will use to log in",
+  "useVerifiedHanyangEmail": "Use verified Hanyang email",
+  "emailIdSetupInfo": "• Enter the email you will use to log in\n• You can also use your verified Hanyang email\n• You may use another email address\n• You will set a password in the next step",
+
+  "passwordSetupTitle": "Set Password",
+  "passwordSetupDescription": "Set a secure password.\nIt must be at least 8 characters.",
   "loginFailedGeneric": "Login failed. Please check your email and password.",
   "loginErrorGeneric": "An error occurred during login",
   "errorUserNotFound": "Email not registered.",

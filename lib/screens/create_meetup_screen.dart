@@ -123,7 +123,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   late DateTime _currentWeekAnchor; // 주차 기준 날짜 추가
   final _meetupService = MeetupService();
   final _friendCategoryService = FriendCategoryService();
-  final List<String> _weekdayNames = ['M', 'Tu', 'W', 'Th', 'F', 'Sa', 'Su'];
+  final List<String> _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   bool _isSubmitting = false;
   String? _selectedCategory; // 초기에는 선택 안 됨
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;

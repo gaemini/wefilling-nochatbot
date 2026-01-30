@@ -490,7 +490,37 @@ class AuthProvider with ChangeNotifier {
       _user = userCredential.user;
       Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
 
+      // ✅ 한양메일 유니크 점유(email_claims) 확정
+      // - Google/Apple 플로우는 completeEmailVerification에서 처리하지만,
+      //   이메일/비밀번호 회원가입 플로우는 여기서 반드시 처리해야 "메일 1개=계정 1개"가 보장됨
+      try {
+        final callable = _functions.httpsCallable('finalizeHanyangEmailVerification');
+        await callable.call({
+          'email': hanyangEmail.trim(),
+        });
+        Logger.log('✅ 한양메일 claim 점유 완료: $hanyangEmail');
+      } on FirebaseFunctionsException catch (e) {
+        Logger.error('❌ 한양메일 claim 점유 실패: ${e.code} - ${e.message}');
+        
+        // 이미 사용 중인 한양메일이면 방금 만든 Auth 계정을 롤백
+        try {
+          await _user?.delete();
+        } catch (rollbackError) {
+          Logger.error('⚠️ Auth 롤백(계정 삭제) 실패: $rollbackError');
+        }
+        try {
+          await _auth.signOut();
+        } catch (_) {}
+        
+        _user = null;
+        _userData = null;
+        _isLoading = false;
+        notifyListeners();
+        rethrow; // UI에서 already-exists 등 구체 처리
+      }
+
       // Firestore에 사용자 문서 생성 (한양메일 정보 포함)
+      // - finalizeHanyangEmailVerification가 먼저 users/{uid}를 merge로 만들 수 있으므로 merge로 저장
       await _firestore.collection('users').doc(_user!.uid).set({
         'uid': _user!.uid,
         'email': email,
@@ -501,7 +531,8 @@ class AuthProvider with ChangeNotifier {
         'nickname': '',
         'createdAt': FieldValue.serverTimestamp(),
         'lastLogin': FieldValue.serverTimestamp(),
-      });
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       Logger.log('✅ Firestore 사용자 문서 생성 완료');
 

@@ -68,7 +68,12 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer> {
                 maxScale: 3.0,
                 child: Center(
                   child: Hero(
-                    tag: widget.heroTag ?? 'image_$index',
+                    // heroTag가 주어졌다면 "처음 열린 이미지"에서만 그대로 사용해
+                    // 기존 호출부(post/review 등)의 Hero 매칭을 유지한다.
+                    // 나머지 페이지는 고유 태그를 사용해 중복 Hero 태그로 인한 크래시를 방지한다.
+                    tag: (widget.heroTag != null && index == widget.initialIndex)
+                        ? widget.heroTag!
+                        : '${widget.heroTag ?? 'image'}_$index',
                     child: Image.network(
                       imageUrl,
                       fit: BoxFit.contain,

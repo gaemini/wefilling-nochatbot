@@ -17,6 +17,7 @@ class DMService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static bool _rulesTestDone = false;
   final NotificationService _notificationService = NotificationService();
+  static const String _imageLastMessageFallback = '📷 Photo';
 
   // 캐시 관리
   final Map<String, Conversation> _conversationCache = {};
@@ -895,11 +896,12 @@ class DMService {
   }
 
   /// 메시지 전송
-  Future<bool> sendMessage(String conversationId, String text) async {
+  Future<bool> sendMessage(String conversationId, String text, {String? imageUrl}) async {
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     Logger.log('📤 sendMessage 시작');
     Logger.log('  - conversationId: $conversationId');
     Logger.log('  - text 길이: ${text.length}자');
+    Logger.log('  - imageUrl: ${imageUrl != null && imageUrl.isNotEmpty ? "있음" : "없음"}');
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     try {
@@ -910,9 +912,18 @@ class DMService {
       }
       Logger.log('✓ 현재 사용자: ${currentUser.uid}');
 
-      // 메시지 길이 검증
-      if (text.trim().isEmpty || text.length > 500) {
-        Logger.log('❌ 메시지 길이가 유효하지 않습니다 (${text.length}자)');
+      final trimmedText = text.trim();
+      final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+
+      // 메시지 유효성 검증: 텍스트/이미지 중 하나는 있어야 함
+      if (trimmedText.isEmpty && !hasImage) {
+        Logger.log('❌ 메시지 내용이 비어 있습니다 (텍스트/이미지 모두 없음)');
+        return false;
+      }
+
+      // 텍스트 길이 검증 (캡션)
+      if (trimmedText.length > 500) {
+        Logger.log('❌ 메시지 길이가 유효하지 않습니다 (${trimmedText.length}자)');
         return false;
       }
       Logger.log('✓ 메시지 길이 검증 통과');
@@ -922,7 +933,8 @@ class DMService {
       // 메시지 생성
       final messageData = {
         'senderId': currentUser.uid,
-        'text': text.trim(),
+        'text': trimmedText,
+        if (hasImage) 'imageUrl': imageUrl!.trim(),
         'createdAt': Timestamp.fromDate(now),
         'isRead': false,
       };
@@ -1111,8 +1123,9 @@ class DMService {
       }
 
       // 메시지 전송 시 대화방 업데이트
+      final lastMessageForList = trimmedText.isNotEmpty ? trimmedText : _imageLastMessageFallback;
       final updateData = {
-        'lastMessage': text.trim(),
+        'lastMessage': lastMessageForList,
         'lastMessageTime': Timestamp.fromDate(now),
         'lastMessageSenderId': currentUser.uid,
         'unreadCount': unreadCount,
@@ -1160,10 +1173,13 @@ class DMService {
       for (final participantId in participants) {
         if (participantId != currentUser.uid) {
           try {
+            final notificationBody = trimmedText.isNotEmpty
+                ? (trimmedText.length > 50 ? '${trimmedText.substring(0, 50)}...' : trimmedText)
+                : _imageLastMessageFallback;
             final success = await _notificationService.createNotification(
               userId: participantId,
               title: '$senderName님의 메시지',
-              message: text.length > 50 ? '${text.substring(0, 50)}...' : text,
+              message: notificationBody,
               type: 'dm_received', // NotificationSettingKeys.dmReceived 참조
               actorId: currentUser.uid,
               actorName: senderName,

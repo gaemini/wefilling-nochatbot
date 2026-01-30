@@ -1,12 +1,28 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Firestore conversations/{conversationId}.participants 기반으로 참여자 여부 확인
+    function isConversationParticipant(conversationId) {
+      return firestore.exists(/databases/(default)/documents/conversations/$(conversationId)) &&
+        request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
+    }
+
+    // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
+    match /dm_images/{userId}/{conversationId}/{fileName} {
+      allow read: if isSignedIn() && isConversationParticipant(conversationId);
+      allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId);
+    }
+
     match /{allPaths=**} {
       // 완전히 공개 읽기 접근 허용 (프로젝트 멤버십 불필요)
       allow read;
       
       // 쓰기는 인증된 사용자에게만 허용
-      allow write: if request.auth != null;
+      allow write: if isSignedIn();
     }
   }
 }

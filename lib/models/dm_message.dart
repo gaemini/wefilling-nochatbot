@@ -8,6 +8,7 @@ class DMMessage {
   final String id;
   final String senderId;
   final String text;
+  final String? imageUrl;
   final DateTime createdAt;
   final bool isRead;
   final DateTime? readAt;
@@ -16,6 +17,7 @@ class DMMessage {
     required this.id,
     required this.senderId,
     required this.text,
+    this.imageUrl,
     required this.createdAt,
     required this.isRead,
     this.readAt,
@@ -29,6 +31,7 @@ class DMMessage {
       id: doc.id,
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
+      imageUrl: (data['imageUrl'] is String) ? data['imageUrl'] as String : null,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       isRead: data['isRead'] ?? false,
       readAt: data['readAt'] != null 
@@ -42,6 +45,7 @@ class DMMessage {
     return {
       'senderId': senderId,
       'text': text,
+      if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
       'createdAt': Timestamp.fromDate(createdAt),
       'isRead': isRead,
       if (readAt != null) 'readAt': Timestamp.fromDate(readAt!),
@@ -58,6 +62,7 @@ class DMMessage {
     String? id,
     String? senderId,
     String? text,
+    String? imageUrl,
     DateTime? createdAt,
     bool? isRead,
     DateTime? readAt,
@@ -66,6 +71,7 @@ class DMMessage {
       id: id ?? this.id,
       senderId: senderId ?? this.senderId,
       text: text ?? this.text,
+      imageUrl: imageUrl ?? this.imageUrl,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
       readAt: readAt ?? this.readAt,

@@ -5,6 +5,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import * as nodemailer from 'nodemailer';
+import { COL } from './firestore_paths';
 
 // Firebase Admin 초기화
 admin.initializeApp();
@@ -107,8 +108,26 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
     const email = normalizeEmail(emailRaw);
 
     const result = await db.runTransaction(async (tx) => {
-      const claimRef = db.collection('email_claims').doc(email);
-      const userRef = db.collection('users').doc(uid);
+      const claimRef = db.collection(COL.emailClaims).doc(email);
+      const userRef = db.collection(COL.users).doc(uid);
+
+      // ✅ "계정 하나당 한양메일 하나" 강제
+      // - 이미 다른 한양메일이 등록된 계정은 추가 등록을 막는다.
+      const userSnap = await tx.get(userRef);
+      if (userSnap.exists) {
+        const userData = userSnap.data() as any;
+        const existingEmailRaw = (userData?.hanyangEmail || '').toString();
+        const existingVerified = userData?.emailVerified === true;
+        if (existingVerified && existingEmailRaw) {
+          const existingNormalized = normalizeEmail(existingEmailRaw);
+          if (existingNormalized && existingNormalized !== email) {
+            throw new functions.https.HttpsError(
+              'failed-precondition',
+              '이미 다른 한양메일이 등록되어 있습니다.'
+            );
+          }
+        }
+      }
 
       const claimSnap = await tx.get(claimRef);
 
@@ -837,7 +856,7 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     // 🔥 이미 사용 중인 한양메일인지 선제 체크
     try {
       const normalized = normalizeEmail(email);
-      const claimSnap = await db.collection('email_claims').doc(normalized).get();
+      const claimSnap = await db.collection(COL.emailClaims).doc(normalized).get();
       if (claimSnap.exists) {
         const claim = claimSnap.data() as any;
         if ((claim?.status || 'active') === 'active') {
@@ -863,6 +882,9 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     }
     const gmailUser = getGmailUser();
 
+    // 문서 키는 정규화(소문자/trim)해서 저장: 대소문자/공백 차이로 검증 실패(INTERNAL) 방지
+    const emailDocId = normalizeEmail(email);
+
     // 4자리 랜덤 인증번호 생성 (메일 발송 가능할 때만 생성/저장)
     const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
     
@@ -871,9 +893,10 @@ export const sendEmailVerificationCode = functions.https.onCall(async (data, con
     expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
     // Firestore에 인증번호 저장
-    await db.collection('email_verifications').doc(email).set({
+    await db.collection(COL.emailVerifications).doc(emailDocId).set({
       code: verificationCode,
-      email: email,
+      email: email, // 원본 이메일(표시/메일 발송용)
+      emailNormalized: emailDocId, // 조회/정합성용
       expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       attempts: 0, // 시도 횟수
@@ -997,8 +1020,9 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
       );
     }
 
-    // hanyang.ac.kr 도메인 검증
-    if (!email.endsWith('@hanyang.ac.kr')) {
+    // hanyang.ac.kr 도메인 검증 (대소문자/공백 방지)
+    const emailTrimmed = String(email).trim();
+    if (!/^[^\s@]+@hanyang\.ac\.kr$/i.test(emailTrimmed)) {
       throw new functions.https.HttpsError(
         'invalid-argument',
         '한양대학교 이메일 주소만 사용할 수 있습니다.'
@@ -1007,8 +1031,8 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
 
     // 기존 점유 여부 확인 (이미 사용 중이면 코드 확인 전에 차단)
     try {
-      const normalized = normalizeEmail(email);
-      const claimSnap = await db.collection('email_claims').doc(normalized).get();
+      const normalized = normalizeEmail(emailTrimmed);
+      const claimSnap = await db.collection(COL.emailClaims).doc(normalized).get();
       if (claimSnap.exists) {
         const claim = claimSnap.data() as any;
         if ((claim?.status || 'active') === 'active') {
@@ -1025,7 +1049,18 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
     }
 
     // 인증번호 조회
-    const verificationDoc = await db.collection('email_verifications').doc(email).get();
+    // - 최신: 정규화된 docId 사용
+    // - 구버전 호환: 혹시 raw email을 docId로 저장했던 데이터도 fallback 조회
+    const normalizedEmail = normalizeEmail(emailTrimmed);
+    let verificationDoc = await db.collection(COL.emailVerifications).doc(normalizedEmail).get();
+    let verificationDocId = normalizedEmail;
+    if (!verificationDoc.exists) {
+      const legacyDoc = await db.collection(COL.emailVerifications).doc(emailTrimmed).get();
+      if (legacyDoc.exists) {
+        verificationDoc = legacyDoc;
+        verificationDocId = emailTrimmed;
+      }
+    }
     
     if (!verificationDoc.exists) {
       throw new functions.https.HttpsError(
@@ -1036,12 +1071,38 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
 
     const verificationData = verificationDoc.data();
     const currentTime = new Date();
-    const expiresAt = verificationData?.expiresAt?.toDate();
+
+    // expiresAt 타입 방어 (구버전/데이터 손상 케이스에서 INTERNAL 방지)
+    const rawExpiresAt = verificationData?.expiresAt;
+    let expiresAt: Date | null = null;
+    try {
+      if (rawExpiresAt?.toDate && typeof rawExpiresAt.toDate === 'function') {
+        expiresAt = rawExpiresAt.toDate();
+      } else if (rawExpiresAt instanceof Date) {
+        expiresAt = rawExpiresAt;
+      } else if (typeof rawExpiresAt === 'number') {
+        expiresAt = new Date(rawExpiresAt);
+      } else if (typeof rawExpiresAt === 'string') {
+        const parsed = new Date(rawExpiresAt);
+        if (!Number.isNaN(parsed.getTime())) expiresAt = parsed;
+      }
+    } catch (_) {
+      expiresAt = null;
+    }
 
     // 만료 시간 확인
-    if (!expiresAt || currentTime > expiresAt) {
+    if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
+      // 데이터가 손상된 경우: 문서 삭제 후 재요청 유도
+      await db.collection(COL.emailVerifications).doc(verificationDocId).delete().catch(() => {});
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        '인증 정보가 손상되었습니다. 다시 인증번호를 요청해주세요.'
+      );
+    }
+
+    if (currentTime > expiresAt) {
       // 만료된 인증번호 삭제
-      await db.collection('email_verifications').doc(email).delete();
+      await db.collection(COL.emailVerifications).doc(verificationDocId).delete();
       throw new functions.https.HttpsError(
         'deadline-exceeded',
         '인증번호가 만료되었습니다. 다시 요청해주세요.'
@@ -1049,10 +1110,11 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
     }
 
     // 시도 횟수 확인
-    const attempts = verificationData?.attempts || 0;
+    const attemptsRaw = verificationData?.attempts;
+    const attempts = typeof attemptsRaw === 'number' ? attemptsRaw : parseInt(String(attemptsRaw ?? '0'), 10) || 0;
     if (attempts >= 3) {
       // 시도 횟수 초과 시 인증번호 삭제
-      await db.collection('email_verifications').doc(email).delete();
+      await db.collection(COL.emailVerifications).doc(verificationDocId).delete();
       throw new functions.https.HttpsError(
         'resource-exhausted',
         '인증번호 입력 횟수를 초과했습니다. 다시 요청해주세요.'
@@ -1060,9 +1122,9 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
     }
 
     // 인증번호 확인
-    if (verificationData?.code !== code) {
+    if (String(verificationData?.code ?? '') !== String(code)) {
       // 시도 횟수 증가
-      await db.collection('email_verifications').doc(email).update({
+      await db.collection(COL.emailVerifications).doc(verificationDocId).update({
         attempts: admin.firestore.FieldValue.increment(1),
       });
 
@@ -1074,7 +1136,7 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
     }
 
     // 인증 성공 시 인증번호 삭제
-    await db.collection('email_verifications').doc(email).delete();
+    await db.collection(COL.emailVerifications).doc(verificationDocId).delete();
 
     return { success: true };
 
@@ -1091,6 +1153,42 @@ export const verifyEmailCode = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', '인증번호 검증 중 오류가 발생했습니다.');
   }
 });
+
+/**
+ * 휘발성 인증코드(email_verifications) 만료 문서를 주기적으로 정리합니다.
+ *
+ * - 앱/함수 로직에서도 성공/만료 시 삭제하지만,
+ *   네트워크/예외 등으로 잔존할 수 있어 스케줄로 보강합니다.
+ * - 비용/부하를 줄이기 위해 "만료된 문서만" 배치 삭제합니다.
+ */
+export const cleanupExpiredEmailVerifications = functions.pubsub
+  .schedule('every 1 hours')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const col = db.collection(COL.emailVerifications);
+
+    let deleted = 0;
+    while (true) {
+      const snap = await col
+        .where('expiresAt', '<=', now)
+        .limit(500)
+        .get();
+
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      snap.docs.forEach((doc) => batch.delete(doc.ref));
+      await batch.commit();
+      deleted += snap.size;
+
+      // 다음 페이지를 위해 루프 계속
+      if (snap.size < 500) break;
+    }
+
+    console.log(`cleanupExpiredEmailVerifications: deleted=${deleted}`);
+    return null;
+  });
 
 // 친구요청 보내기
 export const sendFriendRequest = functions.https.onCall(async (data, context) => {
@@ -2151,17 +2249,22 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
 
     await batch.commit();
 
-    // 1-9. 한양메일 claim 해제 (released)
+    // 1-9. 한양메일 claim 해제 (탈퇴 시 재사용 가능하도록 email_claims 문서 삭제)
     try {
       if (userInfo.hanyangEmail && userInfo.hanyangEmail.includes('@')) {
         const email = userInfo.hanyangEmail.toLowerCase().trim();
         const claimRef = db.collection('email_claims').doc(email);
-        await claimRef.set({
-          status: 'released',
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          releasedAt: admin.firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-        console.log(`📧 이메일 claim 해제 완료: ${email}`);
+        // 안전장치: 다른 UID의 claim을 실수로 삭제하지 않도록 uid 일치 시에만 삭제
+        const claimSnap = await claimRef.get().catch(() => null);
+        const claimUid = (claimSnap && claimSnap.exists) ? (claimSnap.data() as any)?.uid : null;
+        if (!claimSnap || !claimSnap.exists) {
+          console.log(`📧 이메일 claim 문서 없음(스킵): ${email}`);
+        } else if (claimUid && claimUid !== uid) {
+          console.warn(`⚠️ 이메일 claim UID 불일치(삭제 스킵): ${email}, claimUid=${claimUid}, uid=${uid}`);
+        } else {
+          await claimRef.delete();
+          console.log(`📧 이메일 claim 문서 삭제 완료: ${email}`);
+        }
       }
     } catch (e) {
       console.warn('⚠️ 이메일 claim 해제 중 오류(계속 진행):', e);
@@ -2172,6 +2275,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       const bucket = admin.storage().bucket();
       await bucket.deleteFiles({ prefix: `profile_images/${uid}` });
       await bucket.deleteFiles({ prefix: `post_images/${uid}` });
+      await bucket.deleteFiles({ prefix: `dm_images/${uid}` });
     } catch (e) {
       console.warn('⚠️ Storage 삭제 중 오류(무시):', e);
     }

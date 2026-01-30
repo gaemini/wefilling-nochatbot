@@ -2,19 +2,24 @@
 // DM 대화 화면
 // 메시지 목록과 입력창을 표시하고 실시간 메시지 전송/수신
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../services/dm_service.dart';
 import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
+import '../services/storage_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'post_detail_screen.dart';
+import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
 
 // DM 전용 색상
@@ -43,9 +48,11 @@ class DMChatScreen extends StatefulWidget {
 
 class _DMChatScreenState extends State<DMChatScreen> {
   final DMService _dmService = DMService();
+  final StorageService _storageService = StorageService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
   
   // 대화방이 없을 수 있으므로 초기에 스트림을 구독하지 않는다.
   Stream<List<DMMessage>>? _messagesStream;
@@ -57,6 +64,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
   String? _preloadedDmTitle; // 미리 로드된 게시글 제목
   bool _isBlocked = false; // 차단 여부
   bool _isBlockedBy = false; // 차단당한 여부
+  File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
+  double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
 
   @override
   void initState() {
@@ -998,16 +1007,25 @@ class _DMChatScreenState extends State<DMChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Text(
-                message.text,
-                style: const TextStyle(
-                  color: DMColors.myMessageText,
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
+              if (message.imageUrl != null && message.imageUrl!.isNotEmpty) ...[
+                _buildImageBubble(
+                  imageUrl: message.imageUrl!,
+                  isMine: true,
+                  heroTag: 'dm_image_${widget.conversationId}_${message.id}',
                 ),
-              ),
+                if (message.text.trim().isNotEmpty) const SizedBox(height: 8),
+              ],
+              if (message.text.trim().isNotEmpty)
+                Text(
+                  message.text,
+                  style: const TextStyle(
+                    color: DMColors.myMessageText,
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               const SizedBox(height: 4),
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1058,16 +1076,25 @@ class _DMChatScreenState extends State<DMChatScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                message.text,
-                style: const TextStyle(
-                  color: DMColors.otherMessageText,
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
+              if (message.imageUrl != null && message.imageUrl!.isNotEmpty) ...[
+                _buildImageBubble(
+                  imageUrl: message.imageUrl!,
+                  isMine: false,
+                  heroTag: 'dm_image_${widget.conversationId}_${message.id}',
                 ),
-              ),
+                if (message.text.trim().isNotEmpty) const SizedBox(height: 8),
+              ],
+              if (message.text.trim().isNotEmpty)
+                Text(
+                  message.text,
+                  style: const TextStyle(
+                    color: DMColors.otherMessageText,
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               const SizedBox(height: 4),
               Text(
                 TimeFormatter.formatMessageTime(context, message.createdAt),
@@ -1083,8 +1110,86 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
   }
 
+  Widget _buildImageBubble({
+    required String imageUrl,
+    required bool isMine,
+    required String heroTag,
+  }) {
+    const maxWidth = 240.0;
+    const maxHeight = 240.0;
+
+    return GestureDetector(
+      onTap: () => _openImageViewer(imageUrl, heroTag: heroTag),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
+          ),
+          child: Hero(
+            tag: heroTag,
+            child: CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.cover,
+              placeholder: (context, url) => Container(
+                color: isMine ? Colors.white.withOpacity(0.2) : Colors.grey[200],
+                child: const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+              errorWidget: (context, url, error) => Container(
+                color: isMine ? Colors.white.withOpacity(0.2) : Colors.grey[200],
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.broken_image_outlined,
+                      size: 18,
+                      color: isMine ? Colors.white70 : Colors.grey[600],
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '이미지 로드 실패'
+                          : 'Failed to load image',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isMine ? Colors.white70 : Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openImageViewer(String imageUrl, {required String heroTag}) {
+    // 다른 페이지(게시글/후기 등)와 동일한 전체화면 이미지 뷰어 사용
+    showFullscreenImageViewer(
+      context,
+      imageUrls: [imageUrl],
+      initialIndex: 0,
+      heroTag: heroTag,
+    );
+  }
+
   /// 입력창 빌드
   Widget _buildInputArea() {
+    final canSend = !_isBlocked &&
+        !_isBlockedBy &&
+        !_isLoading &&
+        (_messageController.text.trim().isNotEmpty || _pendingImage != null);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1095,66 +1200,98 @@ class _DMChatScreenState extends State<DMChatScreen> {
       ),
       child: SafeArea(
         top: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: Container(
-                constraints: const BoxConstraints(maxHeight: 120),
-                decoration: BoxDecoration(
-                  color: (_isBlocked || _isBlockedBy) ? Colors.grey[200] : DMColors.inputBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: DMColors.inputBorder, width: 0.5),
-                ),
-                child: TextField(
-                  controller: _messageController,
-                  enabled: !_isBlocked && !_isBlockedBy,
-                  maxLines: null,
-                  maxLength: 500,
-                  textInputAction: TextInputAction.newline,
-                  decoration: InputDecoration(
-                    hintText: (_isBlocked || _isBlockedBy)
-                        ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
-                        : AppLocalizations.of(context)!.typeMessage,
-                    hintStyle: TextStyle(
-                      color: (_isBlocked || _isBlockedBy) ? Colors.grey[600] : Colors.grey[500],
-                      fontSize: 15,
+            if (_pendingImage != null) ...[
+              _buildAttachmentPreview(),
+              const SizedBox(height: 8),
+            ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // 첨부 버튼 (+)
+                InkWell(
+                  onTap: (_isBlocked || _isBlockedBy || _isLoading) ? null : _pickImage,
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: (_isBlocked || _isBlockedBy || _isLoading) ? Colors.grey[200] : Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.grey[300]!, width: 1),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    border: InputBorder.none,
-                    counterText: '',
-                  ),
-                  style: const TextStyle(fontSize: 15, height: 1.4),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-            ),
-            
-            const SizedBox(width: 8),
-            
-            // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
-            InkWell(
-              onTap: (_messageController.text.trim().isEmpty || _isBlocked || _isBlockedBy) 
-                  ? null 
-                  : _sendMessage,
-              customBorder: const CircleBorder(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: (_messageController.text.trim().isEmpty || _isBlocked || _isBlockedBy)
-                      ? Colors.grey[300]
-                      : DMColors.myMessageBg,
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(
-                    Icons.arrow_upward_rounded,
-                    color: Colors.white,
-                    size: 22,
+                    child: Icon(
+                      Icons.add,
+                      color: (_isBlocked || _isBlockedBy || _isLoading) ? Colors.grey[400] : Colors.grey[700],
+                      size: 24,
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 120),
+                    decoration: BoxDecoration(
+                      color: (_isBlocked || _isBlockedBy) ? Colors.grey[200] : DMColors.inputBg,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: DMColors.inputBorder, width: 0.5),
+                    ),
+                    child: TextField(
+                      controller: _messageController,
+                      enabled: !_isBlocked && !_isBlockedBy && !_isLoading,
+                      maxLines: null,
+                      maxLength: 500,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: (_isBlocked || _isBlockedBy)
+                            ? '차단된 사용자에게 메시지를 보낼 수 없습니다'
+                            : AppLocalizations.of(context)!.typeMessage,
+                        hintStyle: TextStyle(
+                          color: (_isBlocked || _isBlockedBy) ? Colors.grey[600] : Colors.grey[500],
+                          fontSize: 15,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        border: InputBorder.none,
+                        counterText: '',
+                      ),
+                      style: const TextStyle(fontSize: 15, height: 1.4),
+                      onChanged: (_) => setState(() {}),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
+                InkWell(
+                  onTap: canSend ? _sendMessage : null,
+                  customBorder: const CircleBorder(),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: canSend ? DMColors.myMessageBg : Colors.grey[300],
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(
+                              Icons.arrow_upward_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1162,14 +1299,205 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
   }
 
+  Widget _buildAttachmentPreview() {
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    final showProgress = _isLoading && (_uploadProgress != null);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey[200]!, width: 1),
+      ),
+      child: Row(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Image.file(
+              _pendingImage!,
+              width: 56,
+              height: 56,
+              fit: BoxFit.cover,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  isKorean ? '이미지 1장 선택됨' : '1 image selected',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                if (showProgress) ...[
+                  Text(
+                    isKorean
+                        ? '업로드 중... ${((_uploadProgress ?? 0) * 100).round()}%'
+                        : 'Uploading... ${((_uploadProgress ?? 0) * 100).round()}%',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF6B7280),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: LinearProgressIndicator(
+                      value: (_uploadProgress ?? 0).clamp(0.0, 1.0),
+                      minHeight: 6,
+                      backgroundColor: const Color(0xFFE5E7EB),
+                      valueColor: const AlwaysStoppedAnimation<Color>(DMColors.myMessageBg),
+                    ),
+                  ),
+                ] else ...[
+                  Text(
+                    isKorean ? '전송하면 상대방에게 이미지가 표시됩니다' : 'It will be visible to the other user',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF6B7280),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: _isLoading
+                ? null
+                : () {
+                    setState(() {
+                      _pendingImage = null;
+                      _uploadProgress = null;
+                    });
+                  },
+            icon: const Icon(Icons.close, size: 18),
+            color: Colors.grey[600],
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            splashRadius: 18,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickImage() async {
+    if (_pendingImage != null) {
+      // 1장 제한: 이미 선택되어 있으면 안내
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'ko'
+                ? '이미지는 한 번에 1장만 첨부할 수 있어요'
+                : 'You can attach only 1 image at a time',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 6),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD1D5DB),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: Text(isKorean ? '사진 선택' : 'Choose from library'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _pickImageFrom(ImageSource.gallery);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined),
+                  title: Text(isKorean ? '카메라 촬영' : 'Take a photo'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _pickImageFrom(ImageSource.camera);
+                  },
+                ),
+                const SizedBox(height: 6),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _pickImageFrom(ImageSource source) async {
+    try {
+      final xfile = await _imagePicker.pickImage(source: source);
+      if (xfile == null) return;
+
+      if (!mounted) return;
+      setState(() {
+        _pendingImage = File(xfile.path);
+        _uploadProgress = null;
+      });
+    } catch (e) {
+      Logger.error('이미지 선택 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            Localizations.localeOf(context).languageCode == 'ko'
+                ? '이미지를 불러올 수 없습니다'
+                : 'Unable to pick an image',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   /// 메시지 전송
   Future<void> _sendMessage() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || _isLoading) return;
+    final imageFile = _pendingImage;
+    if ((text.isEmpty && imageFile == null) || _isLoading) return;
 
     setState(() => _isLoading = true);
     _messageController.clear();
+    FocusScope.of(context).unfocus();
 
+    String? uploadedImageUrl;
     try {
       // 실제로 메시지를 보낼 conversationId를 결정
       String actualConversationId = widget.conversationId;
@@ -1226,11 +1554,40 @@ class _DMChatScreenState extends State<DMChatScreen> {
       }
       
       Logger.log('📤 메시지 전송 시도: conversationId=$actualConversationId');
-      final success = await _dmService.sendMessage(actualConversationId, text);
+      // 이미지가 있으면 먼저 업로드
+      if (imageFile != null) {
+        if (mounted) {
+          setState(() => _uploadProgress = 0.0);
+        }
+        uploadedImageUrl = await _storageService.uploadDmImage(
+          imageFile,
+          userId: _currentUser!.uid,
+          conversationId: actualConversationId,
+          onProgress: (p) {
+            if (!mounted) return;
+            setState(() => _uploadProgress = p);
+          },
+        );
+        if (uploadedImageUrl == null || uploadedImageUrl!.isEmpty) {
+          throw Exception('이미지 업로드에 실패했습니다');
+        }
+      }
+
+      final success = await _dmService.sendMessage(
+        actualConversationId,
+        text,
+        imageUrl: uploadedImageUrl,
+      );
       Logger.log('📤 메시지 전송 결과: success=$success');
       
       if (success) {
         Logger.log('✅ 메시지 전송 성공 - 후속 처리 시작');
+        if (mounted) {
+          setState(() {
+            _pendingImage = null; // 전송 성공 시 첨부 해제
+            _uploadProgress = null;
+          });
+        }
         
         // 첫 메시지 전송 시 대화방이 없었다면 생성 되었으므로 스트림을 초기화
         if (_messagesStream == null) {
@@ -1270,6 +1627,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
           );
         }
+        // 실패 시 업로드된 이미지 정리(best-effort)
+        if (uploadedImageUrl != null && uploadedImageUrl!.isNotEmpty) {
+          try {
+            await _storageService.deleteImage(uploadedImageUrl!);
+          } catch (_) {}
+        }
         // 실패 시 텍스트 복원
         _messageController.text = text;
       }
@@ -1282,6 +1645,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
             duration: const Duration(seconds: 2),
           ),
         );
+      }
+      // 실패 시 업로드된 이미지 정리(best-effort)
+      if (uploadedImageUrl != null && uploadedImageUrl!.isNotEmpty) {
+        try {
+          await _storageService.deleteImage(uploadedImageUrl!);
+        } catch (_) {}
       }
       _messageController.text = text;
     } finally {

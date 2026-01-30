@@ -25,7 +25,7 @@ class EmailSignUpScreen extends StatefulWidget {
 
 class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
@@ -36,7 +36,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _usernameController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -78,8 +78,12 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     try {
       final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
 
+      // 아이디@hanyang.ac.kr 형식으로 변환 (Firebase Auth는 이메일 형식 필요)
+      final username = _usernameController.text.trim();
+      final loginEmail = '$username@hanyang.ac.kr';
+      
       final success = await authProvider.signUpWithEmail(
-        email: _emailController.text.trim(),
+        email: loginEmail,
         password: _passwordController.text,
         hanyangEmail: widget.verifiedHanyangEmail,
       );
@@ -140,7 +144,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = '회원가입 실패: $e';
+          _errorMessage = AppLocalizations.of(context)!.signupFailed;
           _isLoading = false;
         });
       }
@@ -159,7 +163,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          AppLocalizations.of(context)!.emailSignUpTitle,
+          '아이디/비밀번호 설정',
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
@@ -215,7 +219,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      AppLocalizations.of(context)!.emailSignUpTitle,
+                      '아이디/비밀번호 설정',
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 24,
@@ -230,7 +234,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
-                        AppLocalizations.of(context)!.emailSignUpDescription,
+                        '한양메일 인증이 완료되었습니다.\n로그인에 사용할 아이디와 비밀번호를 설정해주세요.',
                         style: TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 15,
@@ -301,11 +305,11 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
 
               const SizedBox(height: 32),
 
-              // 이메일 입력 레이블
+              // 아이디 입력 레이블
               Padding(
                 padding: const EdgeInsets.only(left: 4, bottom: 12),
                 child: Text(
-                  AppLocalizations.of(context)!.emailId,
+                  '아이디',
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 15,
@@ -316,7 +320,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                 ),
               ),
 
-              // 이메일 입력
+              // 아이디 입력
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
@@ -334,11 +338,10 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                   ],
                 ),
                 child: TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _usernameController,
                   decoration: InputDecoration(
-                    hintText: 'example@gmail.com',
-                    helperText: AppLocalizations.of(context)!.emailHelperText,
+                    hintText: 'joshua11137',
+                    helperText: '영문, 숫자 조합 (이메일 형식 아님)',
                     helperStyle: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 12,
@@ -351,7 +354,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                       letterSpacing: -0.2,
                     ),
                     prefixIcon: Icon(
-                      Icons.email_outlined,
+                      Icons.person_outline,
                       color: AppColors.pointColor,
                       size: 22,
                     ),
@@ -370,10 +373,13 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)!.pleaseEnterEmail;
+                      return '아이디를 입력해주세요';
                     }
-                    if (!value.contains('@')) {
-                      return AppLocalizations.of(context)!.validEmailFormat;
+                    if (value.length < 4) {
+                      return '아이디는 4자 이상이어야 합니다';
+                    }
+                    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(value)) {
+                      return '아이디는 영문과 숫자만 사용 가능합니다';
                     }
                     return null;
                   },
@@ -570,7 +576,7 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
                           ),
                         )
                       : Text(
-                          AppLocalizations.of(context)!.signUpComplete,
+                          '회원가입 완료',
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 17,

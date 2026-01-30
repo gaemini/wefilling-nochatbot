@@ -490,6 +490,32 @@ class AuthService {
         }
       }
 
+      // DM 이미지 삭제
+      try {
+        final dmImagesRef = storage.ref().child('dm_images/$userId');
+        final dmList = await dmImagesRef.listAll();
+
+        for (var item in dmList.items) {
+          await item.delete();
+        }
+
+        // 하위 폴더까지 삭제 (conversationId 등)
+        for (var prefix in dmList.prefixes) {
+          final nested = await prefix.listAll();
+          for (var item in nested.items) {
+            await item.delete();
+          }
+        }
+
+        if (kDebugMode) {
+          debugPrint('✅ DM 이미지 삭제 완료');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ DM 이미지 삭제 오류 (계속 진행): $e');
+        }
+      }
+
       if (kDebugMode) {
         debugPrint('✅ Storage 파일 삭제 완료');
       }

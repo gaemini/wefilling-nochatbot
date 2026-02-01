@@ -123,6 +123,10 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구요청 수락 성공: $fromUid');
+        
+        // 캐시 무효화 (새로운 친구 추가됨)
+        invalidateUserCache(fromUid);
+        
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -173,6 +177,10 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('친구 삭제 성공: $otherUid');
+        
+        // 캐시 무효화 (친구 삭제됨)
+        invalidateUserCache(otherUid);
+        
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -362,5 +370,22 @@ class RelationshipService {
       Logger.error('사용자 차단 해제 가능 여부 확인 오류: $e');
       return false;
     }
+  }
+
+  /// 프로필 캐시 초기화
+  void clearProfileCache() {
+    _usersRepository.clearCache();
+    Logger.log('🗑️ RelationshipService: 프로필 캐시 초기화');
+  }
+
+  /// 특정 사용자 프로필 캐시 무효화
+  void invalidateUserCache(String userId) {
+    _usersRepository.invalidateCache(userId);
+    Logger.log('🗑️ RelationshipService: 프로필 캐시 무효화 - $userId');
+  }
+
+  /// 특정 사용자의 친구 목록 조회 (일회성)
+  Future<List<UserProfile>> getUserFriends(String userId) async {
+    return await _usersRepository.getUserFriends(userId);
   }
 }

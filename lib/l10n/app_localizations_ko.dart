@@ -87,6 +87,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friends => '친구';
 
   @override
+  String get friendsOfUser => '님의 친구';
+
+  @override
+  String get noFriendsYet => '아직 친구가 없습니다';
+
+  @override
   String get notifications => '알림';
 
   @override
@@ -109,6 +115,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get privacyPolicy => '개인정보 처리방침';
+
+  @override
+  String get private => '비공개';
 
   @override
   String get termsOfService => '서비스 이용약관';
@@ -370,9 +379,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get anonymous => '익명';
-
-  @override
-  String get private => '비공개';
 
   @override
   String get idWillBeShown => '아이디가 공개됩니다';

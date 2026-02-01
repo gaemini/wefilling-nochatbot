@@ -16,6 +16,8 @@ import 'review_detail_screen.dart';
 import 'dm_chat_screen.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
+import '../ui/widgets/profile_image_viewer.dart';
+import 'user_friends_list_screen.dart';
 
 class FriendProfileScreen extends StatefulWidget {
   final String userId;
@@ -142,37 +144,55 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 프로필 이미지 (88px)
-              Container(
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                ),
-                child: Container(
-                  width: 88,
-                  height: 88,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Color(0xFFE5E7EB),
-                  ),
-                  child: photoURL != null
-                      ? ClipOval(
-                          child: Image.network(
-                            photoURL,
-                            width: 88,
-                            height: 88,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => const Icon(
+              // 프로필 이미지 (88px) - 탭 가능
+              GestureDetector(
+                onTap: photoURL != null && photoURL.isNotEmpty
+                    ? () => _openProfileImageViewer(photoURL)
+                    : null,
+                child: Hero(
+                  tag: 'profile_image_${widget.userId}',
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
+                      boxShadow: photoURL != null && photoURL.isNotEmpty
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Container(
+                      width: 88,
+                      height: 88,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFE5E7EB),
+                      ),
+                      child: photoURL != null && photoURL.isNotEmpty
+                          ? ClipOval(
+                              child: Image.network(
+                                photoURL,
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                  Icons.person,
+                                  size: 44,
+                                  color: Color(0xFF6B7280),
+                                ),
+                              ),
+                            )
+                          : const Icon(
                               Icons.person,
                               size: 44,
                               color: Color(0xFF6B7280),
                             ),
-                          ),
-                        )
-                      : const Icon(
-                          Icons.person,
-                          size: 44,
-                          color: Color(0xFF6B7280),
-                        ),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -269,11 +289,18 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatItem(
-                AppLocalizations.of(context)!.friends,
-                widget.userId,
-                cacheKey: 'friend_profile_friends',
-                isFriends: true,
+              // 친구 수 - 클릭 가능
+              Expanded(
+                child: InkWell(
+                  onTap: () => _navigateToFriendsList(),
+                  borderRadius: BorderRadius.circular(8),
+                  child: _buildStatItemContent(
+                    AppLocalizations.of(context)!.friends,
+                    widget.userId,
+                    cacheKey: 'friend_profile_friends',
+                    isFriends: true,
+                  ),
+                ),
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
@@ -359,75 +386,93 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     bool isFriends = false,
   }) {
     return Expanded(
-      child: Column(
-        children: [
-          StreamBuilder<int>(
-            stream: isFriends
-                ? _userStatsService.getFriendCountForUser(userId)
-                : isJoined
-                    ? _userStatsService.getJoinedMeetupCountForUser(userId)
-                    : isPosts
-                        ? _userStatsService.getUserPostCountForUser(userId)
-                        : _userStatsService.getHostedMeetupCountForUser(userId),
-            initialData: _statCountCache[cacheKey],
-            builder: (context, snapshot) {
-              // 데이터 도착 전 0을 먼저 보여주지 않고(어색함), 캐시/플레이스홀더를 사용
-              final int? live = snapshot.data;
-              if (live != null) {
-                _statCountCache[cacheKey] = live;
-              }
-
-              final int? value = live ?? _statCountCache[cacheKey];
-              final Widget countWidget = value != null
-                  ? Text(
-                      '$value',
-                      key: ValueKey<String>('count_$cacheKey:$value'),
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
-                        fontSize: 20,
-                      ),
-                    )
-                  : const Text(
-                      '—',
-                      key: ValueKey<String>('count_loading'),
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF9CA3AF),
-                        fontSize: 20,
-                      ),
-                    );
-
-              return AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  final fade = FadeTransition(opacity: animation, child: child);
-                  return ScaleTransition(
-                    scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
-                    child: fade,
-                  );
-                },
-                child: countWidget,
-              );
-            },
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              color: Color(0xFF6B7280),
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+      child: _buildStatItemContent(
+        label,
+        userId,
+        cacheKey: cacheKey,
+        isJoined: isJoined,
+        isPosts: isPosts,
+        isFriends: isFriends,
       ),
+    );
+  }
+
+  Widget _buildStatItemContent(
+    String label,
+    String userId, {
+    required String cacheKey,
+    bool isJoined = false,
+    bool isPosts = false,
+    bool isFriends = false,
+  }) {
+    return Column(
+      children: [
+        StreamBuilder<int>(
+          stream: isFriends
+              ? _userStatsService.getFriendCountForUser(userId)
+              : isJoined
+                  ? _userStatsService.getJoinedMeetupCountForUser(userId)
+                  : isPosts
+                      ? _userStatsService.getUserPostCountForUser(userId)
+                      : _userStatsService.getHostedMeetupCountForUser(userId),
+          initialData: _statCountCache[cacheKey],
+          builder: (context, snapshot) {
+            // 데이터 도착 전 0을 먼저 보여주지 않고(어색함), 캐시/플레이스홀더를 사용
+            final int? live = snapshot.data;
+            if (live != null) {
+              _statCountCache[cacheKey] = live;
+            }
+
+            final int? value = live ?? _statCountCache[cacheKey];
+            final Widget countWidget = value != null
+                ? Text(
+                    '$value',
+                    key: ValueKey<String>('count_$cacheKey:$value'),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF111827),
+                      fontSize: 20,
+                    ),
+                  )
+                : const Text(
+                    '—',
+                    key: ValueKey<String>('count_loading'),
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF9CA3AF),
+                      fontSize: 20,
+                    ),
+                  );
+
+            return AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final fade = FadeTransition(opacity: animation, child: child);
+                return ScaleTransition(
+                  scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                  child: fade,
+                );
+              },
+              child: countWidget,
+            );
+          },
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            color: Color(0xFF6B7280),
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      ],
     );
   }
 
@@ -622,6 +667,42 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+
+  /// 프로필 이미지 확대 뷰어 열기
+  void _openProfileImageViewer(String imageUrl) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: ProfileImageViewer(
+              imageUrl: imageUrl,
+              heroTag: 'profile_image_${widget.userId}',
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+      ),
+    );
+  }
+
+  /// 친구 목록 화면으로 이동
+  void _navigateToFriendsList() {
+    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UserFriendsListScreen(
+          userId: widget.userId,
+          userName: nickname,
+        ),
       ),
     );
   }

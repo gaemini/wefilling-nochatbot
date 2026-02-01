@@ -90,6 +90,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friends => 'Friends';
 
   @override
+  String get friendsOfUser => '\'s Friends';
+
+  @override
+  String get noFriendsYet => 'No friends yet';
+
+  @override
   String get notifications => 'Notifications';
 
   @override
@@ -112,6 +118,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get privacyPolicy => 'Privacy Policy';
+
+  @override
+  String get private => 'Private';
 
   @override
   String get termsOfService => 'Terms of Service';
@@ -374,9 +383,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get anonymous => 'Anonymous';
-
-  @override
-  String get private => 'Private';
 
   @override
   String get idWillBeShown => 'ID will be shown';

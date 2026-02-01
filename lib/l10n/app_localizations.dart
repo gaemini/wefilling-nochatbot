@@ -254,6 +254,18 @@ abstract class AppLocalizations {
   /// **'친구'**
   String get friends;
 
+  /// No description provided for @friendsOfUser.
+  ///
+  /// In ko, this message translates to:
+  /// **'님의 친구'**
+  String get friendsOfUser;
+
+  /// No description provided for @noFriendsYet.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 친구가 없습니다'**
+  String get noFriendsYet;
+
   /// No description provided for @notifications.
   ///
   /// In ko, this message translates to:
@@ -301,6 +313,12 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'개인정보 처리방침'**
   String get privacyPolicy;
+
+  /// No description provided for @private.
+  ///
+  /// In ko, this message translates to:
+  /// **'비공개'**
+  String get private;
 
   /// No description provided for @termsOfService.
   ///
@@ -823,12 +841,6 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'익명'**
   String get anonymous;
-
-  /// No description provided for @private.
-  ///
-  /// In ko, this message translates to:
-  /// **'비공개'**
-  String get private;
 
   /// No description provided for @idWillBeShown.
   ///

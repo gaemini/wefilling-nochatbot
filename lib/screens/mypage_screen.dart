@@ -29,6 +29,7 @@ import 'post_detail_screen.dart';
 import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
+import '../ui/widgets/profile_image_viewer.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -140,33 +141,51 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 프로필 사진
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFE5E7EB),
-                ),
-                child: user?.photoURL != null
-                    ? ClipOval(
-                        child: Image.network(
-                          user!.photoURL!,
-                          width: 100,
-                          height: 100,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
+              // 프로필 사진 - 탭 가능
+              GestureDetector(
+                onTap: user?.photoURL != null
+                    ? () => _openProfileImageViewer(user!.photoURL!)
+                    : null,
+                child: Hero(
+                  tag: 'profile_image_${user?.uid ?? 'me'}',
+                  child: Container(
+                    width: 100,
+                    height: 100,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: const Color(0xFFE5E7EB),
+                      // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
+                      boxShadow: user?.photoURL != null
+                          ? [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: user?.photoURL != null
+                        ? ClipOval(
+                            child: Image.network(
+                              user!.photoURL!,
+                              width: 100,
+                              height: 100,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => const Icon(
+                                Icons.person,
+                                size: 50,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          )
+                        : const Icon(
                             Icons.person,
                             size: 50,
                             color: Color(0xFF6B7280),
                           ),
-                        ),
-                      )
-                    : const Icon(
-                        Icons.person,
-                        size: 50,
-                        color: Color(0xFF6B7280),
-                      ),
+                  ),
+                ),
               ),
               
               const SizedBox(width: 16),
@@ -552,6 +571,27 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           },
         );
       },
+    );
+  }
+
+  /// 프로필 이미지 확대 뷰어 열기
+  void _openProfileImageViewer(String imageUrl) {
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierColor: Colors.transparent,
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return FadeTransition(
+            opacity: animation,
+            child: ProfileImageViewer(
+              imageUrl: imageUrl,
+              heroTag: 'profile_image_${Provider.of<AuthProvider>(context, listen: false).user?.uid ?? 'me'}',
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 300),
+        reverseTransitionDuration: const Duration(milliseconds: 250),
+      ),
     );
   }
 

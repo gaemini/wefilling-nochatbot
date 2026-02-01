@@ -18,6 +18,11 @@ class UsersRepository {
   static const String _friendRequestsCollection = 'friend_requests';
   static const String _friendshipsCollection = 'friendships';
   static const String _blocksCollection = 'blocks';
+  
+  // 프로필 캐시 (메모리 캐시)
+  final Map<String, UserProfile> _profileCache = {};
+  final Map<String, DateTime> _cacheTimestamps = {};
+  static const Duration _cacheExpiry = Duration(minutes: 5);
 
   /// 현재 로그인한 사용자 ID 가져오기
   String? get currentUserId => _auth.currentUser?.uid;
@@ -25,20 +30,119 @@ class UsersRepository {
   /// 사용자 ID가 유효한지 확인
   bool get isLoggedIn => currentUserId != null;
 
-  /// 사용자 프로필 조회
+  /// 사용자 프로필 조회 (캐싱 적용)
   Future<UserProfile?> getUserProfile(String userId) async {
     try {
+      // 캐시 확인
+      if (_profileCache.containsKey(userId)) {
+        final cacheTime = _cacheTimestamps[userId];
+        if (cacheTime != null && 
+            DateTime.now().difference(cacheTime) < _cacheExpiry) {
+          Logger.log('💾 캐시에서 프로필 로드: $userId');
+          return _profileCache[userId];
+        } else {
+          // 캐시 만료
+          _profileCache.remove(userId);
+          _cacheTimestamps.remove(userId);
+        }
+      }
+
+      // Firestore에서 조회
       final doc =
           await _firestore.collection(_usersCollection).doc(userId).get();
 
       if (doc.exists) {
-        return UserProfile.fromFirestore(doc);
+        final profile = UserProfile.fromFirestore(doc);
+        
+        // 캐시에 저장
+        _profileCache[userId] = profile;
+        _cacheTimestamps[userId] = DateTime.now();
+        
+        return profile;
       }
       return null;
     } catch (e) {
       Logger.error('사용자 프로필 조회 오류: $e');
       return null;
     }
+  }
+  
+  /// 여러 사용자 프로필을 배치로 조회 (성능 최적화)
+  Future<List<UserProfile>> getUserProfilesBatch(List<String> userIds) async {
+    try {
+      if (userIds.isEmpty) return [];
+      
+      final profiles = <UserProfile>[];
+      final uncachedIds = <String>[];
+      
+      // 1. 캐시에서 먼저 가져오기
+      for (final userId in userIds) {
+        if (_profileCache.containsKey(userId)) {
+          final cacheTime = _cacheTimestamps[userId];
+          if (cacheTime != null && 
+              DateTime.now().difference(cacheTime) < _cacheExpiry) {
+            profiles.add(_profileCache[userId]!);
+            continue;
+          } else {
+            // 캐시 만료
+            _profileCache.remove(userId);
+            _cacheTimestamps.remove(userId);
+          }
+        }
+        uncachedIds.add(userId);
+      }
+      
+      if (uncachedIds.isEmpty) {
+        Logger.log('💾 모든 프로필을 캐시에서 로드: ${userIds.length}개');
+        return profiles;
+      }
+      
+      Logger.log('🔍 Firestore에서 프로필 조회: ${uncachedIds.length}개 (캐시: ${profiles.length}개)');
+      
+      // 2. Firestore에서 배치로 조회 (최대 10개씩)
+      final batches = <List<String>>[];
+      for (var i = 0; i < uncachedIds.length; i += 10) {
+        final end = (i + 10 > uncachedIds.length) ? uncachedIds.length : i + 10;
+        batches.add(uncachedIds.sublist(i, end));
+      }
+      
+      for (final batch in batches) {
+        final snapshot = await _firestore
+            .collection(_usersCollection)
+            .where(FieldPath.documentId, whereIn: batch)
+            .get();
+        
+        for (final doc in snapshot.docs) {
+          if (doc.exists) {
+            final profile = UserProfile.fromFirestore(doc);
+            profiles.add(profile);
+            
+            // 캐시에 저장
+            _profileCache[doc.id] = profile;
+            _cacheTimestamps[doc.id] = DateTime.now();
+          }
+        }
+      }
+      
+      return profiles;
+    } catch (e) {
+      Logger.error('배치 프로필 조회 오류: $e');
+      return [];
+    }
+  }
+  
+  /// 캐시 초기화
+  void clearCache() {
+    _profileCache.clear();
+    _cacheTimestamps.clear();
+    Logger.log('🗑️ 프로필 캐시 초기화');
+  }
+  
+  /// 특정 사용자 캐시 무효화
+  void invalidateCache(String userId) {
+    _profileCache.remove(userId);
+    _cacheTimestamps.remove(userId);
+    Logger.log('🗑️ 프로필 캐시 무효화: $userId');
   }
 
   /// 사용자 검색 (닉네임 또는 displayName으로)
@@ -325,7 +429,7 @@ class UsersRepository {
     }
   }
 
-  /// 친구 목록 조회
+  /// 친구 목록 조회 (병렬 처리 + 배치 조회 최적화)
   Stream<List<UserProfile>> getFriends() {
     try {
       final currentUid = currentUserId;
@@ -336,8 +440,10 @@ class UsersRepository {
           .where('uids', arrayContains: currentUid)
           .snapshots()
           .asyncMap((snapshot) async {
+            final startTime = DateTime.now();
             final friendIds = <String>[];
 
+            // 1단계: 친구 ID 추출
             for (final doc in snapshot.docs) {
               final data = doc.data() as Map<String, dynamic>;
               final uids = List<String>.from(data['uids'] ?? []);
@@ -349,14 +455,16 @@ class UsersRepository {
               }
             }
 
-            // 친구 프로필 정보 조회
-            final profiles = <UserProfile>[];
-            for (final friendId in friendIds) {
-              final profile = await getUserProfile(friendId);
-              if (profile != null) {
-                profiles.add(profile);
-              }
+            if (friendIds.isEmpty) {
+              Logger.log('👥 친구 목록: 0명');
+              return <UserProfile>[];
             }
+
+            // 2단계: 배치로 프로필 조회 (캐싱 + 병렬 처리)
+            final profiles = await getUserProfilesBatch(friendIds);
+            
+            final elapsed = DateTime.now().difference(startTime).inMilliseconds;
+            Logger.log('✅ 친구 목록 로드 완료: ${profiles.length}명 (${elapsed}ms)');
 
             return profiles;
           });
@@ -397,6 +505,44 @@ class UsersRepository {
     } catch (e) {
       Logger.error('사용자 카운터 업데이트 오류: $e');
       rethrow;
+    }
+  }
+
+  /// 특정 사용자의 친구 목록 조회 (일회성, 배치 최적화)
+  Future<List<UserProfile>> getUserFriends(String userId) async {
+    try {
+      // 1. 해당 사용자의 friendships 조회
+      final snapshot = await _firestore
+          .collection(_friendshipsCollection)
+          .where('uids', arrayContains: userId)
+          .get();
+
+      final friendIds = <String>[];
+
+      // 2. 친구 ID 추출
+      for (final doc in snapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>;
+        final uids = List<String>.from(data['uids'] ?? []);
+        for (final uid in uids) {
+          if (uid != userId) {
+            friendIds.add(uid);
+          }
+        }
+      }
+
+      if (friendIds.isEmpty) {
+        Logger.log('👥 ${userId}의 친구: 0명');
+        return [];
+      }
+
+      // 3. 배치로 프로필 조회
+      final profiles = await getUserProfilesBatch(friendIds);
+      
+      Logger.log('✅ ${userId}의 친구 목록: ${profiles.length}명');
+      return profiles;
+    } catch (e) {
+      Logger.error('특정 사용자 친구 목록 조회 오류: $e');
+      return [];
     }
   }
 }

@@ -45,6 +45,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   final ScrollController _todayScrollController = ScrollController();
   final ScrollController _allScrollController = ScrollController();
   
+  // 캐시된 데이터를 저장하여 부드러운 전환 구현
+  List<Post>? _cachedTodayPosts;
+  List<Post>? _cachedAllPosts;
+  bool _isInitialLoad = true;
+  
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
     try {
@@ -59,9 +64,40 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _loadCachedData();
+  }
+  
+  /// 캐시된 데이터를 먼저 로드하여 즉시 화면에 표시
+  Future<void> _loadCachedData() async {
+    try {
+      final cachedPosts = await _postService.getCachedPosts();
+      if (!mounted) return;
+      
+      if (cachedPosts.isNotEmpty) {
+        setState(() {
+          _cachedAllPosts = cachedPosts;
+          
+          // 오늘 날짜의 게시글만 필터링
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          _cachedTodayPosts = cachedPosts.where((post) {
+            final postDate = DateTime(
+              post.createdAt.year,
+              post.createdAt.month,
+              post.createdAt.day,
+            );
+            return postDate.isAtSameMomentAs(today);
+          }).toList();
+        });
+        Logger.log('✅ 캐시된 게시글 로드 완료: ${cachedPosts.length}개');
+      }
+    } catch (e) {
+      Logger.error('캐시 로드 오류: $e');
+    }
   }
 
-  Future<void> _refreshCommentCountsForPosts(List<Post> posts) async {
+  /// 댓글 수 재집계 - 백그라운드에서 조용히 처리 (setState 없이)
+  Future<void> _refreshCommentCountsForPosts(List<Post> posts, {bool silent = false}) async {
     // 너무 많은 카드에 대해 매번 집계하면 느려질 수 있어, 상위 N개만 갱신
     const maxTargets = 40;
     final ids = posts.map((p) => p.id).toSet().take(maxTargets).toList();
@@ -69,9 +105,15 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
     final counts = await _commentService.fetchCommentCountsForPostIds(ids);
     if (!mounted) return;
-    setState(() {
+    
+    // silent 모드일 때는 setState 없이 데이터만 업데이트
+    if (silent) {
       _commentCountOverrides.addAll(counts);
-    });
+    } else {
+      setState(() {
+        _commentCountOverrides.addAll(counts);
+      });
+    }
   }
 
   @override
@@ -162,17 +204,27 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
-        // 조기 반환: 로딩
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // 🎯 핵심 개선: 데이터가 있으면 로딩 화면을 보여주지 않음
+        // 초기 로딩 시에만 스켈레톤 UI 표시
+        final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
+                               !snapshot.hasData && 
+                               _cachedTodayPosts == null;
+        
+        if (isLoading) {
           return _buildTodayLoadingView();
         }
 
-        // 조기 반환: 에러
+        // 에러 발생 시 - 캐시된 데이터가 있으면 그것을 사용
         if (snapshot.hasError) {
+          if (_cachedTodayPosts != null && _cachedTodayPosts!.isNotEmpty) {
+            Logger.log('⚠️ 스트림 에러 발생, 캐시된 데이터 사용');
+            return _buildTodayPostsView(_cachedTodayPosts!);
+          }
           return _buildTodayErrorView();
         }
 
-        List<Post> posts = snapshot.data ?? [];
+        // 최신 데이터 또는 캐시된 데이터 사용
+        List<Post> posts = snapshot.data ?? _cachedAllPosts ?? [];
 
         // 오늘 날짜의 게시글만 필터링
         final now = DateTime.now();
@@ -186,16 +238,28 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return postDate.isAtSameMomentAs(today);
         }).toList();
 
-        // 앱 첫 진입 시(초기 로드) 자동으로 댓글 수 재집계 1회 수행
+        // 캐시 업데이트 (다음 로딩을 위해)
+        if (snapshot.hasData && todayPosts.isNotEmpty) {
+          _cachedTodayPosts = todayPosts;
+          
+          // 초기 로드 완료 표시
+          if (_isInitialLoad) {
+            _isInitialLoad = false;
+            Logger.log('✅ 초기 데이터 로드 완료');
+          }
+        }
+
+        // 앱 첫 진입 시 자동으로 댓글 수 재집계 (백그라운드에서 조용히)
         if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
           _didAutoRefreshTodayCommentCounts = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _refreshCommentCountsForPosts(todayPosts);
+            // silent 모드로 setState 없이 처리
+            _refreshCommentCountsForPosts(todayPosts, silent: true);
           });
         }
 
-        // 조기 반환: 빈 상태
+        // 빈 상태
         if (todayPosts.isEmpty) {
           return _buildTodayEmptyView();
         }
@@ -359,28 +423,44 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Post>>(
       stream: _postService.getPostsStream(),
       builder: (context, snapshot) {
-        // 조기 반환: 로딩
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        // 🎯 핵심 개선: 데이터가 있으면 로딩 화면을 보여주지 않음
+        // 초기 로딩 시에만 스켈레톤 UI 표시
+        final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
+                               !snapshot.hasData && 
+                               _cachedAllPosts == null;
+        
+        if (isLoading) {
           return _buildAllLoadingView();
         }
 
-        // 조기 반환: 에러
+        // 에러 발생 시 - 캐시된 데이터가 있으면 그것을 사용
         if (snapshot.hasError) {
+          if (_cachedAllPosts != null && _cachedAllPosts!.isNotEmpty) {
+            Logger.log('⚠️ 스트림 에러 발생, 캐시된 데이터 사용');
+            return _buildAllPostsView(_cachedAllPosts!);
+          }
           return _buildAllErrorView();
         }
 
-        List<Post> posts = snapshot.data ?? [];
+        // 최신 데이터 또는 캐시된 데이터 사용
+        List<Post> posts = snapshot.data ?? _cachedAllPosts ?? [];
 
-        // 앱 첫 진입 시(초기 로드) 자동으로 댓글 수 재집계 1회 수행
+        // 캐시 업데이트 (다음 로딩을 위해)
+        if (snapshot.hasData && posts.isNotEmpty) {
+          _cachedAllPosts = posts;
+        }
+
+        // 앱 첫 진입 시 자동으로 댓글 수 재집계 (백그라운드에서 조용히)
         if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
           _didAutoRefreshAllCommentCounts = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
-            _refreshCommentCountsForPosts(posts);
+            // silent 모드로 setState 없이 처리
+            _refreshCommentCountsForPosts(posts, silent: true);
           });
         }
 
-        // 조기 반환: 빈 상태
+        // 빈 상태
         if (posts.isEmpty) {
           return _buildAllEmptyView();
         }

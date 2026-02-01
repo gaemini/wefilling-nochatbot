@@ -5,6 +5,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,6 +22,7 @@ import '../l10n/app_localizations.dart';
 import 'package:intl/intl.dart';
 import 'post_detail_screen.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
 
 // DM 전용 색상
@@ -74,9 +76,37 @@ class _DMChatScreenState extends State<DMChatScreen> {
   void initState() {
     super.initState();
     _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
+    
+    // 🔍 디버그: Firestore 직접 조회로 실제 저장된 데이터 확인
+    if (kDebugMode) {
+      _debugCheckFirestoreData();
+    }
+    
     _checkBlockStatus(); // 차단 상태 확인
     _preloadDmTitleIfAnonymous(); // 익명이면 제목 미리 로드
     _initConversationState();
+  }
+  
+  /// 디버그: Firestore에 실제로 저장된 데이터 확인
+  Future<void> _debugCheckFirestoreData() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(widget.otherUserId)
+          .get();
+      
+      if (doc.exists) {
+        final data = doc.data()!;
+        Logger.log('🔍 [디버그] Firestore 직접 조회 (otherUserId=${widget.otherUserId}):');
+        Logger.log('   - nickname: "${data['nickname']}"');
+        Logger.log('   - photoURL: "${data['photoURL']}"');
+        Logger.log('   - photoVersion: ${data['photoVersion']}');
+      } else {
+        Logger.log('🔍 [디버그] Firestore 문서 없음: ${widget.otherUserId}');
+      }
+    } catch (e) {
+      Logger.error('🔍 [디버그] Firestore 조회 실패: $e');
+    }
   }
   
   /// 차단 상태 확인
@@ -526,7 +556,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
     // 초기 표시 값을 캐시 상태에 따라 조건부로 설정
     final cachedStatus = _conversation?.participantStatus[otherUserId];
     final cachedName = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
-    final cachedPhoto = _conversation?.getOtherUserPhoto(_currentUser!.uid) ?? '';
     final deletedLabel = AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
     
     // 익명이 아닐 때만 탈퇴 계정 체크
@@ -538,22 +567,54 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
     
     final initialName = isCachedDeleted ? deletedLabel : (cachedName == 'DELETED_ACCOUNT' ? deletedLabel : cachedName);
-    final initialPhoto = isCachedDeleted ? '' : cachedPhoto;
+    
+    // 🔧 수정: 캐시에서 초기 데이터 가져오기 (스트림이 늦게 도착해도 즉시 표시)
+    final cachedUserInfo = (!_isAnonymous && !isCachedDeleted)
+        ? _userInfoCacheService.getCachedUserInfo(otherUserId)
+        : null;
+    
+    if (kDebugMode && cachedUserInfo != null) {
+      Logger.log('🔧 DM채팅 AppBar initialData (캐시):');
+      Logger.log('   - photoURL: "${cachedUserInfo.photoURL}"');
+      Logger.log('   - photoVersion: ${cachedUserInfo.photoVersion}');
+    }
 
     // 실시간으로 사용자 정보 조회 (일반 DM만)
     return PreferredSize(
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: StreamBuilder<DMUserInfo?>(
         stream: (_isAnonymous || isCachedDeleted) ? null : _otherUserInfoStream,
-        initialData: (!_isAnonymous && !isCachedDeleted)
-            ? DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: initialPhoto)
-            : null,
+        initialData: cachedUserInfo ?? ((!_isAnonymous && !isCachedDeleted)
+            ? DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: '', photoVersion: 0)
+            : null),
         builder: (context, snapshot) {
           final info = snapshot.data;
           final otherUserName = (isCachedDeleted || info == null)
               ? deletedLabel
               : (info.nickname == 'DELETED_ACCOUNT' ? deletedLabel : info.nickname);
+          
+          // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
+          if (kDebugMode) {
+            Logger.log('📸 DM채팅 AppBar 아바타 데이터 (대화방=${widget.conversationId.substring(0, 8)}...):');
+            Logger.log('   - otherUserId: $otherUserId');
+            Logger.log('   - isCachedDeleted: $isCachedDeleted');
+            Logger.log('   - info: ${info != null ? "있음" : "null"}');
+            if (info != null) {
+              Logger.log('   - isFromCache: ${info.isFromCache}');
+              Logger.log('   - photoURL: "${info.photoURL}"');
+              Logger.log('   - photoVersion: ${info.photoVersion}');
+              Logger.log('   - nickname: "${info.nickname}"');
+            }
+          }
+          
+          // photoURL이 있으면 무조건 표시 (photoVersion 조건 제거)
+          // DM 목록에서 보이는 것과 동일한 방식으로 단순화
           final otherUserPhoto = (isCachedDeleted || info == null) ? '' : info.photoURL;
+          final otherUserPhotoVersion = (isCachedDeleted || info == null) ? 0 : info.photoVersion;
+          
+          if (kDebugMode) {
+            Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
+          }
           
           final primaryTitle = _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
           final secondaryTitle = null;
@@ -573,28 +634,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
             title: Row(
               children: [
-                ClipOval(
-                  child: SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: (_isAnonymous || otherUserPhoto.isEmpty)
-                        ? Container(
-                            color: Colors.grey[200],
-                            child: const Icon(Icons.person, size: 20),
-                          )
-                        : CachedNetworkImage(
-                            key: ValueKey(otherUserPhoto),
-                            imageUrl: otherUserPhoto,
-                            fit: BoxFit.cover,
-                            fadeInDuration: const Duration(milliseconds: 150),
-                            fadeOutDuration: const Duration(milliseconds: 150),
-                            placeholder: (_, __) => Container(color: Colors.grey[200]),
-                            errorWidget: (_, __, ___) => Container(
-                              color: Colors.grey[200],
-                              child: const Icon(Icons.person, size: 20),
-                            ),
-                          ),
-                  ),
+                UserAvatar(
+                  uid: otherUserId,
+                  photoUrl: otherUserPhoto,
+                  photoVersion: otherUserPhotoVersion,
+                  isAnonymous: _isAnonymous,
+                  size: 36,
+                  placeholderColor: const Color(0xFFE5E7EB),
+                  placeholderIconSize: 20,
                 ),
           const SizedBox(width: 12),
           Expanded(
@@ -956,136 +1003,205 @@ class _DMChatScreenState extends State<DMChatScreen> {
             final isConsecutive = index < messages.length - 1 &&
                 messages[index + 1].senderId == message.senderId;
 
-            return _buildMessageBubble(message, isMine, isConsecutive);
+            // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
+            final showDateSeparator = index == messages.length - 1 ||
+                !_isSameDay(message.createdAt, messages[index + 1].createdAt);
+
+            return Column(
+              children: [
+                if (showDateSeparator) _buildDateSeparator(message.createdAt),
+                _buildMessageBubble(message, isMine, isConsecutive),
+              ],
+            );
           },
         );
       },
     );
   }
 
+  /// 같은 날짜인지 확인
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
+  }
+
+  /// 날짜 구분선 빌드
+  Widget _buildDateSeparator(DateTime date) {
+    final weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+    final weekday = weekdays[date.weekday - 1];
+    final dateText = '${date.month}월 ${date.day}일 $weekday';
+
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      alignment: Alignment.center,
+      child: Text(
+        dateText,
+        style: TextStyle(
+          color: Colors.grey[500],
+          fontSize: 13,
+          fontWeight: FontWeight.w500,
+        ),
+      ),
+    );
+  }
+
   /// 메시지 버블 빌드
   Widget _buildMessageBubble(DMMessage message, bool isMine, bool isConsecutive) {
+    final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
+    final hasText = message.text.trim().isNotEmpty;
+    final isImageOnly = hasImage && !hasText;
+
     if (isMine) {
-      return Align(
-        alignment: Alignment.centerRight,
-        child: Container(
-          margin: EdgeInsets.only(
-            left: 60,
-            right: 12,
-            top: isConsecutive ? 2 : 8,
-            bottom: 2,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: DMColors.myMessageBg,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(18),
-              bottomRight: Radius.circular(4),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              if (message.imageUrl != null && message.imageUrl!.isNotEmpty) ...[
-                _buildImageBubble(
-                  imageUrl: message.imageUrl!,
-                  isMine: true,
-                  heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                ),
-                if (message.text.trim().isNotEmpty) const SizedBox(height: 8),
-              ],
-              if (message.text.trim().isNotEmpty)
+      return Padding(
+        padding: EdgeInsets.only(
+          left: 60,
+          right: 12,
+          top: isConsecutive ? 2 : 8,
+          bottom: 2,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 시간과 읽음 표시
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisSize: MainAxisSize.min,
+              children: [
                 Text(
-                  message.text,
-                  style: const TextStyle(
-                    color: DMColors.myMessageText,
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
+                  TimeFormatter.formatMessageTime(context, message.createdAt),
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 11,
                   ),
                 ),
-              const SizedBox(height: 4),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
+                if (message.isRead)
                   Text(
-                    TimeFormatter.formatMessageTime(context, message.createdAt),
-                    style: const TextStyle(
-                      color: Colors.white70,
+                    AppLocalizations.of(context)!.read,
+                    style: TextStyle(
+                      color: Colors.grey[600],
                       fontSize: 11,
                     ),
                   ),
-                  if (message.isRead) ...[
-                    const SizedBox(width: 4),
-                    Text(
-                      AppLocalizations.of(context)!.read,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 11,
+              ],
+            ),
+            const SizedBox(width: 6),
+            // 메시지 버블 (이미지만 있으면 테두리 없음)
+            Flexible(
+              child: isImageOnly
+                  ? _buildImageBubble(
+                      imageUrl: message.imageUrl!,
+                      isMine: true,
+                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: const BoxDecoration(
+                        color: DMColors.myMessageBg,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(18),
+                          topRight: Radius.circular(18),
+                          bottomLeft: Radius.circular(18),
+                          bottomRight: Radius.circular(4),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (hasImage) ...[
+                            _buildImageBubble(
+                              imageUrl: message.imageUrl!,
+                              isMine: true,
+                              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                            ),
+                            if (hasText) const SizedBox(height: 8),
+                          ],
+                          if (hasText)
+                            Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: DMColors.myMessageText,
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
-                  ],
-                ],
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     } else {
-      return Align(
-        alignment: Alignment.centerLeft,
-        child: Container(
-          margin: EdgeInsets.only(
-            left: 12,
-            right: 60,
-            top: isConsecutive ? 2 : 8,
-            bottom: 2,
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: const BoxDecoration(
-            color: DMColors.otherMessageBg,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(18),
-              bottomLeft: Radius.circular(4),
-              bottomRight: Radius.circular(18),
+      return Padding(
+        padding: EdgeInsets.only(
+          left: 12,
+          right: 60,
+          top: isConsecutive ? 2 : 8,
+          bottom: 2,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 메시지 버블 (이미지만 있으면 테두리 없음)
+            Flexible(
+              child: isImageOnly
+                  ? _buildImageBubble(
+                      imageUrl: message.imageUrl!,
+                      isMine: false,
+                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                    )
+                  : Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: const BoxDecoration(
+                        color: DMColors.otherMessageBg,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(18),
+                          topRight: Radius.circular(18),
+                          bottomLeft: Radius.circular(4),
+                          bottomRight: Radius.circular(18),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (hasImage) ...[
+                            _buildImageBubble(
+                              imageUrl: message.imageUrl!,
+                              isMine: false,
+                              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                            ),
+                            if (hasText) const SizedBox(height: 8),
+                          ],
+                          if (hasText)
+                            Text(
+                              message.text,
+                              style: const TextStyle(
+                                color: DMColors.otherMessageText,
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (message.imageUrl != null && message.imageUrl!.isNotEmpty) ...[
-                _buildImageBubble(
-                  imageUrl: message.imageUrl!,
-                  isMine: false,
-                  heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                ),
-                if (message.text.trim().isNotEmpty) const SizedBox(height: 8),
-              ],
-              if (message.text.trim().isNotEmpty)
-                Text(
-                  message.text,
-                  style: const TextStyle(
-                    color: DMColors.otherMessageText,
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    height: 1.45,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              const SizedBox(height: 4),
-              Text(
-                TimeFormatter.formatMessageTime(context, message.createdAt),
-                style: TextStyle(
-                  color: Colors.grey[600],
-                  fontSize: 11,
-                ),
+            const SizedBox(width: 6),
+            // 시간 표시
+            Text(
+              TimeFormatter.formatMessageTime(context, message.createdAt),
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 11,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
     }

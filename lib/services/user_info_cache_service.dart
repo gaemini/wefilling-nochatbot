@@ -2,6 +2,7 @@
 // 사용자 정보 캐싱 및 실시간 조회 서비스
 // 하이브리드 DM 동기화를 위한 사용자 정보 관리
 
+import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../utils/logger.dart';
 
@@ -10,11 +11,15 @@ class DMUserInfo {
   final String uid;
   final String nickname;
   final String photoURL;
+  final int photoVersion;
+  final bool isFromCache;
   
   DMUserInfo({
     required this.uid, 
     required this.nickname, 
     required this.photoURL,
+    this.photoVersion = 0,
+    this.isFromCache = false,
   });
   
   @override
@@ -79,6 +84,9 @@ class UserInfoCacheService {
         uid: userId,
         nickname: data['nickname'] ?? data['displayName'] ?? 'User',
         photoURL: data['photoURL'] ?? '',
+        photoVersion: (data['photoVersion'] is int)
+            ? (data['photoVersion'] as int)
+            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0,
       );
       
       // 3단계: 캐시 업데이트
@@ -120,11 +128,31 @@ class UserInfoCacheService {
         }
 
         final data = doc.data()!;
+        final fromCache = doc.metadata.isFromCache;
+        
+        // 🔍 디버그: Firestore에서 실제로 읽은 원본 데이터 로그
+        if (kDebugMode) {
+          Logger.log('🔥 watchUserInfo Firestore 스냅샷 (userId=$userId):');
+          Logger.log('   - fromCache: $fromCache');
+          Logger.log('   - nickname: "${data['nickname']}"');
+          Logger.log('   - displayName: "${data['displayName']}"');
+          Logger.log('   - photoURL: "${data['photoURL']}"');
+          Logger.log('   - photoVersion: ${data['photoVersion']} (타입: ${data['photoVersion'].runtimeType})');
+        }
+        
         final userInfo = DMUserInfo(
           uid: userId,
           nickname: (data['nickname'] ?? data['displayName'] ?? 'User').toString(),
           photoURL: (data['photoURL'] ?? '').toString(),
+          photoVersion: (data['photoVersion'] is int)
+              ? (data['photoVersion'] as int)
+              : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0,
+          isFromCache: fromCache,
         );
+        
+        if (kDebugMode) {
+          Logger.log('   → DMUserInfo 생성: photoURL="${userInfo.photoURL}", photoVersion=${userInfo.photoVersion}');
+        }
 
         // write-through 캐시 갱신
         _cache[userId] = userInfo;
@@ -134,11 +162,22 @@ class UserInfoCacheService {
         // 객체 identity가 아니라 값 기준으로 중복 제거
         if (prev == null && next == null) return true;
         if (prev == null || next == null) return false;
-        return prev.nickname == next.nickname && prev.photoURL == next.photoURL;
+        return prev.nickname == next.nickname &&
+            prev.photoURL == next.photoURL &&
+            prev.photoVersion == next.photoVersion &&
+            prev.isFromCache == next.isFromCache;
       }).handleError((e) {
         Logger.error('❌ watchUserInfo 오류: userId=$userId, error=$e');
       });
     });
+  }
+  
+  /// 캐시된 사용자 정보 즉시 반환 (비동기 없음)
+  /// 
+  /// - 캐시에 있으면 즉시 반환, 없으면 null
+  /// - StreamBuilder의 initialData로 사용하기 위한 메서드
+  DMUserInfo? getCachedUserInfo(String userId) {
+    return _cache[userId];
   }
   
   /// 여러 사용자 정보 일괄 조회

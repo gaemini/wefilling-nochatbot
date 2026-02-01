@@ -16,6 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_info_cache_service.dart';
+import '../services/avatar_cache_service.dart';
 import '../config/app_config.dart';
 import '../utils/logger.dart';
 
@@ -723,6 +724,17 @@ class AuthProvider with ChangeNotifier {
           // 🔥 문서 존재 여부 확인
           final docRef = _firestore.collection('users').doc(_user!.uid);
           final docSnapshot = await docRef.get();
+          final docData = docSnapshot.data();
+
+          // photoVersion: 프로필 사진 변경 시에만 증가 (로컬 캐시/DM 전환을 안정화)
+          final currentPhotoVersion =
+              (docData?['photoVersion'] is int)
+                  ? (docData?['photoVersion'] as int)
+                  : int.tryParse('${docData?['photoVersion'] ?? _userData?['photoVersion'] ?? 0}') ?? 0;
+          final oldPhotoUrlStr = (oldPhotoURL ?? '').toString();
+          final newPhotoUrlStr = (photoURL ?? oldPhotoUrlStr).toString();
+          final bool photoChanged = photoURL != null && newPhotoUrlStr != oldPhotoUrlStr;
+          final int nextPhotoVersion = photoChanged ? (currentPhotoVersion + 1) : currentPhotoVersion;
           
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
@@ -740,6 +752,10 @@ class AuthProvider with ChangeNotifier {
           if (photoURL != null) {
             updateData['photoURL'] = photoURL;
           }
+          if (photoChanged) {
+            updateData['photoVersion'] = nextPhotoVersion;
+            updateData['photoUpdatedAt'] = FieldValue.serverTimestamp();
+          }
           
           Logger.log("📝 Firestore 업데이트 시작...");
           
@@ -752,6 +768,7 @@ class AuthProvider with ChangeNotifier {
               'email': _user!.email ?? '',
               'displayName': nickname,
               'photoURL': photoURL ?? _user!.photoURL ?? '',
+              'photoVersion': photoChanged ? nextPhotoVersion : (currentPhotoVersion),
               'nickname': nickname,
               'nationality': nationality,
               'emailVerified': true, // 로그인 성공했으므로 true
@@ -759,6 +776,7 @@ class AuthProvider with ChangeNotifier {
               'createdAt': FieldValue.serverTimestamp(),
               'lastLogin': FieldValue.serverTimestamp(),
               'updatedAt': FieldValue.serverTimestamp(),
+              if (photoChanged) 'photoUpdatedAt': FieldValue.serverTimestamp(),
               if (bio != null) 'bio': bio,
             });
             Logger.log("✅ 사용자 문서 생성 완료");
@@ -794,6 +812,28 @@ class AuthProvider with ChangeNotifier {
           
           // 🔥 하이브리드 동기화: DM 대화방 업데이트
           await _updateAllConversationsForUser(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null);
+
+          // ✅ DM 자연스러운 전환을 위해 "내" 아바타는 로컬에도 프리페치/정리
+          if (photoChanged) {
+            try {
+              final uid = _user!.uid;
+              if (finalPhotoURL.isNotEmpty && nextPhotoVersion > 0) {
+                // 새 버전 프리패치 (fire-and-forget)
+                unawaited(
+                  AvatarCacheService().getOrDownloadAvatar(
+                    uid: uid,
+                    photoVersion: nextPhotoVersion,
+                    photoUrl: finalPhotoURL,
+                  ),
+                );
+              } else {
+                // 기본 이미지로 변경 시 로컬 캐시 삭제
+                unawaited(AvatarCacheService().invalidateUser(uid));
+              }
+            } catch (e) {
+              Logger.error('⚠️ 아바타 로컬 캐시 프리패치/정리 실패(무시): $e');
+            }
+          }
 
           // ✅ 캐시 정리: 이전 프로필 사진이 남아있지 않도록 제거
           // - 이미지 캐시는 URL 기준이므로 이전 URL을 직접 evict

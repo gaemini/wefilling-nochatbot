@@ -5,6 +5,17 @@
     "**/build": true,
     "**/.dart_tool": true,
     "**/ios/Pods": true,
+    "**/ios/.symlinks": true,
+    "**/ios/Flutter/ephemeral": true,
+    "**/android/.gradle": true
+  },
+  "files.exclude": {
+    "**/.fvm": true,
+    "**/build": true,
+    "**/.dart_tool": true,
+    "**/ios/Pods": true,
+    "**/ios/.symlinks": true,
+    "**/ios/Flutter/ephemeral": true,
     "**/android/.gradle": true
   },
   "files.watcherExclude": {
@@ -12,6 +23,8 @@
     "**/build/**": true,
     "**/.dart_tool/**": true,
     "**/ios/Pods/**": true,
+    "**/ios/.symlinks/**": true,
+    "**/ios/Flutter/ephemeral/**": true,
     "**/android/.gradle/**": true
   },
   "dart.lineLength": 120,

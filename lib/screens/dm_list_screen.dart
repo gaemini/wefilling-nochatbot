@@ -1,10 +1,6 @@
-// lib/screens/dm_list_screen.dart
-// DM 목록 화면
-// 대화방 목록을 표시하고 대화방 선택 시 대화 화면으로 이동
-
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../models/conversation.dart';
 import '../models/user_profile.dart';
 import '../services/dm_service.dart';
@@ -16,6 +12,7 @@ import 'dm_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
 import '../constants/app_constants.dart';
+import '../ui/widgets/user_avatar.dart';
 
 // DM 목록 필터: 친구 / 익명
 enum DMFilter { friends, anonymous }
@@ -317,7 +314,9 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildConversationCardContent(
             conversation: conversation,
             displayName: '$titlePrefix$dmTitle',  // 게시글 제목만 표시
+            otherUserId: otherUserId,
             otherUserPhoto: '',  // 익명이므로 사진 없음
+            otherUserPhotoVersion: 0,
             isAnonymous: isAnonymous,
             timeString: timeString,
             unreadCount: unreadCount,
@@ -340,9 +339,7 @@ class _DMListScreenState extends State<DMListScreen> {
     );
     
     final initialName = isCachedDeleted ? deletedLabel : (cachedName == 'DELETED_ACCOUNT' ? deletedLabel : cachedName);
-    final initialPhoto = isCachedDeleted
-        ? ''
-        : conversation.getOtherUserPhoto(_currentUser!.uid);
+    // 초기에는 옛 사진을 보여주지 않음 (인스타 DM 스타일)
 
     // ✅ 사용자 문서 스트림 기반: 최신 프로필/닉네임이 자연스럽게 반영됨
     if (isCachedDeleted) {
@@ -355,7 +352,9 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildConversationCardContent(
             conversation: conversation,
             displayName: deletedLabel,
+            otherUserId: otherUserId,
             otherUserPhoto: '',
+            otherUserPhotoVersion: 0,
             isAnonymous: false,
             timeString: timeString,
             unreadCount: unreadCount,
@@ -369,9 +368,11 @@ class _DMListScreenState extends State<DMListScreen> {
       () => _userInfoCacheService.watchUserInfo(otherUserId),
     );
 
+    // 인스타 DM 스타일: 초기에는 옛 프로필 사진을 보여주지 않고,
+    // 최신 user 문서(스트림)로부터 사진을 받았을 때만 표시한다.
     final DMUserInfo? initialUserInfo = isAnonymous
         ? null
-        : DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: initialPhoto);
+        : DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: '', photoVersion: 0);
 
     return StreamBuilder<DMUserInfo?>(
       stream: isAnonymous ? null : userInfoStream,
@@ -379,7 +380,29 @@ class _DMListScreenState extends State<DMListScreen> {
       builder: (context, userSnapshot) {
         final info = userSnapshot.data;
         final otherUserName = info?.nickname ?? deletedLabel;
+        
+        // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
+        if (kDebugMode) {
+          Logger.log('📸 DM목록 아바타 데이터 (대화방=${conversation.id.substring(0, 8)}...):');
+          Logger.log('   - otherUserId: $otherUserId');
+          Logger.log('   - info: ${info != null ? "있음" : "null"}');
+          if (info != null) {
+            Logger.log('   - isFromCache: ${info.isFromCache}');
+            Logger.log('   - photoURL: "${info.photoURL}"');
+            Logger.log('   - photoVersion: ${info.photoVersion}');
+            Logger.log('   - nickname: "${info.nickname}"');
+          }
+        }
+        
+        // photoURL이 있으면 무조건 표시 (photoVersion 조건 제거)
+        // DM 목록에서 보이는 것과 동일한 방식으로 단순화
         final otherUserPhoto = info?.photoURL ?? '';
+        final otherUserPhotoVersion = info?.photoVersion ?? 0;
+        
+        if (kDebugMode) {
+          Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
+        }
+        
         final displayName = isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
 
         return StreamBuilder<int>(
@@ -390,7 +413,9 @@ class _DMListScreenState extends State<DMListScreen> {
             return _buildConversationCardContent(
               conversation: conversation,
               displayName: displayName,
+              otherUserId: otherUserId,
               otherUserPhoto: isAnonymous ? '' : otherUserPhoto,
+              otherUserPhotoVersion: isAnonymous ? 0 : otherUserPhotoVersion,
               isAnonymous: isAnonymous,
               timeString: timeString,
               unreadCount: unreadCount,
@@ -405,7 +430,9 @@ class _DMListScreenState extends State<DMListScreen> {
   Widget _buildConversationCardContent({
     required Conversation conversation,
     required String displayName,
+    required String otherUserId,
     required String otherUserPhoto,
+    required int otherUserPhotoVersion,
     required bool isAnonymous,
     required String timeString,
     required int unreadCount,
@@ -428,7 +455,14 @@ class _DMListScreenState extends State<DMListScreen> {
           child: Row(
             children: [
               // 프로필 이미지
-              _buildProfileImage(otherUserPhoto, isAnonymous),
+              UserAvatar(
+                uid: otherUserId,
+                photoUrl: otherUserPhoto,
+                photoVersion: otherUserPhotoVersion,
+                isAnonymous: isAnonymous,
+                size: 48,
+                placeholderIconSize: 24,
+              ),
               
               const SizedBox(width: 12),
               
@@ -517,48 +551,6 @@ class _DMListScreenState extends State<DMListScreen> {
                 ],
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 프로필 이미지 빌드
-  Widget _buildProfileImage(String photoUrl, bool isAnonymous) {
-    if (isAnonymous || photoUrl.isEmpty) {
-      return Container(
-        width: 48,
-        height: 48,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Color(0xFFE5E7EB),
-        ),
-        child: const Icon(
-          Icons.person,
-          size: 24,
-          color: Color(0xFF6B7280),
-        ),
-      );
-    }
-
-    return ClipOval(
-      child: SizedBox(
-        width: 48,
-        height: 48,
-        child: CachedNetworkImage(
-          key: ValueKey(photoUrl),
-          imageUrl: photoUrl,
-          fit: BoxFit.cover,
-          fadeInDuration: const Duration(milliseconds: 150),
-          fadeOutDuration: const Duration(milliseconds: 150),
-          placeholder: (_, __) => Container(color: const Color(0xFFE5E7EB)),
-          errorWidget: (_, __, ___) => Container(
-            color: const Color(0xFFE5E7EB),
-            child: const Icon(
-              Icons.person,
-              size: 24,
-              color: Color(0xFF6B7280),
-            ),
           ),
         ),
       ),

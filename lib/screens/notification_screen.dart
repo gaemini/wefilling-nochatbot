@@ -2,14 +2,11 @@
 // 알림 목록 화면
 // 알림 표시 및 읽음 처리
 
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
 import '../services/notification_service.dart';
-import 'meetup_detail_screen.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
-import '../constants/app_constants.dart';
 import 'post_detail_screen.dart';
 import 'requests_page.dart';
 import 'ad_showcase_screen.dart';
@@ -18,9 +15,9 @@ import 'main_screen.dart';
 import 'review_approval_screen.dart';
 import 'review_detail_screen.dart';
 import '../services/review_service.dart';
-import '../models/review_post.dart';
 import '../utils/logger.dart';
 import 'dm_chat_screen.dart';
+import '../widgets/notification_list_item.dart';
 
 class NotificationScreen extends StatefulWidget {
   const NotificationScreen({Key? key}) : super(key: key);
@@ -31,6 +28,8 @@ class NotificationScreen extends StatefulWidget {
 
 class _NotificationScreenState extends State<NotificationScreen> {
   final NotificationService _notificationService = NotificationService();
+  final PostService _postService = PostService();
+  final Map<String, Future<String?>> _postPreviewFutures = {};
   bool _isLoading = false;
 
   @override
@@ -105,7 +104,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (meetupId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing ?? "")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
       );
       return;
     }
@@ -140,7 +139,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupNotFound ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.meetupNotFound)),
         );
       }
     } catch (e) {
@@ -164,7 +163,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (postId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing ?? "")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
       );
       return;
     }
@@ -196,7 +195,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound)),
         );
       }
     } catch (e) {
@@ -221,7 +220,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     
     if (reviewId == null || userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing ?? "")),
+        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
       );
       return;
     }
@@ -267,7 +266,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.reviewNotFound}')),
+          SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
         );
       }
     }
@@ -303,7 +302,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       if (requestId == null || reviewId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reviewInfoMissing ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.reviewInfoMissing)),
         );
         return;
       }
@@ -347,7 +346,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       
       if (conversationId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
         );
         return;
       }
@@ -402,40 +401,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
   }
 
-  // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 제목 반환
-  String _getLocalizedTitle(AppNotification notification) {
-    final l10n = AppLocalizations.of(context);
-    
-    switch (notification.type) {
-      case 'meetup_full':
-        return l10n?.meetupIsFull ?? "";
-      case 'meetup_cancelled':
-        return l10n?.meetupCancelled ?? "";
-      case 'meetup_participant_joined':
-        return l10n?.newParticipantJoined ?? ""; // 새 참여자
-      case 'new_comment':
-        return l10n?.newCommentAdded ?? "";
-      case 'new_like':
-        return l10n?.newLikeAdded ?? "";
-      case 'comment_like':
-        return l10n?.newLikeAdded ?? ""; // 댓글 좋아요도 같은 타이틀 사용
-      case 'review_comment':
-        return l10n?.newCommentAdded ?? ""; // 후기 댓글
-      case 'review_like':
-        return l10n?.newLikeAdded ?? ""; // 후기 좋아요
-      case 'friend_request':
-        return l10n?.friendRequest ?? "";
-      case 'review_approval_request':
-        return l10n?.reviewApprovalRequestTitle ?? "";
-      case 'dm_received':
-        // DM 알림의 경우 actorName을 사용하여 다국어 제목 생성
-        final senderName = notification.actorName ?? 'Unknown';
-        return l10n!.messageFrom(senderName);
-      default:
-        return notification.title; // 기본값으로 저장된 제목 사용
-    }
-  }
-
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
   String _getLocalizedMessage(AppNotification notification) {
     final l10n = AppLocalizations.of(context);
@@ -460,13 +425,25 @@ class _NotificationScreenState extends State<NotificationScreen> {
             data['meetupTitle'] ?? '',
           );
         case 'new_comment':
-          final commenterName = data['commenterName'] ?? '';
-          final postTitle = data['postTitle'] ?? '';
+          final commenterName = (data['commenterName'] ?? '').toString();
+          final postTitle = (data['postTitle'] ?? '').toString().trim();
+          if (postTitle.isEmpty) {
+            final lang = Localizations.localeOf(context).languageCode;
+            return lang == 'ko'
+                ? '$commenterName님이 회원님의 게시글에 댓글을 남겼습니다.'
+                : '$commenterName commented on your post.';
+          }
           return l10n!.newCommentMessage(commenterName, postTitle);
         case 'new_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
           final likerName = postIsAnonymous ? (l10n?.anonymous ?? '익명') : (data['likerName'] ?? '');
-          final postTitle = data['postTitle'] ?? '';
+          final postTitle = (data['postTitle'] ?? '').toString().trim();
+          if (postTitle.isEmpty) {
+            final lang = Localizations.localeOf(context).languageCode;
+            return lang == 'ko'
+                ? '$likerName님이 회원님의 게시글을 좋아합니다.'
+                : '$likerName liked your post.';
+          }
           return l10n!.newLikeMessage(likerName, postTitle);
         case 'comment_like':
           final likerName = data['likerName'] ?? notification.actorName ?? '';
@@ -486,6 +463,25 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final likerName = data['likerName'] ?? notification.actorName ?? '';
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
           return l10n!.newLikeMessage(likerName, reviewTitle);
+        case 'post_private': {
+          // 친구공개(허용된 사용자에게만 공개) 게시글 알림
+          final authorName = (data['authorName'] ?? notification.actorName ?? '').toString().trim();
+          final postTitle = (data['postTitle'] ?? '').toString().trim();
+          final badge = l10n!.friendsOnlyBadge;
+
+          final name = authorName.isEmpty ? 'User' : authorName;
+          if (postTitle.isEmpty) {
+            final lang = Localizations.localeOf(context).languageCode;
+            return lang == 'ko'
+                ? '$name님이 $badge 게시글을 올렸습니다.'
+                : '$name posted a $badge post.';
+          }
+
+          final lang = Localizations.localeOf(context).languageCode;
+          return lang == 'ko'
+              ? '$name님이 $badge 게시글을 올렸습니다: $postTitle'
+              : '$name posted a $badge post: $postTitle';
+        }
         default:
           return notification.message;
       }
@@ -495,65 +491,61 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
   }
 
+  String? _extractPreviewImageUrlFromData(Map<String, dynamic>? data) {
+    if (data == null) return null;
+
+    // 다양한 키/형태를 허용 (서버/클라 버전 호환)
+    final directKeys = [
+      'thumbnailUrl',
+      'postThumbnailUrl',
+      'imageUrl',
+      'previewImageUrl',
+      'photoUrl',
+    ];
+
+    for (final key in directKeys) {
+      final v = data[key];
+      if (v is String && v.trim().isNotEmpty) return v.trim();
+    }
+
+    final imageUrls = data['imageUrls'];
+    if (imageUrls is List && imageUrls.isNotEmpty) {
+      final first = imageUrls.first;
+      if (first is String && first.trim().isNotEmpty) return first.trim();
+    }
+
+    return null;
+  }
+
+  Future<String?> _getPostPreviewImageUrl(String postId) {
+    return _postPreviewFutures.putIfAbsent(postId, () async {
+      try {
+        final post = await _postService.getPostById(postId);
+        if (post == null) return null;
+        if (post.imageUrls.isEmpty) return null;
+        return post.imageUrls.first;
+      } catch (_) {
+        return null;
+      }
+    });
+  }
+
   // 알림 항목 위젯 생성
   Widget _buildNotificationItem(AppNotification notification) {
-    // 알림 유형에 따른 아이콘 및 색상 설정
-    IconData iconData;
-    Color iconColor;
+    final message = _getLocalizedMessage(notification);
+    final timeText = _formatNotificationTime(notification.createdAt);
+    final previewUrlFromData = _extractPreviewImageUrlFromData(notification.data);
 
-    switch (notification.type) {
-      case 'meetup_full':
-        iconData = Icons.group;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'meetup_cancelled':
-        iconData = Icons.event_busy;
-        iconColor = const Color(0xFFEF4444);
-        break;
-      case 'meetup_participant_joined':
-        iconData = Icons.person_add;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'new_comment':
-        iconData = Icons.chat_bubble;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'new_like':
-      case 'comment_like':
-        iconData = Icons.favorite;
-        iconColor = const Color(0xFFEF4444);
-        break;
-      case 'post_private':
-        iconData = Icons.lock;
-        iconColor = const Color(0xFF6B7280);
-        break;
-      case 'friend_request':
-        iconData = Icons.person_add;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'dm_received':
-        iconData = Icons.send;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'ad_updates':
-        iconData = Icons.campaign;
-        iconColor = const Color(0xFFF59E0B);
-        break;
-      case 'review_approval_request':
-        iconData = Icons.rate_review;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'review_comment':
-        iconData = Icons.chat_bubble;
-        iconColor = AppColors.pointColor;
-        break;
-      case 'review_like':
-        iconData = Icons.favorite;
-        iconColor = const Color(0xFFEF4444);
-        break;
-      default:
-        iconData = Icons.notifications;
-        iconColor = const Color(0xFF6B7280);
+    Future<String?>? previewFuture;
+    if (previewUrlFromData == null) {
+      final postId = notification.data?['postId'] ?? notification.postId;
+      final canHavePreview = notification.type == 'new_like' ||
+          notification.type == 'new_comment' ||
+          notification.type == 'comment_like' ||
+          notification.type == 'post_private';
+      if (canHavePreview && postId is String && postId.isNotEmpty) {
+        previewFuture = _getPostPreviewImageUrl(postId);
+      }
     }
 
     return Dismissible(
@@ -570,83 +562,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(
-          content: Text(AppLocalizations.of(context)!.notificationDeleted ?? ""),
+          content: Text(AppLocalizations.of(context)!.notificationDeleted),
         ));
       },
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF5F5F5),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: InkWell(
-          onTap: () => _handleNotificationTap(notification),
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 알림 아이콘
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: iconColor,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: notification.type == 'dm_received'
-                      ? Transform.rotate(
-                          angle: -math.pi / 4, // 45도 시계방향 회전
-                          child: Icon(iconData, color: Colors.white, size: 24),
-                        )
-                      : Icon(iconData, color: Colors.white, size: 24),
-                ),
-                const SizedBox(width: 12),
-
-                // 알림 내용
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        _getLocalizedTitle(notification),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        _getLocalizedMessage(notification),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF6B7280),
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _formatNotificationTime(notification.createdAt),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF9CA3AF),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
+      child: NotificationListItem(
+        notification: notification,
+        primaryText: message,
+        timeText: timeText,
+        onTap: () => _handleNotificationTap(notification),
+        previewImageUrl: previewUrlFromData,
+        previewImageFuture: previewFuture,
       ),
     );
   }
@@ -655,7 +580,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
   String _formatNotificationTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
       return AppLocalizations.of(context)!.daysAgo(difference.inDays);
@@ -670,13 +594,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final onSurface = theme.colorScheme.onSurface;
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          icon: Icon(Icons.arrow_back, color: onSurface),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
@@ -685,18 +612,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
             fontFamily: 'Pretendard',
             fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
           ),
         ),
         centerTitle: true,
         actions: [
           // 모든 알림 읽음 버튼
           IconButton(
-            icon: const Icon(
-              Icons.done_all,
-              color: Color(0xFF111827),
-              size: 24,
-            ),
+            icon: Icon(Icons.done_all, color: onSurface, size: 24),
             onPressed: _isLoading ? null : _markAllAsRead,
             tooltip: AppLocalizations.of(context)!.markAllAsRead,
           ),
@@ -723,10 +645,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.notifications_off_outlined,
                     size: 64,
-                    color: const Color(0xFFD1D5DB),
+                    color: Color(0xFFD1D5DB),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -748,8 +670,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
               // 당겨서 새로고침 시 상태 업데이트
               setState(() {});
             },
-            child: ListView.builder(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(vertical: 6),
               itemCount: notifications.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
               itemBuilder: (context, index) {
                 return _buildNotificationItem(notifications[index]);
               },

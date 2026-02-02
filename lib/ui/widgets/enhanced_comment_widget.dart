@@ -10,12 +10,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
 import '../../services/report_service.dart';
-import '../../design/tokens.dart';
-import '../../design/theme.dart';
 import '../../l10n/app_localizations.dart';
-import '../../services/dm_service.dart';
-import '../../screens/dm_chat_screen.dart';
+import '../../screens/friend_profile_screen.dart';
 import '../../utils/logger.dart';
+import '../dialogs/block_dialog.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -49,9 +47,80 @@ class EnhancedCommentWidget extends StatefulWidget {
 
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
-  final DMService _dmService = DMService();
   bool _showReplies = true;
   String? _currentNickname; // 캐시된 현재 닉네임
+
+  Future<void> _showCommentActionsSheet({
+    required bool isMyComment,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+
+    final canReport = !isMyComment;
+    final canDelete = isMyComment;
+    final canBlock = !isMyComment &&
+        !widget.isAnonymousPost &&
+        widget.comment.userId.isNotEmpty &&
+        widget.comment.userId != 'deleted';
+    final targetName = widget.comment.authorNickname;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      barrierColor: Colors.black.withAlpha(160),
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF111827),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (canReport)
+                    _ActionRow(
+                      icon: Icons.report_gmailerrorred_outlined,
+                      label: l10n.report,
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await _showReportDialog();
+                      },
+                    ),
+                  if (canReport && canBlock) const _ActionDivider(),
+                  if (canBlock)
+                    _ActionRow(
+                      icon: Icons.block,
+                      label: l10n.blockUser,
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        if (!mounted) return;
+                        await showBlockUserDialog(
+                          context,
+                          userId: widget.comment.userId,
+                          userName: targetName,
+                        );
+                      },
+                    ),
+                  if ((canReport || canBlock) && canDelete) const _ActionDivider(),
+                  if (canDelete)
+                    _ActionRow(
+                      icon: Icons.delete_outline,
+                      label: l10n.delete,
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await _showDeleteConfirmDialog();
+                      },
+                    ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   void dispose() {
@@ -369,80 +438,27 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
-  /// 댓글 작성자에게 DM 열기
-  Future<void> _openDMToCommentAuthor() async {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired ?? "")),
-        );
-      }
-      return;
-    }
+  void _openCommentAuthorProfile() {
+    // 익명 게시글에서는 프로필 접근 불가
+    if (widget.isAnonymousPost) return;
+    if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') return;
 
-    // 본인에게는 DM 불가
-    if (widget.comment.userId == currentUser.uid) {
-      return;
-    }
-
-    try {
-      // comment.userId가 올바른 Firebase UID인지 확인
-      Logger.log('🔍 DM 대상 확인 (댓글):');
-      Logger.log('  - comment.userId: ${widget.comment.userId}');
-      Logger.log('  - comment.author: ${widget.comment.authorNickname}');
-      Logger.log('  - isAnonymousPost: ${widget.isAnonymousPost}');
-      Logger.log('  - postId: ${widget.postId}');
-
-      // Firebase Auth UID 형식 검증 (28자 영숫자)
-      final uidPattern = RegExp(r'^[a-zA-Z0-9]{28}$');
-      if (!uidPattern.hasMatch(widget.comment.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${widget.comment.userId}');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.reportError),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-        }
-        return;
-      }
-
-      // 댓글은 항상 익명 대화방으로 처리
-      // 게시글이 전체공개든 익명이든 관계없이 댓글 DM은 익명 대화방에 생성
-      final conversationId = await _dmService.prepareConversationId(
-        widget.comment.userId,
-        isOtherUserAnonymous: true,  // 항상 익명으로 처리
-        postId: widget.postId,
-      );
-
-      Logger.log('✅ DM conversation ID 생성됨 (익명 대화방): $conversationId');
-
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DMChatScreen(
-              conversationId: conversationId,
-              otherUserId: widget.comment.userId,
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      Logger.error('❌ DM 열기 오류: $e');
-      Logger.error('오류 타입: ${e.runtimeType}');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.cannotSendDM ?? "")),
-        );
-      }
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: widget.comment.userId,
+          nickname: widget.comment.authorNickname,
+          photoURL: widget.comment.authorPhotoUrl,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
   }
 
   // 사용자의 현재 닉네임을 실시간으로 조회
   Future<String> _getCurrentNickname(String userId) async {
+    final deletedText = AppLocalizations.of(context)!.deletedAccount;
     // 이미 캐시된 닉네임이 있으면 반환
     if (_currentNickname != null) {
       return _currentNickname!;
@@ -466,7 +482,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         return nickname;
       } else {
         // 사용자 문서가 없으면 탈퇴한 계정으로 표시
-        final deletedText = AppLocalizations.of(context)!.deletedAccount ?? "";
         if (mounted) {
           setState(() {
             _currentNickname = deletedText;
@@ -487,7 +502,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (user == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
         );
       }
       return;
@@ -499,7 +514,7 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       
       if (!success && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")),
+          SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed)),
         );
       }
     } catch (e) {
@@ -514,203 +529,101 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final currentUser = FirebaseAuth.instance.currentUser;
     final isMyComment = currentUser?.uid == widget.comment.userId;
     final isLiked = currentUser != null && widget.comment.isLikedBy(currentUser.uid);
 
-    return Container(
-      margin: EdgeInsets.only(
-        left: (widget.comment.depth * 20.0) + (widget.comment.depth == 0 ? 16.0 : 0.0),
-        right: widget.comment.depth == 0 ? 16.0 : 0.0,
-        bottom: 16, // 댓글 간 간격
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 프로필 이미지
-          Container(
-            width: 32,
-            height: 32,
-            margin: const EdgeInsets.only(top: 2),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.grey[200],
-            ),
-            child: (!widget.isAnonymousPost && widget.comment.authorPhotoUrl.isNotEmpty)
-                ? ClipOval(
-                    child: Image.network(
-                      widget.comment.authorPhotoUrl,
-                      width: 32,
-                      height: 32,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Icon(
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: () => _showCommentActionsSheet(isMyComment: isMyComment),
+      child: Container(
+        margin: EdgeInsets.only(
+          left: (widget.comment.depth * 20.0) + (widget.comment.depth == 0 ? 16.0 : 0.0),
+          right: widget.comment.depth == 0 ? 16.0 : 0.0,
+          bottom: 16, // 댓글 간 간격
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 프로필 이미지
+            GestureDetector(
+              onTap: _openCommentAuthorProfile,
+              child: Container(
+                width: 32,
+                height: 32,
+                margin: const EdgeInsets.only(top: 2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.grey[200],
+                ),
+                child: (!widget.isAnonymousPost && widget.comment.authorPhotoUrl.isNotEmpty)
+                    ? ClipOval(
+                        child: Image.network(
+                          widget.comment.authorPhotoUrl,
+                          width: 32,
+                          height: 32,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.person,
+                            size: 18,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                      )
+                    : Icon(
                         Icons.person,
                         size: 18,
                         color: Colors.grey[500],
                       ),
-                    ),
-                  )
-                : Icon(
-                    Icons.person,
-                    size: 18,
-                    color: Colors.grey[500],
+              ),
+            ),
+            const SizedBox(width: 10),
+            
+            // 댓글 내용 영역
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 헤더: 작성자 이름, 시간 (버튼/케밥 제거)
+                  Row(
+                    children: [
+                      // 작성자 이름
+                      FutureBuilder<String>(
+                        future: widget.isAnonymousPost
+                            ? Future.value(widget.getDisplayName?.call(widget.comment) ?? AppLocalizations.of(context)!.anonymous)
+                            : _getCurrentNickname(widget.comment.userId),
+                        builder: (context, snapshot) {
+                          final displayName = snapshot.data ?? 
+                              (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
+                          return GestureDetector(
+                            onTap: _openCommentAuthorProfile,
+                            child: Text(
+                              displayName,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 6),
+                      
+                      // 시간
+                      Text(
+                        widget.comment.getFormattedTime(context),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF6B7280), // gray600 - 가독성 개선
+                        ),
+                      ),
+                      const Spacer(),
+                    ],
                   ),
-          ),
-          const SizedBox(width: 10),
-          
-          // 댓글 내용 영역
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 헤더: 작성자 이름, 시간, 메뉴
-                Row(
-                  children: [
-                    // 작성자 이름
-                    FutureBuilder<String>(
-                      future: widget.isAnonymousPost
-                          ? Future.value(widget.getDisplayName?.call(widget.comment) ?? AppLocalizations.of(context)!.anonymous)
-                          : _getCurrentNickname(widget.comment.userId),
-                      builder: (context, snapshot) {
-                        final displayName = snapshot.data ?? 
-                            (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
-                        return Text(
-                          displayName,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111827),
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 6),
-                    
-                    // 시간
-                    Text(
-                      widget.comment.getFormattedTime(context),
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        color: Color(0xFF9CA3AF), // textHint/Tertiary color
-                      ),
-                    ),
-                    
-                    const Spacer(),
-                    
-                    // 삭제 아이콘 (내 댓글인 경우)
-                    if (isMyComment)
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          icon: Icon(Icons.delete_outline, size: 18, color: Colors.grey[500]),
-                          onPressed: () {
-                            _showDeleteConfirmDialog();
-                          },
-                          tooltip: '댓글 삭제',
-                        ),
-                      )
-                    else
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: PopupMenuButton<String>(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.more_horiz, size: 18, color: Colors.grey[500]),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          elevation: 4,
-                          color: Colors.white,
-                          surfaceTintColor: Colors.white,
-                          offset: const Offset(0, 8),
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'dm':
-                                _openDMToCommentAuthor();
-                                break;
-                              case 'report':
-                                _showReportDialog();
-                                break;
-                            }
-                          },
-                          itemBuilder: (context) {
-                            return [
-                              PopupMenuItem<String>(
-                                value: 'dm',
-                                height: 48,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFF6366F1).withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: 16,
-                                        color: Color(0xFF6366F1),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      AppLocalizations.of(context)!.directMessage,
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF111827),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const PopupMenuDivider(height: 1),
-                              PopupMenuItem<String>(
-                                value: 'report',
-                                height: 48,
-                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFEF4444).withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.report_gmailerrorred_outlined,
-                                        size: 16,
-                                        color: Color(0xFFEF4444),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      AppLocalizations.of(context)!.report,
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFFEF4444),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ];
-                          },
-                        ),
-                      ),
-                  ],
-                ),
                 
                 const SizedBox(height: 2),
                 
@@ -751,14 +664,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w500, // iOS에서 얇아 보이는 문제 보정
                     color: Color(0xFF1F2937), // textSecondary
                     height: 1.5,
                   ),
                   linkStyle: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
-                    fontWeight: FontWeight.w400,
+                    fontWeight: FontWeight.w500,
                     color: Color(0xFF6366F1), // BrandColors.primary
                     decoration: TextDecoration.underline,
                   ),
@@ -787,9 +700,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               '${widget.comment.likeCount}',
                               style: TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: isLiked ? Colors.red : const Color(0xFF9CA3AF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isLiked ? Colors.red : const Color(0xFF6B7280),
                               ),
                             )
                           else
@@ -797,9 +710,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                               '좋아요', // 텍스트로 '좋아요' 표시 (디자인 시안에 따라 조정 가능)
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF9CA3AF),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF6B7280),
                               ),
                             ),
                         ],
@@ -817,9 +730,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                           '답글 달기',
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 12,
+                            fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF9CA3AF),
+                            color: Color(0xFF6B7280),
                           ),
                         ),
                       ),
@@ -876,6 +789,56 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
           ),
         ],
       ),
+      ),
     );
+  }
+}
+
+class _ActionRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _ActionRow({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+        child: Row(
+          children: [
+            Icon(icon, color: const Color(0xFFEF4444), size: 22),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFEF4444),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionDivider extends StatelessWidget {
+  const _ActionDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Divider(height: 1, thickness: 1, color: Color(0x1FFFFFFF));
   }
 }

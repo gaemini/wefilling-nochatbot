@@ -10,7 +10,6 @@ import '../services/relationship_service.dart';
 import '../models/review_post.dart';
 import '../models/relationship_status.dart';
 import '../constants/app_constants.dart';
-import '../design/tokens.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
 import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -27,6 +26,9 @@ class FriendProfileScreen extends StatefulWidget {
   final String? photoURL;
   final String? email;
   final String? university;
+  /// 게시글/댓글 등 "보드 진입"에서는 비친구라도 프로필 기본정보는 보여주되,
+  /// 리뷰(후기) 섹션은 숨기고 DM은 막는다.
+  final bool allowNonFriendsPreview;
 
   const FriendProfileScreen({
     Key? key,
@@ -35,6 +37,7 @@ class FriendProfileScreen extends StatefulWidget {
     this.photoURL,
     this.email,
     this.university,
+    this.allowNonFriendsPreview = false,
   }) : super(key: key);
 
   @override
@@ -139,6 +142,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
+    final isNonFriendPreview =
+        widget.allowNonFriendsPreview && !isMe && !isFriends;
     
     return Scaffold(
       appBar: AppBar(
@@ -152,17 +157,21 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       backgroundColor: Colors.white,
       body: (_isLoading || _isRelationshipLoading)
           ? const Center(child: CircularProgressIndicator())
-          : (!isMe && !isFriends)
+          : (!isMe && !isFriends && !isNonFriendPreview)
               ? _buildLockedProfile(l10n)
               : CustomScrollView(
                   slivers: [
-                    SliverToBoxAdapter(child: _buildProfileHeader()),
-                    const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                    SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
-                    const SliverToBoxAdapter(
-                      child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                    SliverToBoxAdapter(
+                      child: _buildProfileHeader(isNonFriendPreview: isNonFriendPreview),
                     ),
-                    _buildReviewGridSliver(),
+                    if (!isNonFriendPreview) ...[
+                      const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                      SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
+                      const SliverToBoxAdapter(
+                        child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      ),
+                      _buildReviewGridSliver(),
+                    ],
                     // 안드로이드 하단 네비게이션 바를 위한 여백 추가
                     SliverToBoxAdapter(
                       child: SizedBox(
@@ -304,13 +313,19 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     }
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildProfileHeader({required bool isNonFriendPreview}) {
     final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
-    final email = _userData?['email'] ?? widget.email ?? '';
     final photoURL = _userData?['photoURL'] ?? widget.photoURL;
     final university = _userData?['university'] ?? widget.university;
     final nationality = _userData?['nationality'];
     final bio = _userData?['bio'];
+    final l10n = AppLocalizations.of(context)!;
+    final currentUserId = _relationshipService.currentUserId;
+    final isMe = currentUserId != null && currentUserId == widget.userId;
+    final isFriends = _relationshipStatus == RelationshipStatus.friends;
+    final status = _relationshipStatus ?? RelationshipStatus.none;
+    final canRequest = status == RelationshipStatus.none;
+    final isPending = status == RelationshipStatus.pendingOut;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -472,7 +487,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               // 친구 수 - 클릭 가능
               Expanded(
                 child: InkWell(
-                  onTap: () => _navigateToFriendsList(),
+                  onTap: (isMe || isFriends)
+                      ? _navigateToFriendsList
+                      : () => _showCannotViewFriendsListSnackBar(l10n),
                   borderRadius: BorderRadius.circular(8),
                   child: _buildStatItemContent(
                     AppLocalizations.of(context)!.friends,
@@ -501,35 +518,72 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           
           const SizedBox(height: 16),
           
-          // DM 버튼 (마이 프로필의 "프로필 편집" 버튼과 동일한 스타일)
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: _openDM,
-              icon: const Icon(Icons.message, size: 20),
-              label: Flexible(
-                child: Text(
-                  AppLocalizations.of(context)!.sendMessage,
+          // 보드/댓글 진입(비친구 프리뷰)에서는 DM 대신 "친구요청" 버튼을 DM 자리로 노출
+          if (isNonFriendPreview)
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: (!canRequest || _isRequestingFriend)
+                    ? null
+                    : _sendFriendRequestFromProfile,
+                icon: _isRequestingFriend
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.person_add_alt_1, size: 20),
+                label: Text(
+                  isPending ? l10n.requestPending : l10n.friendRequest,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 15,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                   ),
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.pointColor,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFE5E7EB),
+                  disabledForegroundColor: const Color(0xFF9CA3AF),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFF3F4F6),
-                foregroundColor: const Color(0xFF111827),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            )
+          else
+            // 친구(또는 본인) 화면은 기존 DM 버튼 유지
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: _openDM,
+                icon: const Icon(Icons.message, size: 20),
+                label: Flexible(
+                  child: Text(
+                    AppLocalizations.of(context)!.sendMessage,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF3F4F6),
+                  foregroundColor: const Color(0xFF111827),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -883,6 +937,16 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           userId: widget.userId,
           userName: nickname,
         ),
+      ),
+    );
+  }
+
+  void _showCannotViewFriendsListSnackBar(AppLocalizations l10n) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(l10n.myFriendsOnly),
+        backgroundColor: Colors.black87,
+        duration: const Duration(seconds: 2),
       ),
     );
   }

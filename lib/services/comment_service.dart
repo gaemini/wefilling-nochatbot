@@ -95,12 +95,29 @@ class CommentService {
       // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
       String? targetAuthorId;
       String notificationTitle = '게시글';
+      String? thumbnailUrl;
+      String _previewText(String raw, {int max = 40}) {
+        final t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (t.isEmpty) return '';
+        return t.length <= max ? t : '${t.substring(0, max)}...';
+      }
       try {
         final postDoc = await _firestore.collection('posts').doc(postId).get();
         if (postDoc.exists && postDoc.data() != null) {
           final postData = postDoc.data()!;
-          notificationTitle = postData['title'] ?? '게시글';
+          final rawTitle = (postData['title'] ?? '').toString();
+          final rawContent = (postData['content'] ?? '').toString();
+          notificationTitle = rawTitle.trim().isNotEmpty
+              ? rawTitle.trim()
+              : (_previewText(rawContent).isNotEmpty
+                  ? _previewText(rawContent)
+                  : '게시글');
           targetAuthorId = postData['userId'];
+          final raw = postData['imageUrls'];
+          if (raw is List && raw.isNotEmpty) {
+            final first = raw.first?.toString() ?? '';
+            if (first.trim().isNotEmpty) thumbnailUrl = first.trim();
+          }
         }
       } catch (_) {}
 
@@ -122,6 +139,7 @@ class CommentService {
           replyToUserId, // 원댓글 작성자에게 알림
           nickname,
           user.uid,
+          thumbnailUrl: thumbnailUrl,
         );
         Logger.log(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
       } 
@@ -140,6 +158,7 @@ class CommentService {
           user.uid,
           isReview: isReview,
           reviewOwnerUserId: reviewOwnerUserId,
+          thumbnailUrl: thumbnailUrl,
         );
         Logger.log(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
       } else {

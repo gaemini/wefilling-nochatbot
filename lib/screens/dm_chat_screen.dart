@@ -2,6 +2,7 @@
 // DM 대화 화면
 // 메시지 목록과 입력창을 표시하고 실시간 메시지 전송/수신
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -59,6 +60,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
   final _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   Stream<DMUserInfo?>? _otherUserInfoStream;
+  Timer? _autoMarkReadDebounce;
+  bool _autoMarkReadInFlight = false;
   
   // 대화방이 없을 수 있으므로 초기에 스트림을 구독하지 않는다.
   Stream<List<DMMessage>>? _messagesStream;
@@ -371,9 +374,36 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   @override
   void dispose() {
+    _autoMarkReadDebounce?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _scheduleAutoMarkAsRead(List<DMMessage> messages) {
+    if (!mounted) return;
+    final me = _currentUser;
+    if (me == null) return;
+    if (_isLeaving) return;
+    if (_autoMarkReadInFlight) return;
+
+    // 상대방이 보낸 "안 읽음" 메시지가 있으면, 채팅 화면이 열려 있는 동안 즉시 읽음 처리
+    final hasUnreadIncoming = messages.any((m) => m.senderId != me.uid && !m.isRead);
+    if (!hasUnreadIncoming) return;
+
+    _autoMarkReadDebounce?.cancel();
+    _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
+      if (!mounted) return;
+      if (_autoMarkReadInFlight) return;
+      _autoMarkReadInFlight = true;
+      try {
+        await _dmService.markAsRead(widget.conversationId);
+      } catch (_) {
+        // best-effort
+      } finally {
+        _autoMarkReadInFlight = false;
+      }
+    });
   }
 
   /// 대화방 정보 로드
@@ -989,7 +1019,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
+            Icon(Icons.send_outlined, size: 80, color: Colors.grey[300]),
             const SizedBox(height: 16),
             Text(
               AppLocalizations.of(context)!.noMessages,
@@ -1075,7 +1105,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.chat_bubble_outline, size: 80, color: Colors.grey[300]),
+                Icon(Icons.send_outlined, size: 80, color: Colors.grey[300]),
                 const SizedBox(height: 16),
                 Text(
                   AppLocalizations.of(context)!.noMessages,
@@ -1086,6 +1116,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
           );
         }
 
+        // ✅ 실시간 채팅 중에도 읽음 상태를 서버에 반영
+        // - 상대방 기기에서도 동일 로직이 동작해야 내 메시지의 "1"이 빠르게 "Read"로 전환됨
+        _scheduleAutoMarkAsRead(messages);
+
+        // ✅ 읽음/안읽음 표시는 "최신 안읽음 1개 + 최신 읽음 1개"만 노출
+        // - 안읽음: 숫자 1로 표시
+        // - 읽음: locale에 따른 라벨(AppLocalizations.read)
+        final myUid = _currentUser!.uid;
+        String? latestMyUnreadMessageId;
+        String? latestMyReadMessageId;
+        for (final m in messages) {
+          if (m.senderId != myUid) continue;
+          if (!m.isRead && latestMyUnreadMessageId == null) {
+            latestMyUnreadMessageId = m.id;
+          } else if (m.isRead && latestMyReadMessageId == null) {
+            latestMyReadMessageId = m.id;
+          }
+          if (latestMyUnreadMessageId != null && latestMyReadMessageId != null) break;
+        }
+
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1094,6 +1144,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
           itemBuilder: (context, index) {
             final message = messages[index];
             final isMine = message.isMine(_currentUser!.uid);
+            final String? statusText = isMine
+                ? (message.id == latestMyUnreadMessageId
+                    ? '1'
+                    : (message.id == latestMyReadMessageId
+                        ? AppLocalizations.of(context)!.read
+                        : null))
+                : null;
             
             // 같은 발신자의 연속 메시지인지 확인
             final isConsecutive = index < messages.length - 1 &&
@@ -1106,7 +1163,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             return Column(
               children: [
                 if (showDateSeparator) _buildDateSeparator(message.createdAt),
-                _buildMessageBubble(message, isMine, isConsecutive),
+                _buildMessageBubble(message, isMine, isConsecutive, statusText: statusText),
               ],
             );
           },
@@ -1143,7 +1200,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
 
   /// 메시지 버블 빌드
-  Widget _buildMessageBubble(DMMessage message, bool isMine, bool isConsecutive) {
+  Widget _buildMessageBubble(
+    DMMessage message,
+    bool isMine,
+    bool isConsecutive, {
+    String? statusText,
+  }) {
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
     final hasText = message.text.trim().isNotEmpty;
     final isImageOnly = hasImage && !hasText;
@@ -1172,9 +1234,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
                     fontSize: 11,
                   ),
                 ),
-                if (message.isRead)
+                if (statusText != null)
                   Text(
-                    AppLocalizations.of(context)!.read,
+                    statusText,
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 11,

@@ -590,6 +590,8 @@ exports.onCommentCreated = functions.firestore
         const post = postDoc.data();
         const postAuthorId = post.userId;
         const postTitle = post.title || '';
+        const postImages = Array.isArray(post.imageUrls) ? post.imageUrls : [];
+        const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
         if (!postAuthorId || postAuthorId === commenterId)
             return null;
         const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
@@ -610,6 +612,7 @@ exports.onCommentCreated = functions.firestore
                 postId: postId,
                 postTitle: postTitle,
                 commenterName: commenterName,
+                thumbnailUrl,
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
@@ -651,7 +654,7 @@ exports.onCommentDeleted = functions.firestore
 exports.onCommentLiked = functions.firestore
     .document('comments/{commentId}')
     .onUpdate(async (change, context) => {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     try {
         const before = change.before.data();
         const after = change.after.data();
@@ -696,10 +699,14 @@ exports.onCommentLiked = functions.firestore
         // 게시글 정보 가져오기
         const postId = after.postId;
         let postTitle = '';
+        let thumbnailUrl = '';
         if (postId) {
             const postDoc = await db.collection('posts').doc(postId).get();
             if (postDoc.exists) {
-                postTitle = ((_d = postDoc.data()) === null || _d === void 0 ? void 0 : _d.title) || '';
+                const postData = postDoc.data();
+                postTitle = (postData === null || postData === void 0 ? void 0 : postData.title) || '';
+                const images = Array.isArray(postData === null || postData === void 0 ? void 0 : postData.imageUrls) ? postData.imageUrls : [];
+                thumbnailUrl = images.length > 0 ? String(images[0]) : '';
             }
         }
         await db.collection('notifications').add({
@@ -716,6 +723,7 @@ exports.onCommentLiked = functions.firestore
                 postTitle: postTitle,
                 commentId: context.params.commentId,
                 likerName: likerName,
+                thumbnailUrl,
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
@@ -776,6 +784,8 @@ exports.onPostLiked = functions.firestore
         const postTitle = after.title || '';
         const postIsAnonymous = after.isAnonymous === true;
         const safeLikerName = postIsAnonymous ? '익명' : likerName;
+        const postImages = Array.isArray(after.imageUrls) ? after.imageUrls : [];
+        const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
         await db.collection('notifications').add({
             userId: postAuthorId,
             title: '게시글에 좋아요가 추가되었습니다',
@@ -789,6 +799,7 @@ exports.onPostLiked = functions.firestore
                 postTitle: postTitle,
                 postIsAnonymous: postIsAnonymous,
                 likerName: safeLikerName,
+                thumbnailUrl,
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,

@@ -455,7 +455,17 @@ class PostService {
       List<dynamic> likedBy = List.from(data['likedBy'] ?? []);
       bool hasLiked = likedBy.contains(user.uid);
 
-      final postTitle = data['title'] ?? '';
+      String _previewText(String raw, {int max = 40}) {
+        final t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
+        if (t.isEmpty) return '';
+        return t.length <= max ? t : '${t.substring(0, max)}...';
+      }
+
+      final rawTitle = (data['title'] ?? '').toString();
+      final rawContent = (data['content'] ?? '').toString();
+      final postTitle = rawTitle.trim().isNotEmpty
+          ? rawTitle.trim()
+          : _previewText(rawContent);
       final authorId = data['userId'];
       final bool postIsAnonymous = data['isAnonymous'] == true;
 

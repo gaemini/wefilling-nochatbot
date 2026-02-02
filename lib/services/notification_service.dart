@@ -137,6 +137,7 @@ class NotificationService {
     String commenterId, {
     bool isReview = false,
     String? reviewOwnerUserId,
+    String? thumbnailUrl,
   }) async {
     // 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
     if (postAuthorId == commenterId) {
@@ -144,26 +145,31 @@ class NotificationService {
     }
 
     try {
+      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '게시글';
       final notificationType = isReview ? 'review_comment' : NotificationSettingKeys.newComment;
       
       return await createNotification(
         userId: postAuthorId,
         title: '새 댓글이 달렸습니다',
-        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '게시글'} "$postTitle"에 댓글을 남겼습니다.',
+        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '게시글'} "$safePostTitle"에 댓글을 남겼습니다.',
         type: notificationType,
         postId: isReview ? null : postId,
         actorId: commenterId,
         actorName: commenterName,
         data: {
           'commenterName': commenterName,
-          'postTitle': postTitle,
+          'postTitle': safePostTitle,
           if (isReview) ...{
             'reviewId': postId,
             'userId': reviewOwnerUserId ?? postAuthorId,
             'reviewTitle': postTitle,
             'meetupTitle': postTitle,
           } else
-            'postId': postId,
+            ...{
+              'postId': postId,
+              if (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
+                'thumbnailUrl': thumbnailUrl.trim(),
+            },
         },
       );
     } catch (e) {
@@ -190,10 +196,11 @@ class NotificationService {
     try {
       // 익명 게시글이면 알림에서 '누가 눌렀는지'를 절대 노출하지 않음
       final safeLikerName = postIsAnonymous ? '익명' : likerName;
+      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '게시글';
       return await createNotification(
         userId: postAuthorId,
         title: '게시글에 좋아요가 추가되었습니다',
-        message: '$safeLikerName님이 회원님의 게시글 "$postTitle"을 좋아합니다.',
+        message: '$safeLikerName님이 회원님의 게시글 "$safePostTitle"을 좋아합니다.',
         type: NotificationSettingKeys.newLike,
         postId: postId,
         actorId: likerId,
@@ -204,7 +211,7 @@ class NotificationService {
           'postIsAnonymous': postIsAnonymous,
           // 익명 게시글이면 실제 이름 대신 안전한 값만 저장
           'likerName': safeLikerName,
-          'postTitle': postTitle,
+          'postTitle': safePostTitle,
         },
       );
     } catch (e) {
@@ -230,6 +237,8 @@ class NotificationService {
           Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
           return snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
+              // DM 알림은 알림(Notifications) 탭에서 표시하지 않음
+              .where((n) => n.type != 'dm_received')
               .toList();
         });
   }
@@ -247,8 +256,13 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-          Logger.log('📬 읽지 않은 알림 수 업데이트: ${snapshot.docs.length}개');
-          return snapshot.docs.length;
+          // DM 알림은 전역 알림 뱃지/카운트에서 제외
+          final nonDmCount = snapshot.docs.where((d) {
+            final data = d.data() as Map<String, dynamic>?;
+            return (data?['type']?.toString() ?? '') != 'dm_received';
+          }).length;
+          Logger.log('📬 읽지 않은 알림 수 업데이트: $nonDmCount개 (DM 제외)');
+          return nonDmCount;
         })
         .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }

@@ -33,12 +33,64 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   final Set<String> _requestingIds = <String>{};
   final Set<String> _requestedIds = <String>{};
   bool _isLoading = true;
+  bool _permissionDenied = false;
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _loadFriends();
+    _checkPermissionAndLoad();
+  }
+
+  Future<void> _checkPermissionAndLoad() async {
+    try {
+      final currentUserId = _relationshipService.currentUserId;
+
+      // 본인 친구 목록은 항상 허용
+      if (currentUserId != null && currentUserId == widget.userId) {
+        await _loadFriends();
+        return;
+      }
+
+      // 로그인 안 된 상태에서는 접근 불가
+      if (currentUserId == null) {
+        _denyAccess();
+        return;
+      }
+
+      // 친구가 아니면 접근 불가
+      final status = await _relationshipService.getRelationshipStatus(widget.userId);
+      if (status != RelationshipStatus.friends) {
+        _denyAccess();
+        return;
+      }
+
+      await _loadFriends();
+    } catch (_) {
+      _denyAccess();
+    }
+  }
+
+  void _denyAccess() {
+    if (!mounted) return;
+    setState(() {
+      _permissionDenied = true;
+      _isLoading = false;
+      _errorMessage = null;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.myFriendsOnly),
+          backgroundColor: Colors.black87,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      Navigator.of(context).maybePop();
+    });
   }
 
   Future<void> _loadFriends() async {
@@ -138,6 +190,68 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   }
 
   Widget _buildBody() {
+    if (_permissionDenied) {
+      final l10n = AppLocalizations.of(context)!;
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Icon(
+                  Icons.lock_outline,
+                  color: Color(0xFF6B7280),
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.myFriendsOnly,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).maybePop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.pointColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    l10n.back,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(

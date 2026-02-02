@@ -366,8 +366,8 @@ class _MainScreenState extends State<MainScreen> {
                 label: l10n.myPage,
               ),
               BottomNavigationItem(
-                icon: Icons.chat_bubble_outline,
-                selectedIcon: Icons.chat_bubble,
+                icon: Icons.send_outlined,
+                selectedIcon: Icons.send_rounded,
                 label: l10n.dm,
                 badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
               ),

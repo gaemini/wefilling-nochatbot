@@ -610,7 +610,15 @@ export const onCommentCreated = functions.firestore
       if (!postDoc.exists) return null;
       const post = postDoc.data()!;
       const postAuthorId = post.userId;
-      const postTitle = post.title || '';
+      const rawTitle = typeof (post as any).title === 'string' ? String((post as any).title) : '';
+      const rawContent = typeof (post as any).content === 'string' ? String((post as any).content) : '';
+      const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
+      const contentPreview = normalizedContent
+        ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
+        : '';
+      const postTitle = rawTitle.trim() || contentPreview || '게시글';
+      const postImages: any[] = Array.isArray((post as any).imageUrls) ? (post as any).imageUrls : [];
+      const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
       if (!postAuthorId || postAuthorId === commenterId) return null;
 
       const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
@@ -631,6 +639,7 @@ export const onCommentCreated = functions.firestore
           postId: postId,
           postTitle: postTitle,
           commenterName: commenterName,
+          thumbnailUrl,
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
@@ -718,10 +727,20 @@ export const onCommentLiked = functions.firestore
       // 게시글 정보 가져오기
       const postId = after.postId;
       let postTitle = '';
+      let thumbnailUrl = '';
       if (postId) {
         const postDoc = await db.collection('posts').doc(postId).get();
         if (postDoc.exists) {
-          postTitle = postDoc.data()?.title || '';
+          const postData = postDoc.data() as any;
+          const rawTitle = typeof postData?.title === 'string' ? String(postData.title) : '';
+          const rawContent = typeof postData?.content === 'string' ? String(postData.content) : '';
+          const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
+          const contentPreview = normalizedContent
+            ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
+            : '';
+          postTitle = rawTitle.trim() || contentPreview || '게시글';
+          const images: any[] = Array.isArray(postData?.imageUrls) ? postData.imageUrls : [];
+          thumbnailUrl = images.length > 0 ? String(images[0]) : '';
         }
       }
 
@@ -739,6 +758,7 @@ export const onCommentLiked = functions.firestore
           postTitle: postTitle,
           commentId: context.params.commentId,
           likerName: likerName,
+          thumbnailUrl,
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
@@ -797,9 +817,17 @@ export const onPostLiked = functions.firestore
       // 사용자 표시 이름
       const likerDoc = await db.collection('users').doc(newLiker).get();
       const likerName = likerDoc.exists ? (likerDoc.data()?.nickname || likerDoc.data()?.displayName || 'User') : 'User';
-      const postTitle = after.title || '';
+      const rawTitle = typeof (after as any).title === 'string' ? String((after as any).title) : '';
+      const rawContent = typeof (after as any).content === 'string' ? String((after as any).content) : '';
+      const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
+      const contentPreview = normalizedContent
+        ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
+        : '';
+      const postTitle = rawTitle.trim() || contentPreview || '게시글';
       const postIsAnonymous = after.isAnonymous === true;
       const safeLikerName = postIsAnonymous ? '익명' : likerName;
+      const postImages: any[] = Array.isArray((after as any).imageUrls) ? (after as any).imageUrls : [];
+      const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
 
       await db.collection('notifications').add({
         userId: postAuthorId,
@@ -814,6 +842,7 @@ export const onPostLiked = functions.firestore
           postTitle: postTitle,
           postIsAnonymous: postIsAnonymous,
           likerName: safeLikerName,
+          thumbnailUrl,
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,

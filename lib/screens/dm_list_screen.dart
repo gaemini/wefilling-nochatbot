@@ -243,7 +243,7 @@ class _DMListScreenState extends State<DMListScreen> {
 
         if (conversations.isEmpty) {
           return _buildEmptyState(
-            icon: Icons.chat_bubble_outline,
+            icon: Icons.send_outlined,
             title: AppLocalizations.of(context)!.noConversations ?? '대화가 없습니다',
             subtitle: AppLocalizations.of(context)!.startFirstConversation ?? '첫 대화를 시작해보세요',
           );
@@ -272,12 +272,12 @@ class _DMListScreenState extends State<DMListScreen> {
 
           final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
           
-          // 친구 탭: 익명이 아니고 게시글 DM도 아닌 경우만 표시
-          // 익명 탭: 익명 대화만 표시 (게시글 DM 포함)
+          // 친구 탭: 비익명 대화는 모두 표시(게시글에서 시작된 DM 포함)
+          // 익명 탭: 익명 대화만 표시
           final isPostDM = (c.postId != null && c.postId!.isNotEmpty);
-          final passesType = _filter == DMFilter.friends 
-              ? (!isAnon && !isPostDM)  // 친구 탭: 일반 친구 대화만
-              : isAnon;  // 익명 탭: 모든 익명 대화 (게시글 DM 포함)
+          final passesType = _filter == DMFilter.friends
+              ? !isAnon
+              : isAnon;
           
           final notHiddenLocal = !_hiddenConversationIds.contains(c.id);
           // ✅ archivedBy 체크 제거: getMyConversations에서 이미 처리됨 (새 메시지 자동 복원)
@@ -303,7 +303,7 @@ class _DMListScreenState extends State<DMListScreen> {
 
         if (filtered.isEmpty) {
           return _buildEmptyState(
-            icon: Icons.chat_bubble_outline,
+            icon: Icons.send_outlined,
             title: _filter == DMFilter.friends
                     ? AppLocalizations.of(context)!.friends
                 : AppLocalizations.of(context)!.anonymous,

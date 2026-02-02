@@ -4,10 +4,8 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
-import 'notification_service.dart';
 import 'content_filter_service.dart';
 import '../utils/dm_feature_flags.dart';
 import '../utils/logger.dart';
@@ -16,7 +14,6 @@ class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   static bool _rulesTestDone = false;
-  final NotificationService _notificationService = NotificationService();
   static const String _imageLastMessageFallback = '📷 Photo';
 
   // 캐시 관리
@@ -680,12 +677,15 @@ class DMService {
         .limit(50)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      // 캐시 전용 스냅샷은 건너뛰어 초기 깜빡임을 줄임
+      // 캐시 전용 스냅샷은 건너뛰어 초기 깜빡임을 줄이되,
+      // ✅ 로컬에서 새로 생성/업데이트된 문서(pending write)는 반드시 목록에 보여야 한다.
       final isCacheOnly = snapshot.metadata.isFromCache &&
           snapshot.docs.isNotEmpty &&
           snapshot.docs.every((d) => d.metadata.isFromCache);
-      if (isCacheOnly) {
-        Logger.log('⚠️ getMyConversations: 캐시 전용 스냅샷 건너뜀');
+      final hasPendingWrites = snapshot.metadata.hasPendingWrites ||
+          snapshot.docs.any((d) => d.metadata.hasPendingWrites);
+      if (isCacheOnly && !hasPendingWrites) {
+        Logger.log('⚠️ getMyConversations: 캐시 전용 스냅샷 건너뜀(펜딩 라이트 없음)');
         if (_conversationCache.isNotEmpty) {
           return _conversationCache.values.toList();
         }
@@ -1204,42 +1204,13 @@ class DMService {
         rethrow;
       }
 
-      // 모든 상대방에게 알림 전송
-      Logger.log('🔔 알림 전송 시작...');
-      final isAnonymous = Map<String, bool>.from(convData['isAnonymous']);
-      final participantNames = Map<String, String>.from(convData['participantNames']);
-      
-      final senderName = isAnonymous[currentUser.uid] == true 
-          ? 'Anonymous' // Note: 다국어 지원은 v1.1에서 추가 예정
-          : participantNames[currentUser.uid];
+      // DM은 알림(Notifications) 탭으로 올리지 않음.
+      // - DM은 DM 화면(대화 목록/뱃지)에서만 확인하도록 정책 변경
+      // - 따라서 notifications 컬렉션에 dm_received 문서를 생성하지 않는다.
+      Logger.log('🔕 DM 알림 생성 스킵 (Notifications 탭 미표시 정책)');
 
-      // 모든 상대방에게 알림 전송
-      for (final participantId in participants) {
-        if (participantId != currentUser.uid) {
-          try {
-            final notificationBody = trimmedText.isNotEmpty
-                ? (trimmedText.length > 50 ? '${trimmedText.substring(0, 50)}...' : trimmedText)
-                : _imageLastMessageFallback;
-            final success = await _notificationService.createNotification(
-              userId: participantId,
-              title: '$senderName님의 메시지',
-              message: notificationBody,
-              type: 'dm_received', // NotificationSettingKeys.dmReceived 참조
-              actorId: currentUser.uid,
-              actorName: senderName,
-              data: {'conversationId': conversationId},
-            );
-            if (success) {
-              Logger.log('✅ 알림 전송 성공: $participantId');
-            } else {
-              Logger.log('⚠️ 알림이 비활성화되었습니다: $participantId');
-            }
-          } catch (e) {
-            Logger.error('⚠️ 알림 전송 실패 (무시): userId=$participantId, error=$e');
-            // 알림 실패는 메시지 전송에 영향을 주지 않음
-          }
-        }
-      }
+      // (기존) notifications 컬렉션에 dm_received 생성 로직 제거됨
+      // 필요 시, 시스템 푸시(FCM)만 별도로 보내는 구조로 확장 가능.
 
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.log('✅ sendMessage 완료 - 모든 단계 성공');
@@ -1393,35 +1364,44 @@ class DMService {
       // 🔥 핵심 수정: unreadCount 필드 무시, 항상 실제 메시지 확인
       // 읽지 않은 메시지 가져오기
       Logger.log('🔍 실제 읽지 않은 메시지 조회 중...');
-      final unreadMessages = await _firestore
+      // NOTE: Firestore의 !=(isNotEqualTo) 쿼리는 인덱스/정렬 제약으로 실패하거나
+      //       실시간 상황에서 반영이 늦어질 수 있다. 안정성을 위해 isRead=false만 서버에서
+      //       가져오고(senderId 필터는 클라이언트에서 처리) 읽음 처리한다.
+      final unreadSnap = await _firestore
           .collection('conversations')
           .doc(conversationId)
           .collection('messages')
-          .where('senderId', isNotEqualTo: currentUser.uid)
           .where('isRead', isEqualTo: false)
+          .limit(200)
           .get();
+
+      final unreadIncomingDocs = unreadSnap.docs.where((d) {
+        final data = d.data() as Map<String, dynamic>;
+        return (data['senderId']?.toString() ?? '') != currentUser.uid;
+      }).toList();
       
-      Logger.log('  - 실제 읽지 않은 메시지: ${unreadMessages.docs.length}개');
+      Logger.log('  - isRead=false 문서: ${unreadSnap.docs.length}개');
+      Logger.log('  - 실제 읽지 않은(상대 발신) 메시지: ${unreadIncomingDocs.length}개');
 
       // 실제 메시지가 없으면 skip (정확한 확인)
-      if (unreadMessages.docs.isEmpty) {
+      if (unreadIncomingDocs.isEmpty) {
         Logger.log('✓ 실제로 읽지 않은 메시지 없음 - skip');
         return;
       }
       
-      Logger.log('🔄 읽음 처리 실행: ${unreadMessages.docs.length}개 메시지');
+      Logger.log('🔄 읽음 처리 실행: ${unreadIncomingDocs.length}개 메시지');
 
       // 배치로 읽음 처리
       final batch = _firestore.batch();
       final now = DateTime.now();
 
-      for (var doc in unreadMessages.docs) {
+      for (final doc in unreadIncomingDocs) {
         batch.update(doc.reference, {
           'isRead': true,
           'readAt': Timestamp.fromDate(now),
         });
       }
-      Logger.log('✓ ${unreadMessages.docs.length}개 메시지 읽음 처리 준비');
+      Logger.log('✓ ${unreadIncomingDocs.length}개 메시지 읽음 처리 준비');
 
       // 대화방의 unreadCount 업데이트
       unreadCount[currentUser.uid] = 0;
@@ -1590,16 +1570,23 @@ class DMService {
         .collection('conversations')
         .doc(conversationId)
         .collection('messages')
-        .where('senderId', isNotEqualTo: currentUserId)  // 상대방이 보낸 메시지
-        .where('isRead', isEqualTo: false)               // 읽지 않은 메시지
+        // 안정성: isRead=false만 서버에서 필터링하고 senderId는 클라이언트에서 계산
+        .where('isRead', isEqualTo: false)
         .snapshots()
         .map((snapshot) {
-          final count = snapshot.docs.length;
-          
+          int count = 0;
+          for (final doc in snapshot.docs) {
+            final data = doc.data() as Map<String, dynamic>;
+            final senderId = (data['senderId'] ?? '').toString();
+            if (senderId.isNotEmpty && senderId != currentUserId) {
+              count++;
+            }
+          }
+
           if (DMFeatureFlags.enableDebugLogs) {
             Logger.log('🔄 배지 스트림 업데이트: $conversationId - $count개');
           }
-          
+
           return count;
         })
         .distinct(); // 중복 값 제거로 불필요한 리빌드 방지

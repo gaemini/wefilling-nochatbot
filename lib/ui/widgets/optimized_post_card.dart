@@ -13,6 +13,7 @@ import '../../services/dm_service.dart';
 import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
+import '../../screens/friend_profile_screen.dart';
 import '../../utils/logger.dart';
 import 'poll_post_widget.dart';
 
@@ -442,6 +443,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       authorName = post.author;
     }
     final String? authorImageUrl = isAnonymous ? null : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
+    final bool canOpenProfile =
+        !isAnonymous && post.userId.isNotEmpty && post.userId != 'deleted';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -451,32 +454,49 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 프로필 이미지
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.grey.shade300,
-              ),
-              child: (authorImageUrl != null && !isAnonymous)
-                  ? ClipOval(
-                      child: Image.network(
-                        authorImageUrl,
-                        width: 40,
-                        height: 40,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(
-                          Icons.person,
-                          size: 24,
-                          color: Colors.grey[600],
+            GestureDetector(
+              onTap: canOpenProfile
+                  ? () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => FriendProfileScreen(
+                            userId: post.userId,
+                            nickname: post.author,
+                            photoURL: post.authorPhotoURL,
+                            allowNonFriendsPreview: true,
+                          ),
                         ),
+                      );
+                    }
+                  : null,
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.grey.shade300,
+                ),
+                child: (authorImageUrl != null && !isAnonymous)
+                    ? ClipOval(
+                        child: Image.network(
+                          authorImageUrl,
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.person,
+                            size: 24,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.person,
+                        size: 24,
+                        color: Colors.grey[600],
                       ),
-                    )
-                  : Icon(
-                      Icons.person,
-                      size: 24,
-                      color: Colors.grey[600],
-                    ),
+              ),
             ),
             
             const SizedBox(width: 12),
@@ -489,18 +509,35 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   Row(
                     children: [
                       Flexible(
-                        child: Text(
-                          authorName,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                            height: 1.05,
-                            letterSpacing: -0.2,
+                        child: GestureDetector(
+                          onTap: canOpenProfile
+                              ? () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => FriendProfileScreen(
+                                        userId: post.userId,
+                                        nickname: post.author,
+                                        photoURL: post.authorPhotoURL,
+                                        allowNonFriendsPreview: true,
+                                      ),
+                                    ),
+                                  );
+                                }
+                              : null,
+                          child: Text(
+                            authorName,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: colorScheme.onSurface,
+                              height: 1.05,
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       const SizedBox(width: 6),

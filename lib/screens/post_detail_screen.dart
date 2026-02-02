@@ -4,26 +4,30 @@
 // 댓글 작성 및 게시글 삭제 기능
 
 import 'dart:async';
+import 'dart:collection';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
-import '../services/storage_service.dart';
 import '../services/dm_service.dart';
 import 'dm_chat_screen.dart';
-import 'dart:math' as math;
 import '../providers/auth_provider.dart' as app_auth;
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../ui/widgets/poll_post_widget.dart';
+import '../ui/widgets/user_avatar.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
-import '../utils/ui_utils.dart';
+import 'friend_profile_screen.dart';
+import '../services/relationship_service.dart';
+import '../models/relationship_status.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -38,6 +42,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final DMService _dmService = DMService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  Timer? _likeHoldTimer;
+  bool _likeSheetOpenedByHold = false;
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
@@ -79,9 +86,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void initState() {
     super.initState();
     _currentPost = widget.post;
-    _checkIfUserIsAuthor();
-    _checkIfUserLikedPost();
-    _checkIfUserSavedPost();
+
+    // 작성자 여부/좋아요 상태는 로컬 데이터로 즉시 결정 (초기 렌더 품질/깜빡임 방지)
+    final user = FirebaseAuth.instance.currentUser;
+    _isAuthor = user != null && widget.post.userId == user.uid;
+    _isLiked = user != null && widget.post.likedBy.contains(user.uid);
+
+    // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
+    if (!_isAuthor) {
+      _checkIfUserSavedPost();
+    }
     
     // 조회수 증가 호출
     _incrementViewCount();
@@ -127,6 +141,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   
   @override
   void dispose() {
+    _likeHoldTimer?.cancel();
     _commentController.dispose();
     _scrollController.dispose();
     _commentFocusNode.dispose();
@@ -161,6 +176,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     required int commentCount,
     required int viewCount,
     required bool isLiked,
+    required List<String> likedBy,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -169,7 +185,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final itemWidth = w < 330 ? 42.0 : 48.0;
         final eyeWidth = w < 330 ? 50.0 : 56.0;
         final gap = w < 330 ? 10.0 : 12.0;
-        const iconSize = 20.0;
+        const likeCommentIconSize = 21.0;
+        const viewIconSize = 21.0;
+        // Instagram-like: 아이콘 옆 숫자 가독성 강화
+        const countFontSize = 15.0;
+        const countFontWeight = FontWeight.w700;
+        final inactiveIconColor = Colors.grey[900];
+        final countColor = Colors.grey[900];
 
         Widget metaItem({
           required Widget iconWidget,
@@ -178,11 +200,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }) {
           return SizedBox(
             width: width,
+            height: 44, // 아이콘 크기는 유지, 터치 타깃만 확장
             child: Row(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisSize: MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 iconWidget,
-                const SizedBox(width: 6),
+                const SizedBox(width: 4),
                 if (count > 0)
                   Flexible(
                     child: FittedBox(
@@ -192,9 +216,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         '$count',
                         style: TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[700],
+                          fontSize: countFontSize,
+                          fontWeight: countFontWeight,
+                          color: countColor,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -208,20 +232,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
         return Row(
           children: [
-            metaItem(
-              width: itemWidth,
-              count: likes,
-              iconWidget: InkWell(
-                onTap: _isTogglingLike ? null : _toggleLike,
-                customBorder: const CircleBorder(),
-                child: Padding(
-                  // 아이콘 주변 여백을 과하게 키우지 않도록 최소화
-                  padding: const EdgeInsets.all(1),
-                  child: Icon(
-                    isLiked ? Icons.favorite : Icons.favorite_border,
-                    size: iconSize,
-                    color: isLiked ? Colors.red : Colors.grey[700],
-                  ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) {
+                if (_isTogglingLike) return;
+                _likeHoldTimer?.cancel();
+                _likeSheetOpenedByHold = false;
+                _likeHoldTimer = Timer(const Duration(milliseconds: 500), () async {
+                  if (!mounted) return;
+                  _likeSheetOpenedByHold = true;
+                  // 익명 게시글은 좋아요 누른 사용자 목록을 확인할 수 없음
+                  if (_currentPost.isAnonymous) {
+                    _showAnonymousLikesHiddenSnackBar();
+                    return;
+                  }
+
+                  await _showPostLikesSheet(likedBy: likedBy, likeCount: likes);
+                });
+              },
+              onTapCancel: () {
+                _likeHoldTimer?.cancel();
+              },
+              onTapUp: (_) async {
+                _likeHoldTimer?.cancel();
+                // 홀드로 시트를 띄운 경우에는 좋아요 토글을 막음
+                if (_likeSheetOpenedByHold) return;
+                if (_isTogglingLike) return;
+                await _toggleLike();
+              },
+              child: metaItem(
+                width: itemWidth,
+                count: likes,
+                iconWidget: Icon(
+                  isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  size: likeCommentIconSize, // 아이콘 크기 유지
+                  color: isLiked ? Colors.red : inactiveIconColor,
                 ),
               ),
             ),
@@ -230,9 +275,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               width: itemWidth,
               count: commentCount,
               iconWidget: Icon(
-                Icons.chat_bubble_outline,
-                size: iconSize,
-                color: Colors.grey[700],
+                Icons.chat_bubble_outline_rounded,
+                size: likeCommentIconSize,
+                color: inactiveIconColor,
               ),
             ),
             SizedBox(width: gap),
@@ -240,15 +285,298 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               width: eyeWidth,
               count: viewCount,
               iconWidget: Icon(
-                Icons.remove_red_eye_outlined,
-                size: iconSize,
-                color: Colors.grey[700],
+                Icons.visibility_outlined,
+                size: viewIconSize,
+                color: inactiveIconColor,
               ),
             ),
+            if (!_isAuthor) ...[
+              SizedBox(width: gap),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _openDMFromDetail,
+                child: metaItem(
+                  width: itemWidth,
+                  count: 0,
+                  iconWidget: Transform.rotate(
+                    angle: -math.pi / 4,
+                    child: Icon(
+                      Icons.send_rounded,
+                      size: likeCommentIconSize,
+                      color: inactiveIconColor,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         );
       },
     );
+  }
+
+  void _showAnonymousLikesHiddenSnackBar() {
+    if (!mounted) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isKo
+              ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
+              : 'Likes are hidden for anonymous posts.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _showPostLikesSheet({
+    required List<String> likedBy,
+    required int likeCount,
+  }) async {
+    // 익명 게시글은 좋아요 누른 사용자 목록을 확인할 수 없음
+    if (_currentPost.isAnonymous) {
+      _showAnonymousLikesHiddenSnackBar();
+      return;
+    }
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final orderedUnique = LinkedHashSet<String>.from(
+      likedBy.where((e) => e.trim().isNotEmpty && e != 'deleted'),
+    ).toList();
+
+    // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
+    const maxShown = 50;
+    final shownIds =
+        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
+    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withAlpha(160),
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+        final l10n = AppLocalizations.of(context)!;
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+        return SafeArea(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(DesignTokens.r16),
+            ),
+            child: Material(
+              color: cs.surface,
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.55,
+                minChildSize: 0.35,
+                maxChildSize: 0.9,
+                builder: (context, scrollController) {
+                  return Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: cs.outlineVariant,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: DesignTokens.s16,
+                        ),
+                        child: Row(
+                          children: [
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: l10n.likes,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ).copyWith(color: cs.onSurface),
+                                  ),
+                                  const TextSpan(text: '  '),
+                                  TextSpan(
+                                    text: '$likeCount',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ).copyWith(color: cs.onSurfaceVariant),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hiddenCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            DesignTokens.s16,
+                            6,
+                            DesignTokens.s16,
+                            0,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: BrandColors.textHint,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      Divider(height: 1, color: cs.outlineVariant),
+                      Expanded(
+                        child: FutureBuilder<List<_PostLikeUser>>(
+                          future: _fetchLikeUsers(shownIds),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState != ConnectionState.done &&
+                                !snapshot.hasData) {
+                              return const Center(child: CircularProgressIndicator());
+                            }
+                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            if (users.isEmpty) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  child: Text(
+                                    isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                    ).copyWith(color: cs.onSurfaceVariant),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return ListView.separated(
+                              controller: scrollController,
+                              itemCount: users.length,
+                              separatorBuilder: (_, __) =>
+                                  Divider(height: 1, color: cs.outlineVariant),
+                              itemBuilder: (context, index) {
+                                final u = users[index];
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: DesignTokens.s16,
+                                  ),
+                                  onTap: () {
+                                    // 본인 프로필 이동은 생략
+                                    if (u.uid == currentUser.uid) return;
+                                    Navigator.pop(context);
+                                    Navigator.push(
+                                      this.context,
+                                      MaterialPageRoute(
+                                        builder: (_) => FriendProfileScreen(
+                                          userId: u.uid,
+                                          nickname: u.nickname,
+                                          photoURL: u.photoURL,
+                                          allowNonFriendsPreview: true,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  leading: UserAvatar(
+                                    uid: u.uid,
+                                    photoUrl: u.photoURL,
+                                    photoVersion: u.photoVersion,
+                                    isAnonymous: false,
+                                    size: 40,
+                                  ),
+                                  title: Text(
+                                    u.nickname,
+                                    style: (const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600,
+                                    )).copyWith(color: cs.onSurface),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<_PostLikeUser>> _fetchLikeUsers(List<String> userIds) async {
+    if (userIds.isEmpty) return const <_PostLikeUser>[];
+
+    final resultById = <String, _PostLikeUser>{};
+
+    // Firestore whereIn 제한(최대 10개) 대응
+    const chunkSize = 10;
+    for (var i = 0; i < userIds.length; i += chunkSize) {
+      final chunk = userIds.sublist(
+        i,
+        (i + chunkSize) > userIds.length ? userIds.length : (i + chunkSize),
+      );
+      final snap = await _firestore
+          .collection('users')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final nickname = (data['nickname'] ?? data['displayName'] ?? 'User').toString();
+        final photoURL = (data['photoURL'] ?? '').toString();
+        final photoVersion = (data['photoVersion'] is int)
+            ? (data['photoVersion'] as int)
+            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
+        resultById[doc.id] = _PostLikeUser(
+          uid: doc.id,
+          nickname: nickname,
+          photoURL: photoURL,
+          photoVersion: photoVersion,
+        );
+      }
+    }
+
+    // 원래 순서 유지
+    final ordered = <_PostLikeUser>[];
+    for (final uid in userIds) {
+      final u = resultById[uid];
+      if (u != null) ordered.add(u);
+    }
+    return ordered;
   }
 
   // 조회수 증가 메서드
@@ -298,6 +626,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               content: Text(AppLocalizations.of(context)!.cannotSendDM),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      // 친구가 아니면 DM 불가 (친구에게만 메시지)
+      final status = await RelationshipService().getRelationshipStatus(_currentPost.userId);
+      if (status != RelationshipStatus.friends) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.friendsOnly),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -377,28 +720,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  @override
-  Future<void> _checkIfUserIsAuthor() async {
-    // Post 객체에 이미 userId가 있으므로 직접 비교
-    final user = FirebaseAuth.instance.currentUser;
-    if (mounted && user != null) {
-      setState(() {
-        _isAuthor = widget.post.userId == user.uid;
-      });
-    }
-  }
+  void _openAuthorProfile() {
+    // 익명/탈퇴 계정은 프로필 접근 불가
+    if (_currentPost.isAnonymous) return;
+    if (_currentPost.userId.isEmpty || _currentPost.userId == 'deleted') return;
 
-  Future<void> _checkIfUserLikedPost() async {
-    // Post 객체에 이미 likedBy 리스트가 있으므로 직접 확인
-    final user = FirebaseAuth.instance.currentUser;
-    if (mounted && user != null) {
-      setState(() {
-        _isLiked = widget.post.likedBy.contains(user.uid);
-      });
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: _currentPost.userId,
+          nickname: _currentPost.author,
+          photoURL: _currentPost.authorPhotoURL,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
   }
 
   Future<void> _checkIfUserSavedPost() async {
+    if (_isAuthor) return;
     final isSaved = await _postService.isPostSaved(widget.post.id);
     if (mounted) {
       setState(() {
@@ -492,11 +833,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 // DM 보내기 (기존 기능을 케밥 메뉴로 이동)
-                if (canSendDM)
+                if (!_isAuthor && canSendDM)
                   ListTile(
-                    leading: const Icon(
-                      Icons.chat_bubble_outline,
-                      color: Color(0xFF111827),
+                    leading: Transform.rotate(
+                      // 종이비행기(전송) 아이콘을 살짝 기울여 DM와 댓글(말풍선) 구분
+                      angle: -math.pi / 4,
+                      child: const Icon(
+                        Icons.send_rounded,
+                        color: Color(0xFF111827),
+                      ),
                     ),
                     title: Text(
                       AppLocalizations.of(context)!.directMessage,
@@ -511,28 +856,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       await _openDMFromDetail();
                     },
                   ),
-                ListTile(
-                  leading: Icon(
-                    _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                    color: const Color(0xFF111827),
-                  ),
-                  title: Text(
-                    _isSaved
-                        ? (AppLocalizations.of(context)!.unsave)
-                        : (AppLocalizations.of(context)!.savePost),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  onTap: _isTogglingSave
-                      ? null
-                      : () {
-                          Navigator.pop(context);
-                          _toggleSave();
-                        },
-                ),
                 if (_isAuthor)
                   ListTile(
                     leading: const Icon(
@@ -1195,11 +1518,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
-            tooltip: AppLocalizations.of(context)!.moreOptions,
-            onPressed: _openPostActionsSheet,
-          ),
+          if (!_isAuthor)
+            IconButton(
+              icon: Icon(
+                _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                color: const Color(0xFF111827),
+              ),
+              tooltip: _isSaved
+                  ? (AppLocalizations.of(context)!.unsave)
+                  : (AppLocalizations.of(context)!.savePost),
+              onPressed: _isTogglingSave ? null : _toggleSave,
+            ),
+          if (_isAuthor)
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
+              tooltip: AppLocalizations.of(context)!.moreOptions,
+              onPressed: _openPostActionsSheet,
+            ),
         ],
       ),
       body: Column(
@@ -1220,32 +1555,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Row(
                       children: [
                         // 프로필 사진 (인스타그램 크기)
-                        Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.grey[200],
-                          ),
-                          child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
-                              ? ClipOval(
-                                  child: Image.network(
-                                    _currentPost.authorPhotoURL,
-                                    width: 40,
-                                    height: 40,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => Icon(
-                                      Icons.person,
-                                      color: Colors.grey[600],
-                                      size: DesignTokens.icon,
+                        GestureDetector(
+                          onTap: _openAuthorProfile,
+                          child: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.grey[200],
+                            ),
+                            child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
+                                ? ClipOval(
+                                    child: Image.network(
+                                      _currentPost.authorPhotoURL,
+                                      width: 40,
+                                      height: 40,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => Icon(
+                                        Icons.person,
+                                        color: Colors.grey[600],
+                                        size: DesignTokens.icon,
+                                      ),
                                     ),
+                                  )
+                                : Icon(
+                                    Icons.person,
+                                    color: Colors.grey[600],
+                                    size: DesignTokens.icon,
                                   ),
-                                )
-                              : Icon(
-                                  Icons.person,
-                                  color: Colors.grey[600],
-                                  size: DesignTokens.icon,
-                                ),
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -1255,13 +1593,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               // 작성자 이름
                               Row(
                                 children: [
-                                  Text(
-                                    _currentPost.isAnonymous ? AppLocalizations.of(context)!.anonymous : _currentPost.author,
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.black,
+                                  GestureDetector(
+                                    onTap: _openAuthorProfile,
+                                    child: Text(
+                                      _currentPost.isAnonymous ? AppLocalizations.of(context)!.anonymous : _currentPost.author,
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.black,
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1399,6 +1740,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           commentCount: _currentPost.commentCount,
                           viewCount: _currentPost.viewCount,
                           isLiked: _isLiked,
+                          likedBy: _currentPost.likedBy,
                         ),
                         const SizedBox(height: 8),
                       ],
@@ -1421,6 +1763,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             commentCount: _currentPost.commentCount,
                             viewCount: _currentPost.viewCount,
                             isLiked: _isLiked,
+                            likedBy: _currentPost.likedBy,
                           ),
                           const SizedBox(height: 8),
                         ],
@@ -1683,4 +2026,19 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final index = text.codeUnitAt(0) % colors.length;
     return colors[index];
   }
+}
+
+@immutable
+class _PostLikeUser {
+  final String uid;
+  final String nickname;
+  final String photoURL;
+  final int photoVersion;
+
+  const _PostLikeUser({
+    required this.uid,
+    required this.nickname,
+    required this.photoURL,
+    required this.photoVersion,
+  });
 }

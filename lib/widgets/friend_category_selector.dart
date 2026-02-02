@@ -6,12 +6,16 @@ class FriendCategorySelector extends StatelessWidget {
   final List<FriendCategory> categories;
   final List<String> selectedCategoryIds;
   final Function(List<String>) onSelectionChanged;
+  final Color selectedColor;
+  final Color unselectedBorderColor;
 
   const FriendCategorySelector({
     super.key,
     required this.categories,
     required this.selectedCategoryIds,
     required this.onSelectionChanged,
+    this.selectedColor = const Color(0xFF4A90E2),
+    this.unselectedBorderColor = const Color(0xFFE1E6EE),
   });
 
   @override
@@ -49,21 +53,15 @@ class FriendCategorySelector extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF4A90E2) : Colors.white,
+              color: isSelected ? selectedColor : Colors.white,
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
                 color: isSelected 
-                    ? const Color(0xFF4A90E2) 
-                    : const Color(0xFFE1E6EE),
+                    ? selectedColor 
+                    : unselectedBorderColor,
                 width: 1.2,
               ),
-              boxShadow: isSelected ? [
-                BoxShadow(
-                  color: const Color(0xFF4A90E2).withOpacity(0.3),
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-              ] : null,
+              // 다른 화면들과 톤 통일: 플랫(그림자 제거)
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -78,18 +76,20 @@ class FriendCategorySelector extends StatelessWidget {
                 Text(
                   category.name,
                   style: TextStyle(
+                    fontFamily: 'Pretendard',
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: isSelected ? Colors.white : const Color(0xFF333333),
+                    color: isSelected ? Colors.white : const Color(0xFF111827),
                   ),
                 ),
                 const SizedBox(width: 4),
                 Text(
                   '(${category.friendIds.length}${AppLocalizations.of(context)!.people ?? ''})',
                   style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w400,
-                    color: isSelected ? Colors.white.withOpacity(0.9) : const Color(0xFF999999),
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: isSelected ? Colors.white.withOpacity(0.9) : const Color(0xFF6B7280),
                   ),
                 ),
               ],

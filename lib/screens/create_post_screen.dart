@@ -101,12 +101,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final pollOptions = _getCleanedPollOptions();
 
     setState(() {
+      final categoryOk = _visibility != 'category' || _selectedCategoryIds.isNotEmpty;
       if (_postType == 'poll') {
         // 투표: 질문(본문) + 선택지 2개(고정) 필수, 이미지 첨부는 선택
-        _canSubmit = contentNotEmpty && pollOptions.length == 2;
+        _canSubmit = contentNotEmpty && pollOptions.length == 2 && categoryOk;
       } else {
         // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
-        _canSubmit = contentNotEmpty || _selectedImages.isNotEmpty;
+        _canSubmit = (contentNotEmpty || _selectedImages.isNotEmpty) && categoryOk;
       }
     });
   }
@@ -472,9 +473,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                               AppLocalizations.of(context)!.publicPost ?? "",
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF374151),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
                               ),
                             ),
                             value: 'public',
@@ -486,6 +487,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   _isAnonymous = false; // 카테고리 공개 시 익명 해제
                                 }
                               });
+                              _checkCanSubmit();
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
@@ -498,9 +500,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                               AppLocalizations.of(context)!.categorySpecific ?? "",
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF374151),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
                               ),
                             ),
                             value: 'category',
@@ -512,6 +514,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                                   _isAnonymous = false; // 카테고리 공개 시 익명 해제
                                 }
                               });
+                              _checkCanSubmit();
                             },
                             contentPadding: EdgeInsets.zero,
                             dense: true,
@@ -596,23 +599,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF0FDF4),
+                              // 다른 화면(CreateMeetup)과 톤 통일
+                              color: const Color(0xFFF8F9FA),
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFD1D5DB)),
+                              border: Border.all(color: const Color(0xFFE1E6EE)),
                             ),
                             child: Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.info_outline, size: 16, color: Color(0xFF10B981)),
+                                Icon(
+                                  Icons.info_outline,
+                                  size: 16,
+                                  color: Colors.orange[600],
+                                ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     AppLocalizations.of(context)!.selectedGroupOnly,
                                     style: const TextStyle(
                                       fontFamily: 'Pretendard',
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF374151),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF6B7280),
+                                      height: 1.25,
                                     ),
                                   ),
                                 ),
@@ -624,10 +633,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                           FriendCategorySelector(
                             categories: _friendCategories,
                             selectedCategoryIds: _selectedCategoryIds,
+                            selectedColor: AppColors.pointColor,
                             onSelectionChanged: (newSelection) {
                               setState(() {
                                 _selectedCategoryIds = newSelection;
                               });
+                              _checkCanSubmit();
                             },
                           ),
 

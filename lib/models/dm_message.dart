@@ -9,6 +9,14 @@ class DMMessage {
   final String senderId;
   final String text;
   final String? imageUrl;
+  /// 메시지 타입 (기본: text)
+  /// - text: 일반 메시지
+  /// - post_context: 게시글에서 시작된/참조하는 메시지 (게시글 카드 렌더링용)
+  final String type;
+  /// 게시글 컨텍스트 (선택)
+  final String? postId;
+  final String? postImageUrl;
+  final String? postPreview;
   final DateTime createdAt;
   final bool isRead;
   final DateTime? readAt;
@@ -18,6 +26,10 @@ class DMMessage {
     required this.senderId,
     required this.text,
     this.imageUrl,
+    this.type = 'text',
+    this.postId,
+    this.postImageUrl,
+    this.postPreview,
     required this.createdAt,
     required this.isRead,
     this.readAt,
@@ -32,6 +44,12 @@ class DMMessage {
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
       imageUrl: (data['imageUrl'] is String) ? data['imageUrl'] as String : null,
+      type: (data['type'] is String && (data['type'] as String).isNotEmpty)
+          ? (data['type'] as String)
+          : 'text',
+      postId: (data['postId'] is String) ? data['postId'] as String : null,
+      postImageUrl: (data['postImageUrl'] is String) ? data['postImageUrl'] as String : null,
+      postPreview: (data['postPreview'] is String) ? data['postPreview'] as String : null,
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       isRead: data['isRead'] ?? false,
       readAt: data['readAt'] != null 
@@ -46,6 +64,10 @@ class DMMessage {
       'senderId': senderId,
       'text': text,
       if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
+      if (type.isNotEmpty && type != 'text') 'type': type,
+      if (postId != null && postId!.isNotEmpty) 'postId': postId,
+      if (postImageUrl != null && postImageUrl!.isNotEmpty) 'postImageUrl': postImageUrl,
+      if (postPreview != null && postPreview!.isNotEmpty) 'postPreview': postPreview,
       'createdAt': Timestamp.fromDate(createdAt),
       'isRead': isRead,
       if (readAt != null) 'readAt': Timestamp.fromDate(readAt!),
@@ -63,6 +85,10 @@ class DMMessage {
     String? senderId,
     String? text,
     String? imageUrl,
+    String? type,
+    String? postId,
+    String? postImageUrl,
+    String? postPreview,
     DateTime? createdAt,
     bool? isRead,
     DateTime? readAt,
@@ -72,6 +98,10 @@ class DMMessage {
       senderId: senderId ?? this.senderId,
       text: text ?? this.text,
       imageUrl: imageUrl ?? this.imageUrl,
+      type: type ?? this.type,
+      postId: postId ?? this.postId,
+      postImageUrl: postImageUrl ?? this.postImageUrl,
+      postPreview: postPreview ?? this.postPreview,
       createdAt: createdAt ?? this.createdAt,
       isRead: isRead ?? this.isRead,
       readAt: readAt ?? this.readAt,

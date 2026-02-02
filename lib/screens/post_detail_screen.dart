@@ -187,6 +187,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final gap = w < 330 ? 10.0 : 12.0;
         const likeCommentIconSize = 21.0;
         const viewIconSize = 21.0;
+        const bookmarkIconSize = 24.0;
         // Instagram-like: 아이콘 옆 숫자 가독성 강화
         const countFontSize = 15.0;
         const countFontWeight = FontWeight.w700;
@@ -303,6 +304,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     child: Icon(
                       Icons.send_rounded,
                       size: likeCommentIconSize,
+                      color: inactiveIconColor,
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _isTogglingSave ? null : _toggleSave,
+                child: SizedBox(
+                  width: itemWidth,
+                  height: 44, // 다른 아이콘들과 터치 타깃 동일
+                  child: Align(
+                    alignment: Alignment.centerRight, // 하트와 좌우 대칭(우측 끝) 정렬
+                    child: Icon(
+                      _isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      size: bookmarkIconSize,
                       color: inactiveIconColor,
                     ),
                   ),
@@ -696,12 +714,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       Logger.log('✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
 
       if (mounted) {
+        final originPostImageUrl =
+            (_currentPost.imageUrls.isNotEmpty ? _currentPost.imageUrls.first : '').trim();
+        final rawPreview = _currentPost.content.trim();
+        final originPostPreview =
+            rawPreview.isEmpty ? '' : (rawPreview.length > 90 ? '${rawPreview.substring(0, 90)}...' : rawPreview);
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (_) => DMChatScreen(
               conversationId: conversationId,
               otherUserId: _currentPost.userId,
+              originPostId: _currentPost.id,
+              originPostImageUrl: originPostImageUrl,
+              originPostPreview: originPostPreview,
             ),
           ),
         );
@@ -1518,17 +1544,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         centerTitle: true,
         actions: [
-          if (!_isAuthor)
-            IconButton(
-              icon: Icon(
-                _isSaved ? Icons.bookmark : Icons.bookmark_border,
-                color: const Color(0xFF111827),
-              ),
-              tooltip: _isSaved
-                  ? (AppLocalizations.of(context)!.unsave)
-                  : (AppLocalizations.of(context)!.savePost),
-              onPressed: _isTogglingSave ? null : _toggleSave,
-            ),
           if (_isAuthor)
             IconButton(
               icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
@@ -1637,7 +1652,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 15,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: Color(0xFF111827),
                             height: 1.35,
                             letterSpacing: -0.2,

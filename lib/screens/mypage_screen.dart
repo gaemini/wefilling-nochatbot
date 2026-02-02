@@ -281,7 +281,6 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     icon: Icons.people,
                     color: AppColors.pointColor,
                     showIcon: false,
-                    badgeCount: provider.incomingRequests.length,
                     onTap: () => _navigateToFriendsPage(),
                   );
                 },
@@ -996,57 +995,19 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                           ),
                         );
 
-                  // 배지를 "영역 오른쪽 끝"이 아니라 "숫자" 기준으로 붙여 자연스럽게 보이도록
-                  return Stack(
-                    clipBehavior: Clip.none,
-                    alignment: Alignment.center,
-                    children: [
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 220),
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
-                        transitionBuilder: (child, animation) {
-                          final fade =
-                              FadeTransition(opacity: animation, child: child);
-                          return ScaleTransition(
-                            scale: Tween<double>(begin: 0.98, end: 1.0)
-                                .animate(animation),
-                            child: fade,
-                          );
-                        },
-                        child: countWidget,
-                      ),
-                      if (badgeCount > 0)
-                        Positioned(
-                          top: -10,
-                          right: -14,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEF4444),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: Colors.white, width: 1.5),
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              badgeCount > 99 ? '99+' : badgeCount.toString(),
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                        ),
-                    ],
+                  // 친구요청 배지(빨간 숫자)는 마이페이지 통계 영역에서 더 이상 표시하지 않음
+                  return AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, animation) {
+                      final fade = FadeTransition(opacity: animation, child: child);
+                      return ScaleTransition(
+                        scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                        child: fade,
+                      );
+                    },
+                    child: countWidget,
                   );
                 },
               ),

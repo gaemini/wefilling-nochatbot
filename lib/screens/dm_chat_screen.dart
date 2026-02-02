@@ -40,11 +40,19 @@ class DMColors {
 class DMChatScreen extends StatefulWidget {
   final String conversationId;
   final String otherUserId;
+  /// 게시글 상세/카드에서 DM으로 진입한 경우, 첫 전송 메시지에 붙일 게시글 컨텍스트
+  /// - 상대방 채팅창에 "게시글에서 보낸 메시지" 카드(썸네일+미리보기)로 표시된다.
+  final String? originPostId;
+  final String? originPostImageUrl;
+  final String? originPostPreview;
 
   const DMChatScreen({
     super.key,
     required this.conversationId,
     required this.otherUserId,
+    this.originPostId,
+    this.originPostImageUrl,
+    this.originPostPreview,
   });
 
   @override
@@ -77,6 +85,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   bool _isBlockedBy = false; // 차단당한 여부
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
+  bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
 
   @override
   void initState() {
@@ -1206,9 +1215,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
     bool isConsecutive, {
     String? statusText,
   }) {
+    final hasPostContext = (message.postId != null && message.postId!.trim().isNotEmpty) &&
+        ((message.postImageUrl != null && message.postImageUrl!.trim().isNotEmpty) ||
+            (message.postPreview != null && message.postPreview!.trim().isNotEmpty));
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
     final hasText = message.text.trim().isNotEmpty;
-    final isImageOnly = hasImage && !hasText;
+    // 게시글 컨텍스트가 있으면 "이미지 단독"으로 취급하지 않음 (컨텍스트 카드도 함께 렌더링)
+    final isImageOnly = hasImage && !hasText && !hasPostContext;
 
     if (isMine) {
       return Padding(
@@ -1267,6 +1280,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
+                          if (hasPostContext) ...[
+                            _buildPostContextCard(message, isMine: true),
+                            if (hasImage || hasText) const SizedBox(height: 8),
+                          ],
                           if (hasImage) ...[
                             _buildImageBubble(
                               imageUrl: message.imageUrl!,
@@ -1327,6 +1344,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          if (hasPostContext) ...[
+                            _buildPostContextCard(message, isMine: false),
+                            if (hasImage || hasText) const SizedBox(height: 8),
+                          ],
                           if (hasImage) ...[
                             _buildImageBubble(
                               imageUrl: message.imageUrl!,
@@ -1363,6 +1384,115 @@ class _DMChatScreenState extends State<DMChatScreen> {
         ),
       );
     }
+  }
+
+  Widget _buildPostContextCard(DMMessage message, {required bool isMine}) {
+    final postId = message.postId?.trim() ?? '';
+    final img = (message.postImageUrl?.trim().isNotEmpty ?? false)
+        ? message.postImageUrl!.trim()
+        : '';
+    final preview = (message.postPreview ?? '').trim();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final borderColor = isMine ? Colors.white.withOpacity(0.35) : Colors.grey.shade300;
+
+    return GestureDetector(
+      onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isMine ? Colors.white.withOpacity(0.12) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (img.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                child: AspectRatio(
+                  aspectRatio: 16 / 9,
+                  child: CachedNetworkImage(
+                    imageUrl: img,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                      color: isMine ? Colors.white.withOpacity(0.12) : Colors.grey.shade200,
+                      alignment: Alignment.center,
+                      child: const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: isMine ? Colors.white.withOpacity(0.12) : Colors.grey.shade200,
+                      height: 120,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.image_outlined,
+                        size: 20,
+                        color: isMine ? Colors.white70 : Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.article_outlined,
+                        size: 16,
+                        color: isMine ? Colors.white70 : Colors.grey.shade700,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          isKo ? '게시글에서 보낸 메시지' : 'Sent from a post',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isMine ? Colors.white70 : Colors.grey.shade800,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (postId.isNotEmpty)
+                        Text(
+                          isKo ? '보기' : 'View',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isMine ? Colors.white : Colors.blue.shade700,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (preview.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      preview,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.3,
+                        fontWeight: FontWeight.w600,
+                        color: isMine ? Colors.white : Colors.grey.shade800,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildImageBubble({
@@ -1775,6 +1905,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
             }
           }
         }
+        // 일반(비익명) 대화방이라도 게시글에서 진입했다면 postId를 대화방 문서에 저장해두는 것이 UX에 유리
+        final originPostId = (widget.originPostId ?? '').trim();
+        if (postId == null || postId.trim().isEmpty) {
+          postId = originPostId.isEmpty ? null : originPostId;
+        }
         
         final newConversationId = await _dmService.getOrCreateConversation(
           widget.otherUserId,
@@ -1828,15 +1963,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
       }
 
+      // 게시글에서 DM으로 진입한 경우: 현재 채팅 세션에서 첫 전송 메시지에만 1회 컨텍스트 부착
+      final shouldAttachPostContext = !_originPostContextAttached &&
+          widget.originPostId != null &&
+          widget.originPostId!.trim().isNotEmpty;
+
       final success = await _dmService.sendMessage(
         actualConversationId,
         text,
         imageUrl: uploadedImageUrl,
+        postId: shouldAttachPostContext ? widget.originPostId : null,
+        postImageUrl: shouldAttachPostContext ? widget.originPostImageUrl : null,
+        postPreview: shouldAttachPostContext ? widget.originPostPreview : null,
       );
       Logger.log('📤 메시지 전송 결과: success=$success');
       
       if (success) {
         Logger.log('✅ 메시지 전송 성공 - 후속 처리 시작');
+        if (shouldAttachPostContext) {
+          _originPostContextAttached = true;
+        }
         if (mounted) {
           setState(() {
             _pendingImage = null; // 전송 성공 시 첨부 해제

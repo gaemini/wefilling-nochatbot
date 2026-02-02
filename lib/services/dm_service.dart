@@ -932,12 +932,20 @@ class DMService {
   }
 
   /// 메시지 전송
-  Future<bool> sendMessage(String conversationId, String text, {String? imageUrl}) async {
+  Future<bool> sendMessage(
+    String conversationId,
+    String text, {
+    String? imageUrl,
+    String? postId,
+    String? postImageUrl,
+    String? postPreview,
+  }) async {
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     Logger.log('📤 sendMessage 시작');
     Logger.log('  - conversationId: $conversationId');
     Logger.log('  - text 길이: ${text.length}자');
     Logger.log('  - imageUrl: ${imageUrl != null && imageUrl.isNotEmpty ? "있음" : "없음"}');
+    Logger.log('  - postContext: ${postId != null && postId.isNotEmpty ? "있음" : "없음"}');
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     try {
@@ -950,6 +958,10 @@ class DMService {
 
       final trimmedText = text.trim();
       final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
+      final hasPostContext = postId != null &&
+          postId.trim().isNotEmpty &&
+          (postImageUrl != null && postImageUrl.trim().isNotEmpty ||
+              postPreview != null && postPreview.trim().isNotEmpty);
 
       // 메시지 유효성 검증: 텍스트/이미지 중 하나는 있어야 함
       if (trimmedText.isEmpty && !hasImage) {
@@ -971,6 +983,12 @@ class DMService {
         'senderId': currentUser.uid,
         'text': trimmedText,
         if (hasImage) 'imageUrl': imageUrl!.trim(),
+        if (hasPostContext) 'type': 'post_context',
+        if (hasPostContext) 'postId': postId!.trim(),
+        if (hasPostContext && postImageUrl != null && postImageUrl.trim().isNotEmpty)
+          'postImageUrl': postImageUrl.trim(),
+        if (hasPostContext && postPreview != null && postPreview.trim().isNotEmpty)
+          'postPreview': postPreview.trim(),
         'createdAt': Timestamp.fromDate(now),
         'isRead': false,
       };

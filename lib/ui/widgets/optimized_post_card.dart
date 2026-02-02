@@ -908,12 +908,20 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
+        final originPostImageUrl =
+            (post.imageUrls.isNotEmpty ? post.imageUrls.first : '').trim();
+        final rawPreview = post.content.trim();
+        final originPostPreview =
+            rawPreview.isEmpty ? '' : (rawPreview.length > 90 ? '${rawPreview.substring(0, 90)}...' : rawPreview);
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => DMChatScreen(
               conversationId: conversationId,
               otherUserId: post.userId,
+              originPostId: post.id,
+              originPostImageUrl: originPostImageUrl,
+              originPostPreview: originPostPreview,
             ),
           ),
         );

@@ -2,11 +2,12 @@
 // 확장된 댓글 위젯 - 대댓글과 좋아요 기능 지원
 // 계층적 댓글 표시 및 인터랙션 제공
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
 import '../../services/report_service.dart';
@@ -49,6 +50,36 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
   bool _showReplies = true;
   String? _currentNickname; // 캐시된 현재 닉네임
+
+  Future<void> _openLinkUrl(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  List<InlineSpan> _buildLinkifiedSpans({
+    required String text,
+    required TextStyle style,
+    required TextStyle linkStyle,
+  }) {
+    final elements = linkify.linkify(
+      text,
+      options: const linkify.LinkifyOptions(humanize: false),
+    );
+
+    return elements.map<InlineSpan>((e) {
+      if (e is linkify.LinkableElement) {
+        return TextSpan(
+          text: e.text,
+          style: linkStyle,
+          recognizer: TapGestureRecognizer()..onTap = () => _openLinkUrl(e.url),
+        );
+      }
+      return TextSpan(text: e.text, style: style);
+    }).toList();
+  }
 
   Future<void> _showCommentActionsSheet({
     required bool isMyComment,
@@ -532,263 +563,269 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final currentUser = FirebaseAuth.instance.currentUser;
     final isMyComment = currentUser?.uid == widget.comment.userId;
     final isLiked = currentUser != null && widget.comment.isLikedBy(currentUser.uid);
+    final likeColor = isLiked ? const Color(0xFFEF4444) : const Color(0xFF9CA3AF);
+    final likeCountColor = isLiked ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+    const bodyStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 15,
+      fontWeight: FontWeight.w700, // 본문 bold
+      color: Color(0xFF1F2937), // textSecondary
+      height: 1.5,
+    );
+    const linkStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 15,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6366F1), // BrandColors.primary
+      decoration: TextDecoration.underline,
+    );
+    const mentionStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6366F1),
+      height: 1.5,
+    );
+
+    final isReply = widget.comment.replyToUserNickname != null &&
+        widget.comment.replyToUserId != null &&
+        (widget.comment.replyToUserNickname?.isNotEmpty ?? false);
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onLongPress: () => _showCommentActionsSheet(isMyComment: isMyComment),
       child: Container(
         margin: EdgeInsets.only(
-          left: (widget.comment.depth * 20.0) + (widget.comment.depth == 0 ? 16.0 : 0.0),
+          left: 16.0 + (widget.comment.depth * 20.0),
+          // 대댓글은 부모 컨테이너(우측 16px) 안에 렌더링되므로
+          // 여기서 우측 여백을 또 주면 하트가 왼쪽으로 밀림 → depth>0은 0으로
           right: widget.comment.depth == 0 ? 16.0 : 0.0,
           bottom: 16, // 댓글 간 간격
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 프로필 이미지
-            GestureDetector(
-              onTap: _openCommentAuthorProfile,
-              child: Container(
-                width: 32,
-                height: 32,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.grey[200],
-                ),
-                child: (!widget.isAnonymousPost && widget.comment.authorPhotoUrl.isNotEmpty)
-                    ? ClipOval(
-                        child: Image.network(
-                          widget.comment.authorPhotoUrl,
-                          width: 32,
-                          height: 32,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 프로필 이미지
+                GestureDetector(
+                  onTap: _openCommentAuthorProfile,
+                  child: Container(
+                    width: 32,
+                    height: 32,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.grey[200],
+                    ),
+                    child: (!widget.isAnonymousPost &&
+                            widget.comment.authorPhotoUrl.isNotEmpty)
+                        ? ClipOval(
+                            child: Image.network(
+                              widget.comment.authorPhotoUrl,
+                              width: 32,
+                              height: 32,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.person,
+                                size: 18,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          )
+                        : Icon(
                             Icons.person,
                             size: 18,
                             color: Colors.grey[500],
                           ),
-                        ),
-                      )
-                    : Icon(
-                        Icons.person,
-                        size: 18,
-                        color: Colors.grey[500],
-                      ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            
-            // 댓글 내용 영역
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 헤더: 작성자 이름, 시간 (버튼/케밥 제거)
-                  Row(
-                    children: [
-                      // 작성자 이름
-                      FutureBuilder<String>(
-                        future: widget.isAnonymousPost
-                            ? Future.value(widget.getDisplayName?.call(widget.comment) ?? AppLocalizations.of(context)!.anonymous)
-                            : _getCurrentNickname(widget.comment.userId),
-                        builder: (context, snapshot) {
-                          final displayName = snapshot.data ?? 
-                              (widget.getDisplayName?.call(widget.comment) ?? widget.comment.authorNickname);
-                          return GestureDetector(
-                            onTap: _openCommentAuthorProfile,
-                            child: Text(
-                              displayName,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 6),
-                      
-                      // 시간
-                      Text(
-                        widget.comment.getFormattedTime(context),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF6B7280), // gray600 - 가독성 개선
-                        ),
-                      ),
-                      const Spacer(),
-                    ],
-                  ),
-                
-                const SizedBox(height: 2),
-                
-                // 답글 대상 표시 (대댓글인 경우)
-                if (widget.comment.replyToUserNickname != null && 
-                    widget.comment.replyToUserId != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 2),
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: '@${widget.comment.replyToUserNickname} ',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF6366F1), // BrandColors.primary
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                // 댓글 내용
-                Linkify(
-                  onOpen: (link) async {
-                    final uri = Uri.parse(link.url);
-                    if (await canLaunchUrl(uri)) {
-                      await launchUrl(
-                        uri,
-                        mode: LaunchMode.externalApplication,
-                      );
-                    }
-                  },
-                  text: widget.comment.content,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500, // iOS에서 얇아 보이는 문제 보정
-                    color: Color(0xFF1F2937), // textSecondary
-                    height: 1.5,
-                  ),
-                  linkStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF6366F1), // BrandColors.primary
-                    decoration: TextDecoration.underline,
                   ),
                 ),
-                
-                const SizedBox(height: 8),
-                
-                // 액션 버튼 (좋아요, 답글 달기)
-                Row(
-                  children: [
-                    // 좋아요 버튼
-                    InkWell(
-                      onTap: _toggleLike,
-                      borderRadius: BorderRadius.circular(4),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                const SizedBox(width: 10),
+
+                // 댓글 내용 영역
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Icon(
-                            isLiked ? Icons.favorite : Icons.favorite_border,
-                            size: 14,
-                            color: isLiked ? Colors.red : const Color(0xFF9CA3AF),
+                          FutureBuilder<String>(
+                            future: widget.isAnonymousPost
+                                ? Future.value(
+                                    widget.getDisplayName?.call(widget.comment) ??
+                                        AppLocalizations.of(context)!.anonymous,
+                                  )
+                                : _getCurrentNickname(widget.comment.userId),
+                            builder: (context, snapshot) {
+                              final displayName = snapshot.data ??
+                                  (widget.getDisplayName?.call(widget.comment) ??
+                                      widget.comment.authorNickname);
+                              return GestureDetector(
+                                onTap: _openCommentAuthorProfile,
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                              );
+                            },
                           ),
-                          const SizedBox(width: 4),
-                          if (widget.comment.likeCount > 0)
-                            Text(
+                          const SizedBox(width: 6),
+                          Text(
+                            widget.comment.getFormattedTime(context),
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+
+                      // @아이디를 본문과 "같은 텍스트 흐름"으로 합쳐 줄바꿈까지 자연스럽게 처리
+                      RichText(
+                        text: TextSpan(
+                          children: [
+                            if (isReply)
+                              TextSpan(
+                                text: '@${widget.comment.replyToUserNickname} ',
+                                style: mentionStyle,
+                              ),
+                            ..._buildLinkifiedSpans(
+                              text: widget.comment.content,
+                              style: bodyStyle,
+                              linkStyle: linkStyle,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      // 액션 버튼 (답글 달기만 유지)
+                      if (widget.comment.depth == 0)
+                        Row(
+                          children: [
+                            InkWell(
+                              onTap: widget.onReplyTap,
+                              borderRadius: BorderRadius.circular(4),
+                              child: const Text(
+                                '답글 달기',
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF6B7280),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+
+                // 우측 좋아요(하트) + 숫자: depth와 무관하게 동일한 X좌표에 자동 정렬
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: SizedBox(
+                    width: 36,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        InkWell(
+                          onTap: _toggleLike,
+                          customBorder: const CircleBorder(),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Icon(
+                              isLiked
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 16,
+                              color: likeColor,
+                            ),
+                          ),
+                        ),
+                        if (widget.comment.likeCount > 0)
+                          Transform.translate(
+                            offset: const Offset(0, -4),
+                            child: Text(
                               '${widget.comment.likeCount}',
                               style: TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: isLiked ? Colors.red : const Color(0xFF6B7280),
-                              ),
-                            )
-                          else
-                            Text(
-                              '좋아요', // 텍스트로 '좋아요' 표시 (디자인 시안에 따라 조정 가능)
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF6B7280),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: likeCountColor,
+                                height: 1.0,
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                    
-                    const SizedBox(width: 16),
-                    
-                    // 답글 버튼 (원댓글에만 표시)
-                    if (widget.comment.depth == 0)
-                      InkWell(
-                        onTap: widget.onReplyTap,
-                        borderRadius: BorderRadius.circular(4),
-                        child: Text(
-                          '답글 달기',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6B7280),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
-
-                // 답글 더보기/숨기기 (답글이 있는 경우)
-                if (widget.replies.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  InkWell(
-                    onTap: () => setState(() => _showReplies = !_showReplies),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 24,
-                          height: 1,
-                          color: const Color(0xFFD1D5DB), // 구분선
-                          margin: const EdgeInsets.only(right: 8),
-                        ),
-                        Text(
-                          _showReplies 
-                              ? '답글 숨기기' 
-                              : '답글 ${widget.replies.length}개 보기',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
                       ],
                     ),
                   ),
-                  
-                  // 답글 목록
-                  if (_showReplies) ...[
-                    const SizedBox(height: 12),
-                    ...widget.replies.map((reply) => EnhancedCommentWidget(
-                      comment: reply,
-                      replies: const [], // 대댓글의 대댓글은 지원하지 않음
-                      postId: widget.postId,
-                      onDeleteComment: widget.onDeleteComment,
-                      isAnonymousPost: widget.isAnonymousPost,
-                      getDisplayName: widget.getDisplayName,
-                      isReplyTarget: widget.parentTopLevelCommentId != null,
-                      parentTopLevelCommentId: widget.comment.id,
-                      onReplyTap: widget.onReplyTap, // 대댓글에는 답글 버튼 미표시
-                    )).toList(),
-                  ],
-                ],
+                ),
               ],
             ),
-          ),
-        ],
-      ),
+
+            // 답글 더보기/숨기기 + 답글 목록 (부모 Expanded 밖에서 렌더링 → 하트 정렬 자동)
+            if (widget.replies.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 42.0), // 아바타(32) + 간격(10)
+                child: InkWell(
+                  onTap: () => setState(() => _showReplies = !_showReplies),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 24,
+                        height: 1,
+                        color: const Color(0xFFD1D5DB),
+                        margin: const EdgeInsets.only(right: 8),
+                      ),
+                      Text(
+                        _showReplies
+                            ? '답글 숨기기'
+                            : '답글 ${widget.replies.length}개 보기',
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (_showReplies) ...[
+                const SizedBox(height: 12),
+                ...widget.replies.map(
+                  (reply) => EnhancedCommentWidget(
+                    comment: reply,
+                    replies: const [], // 대댓글의 대댓글은 지원하지 않음
+                    postId: widget.postId,
+                    onDeleteComment: widget.onDeleteComment,
+                    isAnonymousPost: widget.isAnonymousPost,
+                    getDisplayName: widget.getDisplayName,
+                    isReplyTarget: widget.parentTopLevelCommentId != null,
+                    parentTopLevelCommentId: widget.comment.id,
+                    onReplyTap: widget.onReplyTap, // 대댓글에는 답글 버튼 미표시
+                  ),
+                ),
+              ],
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -42,7 +42,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _canSubmit = false;
   
   // 공개 범위 설정
-  String _visibility = 'public'; // 'public' 또는 'category'
+  String _visibility = 'category'; // 'public' 또는 'category' (기본: 카테고리별 공개)
   bool _isAnonymous = false; // 익명 여부
   List<String> _selectedCategoryIds = []; // 선택된 카테고리 ID 목록
   

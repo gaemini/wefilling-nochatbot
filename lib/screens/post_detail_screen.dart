@@ -170,6 +170,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
+  /// 다중 이미지 인디케이터(이미지 아래 점/바)
+  /// - 인스타그램처럼 현재 페이지가 "길게" 표시되며, 슬라이드 시 애니메이션으로 이동
+  Widget _buildImageDotsIndicator({
+    required int count,
+  }) {
+    if (count <= 1) return const SizedBox.shrink();
+
+    const activeColor = Color(0xFF111827);
+    const inactiveColor = Color(0xFFD1D5DB);
+    const dotHeight = 6.0;
+    const dotGap = 6.0;
+
+    return SizedBox(
+      height: 18,
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(count, (i) {
+            final isActive = i == _currentImageIndex;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(horizontal: dotGap / 2),
+              width: isActive ? 18 : 6,
+              height: dotHeight,
+              decoration: BoxDecoration(
+                color: isActive ? activeColor : inactiveColor,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+
   // 상세 화면 하단 메타(하트/댓글/조회) - 카드와 유사한 촘촘한 간격
   Widget _buildStatsRow({
     required int likes,
@@ -1651,7 +1687,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           _getUnifiedBodyText(_currentPost),
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF111827),
                             height: 1.35,
@@ -1743,10 +1779,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ),
                     ),
 
+                    // 다중 이미지 페이지 인디케이터 (이미지 아래)
+                    if (_currentPost.imageUrls.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _buildImageDotsIndicator(
+                          count: _currentPost.imageUrls.length,
+                        ),
+                      ),
+
                     // 액션 버튼들과 좋아요 수 표시 (이미지 바로 아래)
                   Padding(
                     // 첨부 이미지처럼 이미지와 아이콘 줄 사이 간격을 확보
-                    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      _currentPost.imageUrls.length > 1 ? 6 : 10,
+                      16,
+                      0,
+                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

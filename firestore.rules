@@ -665,10 +665,10 @@ service cloud.firestore {
         request.auth.uid in resource.data.participants &&
         (
           (
-            // 일반 메시지 관련 변경 + 보관
+            // 일반 메시지 관련 변경 + 보관 + 나가기 기록
             request.resource.data.participants == resource.data.participants &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'unreadCount', 'updatedAt', 'archivedBy'])
+              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'unreadCount', 'updatedAt', 'archivedBy', 'userLeftAt'])
           ) ||
           (
             // '나가기': participants에서 본인만 제거 (N → N-1), 기타 필드는 unreadCount/updatedAt만 변경 가능

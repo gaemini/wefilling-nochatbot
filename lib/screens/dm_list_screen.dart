@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/conversation.dart';
 import '../models/user_profile.dart';
 import '../services/dm_service.dart';
@@ -31,11 +32,131 @@ class _DMListScreenState extends State<DMListScreen> {
   final _currentUser = FirebaseAuth.instance.currentUser;
   Set<String> _hiddenConversationIds = {};
   final Map<String, Stream<DMUserInfo?>> _userInfoStreams = {};
+  static const String _anonTitlePrefsPrefix = 'dm_anon_title__'; // conversationId -> post content
+  final Map<String, String> _anonTitleCache = {}; // conversationId -> post content
+  final Set<String> _anonPrefetchInFlightPostIds = {};
+  bool _anonPrefetchScheduled = false;
+  bool _anonCacheLoaded = false;
+  static const int _anonPrefetchMaxConversations = 25; // UX/성능 균형(최근 것 우선)
+
+  String _truncate(String text, {int max = 40}) {
+    final t = text.trim();
+    if (t.isEmpty) return t;
+    return t.length > max ? '${t.substring(0, max)}...' : t;
+  }
+
+  Future<void> _loadCachedAnonTitles() async {
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys().where((k) => k.startsWith(_anonTitlePrefsPrefix));
+    for (final k in keys) {
+      final convId = k.substring(_anonTitlePrefsPrefix.length);
+      final v = prefs.getString(k);
+      if (v != null && v.trim().isNotEmpty) {
+        _anonTitleCache[convId] = v.trim();
+      }
+    }
+    _anonCacheLoaded = true;
+    if (mounted) setState(() {});
+  }
+
+  void _scheduleAnonTitlePrefetch(List<Conversation> conversations) {
+    if (_anonPrefetchScheduled) return;
+    _anonPrefetchScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _anonPrefetchScheduled = false;
+      if (!mounted) return;
+      await _prefetchAnonTitles(conversations);
+    });
+  }
+
+  Future<void> _prefetchAnonTitles(List<Conversation> conversations) async {
+    // dmContent가 비어있는 익명+게시글 DM만 대상
+    final targets = conversations.where((c) {
+      final isAnon = c.isOtherUserAnonymous(_currentUser!.uid);
+      final postId = (c.postId ?? '').trim();
+      if (!isAnon) return false;
+      if (postId.isEmpty) return false;
+      if ((c.dmContent ?? '').trim().isNotEmpty) return false;
+      if ((_anonTitleCache[c.id] ?? '').trim().isNotEmpty) return false;
+      return true;
+    }).take(_anonPrefetchMaxConversations).toList();
+
+    if (targets.isEmpty) return;
+
+    // postId를 모아 배치(whereIn 10개 제한)로 가져오기
+    final postIds = <String>{};
+    for (final c in targets) {
+      final pid = (c.postId ?? '').trim();
+      if (pid.isNotEmpty && !_anonPrefetchInFlightPostIds.contains(pid)) {
+        postIds.add(pid);
+      }
+    }
+    if (postIds.isEmpty) return;
+
+    for (final pid in postIds) {
+      _anonPrefetchInFlightPostIds.add(pid);
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ids = postIds.toList();
+      final Map<String, String> postContentById = {};
+
+      // 여러 whereIn 쿼리를 "가능한 한" 병렬로 수행 (체감 속도 개선)
+      final List<List<String>> chunks = [];
+      for (var i = 0; i < ids.length; i += 10) {
+        chunks.add(ids.sublist(i, (i + 10).clamp(0, ids.length)));
+      }
+      // 동시성 과도 방지(3개씩)
+      for (var i = 0; i < chunks.length; i += 3) {
+        final batchChunks = chunks.sublist(i, (i + 3).clamp(0, chunks.length));
+        final snaps = await Future.wait(batchChunks.map((chunk) {
+          return FirebaseFirestore.instance
+              .collection('posts')
+              .where(FieldPath.documentId, whereIn: chunk)
+              .get();
+        }));
+        for (final snap in snaps) {
+          for (final doc in snap.docs) {
+            final content = (doc.data()['content'] as String?)?.trim() ?? '';
+            if (content.isNotEmpty) {
+              postContentById[doc.id] = content;
+            }
+          }
+        }
+      }
+
+      // conversationId -> content 매핑 + 로컬 캐시 저장
+      final List<Future<void>> prefWrites = [];
+      for (final c in targets) {
+        final pid = (c.postId ?? '').trim();
+        final content = (postContentById[pid] ?? '').trim();
+        if (content.isEmpty) continue;
+
+        _anonTitleCache[c.id] = content;
+        prefWrites.add(prefs.setString('$_anonTitlePrefsPrefix${c.id}', content));
+      }
+      // prefs 쓰기는 병렬 처리
+      if (prefWrites.isNotEmpty) {
+        await Future.wait(prefWrites);
+      }
+
+      if (mounted) setState(() {});
+    } catch (e) {
+      Logger.error('익명 DM 타이틀 프리패치 실패(무시): $e');
+    } finally {
+      for (final pid in postIds) {
+        _anonPrefetchInFlightPostIds.remove(pid);
+      }
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _loadHiddenConversations();
+    _loadCachedAnonTitles();
   }
 
   Future<void> _loadHiddenConversations() async {
@@ -128,6 +249,12 @@ class _DMListScreenState extends State<DMListScreen> {
           );
         }
         
+        // 익명 게시글 DM 타이틀은 탭과 무관하게 백그라운드로 미리 준비 (체감 속도 개선)
+        // - 목록에서 "하나씩 채워지는" 느낌을 줄이기 위해 로컬 캐시 중심으로 갱신
+        if (_anonCacheLoaded) {
+          _scheduleAnonTitlePrefetch(conversations);
+        }
+
         // 필터 적용: 친구 / 익명
         Logger.log('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
         
@@ -147,23 +274,24 @@ class _DMListScreenState extends State<DMListScreen> {
           
           // 친구 탭: 익명이 아니고 게시글 DM도 아닌 경우만 표시
           // 익명 탭: 익명 대화만 표시 (게시글 DM 포함)
-          final isPostDM = c.dmTitle != null && c.dmTitle!.isNotEmpty;
+          final isPostDM = (c.postId != null && c.postId!.isNotEmpty);
           final passesType = _filter == DMFilter.friends 
               ? (!isAnon && !isPostDM)  // 친구 탭: 일반 친구 대화만
               : isAnon;  // 익명 탭: 모든 익명 대화 (게시글 DM 포함)
           
           final notHiddenLocal = !_hiddenConversationIds.contains(c.id);
-          final notArchivedServer = !(c.archivedBy.contains(_currentUser!.uid));
+          // ✅ archivedBy 체크 제거: getMyConversations에서 이미 처리됨 (새 메시지 자동 복원)
+          // ✅ userLeftAt 체크도 getMyConversations에서 이미 처리됨
           // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
           final hasOtherParticipant = c.participants.length >= 2;
           
-          final result = passesType && notHiddenLocal && notArchivedServer && hasOtherParticipant;
+          final result = passesType && notHiddenLocal && hasOtherParticipant;
           
           if (!result) {
             Logger.log('  ❌ 제외: ${c.id}');
             Logger.log('     - isAnon: $isAnon, isPostDM: $isPostDM');
             Logger.log('     - passesType: $passesType, notHidden: $notHiddenLocal');
-            Logger.log('     - notArchived: $notArchivedServer, hasOther: $hasOtherParticipant');
+            Logger.log('     - hasOther: $hasOtherParticipant');
           } else {
             Logger.log('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
           }
@@ -299,27 +427,49 @@ class _DMListScreenState extends State<DMListScreen> {
       context,
       conversation.lastMessageTime,
     );
-    final dmTitle = conversation.dmTitle;
+    final dmContent = conversation.dmContent;
 
-    // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
-    if (dmTitle != null && dmTitle.isNotEmpty) {
+    // 🔍 디버그: 익명 대화방 데이터 확인
+    if (isAnonymous && kDebugMode) {
+      Logger.log('🔍 익명 대화방 데이터:');
+      Logger.log('  - ID: ${conversation.id.substring(0, 20)}...');
+      Logger.log('  - dmContent: ${dmContent ?? "null"}');
+      Logger.log('  - lastMessage: ${conversation.lastMessage}');
+    }
+
+    // 🎯 익명 대화방이고 게시글 기반인 경우 (dmContent가 있으면)
+    final isPostBasedAnonymous = isAnonymous && (
+      (dmContent != null && dmContent.isNotEmpty) || 
+      (conversation.postId != null && conversation.postId!.isNotEmpty)  // postId만 있어도 게시글 기반
+    );
+
+    if (isPostBasedAnonymous) {
       return StreamBuilder<int>(
         stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
         initialData: 0,
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
-          final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-          final titlePrefix = isKorean ? '제목: ' : 'Title: ';
+
+          final existing = (dmContent ?? '').trim();
+          final cached = (_anonTitleCache[conversation.id] ?? '').trim();
+          final titleText = existing.isNotEmpty
+              ? _truncate(existing)
+              : (cached.isNotEmpty
+                  ? _truncate(cached)
+                  : (Localizations.localeOf(context).languageCode == 'ko'
+                      ? '익명 게시글'
+                      : 'Anonymous post'));
 
           return _buildConversationCardContent(
             conversation: conversation,
-            displayName: '$titlePrefix$dmTitle',  // 게시글 제목만 표시
+            displayName: titleText,
             otherUserId: otherUserId,
-            otherUserPhoto: '',  // 익명이므로 사진 없음
+            otherUserPhoto: '', // 익명이므로 사진 없음
             otherUserPhotoVersion: 0,
             isAnonymous: isAnonymous,
             timeString: timeString,
             unreadCount: unreadCount,
+            hideProfile: true,
           );
         },
       );
@@ -358,6 +508,7 @@ class _DMListScreenState extends State<DMListScreen> {
             isAnonymous: false,
             timeString: timeString,
             unreadCount: unreadCount,
+            hideProfile: false,
           );
         },
       );
@@ -419,6 +570,7 @@ class _DMListScreenState extends State<DMListScreen> {
               isAnonymous: isAnonymous,
               timeString: timeString,
               unreadCount: unreadCount,
+              hideProfile: isAnonymous,  // 익명이면 프로필 숨김
             );
           },
         );
@@ -436,6 +588,7 @@ class _DMListScreenState extends State<DMListScreen> {
     required bool isAnonymous,
     required String timeString,
     required int unreadCount,
+    bool hideProfile = false,  // 프로필 숨김 여부
   }) {
     return Material(
       color: Colors.white,
@@ -454,17 +607,18 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
           child: Row(
             children: [
-              // 프로필 이미지
-              UserAvatar(
-                uid: otherUserId,
-                photoUrl: otherUserPhoto,
-                photoVersion: otherUserPhotoVersion,
-                isAnonymous: isAnonymous,
-                size: 48,
-                placeholderIconSize: 24,
-              ),
-              
-              const SizedBox(width: 12),
+              // 프로필 이미지 (hideProfile이 false일 때만 표시)
+              if (!hideProfile) ...[
+                UserAvatar(
+                  uid: otherUserId,
+                  photoUrl: otherUserPhoto,
+                  photoVersion: otherUserPhotoVersion,
+                  isAnonymous: isAnonymous,
+                  size: 48,
+                  placeholderIconSize: 24,
+                ),
+                const SizedBox(width: 12),
+              ],
               
               // 내용 영역
               Expanded(
@@ -476,16 +630,35 @@ class _DMListScreenState extends State<DMListScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: Text(
-                            displayName,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF111827),
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 180),
+                            switchInCurve: Curves.easeOut,
+                            switchOutCurve: Curves.easeOut,
+                            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                            layoutBuilder: (currentChild, previousChildren) {
+                              return Stack(
+                                alignment: Alignment.centerLeft, // ✅ 가운데 정렬로 보이는 문제 해결
+                                children: <Widget>[
+                                  ...previousChildren,
+                                  if (currentChild != null) currentChild,
+                                ],
+                              );
+                            },
+                            child: Align(
+                              alignment: Alignment.centerLeft, // ✅ 텍스트 좌측 고정
+                              child: Text(
+                                displayName,
+                                key: ValueKey(displayName),
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111827),
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

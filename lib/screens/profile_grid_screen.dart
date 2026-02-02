@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_performance/firebase_performance.dart';
 import '../l10n/app_localizations.dart';
 import '../models/post.dart';
 import '../models/relationship_status.dart';
@@ -128,16 +127,6 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
   /// 프로필 데이터 로드
   Future<void> _loadProfileData() async {
-    Trace? profileTrace;
-    try {
-      profileTrace = FirebasePerformance.instance.newTrace('profile_grid_load');
-      await profileTrace.start();
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('⚠️ profile_grid_load trace start 실패: $e');
-      }
-    }
-
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
       final currentUserId = authProvider.user?.uid;
@@ -193,16 +182,6 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
               content: Text(
                   '${AppLocalizations.of(context)!.cannotLoadProfile}: $e')),
         );
-      }
-    } finally {
-      if (profileTrace != null) {
-        try {
-          await profileTrace.stop();
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('⚠️ profile_grid_load trace stop 실패: $e');
-          }
-        }
       }
     }
   }
@@ -364,9 +343,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
     if (_userProfile == null) {
       return Scaffold(
         appBar: AppBar(title: Text(AppLocalizations.of(context)!.profile)),
-        body: const Center(
-          child: Text(AppLocalizations.of(context)!.cannotLoadProfile),
-        ),
+        body: Center(child: Text(AppLocalizations.of(context)!.cannotLoadProfile)),
       );
     }
 
@@ -669,6 +646,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       );
     } catch (e) {
       if (!mounted) return;
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
       _showSnackBar(
         isKo ? '게시글을 열 수 없습니다.' : 'Failed to open the post.',
         backgroundColor: Theme.of(context).colorScheme.error,

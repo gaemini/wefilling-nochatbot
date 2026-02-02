@@ -19,6 +19,8 @@ class Conversation {
   final String? postId;
   // 익명 게시글로부터 시작된 DM의 경우 채팅방 표시용 제목(게시글 제목)
   final String? dmTitle;
+  // 익명 게시글로부터 시작된 DM의 경우 채팅방 표시용 본문(게시글 내용)
+  final String? dmContent;
   final DateTime createdAt;
   final DateTime updatedAt;
   final List<String> archivedBy; // 이 대화방을 보관(삭제)한 사용자 uid 목록
@@ -43,6 +45,7 @@ class Conversation {
     required this.unreadCount,
     this.postId,
     this.dmTitle,
+    this.dmContent,
     required this.createdAt,
     required this.updatedAt,
     this.archivedBy = const [],
@@ -88,6 +91,7 @@ class Conversation {
       unreadCount: Map<String, int>.from(data['unreadCount'] ?? {}),
       postId: data['postId'],
       dmTitle: data['dmTitle'],
+      dmContent: data['dmContent'],
       createdAt: (data['createdAt'] as Timestamp).toDate(),
       updatedAt: (data['updatedAt'] as Timestamp).toDate(),
       archivedBy: (data['archivedBy'] as List?)?.map((e) => e.toString()).toList() ?? const [],
@@ -132,6 +136,7 @@ class Conversation {
       'unreadCount': unreadCount,
       if (postId != null) 'postId': postId,
       if (dmTitle != null && dmTitle!.isNotEmpty) 'dmTitle': dmTitle,
+      if (dmContent != null && dmContent!.isNotEmpty) 'dmContent': dmContent,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
       if (archivedBy.isNotEmpty) 'archivedBy': archivedBy,

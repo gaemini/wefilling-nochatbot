@@ -456,14 +456,22 @@ class DMService {
       // 새 대화방 생성
       final now = DateTime.now();
       String? dmTitle;
+      String? dmContent;
       if (postId != null && isOtherUserAnonymous) {
         try {
           final postDoc = await _firestore.collection('posts').doc(postId).get();
           if (postDoc.exists) {
-            dmTitle = postDoc.data()!['title'] as String?;
+            final postData = postDoc.data()!;
+            // 게시글 본문만 저장 (제목은 사용하지 않음)
+            dmContent = postData['content'] as String?;
+            final preview = (dmContent ?? '').trim();
+            final shown = preview.isEmpty ? '없음' : (preview.length > 50 ? preview.substring(0, 50) : preview);
+            Logger.log('📝 게시글 본문 로드 성공: $shown');
+          } else {
+            Logger.log('⚠️ 게시글을 찾을 수 없음: $postId');
           }
         } catch (e) {
-          Logger.error('게시글 제목 로드 실패: $e');
+          Logger.error('게시글 본문 로드 실패: $e');
         }
       }
       
@@ -517,8 +525,12 @@ class DMService {
       if (postId != null) {
         conversationData['postId'] = postId;
       }
-      if (dmTitle != null && dmTitle.isNotEmpty) {
-        conversationData['dmTitle'] = dmTitle;
+      // dmContent만 저장 (제목은 사용하지 않음)
+      if (dmContent != null && dmContent.isNotEmpty) {
+        conversationData['dmContent'] = dmContent;
+        Logger.log('✅ dmContent 저장됨: ${dmContent.substring(0, dmContent.length > 50 ? 50 : dmContent.length)}...');
+      } else {
+        Logger.log('⚠️ dmContent가 비어있음');
       }
       
       Logger.log('📦 대화방 데이터 생성');
@@ -714,23 +726,47 @@ class DMService {
       final conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
           .where((conv) {
-            // 인스타그램 방식: 나간 대화방 필터링
             final userLeftTime = conv.userLeftAt[currentUser.uid];
             final lastMessageTime = conv.lastMessageTime;
+            final isArchived = conv.archivedBy.contains(currentUser.uid);
             
+            // ✅ archivedBy 체크 + 새 메시지 복원 로직
+            if (isArchived) {
+              // 보관했지만 새 메시지가 있으면 복원
+              if (userLeftTime != null && lastMessageTime.compareTo(userLeftTime) > 0) {
+                Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: archivedBy이지만 새 메시지로 복원');
+                Logger.log('     - lastMessageTime: $lastMessageTime');
+                Logger.log('     - userLeftTime: $userLeftTime');
+                Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
+                // 계속 진행하여 표시
+              } else {
+                Logger.log('  🔴 [${conv.id.substring(0, 8)}] 숨김: archivedBy에 포함 (새 메시지 없음)');
+                return false;
+              }
+            }
+            
+            // userLeftAt 체크 (인스타그램 방식)
             bool show;
             // 나간 적이 없으면 표시
             if (userLeftTime == null) {
               show = true;
+              Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: 나간 적 없음');
             }
             // 나간 이후 새 활동(메시지)이 있으면 표시
-            // isAfter 대신 compareTo로 >= 비교
-            else if (lastMessageTime.compareTo(userLeftTime) >= 0) {
+            else if (lastMessageTime.compareTo(userLeftTime) > 0) {
               show = true;
+              Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: 나간 후 새 메시지');
+              Logger.log('     - lastMessageTime: $lastMessageTime');
+              Logger.log('     - userLeftTime: $userLeftTime');
+              Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
             }
             // 나갔고 새 활동 없음 → 숨김
             else {
               show = false;
+              Logger.log('  🔴 [${conv.id.substring(0, 8)}] 숨김: 나갔고 새 메시지 없음');
+              Logger.log('     - lastMessageTime: $lastMessageTime');
+              Logger.log('     - userLeftTime: $userLeftTime');
+              Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
             }
             
             // ⭐ 추가: 익명 대화방에서 모든 상대방이 나간 경우만 숨김 (getTotalUnreadCount와 일치)
@@ -987,15 +1023,22 @@ class DMService {
         final currentUserDoc = await _firestore.collection('users').doc(currentUser.uid).get();
         final otherUserDoc = await _firestore.collection('users').doc(otherUserId).get();
 
-        String? dmTitle;
+        String? dmContent;
         if (parsed.anonymous && parsed.postId != null) {
           try {
             final postDoc = await _firestore.collection('posts').doc(parsed.postId!).get();
             if (postDoc.exists) {
-              dmTitle = postDoc.data()!['title'] as String?;
+              final postData = postDoc.data()!;
+              // 게시글 본문만 저장 (제목은 사용하지 않음)
+              dmContent = postData['content'] as String?;
+              final preview = (dmContent ?? '').trim();
+              final shown = preview.isEmpty ? '없음' : (preview.length > 50 ? preview.substring(0, 50) : preview);
+              Logger.log('📝 sendMessage: 게시글 본문 로드 성공: $shown');
+            } else {
+              Logger.log('⚠️ sendMessage: 게시글을 찾을 수 없음: ${parsed.postId}');
             }
           } catch (e) {
-            Logger.error('게시글 제목 로드 실패: $e');
+            Logger.error('게시글 본문 로드 실패: $e');
           }
         }
 
@@ -1040,7 +1083,8 @@ class DMService {
             otherUserId: 0,
           },
           if (parsed.postId != null) 'postId': parsed.postId,
-          if (dmTitle != null && dmTitle.isNotEmpty) 'dmTitle': dmTitle,
+          // dmContent만 저장 (제목은 사용하지 않음)
+          if (dmContent != null && dmContent.isNotEmpty) 'dmContent': dmContent,
           'createdAt': Timestamp.fromDate(now),
           'updatedAt': Timestamp.fromDate(now),
         };
@@ -1269,20 +1313,47 @@ class DMService {
 
     final convRef = _firestore.collection('conversations').doc(conversationId);
     try {
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🚪 leaveConversation 시작');
+      Logger.log('  - conversationId: $conversationId');
+      Logger.log('  - userId: ${currentUser.uid}');
+      
       final snap = await convRef.get();
-      if (!snap.exists) return;
+      if (!snap.exists) {
+        Logger.log('❌ 대화방이 존재하지 않음');
+        return;
+      }
+      
       final data = snap.data() as Map<String, dynamic>;
       final participants = List<String>.from(data['participants'] ?? []);
-      if (!participants.contains(currentUser.uid)) return;
+      if (!participants.contains(currentUser.uid)) {
+        Logger.log('❌ 사용자가 참여자가 아님');
+        return;
+      }
+      
+      final lastMessageTime = (data['lastMessageTime'] as Timestamp?)?.toDate();
+      final now = DateTime.now();
+      
+      Logger.log('📊 나가기 전 상태:');
+      Logger.log('  - participants: $participants');
+      Logger.log('  - lastMessageTime: $lastMessageTime');
+      Logger.log('  - 현재 시간: $now');
+      if (lastMessageTime != null) {
+        Logger.log('  - 마지막 메시지로부터 ${now.difference(lastMessageTime).inSeconds}초 경과');
+      }
 
-      // 사용자가 나간 시간을 기록 (participants에서는 제거하지 않음)
+      // ✅ archivedBy와 userLeftAt 모두 설정 (확실한 제거)
       await convRef.update({
-        'userLeftAt.${currentUser.uid}': Timestamp.fromDate(DateTime.now()),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
+        'archivedBy': FieldValue.arrayUnion([currentUser.uid]),
+        'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
+        'updatedAt': Timestamp.fromDate(now),
       });
       
-      Logger.log('✅ 대화방 나가기 완료 (인스타그램 방식): $conversationId');
-      Logger.log('  - 사용자는 이전 메시지를 볼 수 없지만 상대방은 모든 메시지 유지');
+      Logger.log('✅ 대화방 나가기 완료');
+      Logger.log('  - archivedBy에 추가: ${currentUser.uid}');
+      Logger.log('  - userLeftAt.${currentUser.uid}: $now');
+      Logger.log('  - 목록에서 즉시 제거됨 (archivedBy 체크)');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } on FirebaseException catch (e) {
       Logger.error('leaveConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
       rethrow;

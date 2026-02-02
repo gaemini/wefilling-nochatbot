@@ -14,8 +14,6 @@ import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../providers/relationship_provider.dart';
 import '../screens/meetup_detail_screen.dart';
-import '../screens/notification_screen.dart';
-import '../screens/post_detail_screen.dart';
 import '../services/meetup_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/app_icon_button.dart';
@@ -487,18 +485,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             color: Colors.black,
           ),
         ),
-        actions: [
-          AppIconButton(
-            icon: Icons.notifications_none_rounded,
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const NotificationScreen()),
-              );
-            },
-            semanticLabel: AppLocalizations.of(context)!.notifications,
-          ),
-        ],
       ),
       body: Column(
         children: [

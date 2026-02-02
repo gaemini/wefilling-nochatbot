@@ -130,8 +130,8 @@ class _MainScreenState extends State<MainScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => UnifiedSearchScreen(
-          // 0: 이름, 1: 게시글, 2: 모임 ...
-          initialTabIndex: _selectedIndex == 0 ? 1 : 2,
+          // 기본은 친구(이름) 검색 탭으로 시작
+          initialTabIndex: 0,
           initialQuery: null,
         ),
       ),

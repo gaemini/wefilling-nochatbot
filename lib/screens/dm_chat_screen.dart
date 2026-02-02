@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../services/dm_service.dart';
@@ -66,7 +67,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Conversation? _conversation;
   bool _isLoading = false;
   bool _isLeaving = false; // 나가기 진행 중 플래그
-  String? _preloadedDmTitle; // 미리 로드된 게시글 제목
+  static const String _anonTitlePrefsPrefix = 'dm_anon_title__'; // conversationId -> post content
+  String? _preloadedDmContent; // 미리 로드된 게시글 본문(대화방 제목용)
+  String? _backfilledPostId; // dmContent 백필을 1회만 수행하기 위한 가드
   bool _isBlocked = false; // 차단 여부
   bool _isBlockedBy = false; // 차단당한 여부
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
@@ -83,7 +86,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
     
     _checkBlockStatus(); // 차단 상태 확인
-    _preloadDmTitleIfAnonymous(); // 익명이면 제목 미리 로드
+    _preloadPostContentIfAnonymous(); // 익명이면 게시글 본문 미리 로드
     _initConversationState();
   }
   
@@ -126,27 +129,96 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
   }
   
-  /// 익명 대화방이면 게시글 제목을 미리 로드
-  Future<void> _preloadDmTitleIfAnonymous() async {
-    // conversationId에서 익명 여부와 postId 추출
-    if (widget.conversationId.startsWith('anon_')) {
-      final parts = widget.conversationId.split('_');
-      if (parts.length >= 4) {
-        final postId = parts.sublist(3).join('_'); // postId 추출
-        try {
-          final postDoc = await FirebaseFirestore.instance
-              .collection('posts')
-              .doc(postId)
-              .get();
-          if (postDoc.exists && mounted) {
-            setState(() {
-              _preloadedDmTitle = postDoc.data()?['title'] as String?;
-            });
+  String? _extractPostIdFromConversationId(String conversationId) {
+    if (!conversationId.startsWith('anon_')) return null;
+    final parts = conversationId.split('_');
+    if (parts.length < 4) return null;
+    var postId = parts.sublist(3).join('_');
+    // __timestamp 형식의 접미사 제거
+    if (postId.contains('__')) {
+      postId = postId.split('__').first;
+    }
+    return postId.isEmpty ? null : postId;
+  }
+
+  /// 익명 게시글 DM이면 게시글 본문을 미리 로드 (AppBar에 즉시 표시)
+  Future<void> _preloadPostContentIfAnonymous() async {
+    final postId = _extractPostIdFromConversationId(widget.conversationId);
+    if (postId == null) return;
+
+    try {
+      // 1) 로컬 캐시(SharedPreferences) 우선 - UX 개선 (즉시 표시)
+      final prefs = await SharedPreferences.getInstance();
+      final cached = (prefs.getString('$_anonTitlePrefsPrefix${widget.conversationId}') ?? '').trim();
+      if (cached.isNotEmpty && mounted) {
+        setState(() {
+          _preloadedDmContent = cached;
+        });
+        return;
+      }
+
+      // 2) Firestore에서 게시글 본문 로드
+      final postDoc = await FirebaseFirestore.instance.collection('posts').doc(postId).get();
+      final content = postDoc.exists ? (postDoc.data()?['content'] as String?) : null;
+      if (!mounted) return;
+      if (content != null && content.trim().isNotEmpty) {
+        final normalized = content.trim();
+        await prefs.setString('$_anonTitlePrefsPrefix${widget.conversationId}', normalized);
+        setState(() {
+          _preloadedDmContent = normalized;
+        });
+      }
+    } catch (e) {
+      Logger.error('게시글 본문 미리 로드 실패: $e');
+    }
+  }
+
+  /// 기존 대화방 문서에 dmContent가 없으면 게시글 본문으로 1회 백필
+  Future<void> _ensureDmContentBackfilled({required String postId}) async {
+    if (_backfilledPostId == postId) return;
+
+    try {
+      final postDoc = await FirebaseFirestore.instance.collection('posts').doc(postId).get();
+      final content = postDoc.exists ? (postDoc.data()?['content'] as String?) : null;
+      final normalized = content?.trim() ?? '';
+      if (normalized.isEmpty) {
+        _backfilledPostId = postId; // 더 시도해도 의미 없으므로 가드
+        return;
+      }
+
+      // UI용 프리로드도 갱신
+      if (mounted) {
+        setState(() {
+          _preloadedDmContent = normalized;
+        });
+      }
+
+      // 로컬 캐시 저장(다음 진입부터 즉시 표시)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('$_anonTitlePrefsPrefix${widget.conversationId}', normalized);
+      } catch (_) {}
+
+      // 대화방 문서에 dmContent가 비어있을 때만 best-effort로 업데이트 (목록도 같이 정상화)
+      final convRef = FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
+      final convDoc = await convRef.get();
+      if (convDoc.exists) {
+        final data = convDoc.data() as Map<String, dynamic>;
+        final existing = (data['dmContent'] as String?)?.trim() ?? '';
+        if (existing.isEmpty) {
+          try {
+            await convRef.update({'dmContent': normalized});
+          } catch (e) {
+            // Rules 상 업데이트가 막혀도 UI는 게시글에서 직접 가져와 표시하면 됨
+            Logger.error('dmContent 백필 업데이트 실패(무시): $e');
           }
-        } catch (e) {
-          Logger.error('게시글 제목 미리 로드 실패: $e');
         }
       }
+
+      _backfilledPostId = postId;
+    } catch (e) {
+      Logger.error('dmContent 백필 실패(무시): $e');
+      _backfilledPostId = postId;
     }
   }
   Future<void> _initConversationState() async {
@@ -316,6 +388,25 @@ class _DMChatScreenState extends State<DMChatScreen> {
         setState(() {
           _conversation = Conversation.fromFirestore(doc);
         });
+
+        // 익명 게시글 DM의 경우: dmContent가 없으면 게시글에서 본문을 가져와 1회 백필
+        final conv = _conversation;
+        if (conv != null &&
+            conv.postId != null &&
+            conv.postId!.isNotEmpty &&
+            conv.isOtherUserAnonymous(_currentUser!.uid)) {
+          final existingContent = (conv.dmContent ?? '').trim();
+          if (existingContent.isEmpty) {
+            await _ensureDmContentBackfilled(postId: conv.postId!);
+          } else if (_preloadedDmContent == null || _preloadedDmContent!.isEmpty) {
+            // 이미 dmContent가 있으면 프리로드에도 반영
+            if (mounted) {
+              setState(() {
+                _preloadedDmContent = existingContent;
+              });
+            }
+          }
+        }
       }
     } catch (e) {
       Logger.error('대화방 정보 로드 오류: $e');
@@ -401,10 +492,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
   /// AppBar 빌드
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
-    final dmTitle = _conversation?.dmTitle ?? _preloadedDmTitle; // 미리 로드된 제목 사용
+    final dmContent = (_conversation?.dmContent ?? _preloadedDmContent)?.trim();
+    final postId = _conversation?.postId ?? _extractPostIdFromConversationId(widget.conversationId);
+    final isPostBasedAnonymous = _isAnonymous && (postId != null && postId.isNotEmpty);
     
     // ⏳ 로딩 상태: 데이터가 준비되지 않았을 때
-    if (_conversation == null && dmTitle == null) {
+    if (_conversation == null && (dmContent == null || dmContent.isEmpty)) {
       return AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
@@ -438,11 +531,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
       );
     }
 
-    // 🎯 익명 대화방이고 dmTitle이 있으면 FutureBuilder 건너뛰기 (익명성 보호)
-    if (dmTitle != null && dmTitle.isNotEmpty) {
-      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-      final primaryTitle = isKorean ? '제목: $dmTitle' : 'Title: $dmTitle';
-      final secondaryTitle = AppLocalizations.of(context)!.author ?? "";
+    // 🎯 익명 게시글 DM: AppBar 제목을 "게시글 본문"으로 표시
+    if (isPostBasedAnonymous) {
+      final primaryTitle = (dmContent != null && dmContent.isNotEmpty)
+          ? dmContent
+          : AppLocalizations.of(context)!.anonymous;
+      final secondaryTitle = AppLocalizations.of(context)!.anonymous;
 
       String _formatHeaderDate() {
         final date = _conversation?.lastMessageTime ?? _conversation?.createdAt;
@@ -487,6 +581,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
                       fontSize: 12,
                       color: Colors.black54,
                     ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),

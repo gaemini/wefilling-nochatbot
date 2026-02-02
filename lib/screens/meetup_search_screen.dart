@@ -87,7 +87,11 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
           _searchResults = [];
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.locale.languageCode == 'ko' ? '검색 중 오류가 발생했습니다' : 'Search error occurred'}: $e')),
+          SnackBar(
+            content: Text(
+              '${Localizations.localeOf(context).languageCode == 'ko' ? '검색 중 오류가 발생했습니다' : 'Search error occurred'}: $e',
+            ),
+          ),
         );
       }
     }
@@ -149,7 +153,11 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                           controller: _searchController,
                           focusNode: _searchFocusNode,
                           decoration: InputDecoration(
-                            hintText: AppLocalizations.of(context)!.locale.languageCode == 'ko' ? '게시글을 검색하세요...' : 'Search posts...',
+                            hintText:
+                                Localizations.localeOf(context).languageCode ==
+                                        'ko'
+                                    ? '게시글을 검색하세요...'
+                                    : 'Search posts...',
                             hintStyle: TextStyle(color: Colors.grey[500]),
                             border: InputBorder.none,
                           ),
@@ -186,12 +194,12 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
           // 검색 결과 영역
           Expanded(
             child: _isLoading
-                ? const Center(
+                ? Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
                         Text(AppLocalizations.of(context)!.searching),
                       ],
                     ),
@@ -219,7 +227,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                             if (_searchQuery.isNotEmpty) ...[
                               const SizedBox(height: 8),
                               Text(
-                                '"$_searchQuery"${AppLocalizations.of(context)!.locale.languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found'}',
+                                '"$_searchQuery"${Localizations.localeOf(context).languageCode == 'ko' ? '에 대한 결과를 찾을 수 없습니다' : ' - No results found'}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   color: Colors.grey[500],

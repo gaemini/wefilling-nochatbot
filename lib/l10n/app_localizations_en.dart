@@ -93,6 +93,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendsOfUser => '\'s Friends';
 
   @override
+  String get alreadyFriends => 'Already friends';
+
+  @override
+  String get notFriends => 'Not friends';
+
+  @override
+  String get friendsOnlyProfileTitle => 'Only friends can view this profile';
+
+  @override
+  String get friendsOnlyProfileSubtitle =>
+      'Become friends to see posts and details';
+
+  @override
+  String get requestPending => 'Requested';
+
+  @override
   String get noFriendsYet => 'No friends yet';
 
   @override

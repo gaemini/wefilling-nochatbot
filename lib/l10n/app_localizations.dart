@@ -260,6 +260,36 @@ abstract class AppLocalizations {
   /// **'님의 친구'**
   String get friendsOfUser;
 
+  /// No description provided for @alreadyFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'내 친구'**
+  String get alreadyFriends;
+
+  /// No description provided for @notFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 아님'**
+  String get notFriends;
+
+  /// No description provided for @friendsOnlyProfileTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구만 프로필을 볼 수 있어요'**
+  String get friendsOnlyProfileTitle;
+
+  /// No description provided for @friendsOnlyProfileSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구가 되면 후기와 정보를 확인할 수 있어요'**
+  String get friendsOnlyProfileSubtitle;
+
+  /// No description provided for @requestPending.
+  ///
+  /// In ko, this message translates to:
+  /// **'요청됨'**
+  String get requestPending;
+
   /// No description provided for @noFriendsYet.
   ///
   /// In ko, this message translates to:

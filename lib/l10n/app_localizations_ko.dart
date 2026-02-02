@@ -90,6 +90,21 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendsOfUser => '님의 친구';
 
   @override
+  String get alreadyFriends => '내 친구';
+
+  @override
+  String get notFriends => '친구 아님';
+
+  @override
+  String get friendsOnlyProfileTitle => '친구만 프로필을 볼 수 있어요';
+
+  @override
+  String get friendsOnlyProfileSubtitle => '친구가 되면 후기와 정보를 확인할 수 있어요';
+
+  @override
+  String get requestPending => '요청됨';
+
+  @override
   String get noFriendsYet => '아직 친구가 없습니다';
 
   @override

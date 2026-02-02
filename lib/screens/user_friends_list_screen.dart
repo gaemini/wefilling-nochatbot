@@ -4,11 +4,13 @@
 
 import 'package:flutter/material.dart';
 import '../services/relationship_service.dart';
+import '../models/relationship_status.dart';
 import '../models/user_profile.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import 'friend_profile_screen.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -27,6 +29,9 @@ class UserFriendsListScreen extends StatefulWidget {
 class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   final RelationshipService _relationshipService = RelationshipService();
   List<UserProfile>? _friends;
+  Set<String>? _myFriendIds;
+  final Set<String> _requestingIds = <String>{};
+  final Set<String> _requestedIds = <String>{};
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -43,11 +48,54 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         _errorMessage = null;
       });
 
-      final friends = await _relationshipService.getUserFriends(widget.userId);
+      final currentUserId = _relationshipService.currentUserId;
+
+      final results = await Future.wait([
+        _relationshipService.getUserFriends(widget.userId),
+        currentUserId != null
+            ? _relationshipService.getUserFriends(currentUserId)
+            : Future.value(<UserProfile>[]),
+      ]);
+
+      final friends = (results[0] as List<UserProfile>)
+          .where((u) => currentUserId == null || u.uid != currentUserId)
+          .toList(growable: false);
+
+      final myFriends = results[1] as List<UserProfile>;
+      final myFriendIds = myFriends.map((u) => u.uid).toSet();
+
+      // 비친구 목록 중 "내가 이미 요청 보낸 상태"는 버튼을 요청됨으로 고정
+      final pendingOutIds = <String>{};
+      if (currentUserId != null) {
+        final nonFriends =
+            friends.where((u) => !myFriendIds.contains(u.uid)).toList();
+        if (nonFriends.isNotEmpty) {
+          final statuses = await Future.wait(
+            nonFriends.map(
+              (u) async {
+                try {
+                  return await _relationshipService.getRelationshipStatus(u.uid);
+                } catch (_) {
+                  return RelationshipStatus.none;
+                }
+              },
+            ),
+          );
+          for (var i = 0; i < nonFriends.length; i++) {
+            if (statuses[i] == RelationshipStatus.pendingOut) {
+              pendingOutIds.add(nonFriends[i].uid);
+            }
+          }
+        }
+      }
       
       if (mounted) {
         setState(() {
           _friends = friends;
+          _myFriendIds = myFriendIds;
+          _requestedIds
+            ..clear()
+            ..addAll(pendingOutIds);
           _isLoading = false;
         });
         Logger.log('✅ ${widget.userName}의 친구 목록 로드: ${friends.length}명');
@@ -66,7 +114,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF9FAFB),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -174,128 +222,326 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       );
     }
 
+    final myFriendIds = _myFriendIds ?? <String>{};
+    final friendsGroup = _friends!
+        .where((u) => myFriendIds.contains(u.uid))
+        .toList(growable: false);
+    final nonFriendsGroup = _friends!
+        .where((u) => !myFriendIds.contains(u.uid))
+        .toList(growable: false);
+
+    final l10n = AppLocalizations.of(context)!;
+
     return RefreshIndicator(
       color: AppColors.pointColor,
       onRefresh: _loadFriends,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: _friends!.length,
-        separatorBuilder: (context, index) => const Divider(
-          height: 1,
-          color: Color(0xFFE5E7EB),
-          indent: 72,
+      child: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(
+          parent: BouncingScrollPhysics(),
         ),
-        itemBuilder: (context, index) {
-          final friend = _friends![index];
-          return _buildFriendItem(friend);
-        },
+        slivers: [
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          if (friendsGroup.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: l10n.alreadyFriends,
+                count: friendsGroup.length,
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildFriendCard(
+                  friendsGroup[index],
+                  isFriend: true,
+                ),
+                childCount: friendsGroup.length,
+              ),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+          ],
+          if (nonFriendsGroup.isNotEmpty) ...[
+            SliverToBoxAdapter(
+              child: _SectionHeader(
+                title: l10n.notFriends,
+                count: nonFriendsGroup.length,
+              ),
+            ),
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildFriendCard(
+                  nonFriendsGroup[index],
+                  isFriend: false,
+                ),
+                childCount: nonFriendsGroup.length,
+              ),
+            ),
+          ],
+          const SliverToBoxAdapter(child: SizedBox(height: 24)),
+        ],
       ),
     );
   }
 
-  Widget _buildFriendItem(UserProfile friend) {
+  Widget _buildFriendCard(
+    UserProfile friend, {
+    required bool isFriend,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    final isRequesting = _requestingIds.contains(friend.uid);
+    final isRequested = _requestedIds.contains(friend.uid);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          // 프로필 이미지
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0xFFE5E7EB),
-            ),
-            child: friend.photoURL != null && friend.photoURL!.isNotEmpty
-                ? ClipOval(
-                    child: Image.network(
-                      friend.photoURL!,
-                      width: 48,
-                      height: 48,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.person,
-                        size: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: isFriend ? () => _openProfile(friend) : null,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Color(0xFFE5E7EB),
+                ),
+                child: friend.hasProfileImage
+                    ? ClipOval(
+                        child: Image.network(
+                          friend.photoURL!,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.person_outline,
+                            size: 22,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_outline,
+                        size: 22,
                         color: Color(0xFF6B7280),
                       ),
-                    ),
-                  )
-                : const Icon(
-                    Icons.person,
-                    size: 24,
-                    color: Color(0xFF6B7280),
-                  ),
-          ),
-          
-          const SizedBox(width: 12),
-          
-          // 이름과 국적
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  friend.nickname ?? friend.displayName ?? 'Unknown',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (friend.nationality != null && friend.nationality!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      CountryFlagCircle(
-                        nationality: friend.nationality!,
-                        size: 16,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      friend.displayNameOrNickname,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        friend.nationality!,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF6B7280),
-                        ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (friend.nationality != null &&
+                        friend.nationality!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CountryFlagCircle(
+                            nationality: friend.nationality!,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              friend.nationality!,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w400,
+                                color: Color(0xFF6B7280),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (isFriend)
+                const Icon(
+                  Icons.chevron_right,
+                  color: Color(0xFF9CA3AF),
+                )
+              else
+                SizedBox(
+                  height: 32,
+                  child: OutlinedButton(
+                    onPressed: (isRequesting || isRequested)
+                        ? null
+                        : () => _sendFriendRequest(friend),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.pointColor,
+                      side: BorderSide(
+                        color: (isRequesting || isRequested)
+                            ? const Color(0xFFE5E7EB)
+                            : AppColors.pointColor,
+                      ),
+                      backgroundColor: (isRequesting || isRequested)
+                          ? const Color(0xFFF3F4F6)
+                          : Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      elevation: 0,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (isRequesting)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          const Icon(Icons.person_add_alt_1, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          isRequested ? l10n.requestPending : l10n.friendRequest,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ],
-              ],
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openProfile(UserProfile user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: user.uid,
+          nickname: user.displayNameOrNickname,
+          photoURL: user.photoURL,
+          email: user.email,
+          university: user.university,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendFriendRequest(UserProfile user) async {
+    final l10n = AppLocalizations.of(context)!;
+    final currentUserId = _relationshipService.currentUserId;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.loginRequired)),
+      );
+      return;
+    }
+
+    setState(() {
+      _requestingIds.add(user.uid);
+    });
+
+    try {
+      final ok = await _relationshipService.sendFriendRequest(user.uid);
+      if (!mounted) return;
+      if (ok) {
+        setState(() {
+          _requestedIds.add(user.uid);
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.friendRequestSent)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      String msg = e.toString();
+      if (msg.startsWith('Exception: ')) {
+        msg = msg.substring('Exception: '.length);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _requestingIds.remove(user.uid);
+      });
+    }
+  }
+}
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final int count;
+
+  const _SectionHeader({
+    required this.title,
+    required this.count,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF6B7280),
+              letterSpacing: -0.2,
             ),
           ),
-          
-          // 프로필 접근 불가 표시
+          const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(999),
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.lock_outline,
-                  size: 14,
-                  color: Colors.grey[600],
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  AppLocalizations.of(context)!.private,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.grey[600],
-                  ),
-                ),
-              ],
+            child: Text(
+              count > 99 ? '99+' : count.toString(),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B7280),
+              ),
             ),
           ),
         ],

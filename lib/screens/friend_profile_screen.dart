@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/dm_service.dart';
+import '../services/relationship_service.dart';
 import '../models/review_post.dart';
+import '../models/relationship_status.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
@@ -43,9 +45,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final DMService _dmService = DMService();
+  final RelationshipService _relationshipService = RelationshipService();
   
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  bool _isRelationshipLoading = true;
+  RelationshipStatus? _relationshipStatus;
+  bool _isRequestingFriend = false;
   // 통계 숫자 깜빡임/0 표시 방지용 캐시
   final Map<String, int> _statCountCache = {};
 
@@ -53,6 +59,39 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   void initState() {
     super.initState();
     _loadUserData();
+    _loadRelationshipStatus();
+  }
+
+  Future<void> _loadRelationshipStatus() async {
+    try {
+      final currentUserId = _relationshipService.currentUserId;
+      if (currentUserId == null || currentUserId == widget.userId) {
+        if (mounted) {
+          setState(() {
+            _relationshipStatus = RelationshipStatus.friends;
+            _isRelationshipLoading = false;
+          });
+        }
+        return;
+      }
+
+      final status =
+          await _relationshipService.getRelationshipStatus(widget.userId);
+      if (mounted) {
+        setState(() {
+          _relationshipStatus = status;
+          _isRelationshipLoading = false;
+        });
+      }
+    } catch (e) {
+      Logger.error('관계 상태 로드 오류: $e');
+      if (mounted) {
+        setState(() {
+          _relationshipStatus = RelationshipStatus.none;
+          _isRelationshipLoading = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -95,6 +134,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   Widget build(BuildContext context) {
     // 안드로이드 하단 네비게이션 바 높이 감지
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final l10n = AppLocalizations.of(context)!;
+
+    final currentUserId = _relationshipService.currentUserId;
+    final isMe = currentUserId != null && currentUserId == widget.userId;
+    final isFriends = _relationshipStatus == RelationshipStatus.friends;
     
     return Scaffold(
       appBar: AppBar(
@@ -106,22 +150,158 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ),
       ),
       backgroundColor: Colors.white,
-      body: _isLoading
+      body: (_isLoading || _isRelationshipLoading)
           ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              slivers: [
-                SliverToBoxAdapter(child: _buildProfileHeader()),
-                const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
-                const SliverToBoxAdapter(child: Divider(height: 1, color: Color(0xFFE5E7EB))),
-                _buildReviewGridSliver(),
-                // 안드로이드 하단 네비게이션 바를 위한 여백 추가
-                SliverToBoxAdapter(
-                  child: SizedBox(height: bottomPadding > 0 ? bottomPadding + 16 : 16),
+          : (!isMe && !isFriends)
+              ? _buildLockedProfile(l10n)
+              : CustomScrollView(
+                  slivers: [
+                    SliverToBoxAdapter(child: _buildProfileHeader()),
+                    const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                    SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
+                    const SliverToBoxAdapter(
+                      child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                    ),
+                    _buildReviewGridSliver(),
+                    // 안드로이드 하단 네비게이션 바를 위한 여백 추가
+                    SliverToBoxAdapter(
+                      child: SizedBox(
+                        height: bottomPadding > 0 ? bottomPadding + 16 : 16,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
     );
+  }
+
+  Widget _buildLockedProfile(AppLocalizations l10n) {
+    final status = _relationshipStatus ?? RelationshipStatus.none;
+    final canRequest = status == RelationshipStatus.none;
+    final isPending = status == RelationshipStatus.pendingOut;
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 72,
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Icon(
+                Icons.lock_outline,
+                color: Color(0xFF6B7280),
+                size: 30,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              l10n.friendsOnlyProfileTitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              l10n.friendsOnlyProfileSubtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: Color(0xFF6B7280),
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: (!canRequest || _isRequestingFriend)
+                    ? null
+                    : _sendFriendRequestFromProfile,
+                icon: _isRequestingFriend
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.person_add_alt_1, size: 20),
+                label: Text(
+                  isPending ? l10n.requestPending : l10n.friendRequest,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.pointColor,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFE5E7EB),
+                  disabledForegroundColor: const Color(0xFF9CA3AF),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _sendFriendRequestFromProfile() async {
+    final l10n = AppLocalizations.of(context)!;
+    final currentUserId = _relationshipService.currentUserId;
+    if (currentUserId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.loginRequired)),
+      );
+      return;
+    }
+
+    setState(() {
+      _isRequestingFriend = true;
+    });
+
+    try {
+      final ok = await _relationshipService.sendFriendRequest(widget.userId);
+      if (!mounted) return;
+      if (ok) {
+        setState(() {
+          _relationshipStatus = RelationshipStatus.pendingOut;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.friendRequestSent)),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      String msg = e.toString();
+      if (msg.startsWith('Exception: ')) {
+        msg = msg.substring('Exception: '.length);
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(msg)),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isRequestingFriend = false;
+      });
+    }
   }
 
   Widget _buildProfileHeader() {

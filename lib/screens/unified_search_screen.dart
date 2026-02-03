@@ -442,7 +442,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 72, color: Colors.grey.shade300),
+          // 중앙 안내가 너무 흐리지 않게 톤 업
+          Icon(icon, size: 72, color: Colors.grey.shade400),
           const SizedBox(height: 18),
           Text(
             title,
@@ -450,14 +451,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
+              color: Colors.grey.shade800,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -492,10 +493,23 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
           TabBar(
             controller: _tabController,
             isScrollable: false,
-            labelColor: Colors.black,
-            unselectedLabelColor: Colors.grey.shade600,
+            labelColor: const Color(0xFF111827),
+            unselectedLabelColor: const Color(0xFF6B7280),
+            labelStyle: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              letterSpacing: -0.2,
+            ),
             indicatorColor: AppColors.pointColor,
-            indicatorWeight: 2.5,
+            indicatorWeight: 3,
+            indicatorSize: TabBarIndicatorSize.label,
             tabs: List.generate(
               _tabCount,
               (i) => Tab(text: _tabLabel(context, i)),

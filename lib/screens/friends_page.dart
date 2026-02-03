@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/user_profile.dart';
+import '../models/relationship_status.dart';
 import '../models/friend_category.dart';
 import '../services/friend_category_service.dart';
 import '../ui/widgets/app_icon_button.dart';
@@ -21,6 +22,7 @@ import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'requests_page.dart';
+import '../widgets/user_tile.dart';
 
 class FriendsPage extends StatefulWidget {
   const FriendsPage({super.key});
@@ -37,6 +39,7 @@ class _FriendsPageState extends State<FriendsPage> {
   bool _isInitialized = false;
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   RelationshipProvider? _relationshipProvider;
+  Timer? _searchDebounce;
 
   @override
   void initState() {
@@ -57,6 +60,7 @@ class _FriendsPageState extends State<FriendsPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _searchDebounce?.cancel();
     _categoriesSubscription?.cancel();
     _categoryService.dispose();
     _relationshipProvider?.removeListener(_handleRelationshipProviderChanged);
@@ -65,8 +69,11 @@ class _FriendsPageState extends State<FriendsPage> {
 
   void _handleRelationshipProviderChanged() {
     if (!mounted) return;
-    // provider.friends가 바뀌면 현재 검색어 기준으로 재필터링
-    _filterFriends(_searchController.text);
+    // provider.friends가 바뀌면 (친구 탭 기본 화면에서만) 현재 검색어 기준으로 재필터링
+    final q = _searchController.text.trim();
+    if (q.isEmpty) {
+      _filterFriends(q);
+    }
   }
 
   /// 데이터 초기화
@@ -129,6 +136,164 @@ class _FriendsPageState extends State<FriendsPage> {
       setState(() {
         _filteredFriends = filtered;
       });
+    }
+  }
+
+  /// 친구 탭 검색: 친구 목록 내 검색이 아니라 "전체 유저 검색"으로도 동작
+  /// - 검색어 없음: 기존 친구 리스트
+  /// - 검색어 있음: SearchUsersPage/통합 검색과 동일한 유저 검색 결과(비친구 포함)
+  void _onSearchChanged(String query) {
+    if (!mounted) return;
+
+    final q = query.trim();
+    _searchDebounce?.cancel();
+
+    // 검색어가 비어있으면: 유저검색 결과 클리어 + 친구 목록으로 복귀
+    if (q.isEmpty) {
+      context.read<RelationshipProvider>().clearSearchResults();
+      _filterFriends('');
+      return;
+    }
+
+    // 너무 잦은 호출 방지 (검색 UX)
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      context.read<RelationshipProvider>().searchUsers(q);
+    });
+  }
+
+  Widget _buildUserSearchResults(RelationshipProvider provider, String query) {
+    // 로딩
+    if (provider.isLoading) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.pointColor));
+    }
+
+    if (provider.errorMessage != null) {
+      return _buildErrorState(provider.errorMessage!);
+    }
+
+    if (provider.searchResults.isEmpty) {
+      final l10n = AppLocalizations.of(context)!;
+      // ✅ 요구사항: 결과 없을 때 중앙 "Clear search" 버튼 제거
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 84,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Icon(
+                  Icons.search_off_outlined,
+                  size: 38,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                l10n.noSearchResults,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '\'$query\' ${l10n.tryDifferentKeyword}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B7280),
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final bottomPadding = MediaQuery.of(context).padding.bottom;
+    return ListView.builder(
+      padding: EdgeInsets.only(
+        top: 8,
+        bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+      ),
+      itemCount: provider.searchResults.length,
+      itemBuilder: (context, index) {
+        final user = provider.searchResults[index];
+        final status = provider.getRelationshipStatus(user.uid);
+        return UserTile(
+          user: user,
+          relationshipStatus: status,
+          onActionPressed: () => _handleUserAction(user, status),
+          onTilePressed: () => _openUserProfileFromSearch(user),
+          isLoading: provider.isLoading,
+        );
+      },
+    );
+  }
+
+  void _openUserProfileFromSearch(UserProfile user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: user.uid,
+          nickname: user.displayNameOrNickname,
+          photoURL: user.photoURL,
+          email: user.email,
+          university: user.university,
+          // 친구 탭 검색에서는 비친구라도 기본 프로필은 프리뷰 허용
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
+  void _handleUserAction(UserProfile user, RelationshipStatus status) {
+    final provider = context.read<RelationshipProvider>();
+    final l10n = AppLocalizations.of(context)!;
+
+    switch (status) {
+      case RelationshipStatus.none:
+        provider.sendFriendRequest(user.uid).then((ok) {
+          if (!mounted) return;
+          if (ok) {
+            _showSnackBar(l10n.friendRequestSent, Colors.green);
+          } else {
+            _showSnackBar(provider.errorMessage ?? l10n.friendRequestFailed, Colors.red);
+          }
+        });
+        return;
+      case RelationshipStatus.pendingOut:
+        provider.cancelFriendRequest(user.uid).then((ok) {
+          if (!mounted) return;
+          _showSnackBar(ok ? l10n.friendRequestCancelled : l10n.friendRequestCancelFailed, ok ? Colors.orange : Colors.red);
+        });
+        return;
+      case RelationshipStatus.friends:
+        _unfriend(user);
+        return;
+      case RelationshipStatus.blocked:
+        provider.unblockUser(user.uid).then((ok) {
+          if (!mounted) return;
+          _showSnackBar(ok ? l10n.userUnblocked : l10n.unblockFailed, ok ? Colors.green : Colors.red);
+        });
+        return;
+      case RelationshipStatus.pendingIn:
+      case RelationshipStatus.blockedBy:
+        return;
     }
   }
 
@@ -766,22 +931,10 @@ class _FriendsPageState extends State<FriendsPage> {
                   );
                 }
 
-                if (_filteredFriends.isEmpty &&
-                    _searchController.text.trim().isNotEmpty) {
-                  return SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: AppEmptyState.noSearchResults(
-                        context: context,
-                        searchQuery: _searchController.text.trim(),
-                        onClearSearch: () {
-                          _searchController.clear();
-                          _filterFriends('');
-                        },
-                      ),
-                    ),
-                  );
+                final q = _searchController.text.trim();
+                if (q.isNotEmpty) {
+                  // ✅ 친구 탭에서도 전체 유저 검색 결과 표시 (비친구 포함)
+                  return _buildUserSearchResults(provider, q);
                 }
 
                 return _buildFriendsList();
@@ -821,7 +974,7 @@ class _FriendsPageState extends State<FriendsPage> {
                     icon: Icons.clear,
                     onPressed: () {
                       _searchController.clear();
-                      _filterFriends('');
+                      _onSearchChanged('');
                     },
                     semanticLabel: AppLocalizations.of(context)!.close,
                     tooltip: AppLocalizations.of(context)!.close,
@@ -838,7 +991,7 @@ class _FriendsPageState extends State<FriendsPage> {
             vertical: 8, // 검색 탭과 동일
           ),
         ),
-        onChanged: _filterFriends,
+        onChanged: _onSearchChanged,
         textInputAction: TextInputAction.search,
       ),
     );

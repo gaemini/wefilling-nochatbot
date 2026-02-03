@@ -243,6 +243,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                   ],
                 ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -257,32 +258,56 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                       ),
                     ),
                     const SizedBox(height: 24),
-                    Text(
-                      AppLocalizations.of(context)!.hanyangEmailOnly,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                        height: 1.3,
+                    // 헤드라인은 2줄 중앙 정렬 (요구사항)
+                    Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            AppLocalizations.of(context)!.hanyangEmailHeadlineLine1,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                              height: 1.15,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            AppLocalizations.of(context)!.hanyangEmailHeadlineLine2,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: -0.5,
+                              height: 1.15,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
                       ),
-                      textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 16),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        AppLocalizations.of(context)!.hanyangEmailDescription,
-                        style: TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white.withOpacity(0.95),
-                          height: 1.7,
-                          letterSpacing: -0.2,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          AppLocalizations.of(context)!.hanyangEmailDescription,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white.withOpacity(0.98),
+                            height: 1.7,
+                            letterSpacing: -0.2,
+                          ),
+                          textAlign: TextAlign.left,
                         ),
-                        textAlign: TextAlign.center,
                       ),
                     ),
                   ],

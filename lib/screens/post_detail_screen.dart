@@ -6,10 +6,12 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
 import '../services/post_service.dart';
@@ -26,6 +28,7 @@ import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
 import 'friend_profile_screen.dart';
+import 'main_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
 
@@ -48,6 +51,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
+  
+  // "맨 위로" 버튼 노출 상태 (상세 화면에서 글/댓글이 길 때 UX 개선)
+  bool _showScrollToTop = false;
+  static const double _scrollToTopShowOffset = 520;
+  static const double _scrollToTopHideOffset = 160;
   bool _isAuthor = false;
   bool _isDeleting = false;
   bool _isSubmittingComment = false;
@@ -56,6 +64,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isSaved = false;
   bool _isTogglingSave = false;
   late Post _currentPost;
+  bool _accessValidated = false;
   final PageController _imagePageController = PageController();
   int _currentImageIndex = 0;
   
@@ -67,6 +76,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Map<String, int> _imageRetryCount = {}; // URL별 재시도 횟수
   Map<String, bool> _imageRetrying = {}; // URL별 재시도 중 상태
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
+  static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
+  bool _didPrefetchImages = false;
+  
+  static const Map<String, String> _imageHttpHeaders = {
+    'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+    'Accept': 'image/*',
+  };
   
   // 익명 번호 매핑 (userId -> 익명번호)
   final Map<String, int> _anonymousUserMap = {};
@@ -80,7 +97,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 댓글 스트림(목록/카운트) - 단일 스트림을 공유해서 UI/카운트 동기화
   late final Stream<List<Comment>> _commentsStream;
-  StreamSubscription<List<Comment>>? _commentsCountSub;
 
   @override
   void initState() {
@@ -92,16 +108,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     _isAuthor = user != null && widget.post.userId == user.uid;
     _isLiked = user != null && widget.post.likedBy.contains(user.uid);
 
-    // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
-    if (!_isAuthor) {
-      _checkIfUserSavedPost();
-    }
-    
-    // 조회수 증가 호출
-    _incrementViewCount();
+    // ✅ 상세 진입 시 서버 기준으로 접근 권한 재검증 + 최신 데이터로 갱신
+    // - 검색 결과/로컬 캐시로 인해 노출되면 안 되는 글이 보이는 것을 방지
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _validateAccessAndRefreshPost();
+    });
     
     // 디버그용: 이미지 URL 확인
-    _logImageUrls();
+    if (kDebugMode) {
+      _logImageUrls();
+    }
     
     // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
     if (_currentPost.imageUrls.length > 1) {
@@ -111,16 +127,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     // 댓글 스트림 구독: 댓글 수를 실시간으로 UI에 반영
-    _commentsStream =
-        _commentService.getCommentsWithReplies(_currentPost.id).asBroadcastStream();
-    _commentsCountSub = _commentsStream.listen((comments) {
-      if (!mounted) return;
-      final newCount = comments.length;
-      if (_currentPost.commentCount == newCount) return;
-      setState(() {
-        _currentPost = _currentPost.copyWith(commentCount: newCount);
-      });
+    // ⚠️ 주의: asBroadcastStream + 선구독(카운트) + 후구독(UI) 조합은
+    // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
+    // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
+    _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
+    
+    // 스크롤 상태 감지 → "맨 위로" 버튼 자연스러운 노출/숨김
+    _scrollController.addListener(_handleScrollChanged);
+    
+    // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prefetchPostImages(initial: true);
     });
+  }
+
+  Future<void> _validateAccessAndRefreshPost() async {
+    try {
+      final refreshed = await _postService.getPostById(widget.post.id);
+      if (!mounted) return;
+
+      if (refreshed == null) {
+        // 접근 불가(권한 없음/차단/삭제 등)
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context)!.noPermission,
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        Navigator.of(context).pop();
+        return;
+      }
+
+      final user = FirebaseAuth.instance.currentUser;
+      setState(() {
+        _currentPost = refreshed;
+        _isAuthor = user != null && refreshed.userId == user.uid;
+        _isLiked = user != null && refreshed.likedBy.contains(user.uid);
+        _accessValidated = true;
+      });
+
+      // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
+      if (!_isAuthor) {
+        await _checkIfUserSavedPost();
+      }
+
+      // 접근 검증 통과 후에만 조회수 증가
+      await _incrementViewCount();
+    } catch (e) {
+      Logger.error('❌ 게시글 접근 검증/갱신 오류: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.noPermission),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      Navigator.of(context).pop();
+    }
   }
 
   /// 게시글 본문 가져오기 (제목 필드는 더 이상 사용하지 않음)
@@ -143,12 +210,90 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void dispose() {
     _likeHoldTimer?.cancel();
     _commentController.dispose();
+    _scrollController.removeListener(_handleScrollChanged);
     _scrollController.dispose();
     _commentFocusNode.dispose();
     _imagePageController.dispose();
     _indicatorTimer?.cancel(); // Timer 정리
-    _commentsCountSub?.cancel();
     super.dispose();
+  }
+
+  void _handleScrollChanged() {
+    if (!mounted) return;
+    if (!_scrollController.hasClients) return;
+
+    final offset = _scrollController.offset;
+    final shouldShow =
+        _showScrollToTop ? offset > _scrollToTopHideOffset : offset > _scrollToTopShowOffset;
+
+    if (shouldShow != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    if (!_scrollController.hasClients) return;
+    _scrollController.animateTo(
+      _scrollController.position.minScrollExtent,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildScrollToTopOverlay() {
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    final visible = _showScrollToTop && !isKeyboardOpen;
+
+    // 하단 댓글 입력 영역과 겹치지 않도록 약간 위로 띄움
+    final bottom = MediaQuery.of(context).padding.bottom + 86;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: bottom,
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, 0.35),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: Center(
+              child: Semantics(
+                button: true,
+                label: '맨 위로 이동',
+                child: Material(
+                  color: const Color(0xFFF3F4F6),
+                  elevation: 2,
+                  shadowColor: const Color(0x14000000),
+                  borderRadius: BorderRadius.circular(999),
+                  child: InkWell(
+                    onTap: _scrollToTop,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                      ),
+                      child: const Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        size: 22,
+                        color: Color(0xFF374151),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
   
   // 페이지 인디케이터를 표시하고 1초 후 자동으로 숨김
@@ -171,7 +316,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   /// 다중 이미지 인디케이터(이미지 아래 점/바)
-  /// - 인스타그램처럼 현재 페이지가 "길게" 표시되며, 슬라이드 시 애니메이션으로 이동
+  /// - 점 크기는 고정, 활성 점만 좌우로 이동 (더 자연스러운 UX)
   Widget _buildImageDotsIndicator({
     required int count,
   }) {
@@ -179,28 +324,66 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     const activeColor = Color(0xFF111827);
     const inactiveColor = Color(0xFFD1D5DB);
-    const dotHeight = 6.0;
+    const dotSize = 6.0;
     const dotGap = 6.0;
+    const trackHeight = 18.0;
+
+    final clampedIndex = _currentImageIndex.clamp(0, count - 1);
+    final trackWidth = (count * dotSize) + ((count - 1) * dotGap);
 
     return SizedBox(
-      height: 18,
+      height: trackHeight,
       child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(count, (i) {
-            final isActive = i == _currentImageIndex;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: dotGap / 2),
-              width: isActive ? 18 : 6,
-              height: dotHeight,
-              decoration: BoxDecoration(
-                color: isActive ? activeColor : inactiveColor,
-                borderRadius: BorderRadius.circular(999),
-              ),
-            );
-          }),
+        child: Semantics(
+          label: '이미지 ${clampedIndex + 1}/$count',
+          child: SizedBox(
+            width: trackWidth,
+            height: trackHeight,
+            child: Stack(
+              children: [
+                // 비활성 점들 (고정)
+                Align(
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: List.generate(count, (i) {
+                      return Container(
+                        width: dotSize,
+                        height: dotSize,
+                        margin: EdgeInsets.only(right: i == count - 1 ? 0 : dotGap),
+                        decoration: const BoxDecoration(
+                          color: inactiveColor,
+                          shape: BoxShape.circle,
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+                // 활성 점 (이동)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
+                  left: clampedIndex * (dotSize + dotGap),
+                  top: (trackHeight - dotSize) / 2,
+                  child: Container(
+                    width: dotSize,
+                    height: dotSize,
+                    decoration: BoxDecoration(
+                      color: activeColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: activeColor.withOpacity(0.25),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
@@ -423,10 +606,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       barrierColor: Colors.black.withAlpha(160),
       backgroundColor: Colors.transparent,
       builder: (context) {
-        final theme = Theme.of(context);
-        final cs = theme.colorScheme;
         final l10n = AppLocalizations.of(context)!;
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
+        // 디자인 통일: 다른 페이지(카드/리스트)와 동일한 흰색 서피스 + 중립 디바이더
+        const sheetBg = Colors.white;
+        const dividerColor = Color(0xFFE5E7EB);
+        const handleColor = Color(0xFFD1D5DB);
+        const secondaryText = Color(0xFF6B7280);
 
         return SafeArea(
           child: ClipRRect(
@@ -434,7 +620,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               top: Radius.circular(DesignTokens.r16),
             ),
             child: Material(
-              color: cs.surface,
+              color: sheetBg,
               child: DraggableScrollableSheet(
                 expand: false,
                 initialChildSize: 0.55,
@@ -448,7 +634,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         width: 36,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: cs.outlineVariant,
+                          color: handleColor,
                           borderRadius: BorderRadius.circular(999),
                         ),
                       ),
@@ -468,7 +654,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       fontFamily: 'Pretendard',
                                       fontSize: 16,
                                       fontWeight: FontWeight.w700,
-                                    ).copyWith(color: cs.onSurface),
+                                    ).copyWith(color: const Color(0xFF111827)),
                                   ),
                                   const TextSpan(text: '  '),
                                   TextSpan(
@@ -477,7 +663,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       fontFamily: 'Pretendard',
                                       fontSize: 14,
                                       fontWeight: FontWeight.w700,
-                                    ).copyWith(color: cs.onSurfaceVariant),
+                                    ).copyWith(color: secondaryText),
                                   ),
                                 ],
                               ),
@@ -496,25 +682,31 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)',
+                              isKo
+                                  ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
+                                  : 'Showing up to $maxShown users. (+$hiddenCount more)',
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 12,
                                 fontWeight: FontWeight.w500,
-                                color: BrandColors.textHint,
+                                color: secondaryText,
                               ),
                             ),
                           ),
                         ),
                       const SizedBox(height: 8),
-                      Divider(height: 1, color: cs.outlineVariant),
+                      const Divider(height: 1, color: dividerColor),
                       Expanded(
                         child: FutureBuilder<List<_PostLikeUser>>(
                           future: _fetchLikeUsers(shownIds),
                           builder: (context, snapshot) {
                             if (snapshot.connectionState != ConnectionState.done &&
                                 !snapshot.hasData) {
-                              return const Center(child: CircularProgressIndicator());
+                              return const Center(
+                                child: CircularProgressIndicator(
+                                  color: BrandColors.primary,
+                                ),
+                              );
                             }
                             final users = snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
@@ -527,7 +719,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                       fontFamily: 'Pretendard',
                                       fontSize: 14,
                                       fontWeight: FontWeight.w500,
-                                    ).copyWith(color: cs.onSurfaceVariant),
+                                    ).copyWith(color: secondaryText),
                                   ),
                                 ),
                               );
@@ -537,16 +729,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                               controller: scrollController,
                               itemCount: users.length,
                               separatorBuilder: (_, __) =>
-                                  Divider(height: 1, color: cs.outlineVariant),
+                                  const Divider(height: 1, color: dividerColor),
                               itemBuilder: (context, index) {
                                 final u = users[index];
                                 return ListTile(
                                   contentPadding: const EdgeInsets.symmetric(
                                     horizontal: DesignTokens.s16,
                                   ),
+                                  tileColor: sheetBg,
                                   onTap: () {
-                                    // 본인 프로필 이동은 생략
-                                    if (u.uid == currentUser.uid) return;
+                                    // 본인 프로필이면 네비게이션바가 있는 마이페이지 탭으로 이동
+                                    if (u.uid == currentUser.uid) {
+                                      Navigator.pop(context);
+                                      _openMyPageWithBottomNav();
+                                      return;
+                                    }
                                     Navigator.pop(context);
                                     Navigator.push(
                                       this.context,
@@ -567,13 +764,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                     isAnonymous: false,
                                     size: 40,
                                   ),
-                                  title: Text(
-                                    u.nickname,
-                                    style: (const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    )).copyWith(color: cs.onSurface),
+                                  title: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          u.nickname,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: (const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                          )).copyWith(color: const Color(0xFF111827)),
+                                        ),
+                                      ),
+                                      if (u.nationality != null) ...[
+                                        const SizedBox(width: 6),
+                                        CountryFlagCircle(
+                                          nationality: u.nationality!,
+                                          size: 16,
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 );
                               },
@@ -612,6 +823,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         final data = doc.data();
         final nickname = (data['nickname'] ?? data['displayName'] ?? 'User').toString();
         final photoURL = (data['photoURL'] ?? '').toString();
+        final nationalityRaw = (data['nationality'] ?? '').toString().trim();
+        final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;
         final photoVersion = (data['photoVersion'] is int)
             ? (data['photoVersion'] as int)
             : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
@@ -620,6 +833,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           nickname: nickname,
           photoURL: photoURL,
           photoVersion: photoVersion,
+          nationality: nationality,
         );
       }
     }
@@ -637,8 +851,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _incrementViewCount() async {
     try {
       Logger.log('🔍 게시글 상세 화면 - 조회수 증가 시작');
-      Logger.log('   - 게시글 제목: ${widget.post.title}');
-      Logger.log('   - 게시글 ID: ${widget.post.id}');
+      Logger.log('   - 게시글 제목: ${_currentPost.title}');
+      Logger.log('   - 게시글 ID: ${_currentPost.id}');
       
       await _postService.incrementViewCount(widget.post.id);
 
@@ -692,7 +906,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.friendsOnly),
+              content: Text(
+                AppLocalizations.of(context)!.dmFriendsOnlyHint,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
+                textAlign: TextAlign.center,
+              ),
               backgroundColor: Colors.orange,
               duration: const Duration(seconds: 2),
             ),
@@ -732,16 +956,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         return;
       }
       
-      // 카테고리별 공개가 아닌 경우 (전체공개 또는 익명) 익명 대화방으로
-      // 카테고리별 공개인 경우에만 일반 대화방으로
-      final bool shouldUseAnonymousChat = 
-          _currentPost.category == null || 
-          _currentPost.category!.isEmpty || 
-          _currentPost.category == '전체' ||
-          _currentPost.isAnonymous;
-      
-      // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
-      final conversationId = _dmService.generateConversationId(
+      // ✅ UX 개선: 기존 대화방이 있으면 "그 방의 연장선"으로 DM 전송
+      // - 익명 게시글은 실명 대화와 분리(기존 정책 유지)
+      // - 전체공개/카테고리 등은 기존 1:1 방(uidA_uidB)로 통일
+      final bool shouldUseAnonymousChat = _currentPost.isAnonymous;
+
+      // 대화방 ID 결정 (보관된 방은 복원)
+      final conversationId = await _dmService.resolveConversationId(
         _currentPost.userId,
         postId: _currentPost.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
@@ -752,9 +973,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         final originPostImageUrl =
             (_currentPost.imageUrls.isNotEmpty ? _currentPost.imageUrls.first : '').trim();
-        final rawPreview = _currentPost.content.trim();
-        final originPostPreview =
-            rawPreview.isEmpty ? '' : (rawPreview.length > 90 ? '${rawPreview.substring(0, 90)}...' : rawPreview);
+        // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
+        final rawContent = _currentPost.content.trim();
+        final rawTitle = _currentPost.title.trim();
+        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '게시글');
+        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -782,10 +1005,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  void _openMyPageWithBottomNav() {
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(initialTabIndex: 3),
+      ),
+      (route) => false,
+    );
+  }
+
   void _openAuthorProfile() {
     // 익명/탈퇴 계정은 프로필 접근 불가
     if (_currentPost.isAnonymous) return;
     if (_currentPost.userId.isEmpty || _currentPost.userId == 'deleted') return;
+
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && _currentPost.userId == me) {
+      _openMyPageWithBottomNav();
+      return;
+    }
 
     Navigator.push(
       context,
@@ -1370,12 +1609,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     Future.delayed(Duration(seconds: delaySeconds), () {
       if (mounted) {
+        // 캐시를 비우고 다시 요청 (일시적 403/네트워크 오류 대응)
+        CachedNetworkImage.evictFromCache(imageUrl);
         setState(() {
           _imageRetrying[imageUrl] = false;
         });
         Logger.log('🔄 이미지 재시도 실행: $imageUrl');
       }
     });
+  }
+
+  Future<void> _prefetchPostImages({required bool initial, int? aroundIndex}) async {
+    if (!mounted) return;
+    final urls = _currentPost.imageUrls;
+    if (urls.length <= 1) return;
+
+    // 최초 진입 시에는 한 번만 "여러 장 병렬 프리패치"
+    if (initial && _didPrefetchImages) return;
+    if (initial) _didPrefetchImages = true;
+
+    List<String> targets;
+    if (aroundIndex != null) {
+      final idx = aroundIndex.clamp(0, urls.length - 1);
+      final indices = <int>{idx};
+      if (idx - 1 >= 0) indices.add(idx - 1);
+      if (idx + 1 < urls.length) indices.add(idx + 1);
+      targets = indices.map((i) => urls[i]).toList();
+    } else {
+      targets = urls.take(_maxPrefetchImages).toList();
+    }
+
+    // 이미 프리패치 중/완료된 것은 Flutter 이미지 캐시가 알아서 dedupe 됨
+    final futures = targets.map((url) async {
+      try {
+        await precacheImage(
+          CachedNetworkImageProvider(url, headers: _imageHttpHeaders),
+          context,
+        );
+      } catch (_) {
+        // 프리패치 실패는 UX에 치명적이지 않으므로 무시 (실로드에서 처리)
+      }
+    });
+
+    // friend list 병렬 fetch처럼 동시에 로드
+    await Future.wait(futures);
   }
 
   // 이미지 로딩 성공 처리
@@ -1419,58 +1696,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
 
-    return Image.network(
-      imageUrl,
+    return CachedNetworkImage(
+      key: ValueKey('$imageUrl:$retryCount'),
+      imageUrl: imageUrl,
+      httpHeaders: _imageHttpHeaders,
       fit: fit,
-      headers: {
-        'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
-        'Accept': 'image/*',
-      },
-      loadingBuilder: (context, child, loadingProgress) {
-        final authUser = FirebaseAuth.instance.currentUser;
-        Logger.log('📸 이미지 로딩 시도: $imageUrl');
-        Logger.log(
-          '📸 Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
-        );
-        Logger.log('📸 Timestamp: ${DateTime.now()}');
-
-        if (loadingProgress != null) {
-          Logger.log(
-            '📸 로딩 진행률: ${loadingProgress.cumulativeBytesLoaded} / ${loadingProgress.expectedTotalBytes ?? 'unknown'}',
-          );
-        }
-
-        if (loadingProgress == null) {
-          // 이미지 로딩 성공
-          _onImageLoadSuccess(imageUrl);
-          return child;
-        }
-
-        return Center(
-          child: CircularProgressIndicator(
-            value:
-                loadingProgress.expectedTotalBytes != null
-                    ? loadingProgress.cumulativeBytesLoaded /
-                        loadingProgress.expectedTotalBytes!
-                    : null,
-            strokeWidth: isFullScreen ? 3 : 2,
+      fadeInDuration: const Duration(milliseconds: 140),
+      fadeOutDuration: const Duration(milliseconds: 120),
+      placeholder: (context, url) {
+        // 인스타처럼 "즉시" 회색 플레이트를 보여주고 로딩은 최소 표시
+        return Container(
+          color: Colors.grey.shade100,
+          child: Center(
+            child: SizedBox(
+              width: isFullScreen ? 28 : 22,
+              height: isFullScreen ? 28 : 22,
+              child: const CircularProgressIndicator(strokeWidth: 2),
+            ),
           ),
         );
       },
-      errorBuilder: (context, error, stackTrace) {
-        final authUser = FirebaseAuth.instance.currentUser;
-        Logger.error('❌ 이미지 로드 오류: $imageUrl');
-        Logger.error('❌ Error: $error');
-        Logger.log(
-          '❌ Auth 상태: ${authUser != null ? "Authenticated (${authUser.uid})" : "Not Authenticated"}',
+      imageBuilder: (context, imageProvider) {
+        _onImageLoadSuccess(imageUrl);
+        return Image(
+          image: imageProvider,
+          fit: fit,
+          filterQuality: FilterQuality.medium,
         );
-        Logger.log('❌ Timestamp: ${DateTime.now()}');
+      },
+      errorWidget: (context, url, error) {
+        if (kDebugMode) {
+          Logger.error('❌ 이미지 로드 오류: $url / $error');
+        }
 
         // 403 오류이고 재시도 가능한 경우 자동 재시도
         if (error.toString().contains('403') && retryCount < _maxRetryCount) {
-          Logger.error('🔄 403 오류 감지, 자동 재시도 시작: $imageUrl');
-          // 비동기적으로 재시도 실행
           WidgetsBinding.instance.addPostFrameCallback((_) {
             _retryImageLoad(imageUrl);
           });
@@ -1505,9 +1765,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                retryCount >= _maxRetryCount
-                    ? Icons.error_outline
-                    : Icons.broken_image,
+                retryCount >= _maxRetryCount ? Icons.error_outline : Icons.broken_image,
                 color: Colors.grey[600],
                 size: isFullScreen ? 32 : 24,
               ),
@@ -1530,20 +1788,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // 수동 재시도 버튼 (최대 재시도 후에만 표시)
                 ElevatedButton.icon(
                   onPressed: () {
-                    // 재시도 카운트 리셋 후 다시 시도
+                    CachedNetworkImage.evictFromCache(imageUrl);
                     setState(() {
                       _imageRetryCount[imageUrl] = 0;
                       _imageRetrying[imageUrl] = false;
                     });
-                    Logger.log('🔄 수동 재시도: $imageUrl');
                   },
-                  icon: Icon(Icons.refresh, size: 16),
-                  label: Text(AppLocalizations.of(context)!.retryAction, style: const TextStyle(fontSize: 12)),
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: Text(
+                    AppLocalizations.of(context)!.retryAction,
+                    style: const TextStyle(fontSize: 12),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    minimumSize: Size(0, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: const Size(0, 0),
                   ),
                 ),
               ],
@@ -1558,6 +1818,32 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Widget build(BuildContext context) {
     final authProvider = Provider.of<app_auth.AuthProvider>(context);
     final isLoggedIn = authProvider.isLoggedIn;
+
+    // 접근 검증이 끝나기 전에는 내용을 렌더링하지 않음 (정보 노출 방지)
+    if (!_accessValidated) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            AppLocalizations.of(context)!.board,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -1588,8 +1874,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
+          Column(
+            children: [
           // 게시글 내용
           Expanded(
             child: SingleChildScrollView(
@@ -1709,6 +1997,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     ),
                   ),
 
+                  // 투표형 게시글: 본문(시간) 바로 아래에 배치
+                  if (_currentPost.type == 'poll')
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: PollPostWidget(postId: _currentPost.id),
+                    ),
+
                   // 이미지 유무에 따라 레이아웃 분기
                   if (_currentPost.imageUrls.isNotEmpty) ...[
                     // === 이미지가 있는 경우: 제목 → 이미지 → 좋아요 → 본문 ===
@@ -1719,9 +2014,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         children: [
                           PageView.builder(
                             controller: _imagePageController,
+                            allowImplicitScrolling: true,
                             onPageChanged: (i) {
                               setState(() => _currentImageIndex = i);
                               _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
+                              _prefetchPostImages(initial: false, aroundIndex: i);
                             },
                             itemCount: _currentPost.imageUrls.length,
                             itemBuilder: (context, index) {
@@ -1788,12 +2085,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         ),
                       ),
 
-                    // 액션 버튼들과 좋아요 수 표시 (이미지 바로 아래)
+                  ] else ...[
+                    const SizedBox(height: 8),
+                  ],
+
+                  // 하단 메타(하트/댓글/조회 등): 항상 댓글 바로 위에 고정 배치
                   Padding(
-                    // 첨부 이미지처럼 이미지와 아이콘 줄 사이 간격을 확보
                     padding: EdgeInsets.fromLTRB(
                       16,
-                      _currentPost.imageUrls.length > 1 ? 6 : 10,
+                      _currentPost.imageUrls.isNotEmpty
+                          ? (_currentPost.imageUrls.length > 1 ? 6 : 10)
+                          : 10,
                       16,
                       0,
                     ),
@@ -1811,37 +2113,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ],
                     ),
                   ),
-
-                    // 본문은 캡션 위치(통계 아래, 댓글 위)로 이동
-                  ] else ...[
-                    // === 이미지가 없는 경우: 제목 → 본문 → 좋아요 ===
-                    const SizedBox(height: 8),
-                    
-                    // 액션 버튼들과 좋아요 수 표시 (본문 바로 아래)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildStatsRow(
-                            likes: _currentPost.likes,
-                            commentCount: _currentPost.commentCount,
-                            viewCount: _currentPost.viewCount,
-                            isLiked: _isLiked,
-                            likedBy: _currentPost.likedBy,
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  // 투표형 게시글: 통계 아래, 캡션 위에 투표 UI 삽입
-                  if (_currentPost.type == 'poll')
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-                      child: PollPostWidget(postId: _currentPost.id),
-                    ),
 
 
                   // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
@@ -1869,8 +2140,35 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         );
                       }
 
-                      final allComments = snapshot.data ?? [];
+                      // NOTE: 부모 댓글이 먼저 삭제되고 대댓글은 서버 트리거로 지워지는 동안,
+                      // "고아 대댓글"이 잠깐 남아 commentCount가 튀는 UX를 방지하기 위해
+                      // 화면에서는 부모가 존재하는 대댓글만 집계/표시한다.
+                      final rawComments = snapshot.data ?? [];
+                      final topLevelComments =
+                          rawComments.where((c) => c.isTopLevel).toList();
+                      final topLevelIds =
+                          topLevelComments.map((c) => c.id).toSet();
+                      final allComments = rawComments
+                          .where(
+                            (c) =>
+                                c.isTopLevel ||
+                                (c.parentCommentId != null &&
+                                    topLevelIds.contains(c.parentCommentId)),
+                          )
+                          .toList();
                       final currentUser = FirebaseAuth.instance.currentUser;
+
+                      // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
+                      if (_currentPost.commentCount != allComments.length) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          if (_currentPost.commentCount == allComments.length) return;
+                          setState(() {
+                            _currentPost =
+                                _currentPost.copyWith(commentCount: allComments.length);
+                          });
+                        });
+                      }
 
                       if (allComments.isEmpty) {
                         return Padding(
@@ -1880,7 +2178,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       }
 
                       // 댓글을 계층적으로 구조화
-                      final topLevelComments = allComments.where((c) => c.isTopLevel).toList();
+                      // (topLevelComments는 위에서 raw 기준으로 계산)
                       
                       return ListView.builder(
                         shrinkWrap: true,
@@ -2070,6 +2368,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 ],
             ),
           ),
+            ],
+          ),
+          _buildScrollToTopOverlay(),
         ],
       ),
     );
@@ -2099,11 +2400,13 @@ class _PostLikeUser {
   final String nickname;
   final String photoURL;
   final int photoVersion;
+  final String? nationality;
 
   const _PostLikeUser({
     required this.uid,
     required this.nickname,
     required this.photoURL,
     required this.photoVersion,
+    required this.nationality,
   });
 }

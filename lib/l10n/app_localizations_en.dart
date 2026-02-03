@@ -661,6 +661,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Only friends in selected group can see this meetup';
 
   @override
+  String get selectedGroupOnlyPost =>
+      'Only friends in selected group can see this post';
+
+  @override
   String get selectedFriendGroupOnly => 'Selected Friend Group Only';
 
   @override
@@ -1454,11 +1458,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get hanyangEmailOnly => 'Hanyang University Email Verification';
 
   @override
+  String get hanyangEmailHeadlineLine1 => 'Hanyang University';
+
+  @override
+  String get hanyangEmailHeadlineLine2 => 'Email Verification';
+
+  @override
   String get hanyangEmailLogin => 'Login with Hanyang University Email';
 
   @override
   String get hanyangEmailDescription =>
-      'Hanyang University email verification is required for registration.\nYou can log in with your Google account after verification.';
+      'Hanyang University email verification is required for registration.\nAfter verification, you can sign up/log in with Google, Apple, or Email.';
 
   @override
   String get sendVerificationCode => 'Send Verification Code';
@@ -2092,6 +2102,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendsOnly => 'Friends Only';
 
   @override
+  String get dmFriendsOnlyHint => 'Add as a friend to send a DM';
+
+  @override
   String get signUpFirstMessage =>
       'Please click the \"Sign Up\" button below\nto complete Hanyang email verification first.';
 
@@ -2522,7 +2535,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get nicknamePlaceholder => 'John Doe';
+  String get nicknamePlaceholder => 'Set your nickname';
 
   @override
   String get nicknameRequired => 'Please enter a nickname';

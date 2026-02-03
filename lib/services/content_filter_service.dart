@@ -69,6 +69,8 @@ class ContentFilterService {
       _blockedByUserIds = querySnapshot.docs
           .map((doc) => doc.data()['blocker'] as String)
           .toSet();
+      // blocked 목록과 동일하게 캐시 갱신 시간도 업데이트
+      _lastCacheUpdate = DateTime.now();
 
       return _blockedByUserIds!;
     } catch (e) {

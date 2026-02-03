@@ -412,6 +412,246 @@ export const onPrivatePostCreated = functions.firestore
     }
   });
 
+// ===== 친구 카테고리 변경 시 게시글 allowedUserIds 동기화 =====
+// - posts/{postId}.allowedUserIds는 Firestore Rules의 접근 제어에 사용되므로,
+//   friend_categories/{categoryId}.friendIds 변경(추가/삭제)이 발생하면 관련 게시글의 allowedUserIds를 재계산해야 함.
+function toUniqueStringArray(raw: any): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    const s = (v ?? '').toString().trim();
+    if (s) out.push(s);
+  }
+  // Set으로 중복 제거 + 안정적인 비교를 위해 정렬
+  return Array.from(new Set(out)).sort();
+}
+
+function sameStringSet(a: string[], b: string[]): boolean {
+  const aa = toUniqueStringArray(a);
+  const bb = toUniqueStringArray(b);
+  if (aa.length !== bb.length) return false;
+  for (let i = 0; i < aa.length; i++) {
+    if (aa[i] !== bb[i]) return false;
+  }
+  return true;
+}
+
+async function fetchFriendIdsByCategoryIds(categoryIds: string[]): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  const ids = toUniqueStringArray(categoryIds);
+  if (ids.length === 0) return result;
+
+  const chunkSize = 10; // Firestore whereIn 제한
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const chunk = ids.slice(i, i + chunkSize);
+    const snap = await db
+      .collection('friend_categories')
+      .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
+      .get();
+    for (const doc of snap.docs) {
+      const data = doc.data() as any;
+      const friendIds = toUniqueStringArray(data?.friendIds);
+      result.set(doc.id, friendIds);
+    }
+  }
+  return result;
+}
+
+export const onFriendCategoryUpdatedSyncPostAllowedUsers = functions.firestore
+  .document('friend_categories/{categoryId}')
+  .onUpdate(async (change, context) => {
+    const categoryId = context.params.categoryId as string;
+    try {
+      const before = change.before.data() as any;
+      const after = change.after.data() as any;
+
+      const beforeFriendIds = toUniqueStringArray(before?.friendIds);
+      const afterFriendIds = toUniqueStringArray(after?.friendIds);
+
+      // friendIds가 변하지 않았다면 스킵
+      if (sameStringSet(beforeFriendIds, afterFriendIds)) {
+        return null;
+      }
+
+      const postsSnap = await db
+        .collection('posts')
+        .where('visibleToCategoryIds', 'array-contains', categoryId)
+        .get();
+
+      if (postsSnap.empty) {
+        console.log(`onFriendCategoryUpdatedSyncPostAllowedUsers: 대상 게시글 없음 (categoryId=${categoryId})`);
+        return null;
+      }
+
+      const posts = postsSnap.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+
+      // 관련 게시글들이 참조하는 모든 카테고리 ID를 모아 한번에 조회
+      const allCategoryIds = new Set<string>();
+      for (const p of posts) {
+        const ids = toUniqueStringArray(p.data?.visibleToCategoryIds);
+        for (const id of ids) allCategoryIds.add(id);
+      }
+      const friendIdsByCategoryId = await fetchFriendIdsByCategoryIds(Array.from(allCategoryIds));
+
+      // 배치 업데이트 (최대 500)
+      let batch = db.batch();
+      let ops = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const p of posts) {
+        const visibility = (p.data?.visibility || 'public').toString();
+        if (visibility !== 'category') {
+          skipped += 1;
+          continue;
+        }
+
+        const authorId = (p.data?.userId || '').toString().trim();
+        if (!authorId) {
+          skipped += 1;
+          continue;
+        }
+
+        const visibleCategoryIds = toUniqueStringArray(p.data?.visibleToCategoryIds);
+        const allowedSet = new Set<string>();
+        allowedSet.add(authorId);
+        for (const cid of visibleCategoryIds) {
+          const ids = friendIdsByCategoryId.get(cid) || [];
+          for (const fid of ids) allowedSet.add(fid);
+        }
+
+        const newAllowed = Array.from(allowedSet).filter((s) => s.trim().length > 0).sort();
+        const currentAllowed = toUniqueStringArray(p.data?.allowedUserIds);
+
+        if (sameStringSet(currentAllowed, newAllowed)) {
+          skipped += 1;
+          continue;
+        }
+
+        batch.update(p.ref, {
+          allowedUserIds: newAllowed,
+          allowedUserIdsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        ops += 1;
+        updated += 1;
+
+        if (ops >= 450) {
+          await batch.commit();
+          batch = db.batch();
+          ops = 0;
+        }
+      }
+
+      if (ops > 0) {
+        await batch.commit();
+      }
+
+      console.log(
+        `onFriendCategoryUpdatedSyncPostAllowedUsers: 업데이트 완료 (categoryId=${categoryId}, updated=${updated}, skipped=${skipped}, posts=${posts.length})`
+      );
+      return null;
+    } catch (error) {
+      console.error(`onFriendCategoryUpdatedSyncPostAllowedUsers 오류 (categoryId=${categoryId}):`, error);
+      return null;
+    }
+  });
+
+export const onFriendCategoryDeletedSyncPostAllowedUsers = functions.firestore
+  .document('friend_categories/{categoryId}')
+  .onDelete(async (_snapshot, context) => {
+    const categoryId = context.params.categoryId as string;
+    try {
+      const postsSnap = await db
+        .collection('posts')
+        .where('visibleToCategoryIds', 'array-contains', categoryId)
+        .get();
+
+      if (postsSnap.empty) {
+        console.log(`onFriendCategoryDeletedSyncPostAllowedUsers: 대상 게시글 없음 (categoryId=${categoryId})`);
+        return null;
+      }
+
+      const posts = postsSnap.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() as any }));
+
+      // 삭제된 카테고리를 제외한 remaining categoryIds들을 모아 조회
+      const allCategoryIds = new Set<string>();
+      for (const p of posts) {
+        const ids = toUniqueStringArray(p.data?.visibleToCategoryIds).filter((id) => id !== categoryId);
+        for (const id of ids) allCategoryIds.add(id);
+      }
+      const friendIdsByCategoryId = await fetchFriendIdsByCategoryIds(Array.from(allCategoryIds));
+
+      let batch = db.batch();
+      let ops = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const p of posts) {
+        const visibility = (p.data?.visibility || 'public').toString();
+        if (visibility !== 'category') {
+          skipped += 1;
+          continue;
+        }
+
+        const authorId = (p.data?.userId || '').toString().trim();
+        if (!authorId) {
+          skipped += 1;
+          continue;
+        }
+
+        const remainingCategoryIds = toUniqueStringArray(p.data?.visibleToCategoryIds).filter(
+          (id) => id !== categoryId
+        );
+
+        const allowedSet = new Set<string>();
+        allowedSet.add(authorId);
+        for (const cid of remainingCategoryIds) {
+          const ids = friendIdsByCategoryId.get(cid) || [];
+          for (const fid of ids) allowedSet.add(fid);
+        }
+
+        const newAllowed = Array.from(allowedSet).filter((s) => s.trim().length > 0).sort();
+        const currentAllowed = toUniqueStringArray(p.data?.allowedUserIds);
+
+        const needUpdateAllowed = !sameStringSet(currentAllowed, newAllowed);
+        const needUpdateVisibleIds = !sameStringSet(toUniqueStringArray(p.data?.visibleToCategoryIds), remainingCategoryIds);
+
+        if (!needUpdateAllowed && !needUpdateVisibleIds) {
+          skipped += 1;
+          continue;
+        }
+
+        batch.update(p.ref, {
+          visibleToCategoryIds: remainingCategoryIds,
+          allowedUserIds: newAllowed,
+          allowedUserIdsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        ops += 1;
+        updated += 1;
+
+        if (ops >= 450) {
+          await batch.commit();
+          batch = db.batch();
+          ops = 0;
+        }
+      }
+
+      if (ops > 0) {
+        await batch.commit();
+      }
+
+      console.log(
+        `onFriendCategoryDeletedSyncPostAllowedUsers: 업데이트 완료 (categoryId=${categoryId}, updated=${updated}, skipped=${skipped}, posts=${posts.length})`
+      );
+      return null;
+    } catch (error) {
+      console.error(`onFriendCategoryDeletedSyncPostAllowedUsers 오류 (categoryId=${categoryId}):`, error);
+      return null;
+    }
+  });
+
 // 친구요청 생성 시 수신자에게 알림 생성
 export const onFriendRequestCreated = functions.firestore
   .document('friend_requests/{requestId}')
@@ -668,6 +908,30 @@ export const onCommentDeleted = functions.firestore
       try {
         await db.collection('meetups').doc(postId).update({ commentCount: dec });
       } catch (_) {}
+
+      // ✅ 부모(최상위) 댓글이 삭제되면, 해당 댓글의 대댓글도 함께 삭제한다.
+      // - 클라이언트는 타인의 대댓글을 삭제할 권한이 없을 수 있으므로(Admin SDK로 처리)
+      // - 대댓글 삭제는 각각 onCommentDeleted를 다시 트리거하여 commentCount가 올바르게 감소한다.
+      const parentCommentId = (comment as any)?.parentCommentId;
+      const isTopLevel = !parentCommentId;
+      if (isTopLevel) {
+        const topCommentId = context.params.commentId as string;
+
+        // Firestore batch limit(500) 여유를 두고 450개씩 반복 삭제
+        while (true) {
+          const repliesSnap = await db
+            .collection('comments')
+            .where('parentCommentId', '==', topCommentId)
+            .limit(450)
+            .get();
+
+          if (repliesSnap.empty) break;
+
+          const batch = db.batch();
+          repliesSnap.docs.forEach((doc) => batch.delete(doc.ref));
+          await batch.commit();
+        }
+      }
 
       return null;
     } catch (error) {

@@ -68,6 +68,9 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                 final percent = (ratio * 100).round();
 
                 final isMine = votedOptionId != null && votedOptionId == id;
+                final votesLabel = AppLocalizations.of(context)!.pollVotesUnit(votes);
+                final countStr = votes.toString();
+                final countIndex = votesLabel.indexOf(countStr);
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 10),
@@ -93,27 +96,35 @@ class _PollPostWidgetState extends State<PollPostWidget> {
                             style: TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 12,
-                              fontWeight: isMine ? FontWeight.w700 : FontWeight.w600,
-                              color: isMine ? const Color(0xFF10B981) : const Color(0xFF6B7280),
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF111827),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: LinearProgressIndicator(
-                          minHeight: 10,
-                          value: ratio.clamp(0.0, 1.0),
-                          backgroundColor: const Color(0xFFE5E7EB),
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            isMine ? const Color(0xFF10B981) : AppColors.pointColor,
-                          ),
+                      LinearProgressIndicator(
+                        minHeight: 10,
+                        value: ratio.clamp(0.0, 1.0),
+                        backgroundColor: const Color(0xFFE5E7EB),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          AppColors.pointColor,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        AppLocalizations.of(context)!.pollVotesUnit(votes),
+                      Text.rich(
+                        TextSpan(
+                          children: countIndex < 0
+                              ? [TextSpan(text: votesLabel)]
+                              : [
+                                  TextSpan(text: votesLabel.substring(0, countIndex)),
+                                  TextSpan(
+                                    text: countStr,
+                                    style: const TextStyle(fontWeight: FontWeight.w800),
+                                  ),
+                                  TextSpan(text: votesLabel.substring(countIndex + countStr.length)),
+                                ],
+                        ),
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 12,
@@ -247,43 +258,22 @@ class _PollPostWidgetState extends State<PollPostWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.how_to_vote_outlined, size: 18, color: Color(0xFF111827)),
-                    const SizedBox(width: 6),
-                    Text(
-                      AppLocalizations.of(context)!.pollVoteLabel,
+                // 헤더(Poll 라벨 / n participated)는 노출하지 않음
+                if (!hasVoted) ...[
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                      AppLocalizations.of(context)!.pollVoteToSeeResults,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
                       ),
                     ),
-                    const Spacer(),
-                    if (hasVoted)
-                      Text(
-                        AppLocalizations.of(context)!.pollParticipantsCount(totalVotes),
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B7280),
-                        ),
-                      )
-                    else
-                      Text(
-                        AppLocalizations.of(context)!.pollVoteToSeeResults,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B7280),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+                  ),
+                  const SizedBox(height: 10),
+                ],
                 contentForVote(votedOptionId, hasVoted),
               ],
             ),

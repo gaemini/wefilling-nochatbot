@@ -1,6 +1,6 @@
 // lib/ui/widgets/app_icon_button.dart
 // 접근성 기준을 준수하는 표준화된 아이콘 버튼
-// 48×48 히트박스, 24px 아이콘, 12dp 패딩, 시맨틱 라벨 지원
+// 48×48 히트박스, 27px 아이콘, 12dp 패딩, 시맨틱 라벨 지원
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,7 +11,7 @@ import '../../utils/accessibility_utils.dart';
 ///
 /// 접근성 기준:
 /// - 최소 48×48 터치 영역
-/// - 24px 아이콘 크기
+/// - 27px 아이콘 크기
 /// - 12dp 내부 패딩
 /// - 리플 효과
 /// - 시맨틱 라벨 지원

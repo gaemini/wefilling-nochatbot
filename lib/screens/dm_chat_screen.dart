@@ -68,12 +68,18 @@ class _DMChatScreenState extends State<DMChatScreen> {
   final _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   Stream<DMUserInfo?>? _otherUserInfoStream;
+  // UX: 캐시 스냅샷(fromCache) → 서버 스냅샷 전환으로 인한 플리커를 방지하기 위해
+  // 서버에서 확인된 최신 상대 프로필 정보를 별도로 보관한다.
+  DMUserInfo? _serverOtherUserInfo;
+  bool _serverOtherUserInfoFetchInFlight = false;
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
   
   // 대화방이 없을 수 있으므로 초기에 스트림을 구독하지 않는다.
   Stream<List<DMMessage>>? _messagesStream;
-  bool _conversationExists = false;
+  // null: 아직 확인 전(초기 로딩), false: 없음(첫 메시지 전송 시 생성), true: 존재
+  bool? _conversationExists;
+  bool _isConversationInitializing = true;
   
   Conversation? _conversation;
   bool _isLoading = false;
@@ -86,6 +92,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   File? _pendingImage; // 첨부 대기 이미지 (1장 제한)
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
   bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
+  bool _composerPostContextDismissed = false; // 입력창 위 미리보기 카드 닫힘 여부
 
   @override
   void initState() {
@@ -100,6 +107,37 @@ class _DMChatScreenState extends State<DMChatScreen> {
     _checkBlockStatus(); // 차단 상태 확인
     _preloadPostContentIfAnonymous(); // 익명이면 게시글 본문 미리 로드
     _initConversationState();
+
+    // 상대 프로필은 서버 기준 최신값을 먼저 확보 (캐시 플리커 방지)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_isAnonymous) return;
+      _ensureServerOtherUserInfo(widget.otherUserId);
+    });
+  }
+
+  void _ensureServerOtherUserInfo(String userId) {
+    if (_serverOtherUserInfo != null) return;
+    if (_serverOtherUserInfoFetchInFlight) return;
+    _serverOtherUserInfoFetchInFlight = true;
+
+    _userInfoCacheService
+        .getUserInfo(userId, forceRefresh: true)
+        .then((info) {
+      if (!mounted) return;
+      if (info == null) return;
+      setState(() {
+        _serverOtherUserInfo = DMUserInfo(
+          uid: info.uid,
+          nickname: info.nickname,
+          photoURL: info.photoURL,
+          photoVersion: info.photoVersion,
+          isFromCache: false,
+        );
+      });
+    }).whenComplete(() {
+      _serverOtherUserInfoFetchInFlight = false;
+    });
   }
   
   /// 디버그: Firestore에 실제로 저장된 데이터 확인
@@ -235,6 +273,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
   Future<void> _initConversationState() async {
     try {
+      if (mounted) {
+        setState(() {
+          _isConversationInitializing = true;
+          _conversationExists = null;
+        });
+      }
       Logger.log('🚀 대화방 초기화: ${widget.conversationId}');
       
       // conversationId 형식 확인
@@ -284,9 +328,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
           .get();
       
       _conversationExists = conv.exists;
+      if (mounted) setState(() {});
       
       // 대화방이 존재하지 않으면 메시지 전송 시까지 대기
-      if (!_conversationExists) {
+      if (_conversationExists == false) {
         Logger.log('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: ${widget.conversationId}');
         
         // 본인 DM 체크
@@ -314,7 +359,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       }
       
       // 참여자 확인 (대화방이 이미 존재했던 경우에만)
-      if (_conversationExists && conv.exists) {
+      if (_conversationExists == true && conv.exists) {
         final data = conv.data() as Map<String, dynamic>;
         final participants = List<String>.from(data['participants'] ?? []);
         
@@ -376,6 +421,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
           );
         }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConversationInitializing = false;
+        });
       }
     }
   }
@@ -537,6 +588,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
     
     // ⏳ 로딩 상태: 데이터가 준비되지 않았을 때
     if (_conversation == null && (dmContent == null || dmContent.isEmpty)) {
+      final l10n = AppLocalizations.of(context)!;
+      final resolvedName = _isAnonymous
+          ? (l10n.anonymous ?? 'Anonymous')
+          : (_serverOtherUserInfo?.nickname ?? '');
+      final resolvedPhotoUrl = _isAnonymous ? '' : (_serverOtherUserInfo?.photoURL ?? '');
+      final resolvedPhotoVersion = _isAnonymous ? 0 : (_serverOtherUserInfo?.photoVersion ?? 0);
+
       return AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
@@ -546,24 +604,37 @@ class _DMChatScreenState extends State<DMChatScreen> {
         ),
         title: Row(
           children: [
-            // 프로필 스켈레톤
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                shape: BoxShape.circle,
-              ),
+            // 대화방이 없어도 상대 프로필을 먼저 보여준다(오류 오해 방지)
+            UserAvatar(
+              uid: otherUserId,
+              photoUrl: resolvedPhotoUrl,
+              photoVersion: resolvedPhotoVersion,
+              isAnonymous: _isAnonymous,
+              size: 36,
+              placeholderColor: const Color(0xFFE5E7EB),
+              placeholderIconSize: 20,
             ),
             const SizedBox(width: 12),
-            // 이름 스켈레톤
-            Container(
-              width: 120,
-              height: 16,
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(4),
-              ),
+            Expanded(
+              child: resolvedName.trim().isNotEmpty
+                  ? Text(
+                      resolvedName.trim(),
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : Container(
+                      width: 120,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.grey[200],
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
             ),
           ],
         ),
@@ -689,29 +760,24 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
     
     // 초기 표시 값을 캐시 상태에 따라 조건부로 설정
+    // - ⚠️ 대화방(_conversation)이 아직 로드되지 않은 상태에서는 "탈퇴 계정"으로 판단하지 않는다.
+    //   (이 오판 때문에 'Deleted Account'가 잠깐 보였다가 사라지는 플리커가 발생할 수 있음)
+    final hasCachedConversation = _conversation != null;
     final cachedStatus = _conversation?.participantStatus[otherUserId];
     final cachedName = _conversation?.getOtherUserName(_currentUser!.uid) ?? '';
     final deletedLabel = AppLocalizations.of(context)!.deletedAccount ?? 'Deleted Account';
     
     // 익명이 아닐 때만 탈퇴 계정 체크
-    final isCachedDeleted = !_isAnonymous && (
+    final isCachedDeleted = !_isAnonymous && hasCachedConversation && (
         cachedStatus == 'deleted' ||
         cachedName.isEmpty ||
         cachedName == 'DELETED_ACCOUNT' ||
         cachedName == deletedLabel
     );
-    
-    final initialName = isCachedDeleted ? deletedLabel : (cachedName == 'DELETED_ACCOUNT' ? deletedLabel : cachedName);
-    
-    // 🔧 수정: 캐시에서 초기 데이터 가져오기 (스트림이 늦게 도착해도 즉시 표시)
-    final cachedUserInfo = (!_isAnonymous && !isCachedDeleted)
-        ? _userInfoCacheService.getCachedUserInfo(otherUserId)
-        : null;
-    
-    if (kDebugMode && cachedUserInfo != null) {
-      Logger.log('🔧 DM채팅 AppBar initialData (캐시):');
-      Logger.log('   - photoURL: "${cachedUserInfo.photoURL}"');
-      Logger.log('   - photoVersion: ${cachedUserInfo.photoVersion}');
+
+    // 서버 최신값을 백그라운드로 확보 (옛 값 노출 방지)
+    if (!_isAnonymous && !isCachedDeleted) {
+      _ensureServerOtherUserInfo(otherUserId);
     }
 
     // 실시간으로 사용자 정보 조회 (일반 DM만)
@@ -719,14 +785,18 @@ class _DMChatScreenState extends State<DMChatScreen> {
       preferredSize: const Size.fromHeight(kToolbarHeight),
       child: StreamBuilder<DMUserInfo?>(
         stream: (_isAnonymous || isCachedDeleted) ? null : _otherUserInfoStream,
-        initialData: cachedUserInfo ?? ((!_isAnonymous && !isCachedDeleted)
-            ? DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: '', photoVersion: 0)
-            : null),
+        // 캐시 기반 초기값을 UI에 노출하지 않는다(플리커 방지)
+        initialData: null,
         builder: (context, snapshot) {
           final info = snapshot.data;
-          final otherUserName = (isCachedDeleted || info == null)
-              ? deletedLabel
-              : (info.nickname == 'DELETED_ACCOUNT' ? deletedLabel : info.nickname);
+          final DMUserInfo? freshFromStream =
+              (info != null && info.isFromCache == false) ? info : null;
+          final DMUserInfo? resolved = _serverOtherUserInfo ?? freshFromStream;
+          final bool isUserInfoReady = resolved != null;
+
+          final otherUserName = (isCachedDeleted || resolved == null)
+              ? (isCachedDeleted ? deletedLabel : '')
+              : (resolved.nickname == 'DELETED_ACCOUNT' ? deletedLabel : resolved.nickname);
           
           // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
           if (kDebugMode) {
@@ -742,16 +812,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
             }
           }
           
-          // photoURL이 있으면 무조건 표시 (photoVersion 조건 제거)
-          // DM 목록에서 보이는 것과 동일한 방식으로 단순화
-          final otherUserPhoto = (isCachedDeleted || info == null) ? '' : info.photoURL;
-          final otherUserPhotoVersion = (isCachedDeleted || info == null) ? 0 : info.photoVersion;
+          // photoURL이 있으면 표시하되, 캐시 스냅샷은 노출하지 않는다.
+          final otherUserPhoto = (isCachedDeleted || resolved == null) ? '' : resolved.photoURL;
+          final otherUserPhotoVersion =
+              (isCachedDeleted || resolved == null) ? 0 : resolved.photoVersion;
           
           if (kDebugMode) {
             Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
           }
           
-          final primaryTitle = _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
+          final primaryTitle =
+              _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
           final secondaryTitle = null;
 
     String _formatHeaderDate() {
@@ -784,16 +855,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  primaryTitle,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                if (!_isAnonymous && !isCachedDeleted && !isUserInfoReady)
+                  Container(
+                    width: 140,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  )
+                else
+                  Text(
+                    primaryTitle,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
                 if (secondaryTitle != null) ...[
                   const SizedBox(height: 2),
                   Text(
@@ -1023,39 +1104,22 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 메시지 목록 빌드
   Widget _buildMessageList() {
+    // ✅ 초기 로딩 단계에서는 "대화방 없음" 문구가 먼저 뜨지 않도록 로딩 스켈레톤을 노출한다.
+    if (_isConversationInitializing || _conversationExists == null) {
+      return _buildConversationLoadingSkeleton();
+    }
+
     if (_messagesStream == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.send_outlined, size: 80, color: Colors.grey[300]),
-            const SizedBox(height: 16),
-            Text(
-              AppLocalizations.of(context)!.noMessages,
-              style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      );
+      // 여기까지 왔다는 건 "대화방이 없음"이 확정된 케이스(또는 스트림 초기화 실패)다.
+      return _buildStartConversationPlaceholder(isConversationCreated: false);
     }
 
     return StreamBuilder<List<DMMessage>>(
       stream: _messagesStream!,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.loadingMessages,
-                  style: TextStyle(color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          );
+          // ✅ 로딩 중에도 동일한 스켈레톤을 유지해 화면이 바뀌며 깜빡이는 느낌을 줄인다.
+          return _buildConversationLoadingSkeleton();
         }
 
         if (snapshot.hasError) {
@@ -1110,18 +1174,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
         final messages = snapshot.data ?? [];
 
         if (messages.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.send_outlined, size: 80, color: Colors.grey[300]),
-                const SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.noMessages,
-                  style: TextStyle(fontSize: 16, color: Colors.grey[600]),
-                ),
-              ],
-            ),
+          return _buildStartConversationPlaceholder(
+            isConversationCreated: _conversationExists == true,
           );
         }
 
@@ -1145,6 +1199,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
           if (latestMyUnreadMessageId != null && latestMyReadMessageId != null) break;
         }
 
+        // ✅ "메시지 옆 정보(시간/읽음)" 중복 노출 방지
+        // - 동일 라벨이 연속되면 마지막(= 더 최신, 아래쪽) 메시지에만 표시한다.
+        String? _statusFor(DMMessage m) {
+          if (m.senderId != myUid) return null;
+          if (m.id == latestMyUnreadMessageId) return '1';
+          if (m.id == latestMyReadMessageId) return AppLocalizations.of(context)!.read;
+          return null;
+        }
+
+        final timeLabels = List<String>.generate(
+          messages.length,
+          (i) => TimeFormatter.formatMessageTime(context, messages[i].createdAt),
+          growable: false,
+        );
+        final statusLabels = List<String?>.generate(
+          messages.length,
+          (i) => _statusFor(messages[i]),
+          growable: false,
+        );
+
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1153,13 +1227,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
           itemBuilder: (context, index) {
             final message = messages[index];
             final isMine = message.isMine(_currentUser!.uid);
-            final String? statusText = isMine
-                ? (message.id == latestMyUnreadMessageId
-                    ? '1'
-                    : (message.id == latestMyReadMessageId
-                        ? AppLocalizations.of(context)!.read
-                        : null))
-                : null;
+            final String? statusText = statusLabels[index];
+
+            // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
+            final String timeText = timeLabels[index];
+            final String? prevTimeText = index > 0 ? timeLabels[index - 1] : null;
+            final String? prevStatusText = index > 0 ? statusLabels[index - 1] : null;
+            final bool showTimeText = prevTimeText == null || timeText != prevTimeText;
+            final bool showStatusText = statusText != null && (prevStatusText == null || statusText != prevStatusText);
             
             // 같은 발신자의 연속 메시지인지 확인
             final isConsecutive = index < messages.length - 1 &&
@@ -1172,12 +1247,148 @@ class _DMChatScreenState extends State<DMChatScreen> {
             return Column(
               children: [
                 if (showDateSeparator) _buildDateSeparator(message.createdAt),
-                _buildMessageBubble(message, isMine, isConsecutive, statusText: statusText),
+                _buildMessageBubble(
+                  message,
+                  isMine,
+                  isConsecutive,
+                  timeText: timeText,
+                  showTimeText: showTimeText,
+                  statusText: statusText,
+                  showStatusText: showStatusText,
+                ),
               ],
             );
           },
         );
       },
+    );
+  }
+
+  Widget _buildConversationLoadingSkeleton() {
+    // "대화방 없음" 문구가 먼저 보이는 UX를 방지하기 위한 초기 로딩 스켈레톤
+    // - Shimmer 의존성을 추가하지 않고, 가벼운 회색 버블 6개만 렌더링한다.
+    final base = Colors.grey.shade200;
+    final base2 = Colors.grey.shade100;
+    final widths = <double>[0.62, 0.48, 0.72, 0.40, 0.66, 0.52];
+
+    return ListView.builder(
+      controller: _scrollController,
+      reverse: true,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+      itemCount: widths.length,
+      itemBuilder: (context, i) {
+        final isMine = i.isEven;
+        final w = MediaQuery.of(context).size.width * widths[i];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Align(
+            alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+            child: Container(
+              width: w,
+              height: 16 + (i % 3) * 10,
+              decoration: BoxDecoration(
+                color: isMine ? base : base2,
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStartConversationPlaceholder({
+    required bool isConversationCreated,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    final resolvedName = _isAnonymous
+        ? (l10n.anonymous ?? 'Anonymous')
+        : (_serverOtherUserInfo?.nickname.trim().isNotEmpty == true
+            ? _serverOtherUserInfo!.nickname.trim()
+            : '');
+
+    final resolvedPhotoUrl = _isAnonymous ? '' : (_serverOtherUserInfo?.photoURL ?? '');
+    final resolvedPhotoVersion = _isAnonymous ? 0 : (_serverOtherUserInfo?.photoVersion ?? 0);
+
+    final title = resolvedName.isNotEmpty
+        ? (isKo ? '$resolvedName님과 대화를 시작해보세요' : 'Start a chat with $resolvedName')
+        : (isKo ? '대화를 시작해보세요' : 'Start a chat');
+
+    final subtitle = isKo
+        ? '첫 메시지를 보내면 대화방이 자동으로 생성되고\n여기서 계속 대화할 수 있어요.'
+        : 'Send your first message to create the chat,\nthen continue the conversation here.';
+
+    final hint = isKo
+        ? (isConversationCreated
+            ? '대화가 시작되면 여기에 메시지가 표시됩니다.'
+            : '아직 대화방이 없어요. 메시지를 보내면 시작됩니다.')
+        : (isConversationCreated
+            ? 'Messages will appear here once the chat starts.'
+            : 'No chat yet. Send a message to start.');
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 28),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            UserAvatar(
+              uid: widget.otherUserId,
+              photoUrl: resolvedPhotoUrl,
+              photoVersion: resolvedPhotoVersion,
+              isAnonymous: _isAnonymous,
+              size: 72,
+              placeholderColor: const Color(0xFFE5E7EB),
+              placeholderIconSize: 28,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF111827),
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B7280),
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                hint,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF4B5563),
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1213,11 +1424,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
     DMMessage message,
     bool isMine,
     bool isConsecutive, {
+    required String timeText,
+    bool showTimeText = true,
     String? statusText,
+    bool showStatusText = true,
   }) {
-    final hasPostContext = (message.postId != null && message.postId!.trim().isNotEmpty) &&
-        ((message.postImageUrl != null && message.postImageUrl!.trim().isNotEmpty) ||
-            (message.postPreview != null && message.postPreview!.trim().isNotEmpty));
+    // 게시글 컨텍스트는 postId만 있어도 카드로 노출한다.
+    final hasPostContext =
+        (message.postId != null && message.postId!.trim().isNotEmpty);
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
     final hasText = message.text.trim().isNotEmpty;
     // 게시글 컨텍스트가 있으면 "이미지 단독"으로 취급하지 않음 (컨텍스트 카드도 함께 렌더링)
@@ -1240,19 +1454,31 @@ class _DMChatScreenState extends State<DMChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  TimeFormatter.formatMessageTime(context, message.createdAt),
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 11,
-                  ),
-                ),
-                if (statusText != null)
-                  Text(
-                    statusText,
+                Visibility(
+                  visible: showTimeText,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  maintainState: true,
+                  child: Text(
+                    timeText,
                     style: TextStyle(
                       color: Colors.grey[600],
                       fontSize: 11,
+                    ),
+                  ),
+                ),
+                if (statusText != null)
+                  Visibility(
+                    visible: showStatusText,
+                    maintainAnimation: true,
+                    maintainSize: true,
+                    maintainState: true,
+                    child: Text(
+                      statusText,
+                      style: TextStyle(
+                        color: Colors.grey[600],
+                        fontSize: 11,
+                      ),
                     ),
                   ),
               ],
@@ -1373,11 +1599,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
             const SizedBox(width: 6),
             // 시간 표시
-            Text(
-              TimeFormatter.formatMessageTime(context, message.createdAt),
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 11,
+            Visibility(
+              visible: showTimeText,
+              maintainAnimation: true,
+              maintainSize: true,
+              maintainState: true,
+              child: Text(
+                timeText,
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 11,
+                ),
               ),
             ),
           ],
@@ -1575,6 +1807,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
         !_isLoading &&
         (_messageController.text.trim().isNotEmpty || _pendingImage != null);
 
+    final originPostId = (widget.originPostId ?? '').trim();
+    final shouldShowComposerPostContext = originPostId.isNotEmpty &&
+        !_originPostContextAttached &&
+        !_composerPostContextDismissed;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -1588,6 +1825,33 @@ class _DMChatScreenState extends State<DMChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ✅ 게시글에서 DM으로 진입한 경우: "보내기 전" 컨텍스트 미리보기 카드
+            // - 사용자는 메시지를 입력한 뒤 전송할 수 있고,
+            // - 첫 전송 시에만 실제 메시지에 post_context로 부착된다.
+            if (shouldShowComposerPostContext) ...[
+              _buildComposerPostContextPreview(),
+              const SizedBox(height: 8),
+            ],
+            if (_conversationExists == false &&
+                !_isAnonymous &&
+                !_isBlocked &&
+                !_isBlockedBy) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '첫 메시지를 보내면 대화방이 생성돼요.'
+                      : 'Send your first message to create this chat.',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             if (_pendingImage != null) ...[
               _buildAttachmentPreview(),
               const SizedBox(height: 8),
@@ -1677,6 +1941,135 @@ class _DMChatScreenState extends State<DMChatScreen> {
                   ),
                 ),
               ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildComposerPostContextPreview() {
+    final postId = (widget.originPostId ?? '').trim();
+    final img = (widget.originPostImageUrl ?? '').trim();
+    final preview = (widget.originPostPreview ?? '').trim();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    return GestureDetector(
+      onTap: postId.isEmpty ? null : () => _navigateToPost(postId),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey[200]!, width: 1),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 썸네일 (있으면)
+            if (img.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: CachedNetworkImage(
+                  imageUrl: img,
+                  width: 56,
+                  height: 56,
+                  fit: BoxFit.cover,
+                  placeholder: (_, __) => Container(
+                    width: 56,
+                    height: 56,
+                    color: Colors.grey[200],
+                    alignment: Alignment.center,
+                    child: const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    width: 56,
+                    height: 56,
+                    color: Colors.grey[200],
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.article_outlined,
+                      size: 22,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ),
+              )
+            else
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF3F4F6),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.article_outlined,
+                  size: 22,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          isKo ? '이 게시글에 대해 DM 보내기' : 'Message about this post',
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF111827),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            _composerPostContextDismissed = true;
+                          });
+                        },
+                        customBorder: const CircleBorder(),
+                        child: const Padding(
+                          padding: EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close,
+                            size: 18,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (preview.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      preview,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4B5563),
+                        height: 1.35,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ],
         ),
@@ -1888,7 +2281,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       String actualConversationId = widget.conversationId;
       
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
-      if (!_conversationExists) {
+      if (_conversationExists != true) {
         Logger.log('📝 첫 메시지 전송 - 대화방 생성 시도');
         Logger.log('📝 기존 conversationId: ${widget.conversationId}');
         
@@ -1966,7 +2359,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       // 게시글에서 DM으로 진입한 경우: 현재 채팅 세션에서 첫 전송 메시지에만 1회 컨텍스트 부착
       final shouldAttachPostContext = !_originPostContextAttached &&
           widget.originPostId != null &&
-          widget.originPostId!.trim().isNotEmpty;
+          widget.originPostId!.trim().isNotEmpty &&
+          !_composerPostContextDismissed;
 
       final success = await _dmService.sendMessage(
         actualConversationId,

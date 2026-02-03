@@ -11,6 +11,7 @@ import '../widgets/country_flag_circle.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import 'friend_profile_screen.dart';
+import 'main_screen.dart';
 
 class UserFriendsListScreen extends StatefulWidget {
   final String userId;
@@ -109,12 +110,16 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             : Future.value(<UserProfile>[]),
       ]);
 
-      final friends = (results[0] as List<UserProfile>)
-          .where((u) => currentUserId == null || u.uid != currentUserId)
-          .toList(growable: false);
+      // 친구의 친구 목록에서도 "나"가 보이도록 현재 사용자 필터링을 하지 않는다.
+      // (기존: 내 uid를 제외해서 목록에서 사라짐)
+      final friends = (results[0] as List<UserProfile>).toList(growable: false);
 
       final myFriends = results[1] as List<UserProfile>;
       final myFriendIds = myFriends.map((u) => u.uid).toSet();
+      // 내 카드가 "이미 친구" 섹션에 자연스럽게 포함되도록(액션 버튼/탭 동작 일관)
+      if (currentUserId != null) {
+        myFriendIds.add(currentUserId);
+      }
 
       // 비친구 목록 중 "내가 이미 요청 보낸 상태"는 버튼을 요청됨으로 고정
       final pendingOutIds = <String>{};
@@ -401,6 +406,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     required bool isFriend,
   }) {
     final l10n = AppLocalizations.of(context)!;
+    final currentUserId = _relationshipService.currentUserId;
+    final isMe = currentUserId != null && friend.uid == currentUserId;
     final isRequesting = _requestingIds.contains(friend.uid);
     final isRequested = _requestedIds.contains(friend.uid);
 
@@ -420,7 +427,15 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: isFriend ? () => _openProfile(friend) : null,
+        onTap: (isFriend || isMe)
+            ? () {
+                if (isMe) {
+                  _openMyPage();
+                } else {
+                  _openProfile(friend);
+                }
+              }
+            : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
@@ -458,7 +473,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      friend.displayNameOrNickname,
+                      _displayNameWithMeSuffix(friend.displayNameOrNickname, isMe),
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 15,
@@ -499,7 +514,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              if (isFriend)
+              if (isFriend || isMe)
                 const Icon(
                   Icons.chevron_right,
                   color: Color(0xFF9CA3AF),
@@ -571,6 +586,22 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         ),
       ),
     );
+  }
+
+  void _openMyPage() {
+    // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const MainScreen(initialTabIndex: 3),
+      ),
+      (route) => false,
+    );
+  }
+
+  String _displayNameWithMeSuffix(String name, bool isMe) {
+    if (!isMe) return name;
+    final locale = Localizations.localeOf(context).languageCode;
+    return locale == 'ko' ? '$name (나)' : '$name (Me)';
   }
 
   Future<void> _sendFriendRequest(UserProfile user) async {

@@ -25,6 +25,33 @@ class PostService {
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
 
+  bool _canUserReadPost(Post post, User? user) {
+    // 로그인하지 않은 경우 전체 공개만 허용
+    if (user == null) {
+      return post.visibility == 'public' || post.visibility.isEmpty;
+    }
+
+    final visibility = post.visibility;
+
+    // visibility 필드가 없으면 전체 공개로 간주 (레거시 데이터 호환)
+    if (visibility == 'public' || visibility.isEmpty) {
+      return true;
+    }
+
+    if (visibility == 'category') {
+      // 작성자 본인은 항상 허용
+      if (post.userId == user.uid) return true;
+
+      // allowedUserIds가 비어있으면 차단 (엄격)
+      if (post.allowedUserIds.isEmpty) return false;
+
+      return post.allowedUserIds.contains(user.uid);
+    }
+
+    // 알 수 없는 visibility는 차단
+    return false;
+  }
+
   List<PollOption> _parsePollOptions(dynamic raw) {
     try {
       if (raw is! List) return const [];
@@ -416,6 +443,9 @@ class PostService {
   // 특정 게시글 가져오기
   Future<Post?> getPostById(String postId) async {
     try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+
       final doc = await _firestore.collection('posts').doc(postId).get();
       if (!doc.exists) return null;
 
@@ -424,7 +454,18 @@ class PostService {
         "PostService.getPostById - 게시글 데이터: ${data['id']} | 작성자: ${data['authorNickname']} | 국적: ${data['authorNationality'] ?? '없음'}",
       );
 
-      return _buildPostFromFirestore(doc.id, data);
+      final post = _buildPostFromFirestore(doc.id, data);
+
+      // 앱 레벨에서 한 번 더 접근 제어(캐시/레거시 데이터/UX 안정성)
+      if (!_canUserReadPost(post, user)) {
+        return null;
+      }
+
+      // 차단/차단당함 콘텐츠 제거
+      final filtered = await ContentFilterService.filterPosts([post]);
+      if (filtered.isEmpty) return null;
+
+      return post;
     } catch (e) {
       Logger.error('게시글 조회 오류: $e');
       return null;
@@ -809,11 +850,14 @@ class PostService {
     try {
       if (query.isEmpty) return [];
 
+      final user = _auth.currentUser;
+      if (user == null) return [];
+
       final lowercaseQuery = query.toLowerCase();
 
       // 기본 쿼리
       Query<Map<String, dynamic>> queryRef =
-          _firestore.collection('posts').orderBy('createdAt', descending: true);
+          _firestore.collection('posts').orderBy('createdAt', descending: true).limit(600);
 
       // 카테고리 필터 추가
       if (category != null && category.isNotEmpty) {
@@ -822,31 +866,36 @@ class PostService {
 
       final snapshot = await queryRef.get();
 
-      return snapshot.docs
-          .map((doc) {
-            try {
-              final data = doc.data();
+      final matched = <Post>[];
 
-              // 검색어와 일치하는지 확인
-              final title = (data['title'] as String? ?? '').toLowerCase();
-              final content = (data['content'] as String? ?? '').toLowerCase();
-              final author =
-                  (data['authorNickname'] as String? ?? '').toLowerCase();
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data();
+          final post = _buildPostFromFirestore(doc.id, data);
 
-              if (title.contains(lowercaseQuery) ||
-                  content.contains(lowercaseQuery) ||
-                  author.contains(lowercaseQuery)) {
-                return _buildPostFromFirestore(doc.id, data);
-              }
-              return null;
-            } catch (e) {
-              Logger.error('게시글 검색 파싱 오류: $e');
-              return null;
-            }
-          })
-          .where((post) => post != null)
-          .cast<Post>()
-          .toList();
+          // 🔒 검색에서도 동일한 공개범위/허용 사용자 필터 적용
+          if (!_canUserReadPost(post, user)) {
+            continue;
+          }
+
+          // 검색어와 일치하는지 확인
+          final title = (data['title'] as String? ?? '').toLowerCase();
+          final content = (data['content'] as String? ?? '').toLowerCase();
+          final author = (data['authorNickname'] as String? ?? '').toLowerCase();
+
+          if (title.contains(lowercaseQuery) ||
+              content.contains(lowercaseQuery) ||
+              author.contains(lowercaseQuery)) {
+            matched.add(post);
+          }
+        } catch (e) {
+          Logger.error('게시글 검색 파싱 오류: $e');
+        }
+      }
+
+      // 차단/차단당함 콘텐츠 제거
+      final filtered = await ContentFilterService.filterPosts(matched);
+      return filtered;
     } catch (e) {
       Logger.error('게시글 검색 오류: $e');
       return [];

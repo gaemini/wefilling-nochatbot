@@ -14,6 +14,7 @@ import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
 import '../../screens/friend_profile_screen.dart';
+import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
 import 'poll_post_widget.dart';
 
@@ -126,6 +127,36 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         );
       }
     }
+  }
+
+  void _openProfileOrMyPage({
+    required String userId,
+    required String nickname,
+    required String photoURL,
+  }) {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && userId == me) {
+      // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(initialTabIndex: 3),
+        ),
+        (route) => false,
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: nickname,
+          photoURL: photoURL,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
   }
 
   // 테두리 색상 메서드 제거 - 색상으로만 구분
@@ -457,16 +488,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
             GestureDetector(
               onTap: canOpenProfile
                   ? () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FriendProfileScreen(
-                            userId: post.userId,
-                            nickname: post.author,
-                            photoURL: post.authorPhotoURL,
-                            allowNonFriendsPreview: true,
-                          ),
-                        ),
+                      _openProfileOrMyPage(
+                        userId: post.userId,
+                        nickname: post.author,
+                        photoURL: post.authorPhotoURL,
                       );
                     }
                   : null,
@@ -512,16 +537,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         child: GestureDetector(
                           onTap: canOpenProfile
                               ? () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => FriendProfileScreen(
-                                        userId: post.userId,
-                                        nickname: post.author,
-                                        photoURL: post.authorPhotoURL,
-                                        allowNonFriendsPreview: true,
-                                      ),
-                                    ),
+                                  _openProfileOrMyPage(
+                                    userId: post.userId,
+                                    nickname: post.author,
+                                    photoURL: post.authorPhotoURL,
                                   );
                                 }
                               : null,
@@ -887,16 +906,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return;
       }
       
-      // 카테고리별 공개가 아닌 경우 (전체공개 또는 익명) 익명 대화방으로
-      // 카테고리별 공개인 경우에만 일반 대화방으로
-      final bool shouldUseAnonymousChat = 
-          post.category == null || 
-          post.category!.isEmpty || 
-          post.category == '전체' ||
-          post.isAnonymous;
-      
-      // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
-      final conversationId = _dmService.generateConversationId(
+      // ✅ 게시글에서 DM 보내기는 "게시글에 대해 물어보는 용도"이므로,
+      // - 익명 게시글만 익명 대화방(anon_*)으로 분리
+      // - 그 외에는 기존 1:1 대화방을 연장선으로 재사용(보관된 방 복원 포함)
+      final bool shouldUseAnonymousChat = post.isAnonymous;
+
+      final conversationId = await _dmService.resolveConversationId(
         post.userId,
         postId: post.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
@@ -910,9 +925,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       if (mounted) {
         final originPostImageUrl =
             (post.imageUrls.isNotEmpty ? post.imageUrls.first : '').trim();
-        final rawPreview = post.content.trim();
-        final originPostPreview =
-            rawPreview.isEmpty ? '' : (rawPreview.length > 90 ? '${rawPreview.substring(0, 90)}...' : rawPreview);
+        // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
+        final rawContent = post.content.trim();
+        final rawTitle = post.title.trim();
+        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '게시글');
+        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(

@@ -302,6 +302,8 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'review_like':
       return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFFEF4444));
     case 'new_comment':
+      // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조
+      return const _BadgeSpec(icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'review_comment':
       return const _BadgeSpec(icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'dm_received':
@@ -320,7 +322,7 @@ _BadgeSpec _badgeSpecForType(String type) {
       return const _BadgeSpec(icon: Icons.campaign, color: Color(0xFFF59E0B));
     case 'post_private':
       // 친구공개(allowed users) 게시글 알림: 자물쇠 대신 일반 게시글 느낌으로 표시
-      return const _BadgeSpec(icon: Icons.article, color: AppColors.pointColor);
+      return const _BadgeSpec(icon: Icons.article, color: Color(0xFF9CA3AF));
     default:
       return const _BadgeSpec(icon: Icons.notifications, color: Color(0xFF6B7280));
   }

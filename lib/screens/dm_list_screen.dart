@@ -32,6 +32,12 @@ class _DMListScreenState extends State<DMListScreen> {
   final _currentUser = FirebaseAuth.instance.currentUser;
   Set<String> _hiddenConversationIds = {};
   final Map<String, Stream<DMUserInfo?>> _userInfoStreams = {};
+  // DM 목록 UX 개선:
+  // - Firestore 캐시 스냅샷(fromCache) → 서버 스냅샷 전환 시
+  //   "옛 사진/닉네임이 잠깐 보였다가 바뀌는" 플리커가 발생할 수 있어,
+  //   서버에서 확인된 최신 사용자 정보를 별도로 보관/재사용한다.
+  final Map<String, DMUserInfo> _serverUserInfoById = {};
+  final Set<String> _serverUserInfoFetchInFlight = <String>{};
   static const String _anonTitlePrefsPrefix = 'dm_anon_title__'; // conversationId -> post content
   final Map<String, String> _anonTitleCache = {}; // conversationId -> post content
   final Set<String> _anonPrefetchInFlightPostIds = {};
@@ -487,9 +493,6 @@ class _DMListScreenState extends State<DMListScreen> {
         cachedName == 'DELETED_ACCOUNT' ||
         cachedName == deletedLabel
     );
-    
-    final initialName = isCachedDeleted ? deletedLabel : (cachedName == 'DELETED_ACCOUNT' ? deletedLabel : cachedName);
-    // 초기에는 옛 사진을 보여주지 않음 (인스타 DM 스타일)
 
     // ✅ 사용자 문서 스트림 기반: 최신 프로필/닉네임이 자연스럽게 반영됨
     if (isCachedDeleted) {
@@ -514,23 +517,30 @@ class _DMListScreenState extends State<DMListScreen> {
       );
     }
 
+    // 서버 기준 최신 사용자 정보를 백그라운드로 확보 (캐시 → 최신 전환 플리커 제거)
+    if (!isAnonymous) {
+      _ensureServerUserInfo(otherUserId);
+    }
+
     final userInfoStream = _userInfoStreams.putIfAbsent(
       otherUserId,
       () => _userInfoCacheService.watchUserInfo(otherUserId),
     );
 
-    // 인스타 DM 스타일: 초기에는 옛 프로필 사진을 보여주지 않고,
-    // 최신 user 문서(스트림)로부터 사진을 받았을 때만 표시한다.
-    final DMUserInfo? initialUserInfo = isAnonymous
-        ? null
-        : DMUserInfo(uid: otherUserId, nickname: initialName, photoURL: '', photoVersion: 0);
-
     return StreamBuilder<DMUserInfo?>(
       stream: isAnonymous ? null : userInfoStream,
-      initialData: initialUserInfo,
+      // 캐시 기반 초기값(옛 닉네임/사진) 노출을 방지하기 위해 null로 시작한다.
+      // 서버에서 확인된 최신 값은 _serverUserInfoById를 통해 빠르게 반영된다.
+      initialData: null,
       builder: (context, userSnapshot) {
         final info = userSnapshot.data;
-        final otherUserName = info?.nickname ?? deletedLabel;
+        // 캐시 스냅샷은 UX 플리커의 원인이므로 UI에는 반영하지 않는다.
+        final DMUserInfo? freshFromStream =
+            (info != null && info.isFromCache == false) ? info : null;
+        final DMUserInfo? freshFromServerMap = _serverUserInfoById[otherUserId];
+        final DMUserInfo? resolved = freshFromServerMap ?? freshFromStream;
+        final bool isUserInfoReady = resolved != null;
+        final otherUserName = resolved?.nickname ?? '';
         
         // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
         if (kDebugMode) {
@@ -544,17 +554,22 @@ class _DMListScreenState extends State<DMListScreen> {
             Logger.log('   - nickname: "${info.nickname}"');
           }
         }
-        
-        // photoURL이 있으면 무조건 표시 (photoVersion 조건 제거)
-        // DM 목록에서 보이는 것과 동일한 방식으로 단순화
-        final otherUserPhoto = info?.photoURL ?? '';
-        final otherUserPhotoVersion = info?.photoVersion ?? 0;
+
+        // 스트림에서 서버 스냅샷을 받으면, 목록 전체에서 재사용할 수 있게 저장
+        if (freshFromStream != null) {
+          _updateServerUserInfoIfNeeded(otherUserId, freshFromStream);
+        }
+
+        // photoURL이 있으면 표시하되, "캐시값"은 노출하지 않는다.
+        final otherUserPhoto = resolved?.photoURL ?? '';
+        final otherUserPhotoVersion = resolved?.photoVersion ?? 0;
         
         if (kDebugMode) {
           Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
         }
         
-        final displayName = isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
+        final displayName =
+            isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
 
         return StreamBuilder<int>(
           stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
@@ -571,11 +586,68 @@ class _DMListScreenState extends State<DMListScreen> {
               timeString: timeString,
               unreadCount: unreadCount,
               hideProfile: isAnonymous,  // 익명이면 프로필 숨김
+              isTitleLoading: !isAnonymous && !isUserInfoReady,
             );
           },
         );
       },
     );
+  }
+
+  void _ensureServerUserInfo(String userId) {
+    // 이미 최신값을 확보했으면 스킵
+    if (_serverUserInfoById.containsKey(userId)) return;
+    if (_serverUserInfoFetchInFlight.contains(userId)) return;
+    _serverUserInfoFetchInFlight.add(userId);
+
+    // 서버 기준으로 최신 사용자 정보 확보 (옛 값 노출 방지)
+    _userInfoCacheService
+        .getUserInfo(userId, forceRefresh: true)
+        .then((info) {
+      if (!mounted) return;
+      if (info == null) return;
+      // getUserInfo는 Source.server를 사용하므로 "최신"으로 간주
+      setState(() {
+        _serverUserInfoById[userId] = DMUserInfo(
+          uid: info.uid,
+          nickname: info.nickname,
+          photoURL: info.photoURL,
+          photoVersion: info.photoVersion,
+          isFromCache: false,
+        );
+      });
+    }).whenComplete(() {
+      _serverUserInfoFetchInFlight.remove(userId);
+    });
+  }
+
+  void _updateServerUserInfoIfNeeded(String userId, DMUserInfo fresh) {
+    final current = _serverUserInfoById[userId];
+    final same = current != null &&
+        current.nickname == fresh.nickname &&
+        current.photoURL == fresh.photoURL &&
+        current.photoVersion == fresh.photoVersion;
+    if (same) return;
+
+    // StreamBuilder 빌드 중 setState를 피하기 위해 다음 프레임에 반영
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final now = _serverUserInfoById[userId];
+      final stillSame = now != null &&
+          now.nickname == fresh.nickname &&
+          now.photoURL == fresh.photoURL &&
+          now.photoVersion == fresh.photoVersion;
+      if (stillSame) return;
+      setState(() {
+        _serverUserInfoById[userId] = DMUserInfo(
+          uid: fresh.uid,
+          nickname: fresh.nickname,
+          photoURL: fresh.photoURL,
+          photoVersion: fresh.photoVersion,
+          isFromCache: false,
+        );
+      });
+    });
   }
 
   /// 대화방 카드 콘텐츠 빌드 (FutureBuilder 내부용)
@@ -589,6 +661,7 @@ class _DMListScreenState extends State<DMListScreen> {
     required String timeString,
     required int unreadCount,
     bool hideProfile = false,  // 프로필 숨김 여부
+    bool isTitleLoading = false, // 최신 사용자 정보 로딩 중(플리커 방지)
   }) {
     return Material(
       color: Colors.white,
@@ -630,35 +703,28 @@ class _DMListScreenState extends State<DMListScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 180),
-                            switchInCurve: Curves.easeOut,
-                            switchOutCurve: Curves.easeOut,
-                            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-                            layoutBuilder: (currentChild, previousChildren) {
-                              return Stack(
-                                alignment: Alignment.centerLeft, // ✅ 가운데 정렬로 보이는 문제 해결
-                                children: <Widget>[
-                                  ...previousChildren,
-                                  if (currentChild != null) currentChild,
-                                ],
-                              );
-                            },
-                            child: Align(
-                              alignment: Alignment.centerLeft, // ✅ 텍스트 좌측 고정
-                              child: Text(
-                                displayName,
-                                key: ValueKey(displayName),
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111827),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: isTitleLoading
+                                ? Container(
+                                    width: 120,
+                                    height: 14,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE5E7EB),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  )
+                                : Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF111827),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                           ),
                         ),
                       ],

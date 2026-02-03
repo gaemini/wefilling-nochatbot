@@ -153,6 +153,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
     // 색상 안전하게 파싱 (null 체크 포함)
     final color = _parseColor(category.color ?? '#${AppColors.pointColor.value.toRadixString(16).substring(2)}');
     final iconName = _normalizeIconName(category.iconName);
+    final l10n = AppLocalizations.of(context)!;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -201,11 +202,34 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           ),
         ),
         trailing: PopupMenuButton<String>(
-          icon: const Icon(
-            Icons.more_vert,
-            color: Color(0xFF6B7280),
-            size: 20,
+          // 흰 카드 위에서 버튼/배경이 섞이지 않도록 "버튼" 형태를 부여
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+            ),
+            child: const Center(
+              child: Icon(
+                IconStyles.more,
+                color: Color(0xFF6B7280),
+                size: 18,
+              ),
+            ),
           ),
+          padding: EdgeInsets.zero,
+          // 메뉴 컨테이너도 배경과 구분되도록 테두리/틴트 적용
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
+          ),
+          elevation: 4,
+          color: const Color(0xFFFCFCFD), // pure white보다 살짝 틴트
+          surfaceTintColor: const Color(0xFFFCFCFD),
+          shadowColor: const Color(0x1A000000), // 대비를 조금 더
+          offset: const Offset(0, 8),
           onSelected: (value) {
             switch (value) {
               case 'edit':
@@ -219,35 +243,66 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
           itemBuilder: (context) => [
             PopupMenuItem(
               value: 'edit',
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.edit_outlined, size: 20, color: Color(0xFF6B7280)),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6B7280).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFE5E7EB),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Icon(
+                      IconStyles.edit,
+                      size: 16,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   Text(
-                    AppLocalizations.of(context)!.editAction ?? "",
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF111827),
+                    l10n.editAction ?? "",
+                    style: TypographyStyles.labelLarge.copyWith(
+                      color: BrandColors.textPrimary,
                     ),
                   ),
                 ],
               ),
             ),
+            const PopupMenuDivider(height: 1),
             PopupMenuItem(
               value: 'delete',
+              height: 48,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
                 children: [
-                  const Icon(Icons.delete_outline, size: 20, color: Color(0xFFEF4444)),
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: _safeColorWithOpacity(BrandColors.error, 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFFFEE2E2),
+                        width: 1,
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.delete_outline,
+                      size: 16,
+                      color: BrandColors.error,
+                    ),
+                  ),
                   const SizedBox(width: 12),
                   Text(
-                    AppLocalizations.of(context)!.delete, 
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFFEF4444),
+                    l10n.delete,
+                    style: TypographyStyles.labelLarge.copyWith(
+                      color: BrandColors.error,
                     ),
                   ),
                 ],

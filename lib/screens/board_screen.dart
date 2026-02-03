@@ -34,6 +34,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   final Map<String, int> _commentCountOverrides = {};
   bool _didAutoRefreshTodayCommentCounts = false;
   bool _didAutoRefreshAllCommentCounts = false;
+  
+  // "맨 위로" 버튼 노출 상태 (스크롤이 내려갔을 때만 표시)
+  bool _showScrollToTop = false;
+  static const double _scrollToTopShowOffset = 420; // 이 이상 내려가면 표시
+  static const double _scrollToTopHideOffset = 140; // 이 이하로 올라오면 숨김 (히스테리시스)
 
   // 게시글 카드 외부 여백(첨부 이미지처럼 좌우 여백을 더 주고, 카드 간 간격도 안정적으로)
   static const EdgeInsets _boardPostCardMargin =
@@ -65,6 +70,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _loadCachedData();
+    
+    // 스크롤 상태 감지 (Today/All 탭 모두)
+    _todayScrollController.addListener(_handleScrollChanged);
+    _allScrollController.addListener(_handleScrollChanged);
+    _tabController.addListener(_handleTabChanged);
   }
   
   /// 캐시된 데이터를 먼저 로드하여 즉시 화면에 표시
@@ -119,11 +129,107 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
+    _tabController.removeListener(_handleTabChanged);
+    _todayScrollController.removeListener(_handleScrollChanged);
+    _allScrollController.removeListener(_handleScrollChanged);
     _tabController.dispose();
     _todayScrollController.dispose();
     _allScrollController.dispose();
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
+  }
+
+  ScrollController get _activeScrollController {
+    // index 0: Today, index 1: All
+    return _tabController.index == 0 ? _todayScrollController : _allScrollController;
+  }
+
+  void _handleTabChanged() {
+    // 탭 전환 시 현재 탭의 스크롤 위치에 맞춰 버튼 노출 상태 동기화
+    if (!mounted) return;
+    if (_tabController.indexIsChanging) return;
+    _syncScrollToTopVisibility();
+  }
+
+  void _handleScrollChanged() {
+    if (!mounted) return;
+    _syncScrollToTopVisibility();
+  }
+
+  void _syncScrollToTopVisibility() {
+    final controller = _activeScrollController;
+    if (!controller.hasClients) return;
+
+    final offset = controller.offset;
+    final shouldShow =
+        _showScrollToTop ? offset > _scrollToTopHideOffset : offset > _scrollToTopShowOffset;
+
+    if (shouldShow != _showScrollToTop) {
+      setState(() => _showScrollToTop = shouldShow);
+    }
+  }
+
+  void _scrollToTop() {
+    final controller = _activeScrollController;
+    if (!controller.hasClients) return;
+    controller.animateTo(
+      controller.position.minScrollExtent,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Widget _buildScrollToTopOverlay() {
+    // 하단 탭바/안전영역 고려
+    final bottom = MediaQuery.of(context).padding.bottom + 14;
+
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: bottom,
+      child: IgnorePointer(
+        ignoring: !_showScrollToTop,
+        child: AnimatedSlide(
+          offset: _showScrollToTop ? Offset.zero : const Offset(0, 0.35),
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          child: AnimatedOpacity(
+            opacity: _showScrollToTop ? 1 : 0,
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: Center(
+              child: Semantics(
+                button: true,
+                label: '맨 위로 이동',
+                child: Material(
+                  color: const Color(0xFFF3F4F6),
+                  elevation: 2,
+                  shadowColor: const Color(0x14000000),
+                  borderRadius: BorderRadius.circular(999),
+                  child: InkWell(
+                    onTap: _scrollToTop,
+                    borderRadius: BorderRadius.circular(999),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                      ),
+                      child: const Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        size: 22,
+                        color: Color(0xFF374151),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
 
@@ -132,51 +238,56 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
-      body: Column(
+      body: Stack(
         children: [
-          // 탭 바
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+          Column(
+            children: [
+              // 탭 바
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: TabBar(
-              controller: _tabController,
-              labelColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
-              unselectedLabelColor: Colors.grey[600],
-              indicatorColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
-              labelStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+                child: TabBar(
+                  controller: _tabController,
+                  labelColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
+                  unselectedLabelColor: Colors.grey[600],
+                  indicatorColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
+                  labelStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  unselectedLabelStyle: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  tabs: const [
+                    Tab(text: 'Today'),
+                    Tab(text: 'All'),
+                  ],
+                ),
               ),
-              unselectedLabelStyle: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    // 오늘 탭
+                    _buildTodayPostsTab(),
+                    // 전체 탭
+                    _buildAllPostsTab(),
+                  ],
+                ),
               ),
-              tabs: const [
-                Tab(text: 'Today'),
-                Tab(text: 'All'),
-              ],
-            ),
+            ],
           ),
-          // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // 오늘 탭
-                _buildTodayPostsTab(),
-                // 전체 탭
-                _buildAllPostsTab(),
-              ],
-            ),
-          ),
+          _buildScrollToTopOverlay(),
         ],
       ),
       floatingActionButton: AppFab.write(

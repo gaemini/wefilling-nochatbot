@@ -196,9 +196,18 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
       ),
       body: Consumer<RelationshipProvider>(
         builder: (context, relationshipProvider, _) {
-          final friends = List<UserProfile>.from(relationshipProvider.friends)
-            ..sort((a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
+          final friends = List<UserProfile>.from(relationshipProvider.friends);
           final filteredFriends = _computeFilteredFriends(friends);
+
+          // ✅ UX: 선택(포함)된 친구를 항상 상단에 노출해서 한 눈에 확인 가능하게 한다.
+          final selectedFriends = filteredFriends
+              .where((f) => _selectedFriendIds.contains(f.uid))
+              .toList()
+            ..sort((a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
+          final unselectedFriends = filteredFriends
+              .where((f) => !_selectedFriendIds.contains(f.uid))
+              .toList()
+            ..sort((a, b) => a.displayNameOrNickname.compareTo(b.displayNameOrNickname));
 
           if (relationshipProvider.isLoading && friends.isEmpty) {
             return const Center(
@@ -285,19 +294,103 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 child: Builder(
                   builder: (context) {
                     final bottomPadding = MediaQuery.of(context).padding.bottom;
+                    // 선택된 친구가 있으면 섹션 헤더를 포함해 노출
+                    final bool hasSelectedSection = selectedFriends.isNotEmpty;
+                    final int selectedHeaderIndex = 0;
+                    final int selectedStartIndex = 1;
+                    final int selectedEndIndex = selectedStartIndex + selectedFriends.length; // exclusive
+                    final int othersHeaderIndex = selectedEndIndex;
+                    final int othersStartIndex = othersHeaderIndex + 1;
+                    final int totalCount = hasSelectedSection
+                        ? (1 + selectedFriends.length + (unselectedFriends.isNotEmpty ? 1 : 0) + unselectedFriends.length)
+                        : unselectedFriends.length;
+
                     return ListView.builder(
                       padding: EdgeInsets.only(
                         top: 8,
                         bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
                       ),
-                      itemCount: filteredFriends.length,
+                      itemCount: totalCount,
                       itemBuilder: (context, index) {
-                        final friend = filteredFriends[index];
-                        final isSelected = _selectedFriendIds.contains(friend.uid);
+                        if (hasSelectedSection) {
+                          // Header: Selected
+                          if (index == selectedHeaderIndex) {
+                            final l10n = AppLocalizations.of(context)!;
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    l10n.selected,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF111827),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '(${selectedFriends.length})',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: Color(0xFF6B7280),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+
+                          // Selected friends
+                          if (index >= selectedStartIndex && index < selectedEndIndex) {
+                            final friend = selectedFriends[index - selectedStartIndex];
+                            return _buildFriendRow(
+                              friend: friend,
+                              categoryColor: color,
+                              isSelected: true,
+                            );
+                          }
+
+                          // Header: Others (only if there are unselected friends)
+                          if (unselectedFriends.isNotEmpty && index == othersHeaderIndex) {
+                            final isKo = Localizations.localeOf(context).languageCode == 'ko';
+                            return Padding(
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+                              child: Text(
+                                isKo ? '친구' : 'Friends',
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF111827),
+                                ),
+                              ),
+                            );
+                          }
+
+                          // Unselected friends
+                          if (unselectedFriends.isNotEmpty && index >= othersStartIndex) {
+                            final friend = unselectedFriends[index - othersStartIndex];
+                            return _buildFriendRow(
+                              friend: friend,
+                              categoryColor: color,
+                              isSelected: false,
+                            );
+                          }
+
+                          // Fallback (should not happen)
+                          return const SizedBox.shrink();
+                        }
+
+                        // No selection yet: show normal list
+                        final friend = unselectedFriends[index];
                         return _buildFriendRow(
                           friend: friend,
                           categoryColor: color,
-                          isSelected: isSelected,
+                          isSelected: false,
                         );
                       },
                     );

@@ -1388,6 +1388,12 @@ abstract class AppLocalizations {
   /// **'선택한 그룹의 친구들만 이 모임을 볼 수 있습니다'**
   String get selectedGroupOnly;
 
+  /// No description provided for @selectedGroupOnlyPost.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 그룹의 친구들만 이 게시글을 볼 수 있습니다'**
+  String get selectedGroupOnlyPost;
+
   /// No description provided for @selectedFriendGroupOnly.
   ///
   /// In ko, this message translates to:
@@ -2798,6 +2804,18 @@ abstract class AppLocalizations {
   /// **'한양대학교 이메일 인증'**
   String get hanyangEmailOnly;
 
+  /// No description provided for @hanyangEmailHeadlineLine1.
+  ///
+  /// In ko, this message translates to:
+  /// **'한양대학교'**
+  String get hanyangEmailHeadlineLine1;
+
+  /// No description provided for @hanyangEmailHeadlineLine2.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 인증'**
+  String get hanyangEmailHeadlineLine2;
+
   /// No description provided for @hanyangEmailLogin.
   ///
   /// In ko, this message translates to:
@@ -2807,7 +2825,7 @@ abstract class AppLocalizations {
   /// No description provided for @hanyangEmailDescription.
   ///
   /// In ko, this message translates to:
-  /// **'회원가입을 위해 한양대학교 이메일 인증이 필요합니다.\n인증 후 Google 계정으로 로그인할 수 있습니다.'**
+  /// **'회원가입을 위해 한양대학교 이메일 인증이 필요합니다.\n인증 후 Google/Apple/아이디로 가입 및 로그인할 수 있습니다.'**
   String get hanyangEmailDescription;
 
   /// No description provided for @sendVerificationCode.
@@ -3932,6 +3950,12 @@ abstract class AppLocalizations {
   /// **'친구 공개'**
   String get friendsOnly;
 
+  /// No description provided for @dmFriendsOnlyHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구추가 후 디엠을 보내보세요'**
+  String get dmFriendsOnlyHint;
+
   /// No description provided for @signUpFirstMessage.
   ///
   /// In ko, this message translates to:
@@ -4727,7 +4751,7 @@ abstract class AppLocalizations {
   /// No description provided for @nicknamePlaceholder.
   ///
   /// In ko, this message translates to:
-  /// **'홍길동'**
+  /// **'닉네임을 설정하세요'**
   String get nicknamePlaceholder;
 
   /// No description provided for @nicknameRequired.

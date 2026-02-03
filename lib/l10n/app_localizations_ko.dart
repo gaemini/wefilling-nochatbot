@@ -655,6 +655,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get selectedGroupOnly => '선택한 그룹의 친구들만 이 모임을 볼 수 있습니다';
 
   @override
+  String get selectedGroupOnlyPost => '선택한 그룹의 친구들만 이 게시글을 볼 수 있습니다';
+
+  @override
   String get selectedFriendGroupOnly => '선택한 친구 그룹만';
 
   @override
@@ -1429,11 +1432,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get hanyangEmailOnly => '한양대학교 이메일 인증';
 
   @override
+  String get hanyangEmailHeadlineLine1 => '한양대학교';
+
+  @override
+  String get hanyangEmailHeadlineLine2 => '이메일 인증';
+
+  @override
   String get hanyangEmailLogin => '한양대학교 이메일로 로그인';
 
   @override
   String get hanyangEmailDescription =>
-      '회원가입을 위해 한양대학교 이메일 인증이 필요합니다.\n인증 후 Google 계정으로 로그인할 수 있습니다.';
+      '회원가입을 위해 한양대학교 이메일 인증이 필요합니다.\n인증 후 Google/Apple/아이디로 가입 및 로그인할 수 있습니다.';
 
   @override
   String get sendVerificationCode => '인증번호 전송';
@@ -2042,6 +2051,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendsOnly => '친구 공개';
 
   @override
+  String get dmFriendsOnlyHint => '친구추가 후 디엠을 보내보세요';
+
+  @override
   String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.';
 
   @override
@@ -2453,7 +2465,7 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get nicknamePlaceholder => '홍길동';
+  String get nicknamePlaceholder => '닉네임을 설정하세요';
 
   @override
   String get nicknameRequired => '닉네임을 입력해주세요';

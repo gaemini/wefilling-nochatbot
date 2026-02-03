@@ -42,7 +42,11 @@ class CommentService {
       // 게시글 작성자 확인 (차단 여부 확인용)
       String? postAuthorId;
       try {
-        final postDoc = await _firestore.collection('posts').doc(postId).get();
+        final postDoc = await _firestore
+            .collection('posts')
+            .doc(postId)
+            .get()
+            .timeout(const Duration(seconds: 6));
         if (postDoc.exists && postDoc.data() != null) {
           postAuthorId = postDoc.data()!['userId'];
         }
@@ -52,8 +56,22 @@ class CommentService {
       
       // 게시글 작성자와 차단 관계 확인
       if (postAuthorId != null && postAuthorId != user.uid) {
-        final isBlocked = await ContentFilterService.isUserBlocked(postAuthorId);
-        final isBlockedBy = await ContentFilterService.isBlockedByUser(postAuthorId);
+        // 네트워크 지연으로 전송이 무한 대기처럼 보이지 않도록 병렬 + 타임아웃 처리
+        bool isBlocked = false;
+        bool isBlockedBy = false;
+        try {
+          final results = await Future.wait<bool>([
+            ContentFilterService.isUserBlocked(postAuthorId)
+                .timeout(const Duration(seconds: 5)),
+            ContentFilterService.isBlockedByUser(postAuthorId)
+                .timeout(const Duration(seconds: 5)),
+          ]);
+          isBlocked = results[0];
+          isBlockedBy = results[1];
+        } catch (e) {
+          // 차단 체크 실패는 "차단 아님"으로 처리(기존 정책: 조회 실패 시 빈 Set 반환과 동일)
+          Logger.error('차단 관계 확인 실패(무시): $e');
+        }
         
         if (isBlocked || isBlockedBy) {
           Logger.error('댓글 작성 실패: 차단된 사용자의 게시글입니다.');
@@ -62,7 +80,11 @@ class CommentService {
       }
 
       // 사용자 데이터 가져오기
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userDoc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get()
+          .timeout(const Duration(seconds: 6));
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final photoUrl = userData?['photoURL'] ?? user.photoURL ?? '';
@@ -84,7 +106,10 @@ class CommentService {
       };
 
       // Firestore에 저장
-      await _firestore.collection('comments').add(commentData);
+      await _firestore
+          .collection('comments')
+          .add(commentData)
+          .timeout(const Duration(seconds: 10));
 
       // 캐시 무효화 (새 댓글이 추가되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
@@ -133,14 +158,16 @@ class CommentService {
       // 대댓글인 경우: 원댓글 작성자에게 알림 전송
       if (parentCommentId != null && replyToUserId != null && replyToUserId != user.uid) {
         Logger.log('🔔 대댓글 알림 전송 시작... (대상: $replyToUserId)');
-        final notificationSent = await _notificationService.sendNewCommentNotification(
-          postId,
-          notificationTitle,
-          replyToUserId, // 원댓글 작성자에게 알림
-          nickname,
-          user.uid,
-          thumbnailUrl: thumbnailUrl,
-        );
+        final notificationSent = await _notificationService
+            .sendNewCommentNotification(
+              postId,
+              notificationTitle,
+              replyToUserId, // 원댓글 작성자에게 알림
+              nickname,
+              user.uid,
+              thumbnailUrl: thumbnailUrl,
+            )
+            .timeout(const Duration(seconds: 6), onTimeout: () => false);
         Logger.log(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
       } 
       // 원댓글: 대상 작성자에게 알림 (자기 자신 제외)
@@ -150,16 +177,18 @@ class CommentService {
         // 리뷰 댓글인 경우 별도 알림 타입 사용
         final isReview = reviewOwnerUserId != null;
         
-        final notificationSent = await _notificationService.sendNewCommentNotification(
-          postId,
-          notificationTitle,
-          targetAuthorId,
-          nickname,
-          user.uid,
-          isReview: isReview,
-          reviewOwnerUserId: reviewOwnerUserId,
-          thumbnailUrl: thumbnailUrl,
-        );
+        final notificationSent = await _notificationService
+            .sendNewCommentNotification(
+              postId,
+              notificationTitle,
+              targetAuthorId,
+              nickname,
+              user.uid,
+              isReview: isReview,
+              reviewOwnerUserId: reviewOwnerUserId,
+              thumbnailUrl: thumbnailUrl,
+            )
+            .timeout(const Duration(seconds: 6), onTimeout: () => false);
         Logger.log(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
       } else {
         Logger.log('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
@@ -171,6 +200,12 @@ class CommentService {
       unawaited(_updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
 
       return true;
+    } on FirebaseException catch (e) {
+      Logger.error('댓글 작성 Firebase 오류: ${e.code} - ${e.message}');
+      return false;
+    } on TimeoutException catch (e) {
+      Logger.error('댓글 작성 타임아웃: $e');
+      return false;
     } catch (e) {
       Logger.error('댓글 작성 오류: $e');
       return false;
@@ -425,11 +460,19 @@ class CommentService {
   // 댓글과 대댓글을 계층적으로 가져오기
   Stream<List<Comment>> getCommentsWithReplies(String postId) {
     try {
+      Logger.log('💬 댓글 스트림 시작: postId=$postId');
       return _firestore
           .collection('comments')
           .where('postId', isEqualTo: postId)
-          .snapshots()
+          .snapshots(includeMetadataChanges: true)
+          .handleError((e, st) {
+            Logger.error('❌ 댓글 스트림 오류(postId=$postId): $e');
+          })
           .map((snapshot) {
+            Logger.log(
+              '💬 댓글 스냅샷 수신(postId=$postId): ${snapshot.docs.length}개'
+              ' (fromCache=${snapshot.metadata.isFromCache})',
+            );
             List<Comment> allComments = snapshot.docs.map((doc) {
               return Comment.fromFirestore(doc);
             }).toList();
@@ -461,24 +504,11 @@ class CommentService {
       // 본인이 작성한 댓글만 삭제 가능
       if (commentUserId != user.uid) return false;
 
-      // 대댓글들도 함께 삭제
-      final repliesQuery = await _firestore
-          .collection('comments')
-          .where('parentCommentId', isEqualTo: commentId)
-          .get();
-
-      // 배치로 삭제
-      final batch = _firestore.batch();
-      
-      // 원댓글 삭제
-      batch.delete(_firestore.collection('comments').doc(commentId));
-      
-      // 대댓글들 삭제
-      for (final replyDoc in repliesQuery.docs) {
-        batch.delete(replyDoc.reference);
-      }
-      
-      await batch.commit();
+      // NOTE:
+      // - 대댓글은 다른 사용자가 작성한 경우가 많아, 클라이언트 권한으로 일괄 삭제가 실패할 수 있다.
+      // - 따라서 여기서는 "부모 댓글"만 삭제하고,
+      //   대댓글은 Cloud Functions(onDelete 트리거)에서 관리자 권한으로 연쇄 삭제한다.
+      await _firestore.collection('comments').doc(commentId).delete();
       
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
@@ -486,7 +516,7 @@ class CommentService {
       // 캐시 무효화 (댓글이 삭제되었으므로 해당 게시글의 댓글 캐시 삭제)
       if (CacheFeatureFlags.isCommentCacheEnabled) {
         _cache.invalidatePostComments(postId);
-        Logger.log('💾 댓글 캐시 무효화 (댓글 및 대댓글 삭제)');
+        Logger.log('💾 댓글 캐시 무효화 (댓글 삭제 요청)');
       }
 
       return true;

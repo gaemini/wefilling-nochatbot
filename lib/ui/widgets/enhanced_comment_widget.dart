@@ -13,6 +13,7 @@ import '../../services/comment_service.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/friend_profile_screen.dart';
+import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
 import '../dialogs/block_dialog.dart';
 
@@ -473,6 +474,18 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     // 익명 게시글에서는 프로필 접근 불가
     if (widget.isAnonymousPost) return;
     if (widget.comment.userId.isEmpty || widget.comment.userId == 'deleted') return;
+
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && widget.comment.userId == me) {
+      // 하단 네비게이션바가 있는 "원래" 마이페이지 탭으로 이동
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(initialTabIndex: 3),
+        ),
+        (route) => false,
+      );
+      return;
+    }
 
     Navigator.push(
       context,

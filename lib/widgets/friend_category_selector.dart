@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import '../models/friend_category.dart';
 import '../l10n/app_localizations.dart';
 
+enum FriendCategorySelectorStyle { chips, list }
+
 class FriendCategorySelector extends StatelessWidget {
   final List<FriendCategory> categories;
   final List<String> selectedCategoryIds;
   final Function(List<String>) onSelectionChanged;
   final Color selectedColor;
   final Color unselectedBorderColor;
+  final FriendCategorySelectorStyle style;
 
   const FriendCategorySelector({
     super.key,
@@ -16,7 +19,18 @@ class FriendCategorySelector extends StatelessWidget {
     required this.onSelectionChanged,
     this.selectedColor = const Color(0xFF4A90E2),
     this.unselectedBorderColor = const Color(0xFFE1E6EE),
+    this.style = FriendCategorySelectorStyle.chips,
   });
+
+  void _toggle(String id) {
+    final newSelection = List<String>.from(selectedCategoryIds);
+    if (newSelection.contains(id)) {
+      newSelection.remove(id);
+    } else {
+      newSelection.add(id);
+    }
+    onSelectionChanged(newSelection);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +47,24 @@ class FriendCategorySelector extends StatelessWidget {
       );
     }
 
+    if (style == FriendCategorySelectorStyle.list) {
+      return Column(
+        children: [
+          for (int i = 0; i < categories.length; i++) ...[
+            _CategoryListItem(
+              category: categories[i],
+              isSelected: selectedCategoryIds.contains(categories[i].id),
+              selectedColor: selectedColor,
+              unselectedBorderColor: unselectedBorderColor,
+              peopleLabel: AppLocalizations.of(context)!.people ?? '',
+              onTap: () => _toggle(categories[i].id),
+            ),
+            if (i != categories.length - 1) const SizedBox(height: 10),
+          ],
+        ],
+      );
+    }
+
     return Wrap(
       spacing: 10,
       runSpacing: 10,
@@ -40,13 +72,7 @@ class FriendCategorySelector extends StatelessWidget {
         final isSelected = selectedCategoryIds.contains(category.id);
         return InkWell(
           onTap: () {
-            final newSelection = List<String>.from(selectedCategoryIds);
-            if (isSelected) {
-              newSelection.remove(category.id);
-            } else {
-              newSelection.add(category.id);
-            }
-            onSelectionChanged(newSelection);
+            _toggle(category.id);
           },
           borderRadius: BorderRadius.circular(24),
           child: AnimatedContainer(
@@ -66,11 +92,11 @@ class FriendCategorySelector extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // 선택 여부와 관계없이 아이콘 공간을 확보하여 레이아웃 변경 방지
+                // 왼쪽에 "선택 시스템"이 보이도록 미선택도 아이콘 노출
                 Icon(
-                  Icons.check_rounded,
+                  isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
                   size: 16,
-                  color: isSelected ? Colors.white : Colors.transparent,
+                  color: isSelected ? Colors.white : const Color(0xFF9CA3AF),
                 ),
                 const SizedBox(width: 6),
                 Text(
@@ -97,6 +123,82 @@ class FriendCategorySelector extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+class _CategoryListItem extends StatelessWidget {
+  final FriendCategory category;
+  final bool isSelected;
+  final Color selectedColor;
+  final Color unselectedBorderColor;
+  final String peopleLabel;
+  final VoidCallback onTap;
+
+  const _CategoryListItem({
+    required this.category,
+    required this.isSelected,
+    required this.selectedColor,
+    required this.unselectedBorderColor,
+    required this.peopleLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = isSelected ? selectedColor.withOpacity(0.10) : Colors.white;
+    final border = isSelected ? selectedColor : unselectedBorderColor;
+    final textColor = isSelected ? const Color(0xFF111827) : const Color(0xFF111827);
+    final subColor = isSelected ? const Color(0xFF374151) : const Color(0xFF6B7280);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: border, width: isSelected ? 1.4 : 1),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                isSelected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 20,
+                color: isSelected ? selectedColor : const Color(0xFF9CA3AF),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  category.name,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                '(${category.friendIds.length}$peopleLabel)',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: subColor,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

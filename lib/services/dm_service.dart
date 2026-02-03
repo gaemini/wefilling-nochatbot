@@ -958,10 +958,9 @@ class DMService {
 
       final trimmedText = text.trim();
       final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
-      final hasPostContext = postId != null &&
-          postId.trim().isNotEmpty &&
-          (postImageUrl != null && postImageUrl.trim().isNotEmpty ||
-              postPreview != null && postPreview.trim().isNotEmpty);
+      // 게시글 컨텍스트는 postId만 있어도 성립한다.
+      // (이미지/preview가 없는 게시글에서도 "게시글 보기" 카드로 이동 가능)
+      final hasPostContext = postId != null && postId.trim().isNotEmpty;
 
       // 메시지 유효성 검증: 텍스트/이미지 중 하나는 있어야 함
       if (trimmedText.isEmpty && !hasImage) {

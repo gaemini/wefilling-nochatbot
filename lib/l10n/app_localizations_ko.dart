@@ -378,7 +378,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get userBlocked => '사용자를 차단했습니다';
 
   @override
-  String get visibilityScope => '공개 범위';
+  String get visibilityScope => '공개범위';
 
   @override
   String get publicPost => '전체 공개';

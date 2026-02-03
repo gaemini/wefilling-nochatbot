@@ -515,40 +515,78 @@ class _CreatePostScreenState extends State<CreatePostScreen>
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 360),
-                child: TabBar(
-                  controller: _tabController,
-                  isScrollable: false,
-              labelStyle: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontWeight: FontWeight.w800,
-              ),
-              unselectedLabelStyle: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontWeight: FontWeight.w700,
-              ),
-              dividerColor: Colors.transparent,
-              indicator: const UnderlineTabIndicator(
-                borderSide: BorderSide(color: AppColors.pointColor, width: 3),
-                insets: EdgeInsets.symmetric(horizontal: 28),
-              ),
-              labelColor: const Color(0xFF111827),
-              unselectedLabelColor: const Color(0xFF9CA3AF),
-              onTap: (_) => _dismissKeyboard(),
-              tabs: [
-                Tab(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: Text(Localizations.localeOf(context).languageCode == 'ko' ? '내용' : 'Content'),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6), // gray-100
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE5E7EB)), // gray-200
+                  ),
+                  padding: const EdgeInsets.all(4),
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: false,
+                    dividerColor: Colors.transparent,
+                    indicatorSize: TabBarIndicatorSize.tab,
+                    indicator: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.06),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    labelStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    labelColor: const Color(0xFF111827),
+                    unselectedLabelColor: const Color(0xFF6B7280),
+                    splashBorderRadius: BorderRadius.circular(10),
+                    onTap: (_) => _dismissKeyboard(),
+                    tabs: [
+                      Tab(
+                        child: SizedBox(
+                          height: 38,
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                Localizations.localeOf(context).languageCode == 'ko'
+                                    ? '내용'
+                                    : 'Content',
+                                maxLines: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Tab(
+                        child: SizedBox(
+                          height: 38,
+                          child: Center(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                // '범위' 대신 '공개범위' 용어 사용 (l10n)
+                                AppLocalizations.of(context)!.visibilityScope,
+                                maxLines: 1,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Tab(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    child: Text(Localizations.localeOf(context).languageCode == 'ko' ? '공개' : 'Visibility'),
-                  ),
-                ),
-              ],
-            ),
               ),
             ),
           ),
@@ -606,13 +644,13 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               padding: EdgeInsets.only(
                 left: 16.0,
                 right: 16.0,
-                top: 16.0,
+                top: 12.0,
                 bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
                   // 작성 타입 선택 (일반/투표)
                   Container(
@@ -863,13 +901,13 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               padding: EdgeInsets.only(
                 left: 16.0,
                 right: 16.0,
-                top: 16.0,
+                top: 12.0,
                 bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 8),
 
                   // 공개 범위 선택
                   Container(
@@ -1054,12 +1092,15 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                         ? const Color(0xFFFFF1F2)
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                                          ? const Color(0xFFFCA5A5)
-                                          : const Color(0xFFE5E7EB),
-                                      width: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty) ? 1.5 : 1,
-                                    ),
+                                    // 카테고리 목록을 감싸는 "안쪽 선" 제거:
+                                    // - 평상시에는 border 자체를 없애고
+                                    // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
+                                    border: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
+                                        ? Border.all(
+                                            color: const Color(0xFFFCA5A5),
+                                            width: 1.5,
+                                          )
+                                        : null,
                                   ),
                                   child: FriendCategorySelector(
                                     categories: _friendCategories,

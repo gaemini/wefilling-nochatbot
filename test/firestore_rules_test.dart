@@ -54,8 +54,8 @@ void main() {
   group('Firestore Rules - Admin Settings', () {
     test('관리자만 Feature Flag 설정 가능', () {
       // Given: 관리자와 일반 사용자
-      const adminUser = FirestoreRulesTest.testUsers['admin'];
-      const regularUser = FirestoreRulesTest.testUsers['user1'];
+      final adminUser = FirestoreRulesTest.testUsers['admin'];
+      final regularUser = FirestoreRulesTest.testUsers['user1'];
 
       // Then: 규칙 검증
       // 관리자는 쓰기 가능해야 함
@@ -67,7 +67,7 @@ void main() {
 
     test('로그인한 사용자는 Feature Flag 읽기 가능', () {
       // Given: 로그인한 사용자
-      const user = FirestoreRulesTest.testUsers['user1'];
+      final user = FirestoreRulesTest.testUsers['user1'];
 
       // Then: 읽기 권한이 있어야 함
       expect(user!['uid'], isNotNull);

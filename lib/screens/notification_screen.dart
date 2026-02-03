@@ -20,7 +20,17 @@ import 'dm_chat_screen.dart';
 import '../widgets/notification_list_item.dart';
 
 class NotificationScreen extends StatefulWidget {
-  const NotificationScreen({Key? key}) : super(key: key);
+  /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
+  ///
+  /// - 종(알림) 아이콘을 눌러서 들어왔을 때만 배지(앱 아이콘/탭 배지)를 0으로 내려야 하는 요구사항을 위해 사용.
+  /// - 푸시/딥링크로 NotificationScreen이 열릴 때 자동으로 읽음 처리하면
+  ///   배지가 "생겼다 사라지는" 현상이 발생할 수 있으므로 기본값은 false.
+  final bool markAllAsReadOnOpen;
+
+  const NotificationScreen({
+    Key? key,
+    this.markAllAsReadOnOpen = false,
+  }) : super(key: key);
 
   @override
   State<NotificationScreen> createState() => _NotificationScreenState();
@@ -35,8 +45,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
   @override
   void initState() {
     super.initState();
-    // 화면을 열 때 모든 알림 읽음 처리
-    _markAllAsRead();
+    if (widget.markAllAsReadOnOpen) {
+      // build 이전에 setState가 섞이는 것을 피하기 위해 post-frame에서 실행
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _markAllAsRead();
+      });
+    }
   }
 
   Future<void> _markAllAsRead() async {
@@ -615,14 +630,6 @@ class _NotificationScreenState extends State<NotificationScreen> {
           ),
         ),
         centerTitle: true,
-        actions: [
-          // 모든 알림 읽음 버튼
-          IconButton(
-            icon: Icon(Icons.done_all, color: onSurface, size: 24),
-            onPressed: _isLoading ? null : _markAllAsRead,
-            tooltip: AppLocalizations.of(context)!.markAllAsRead,
-          ),
-        ],
       ),
       body: StreamBuilder<List<AppNotification>>(
         stream: _notificationService.getUserNotifications(),

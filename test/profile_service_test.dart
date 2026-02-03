@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import '../lib/services/profile_grid_adapter_service.dart';
 import '../lib/services/feature_flag_service.dart';
+import '../lib/models/post.dart';
 import '../lib/models/user_profile.dart';
 import '../lib/repositories/users_repository.dart';
 
@@ -129,18 +130,6 @@ void main() {
         // Given
         const viewerUid = 'viewer-123';
         const ownerUid = 'owner-456';
-
-        final mockQuery = MockQuerySnapshot();
-        final mockDoc = MockDocumentSnapshot();
-        
-        when(mockDoc.data()).thenReturn({
-          'users': [viewerUid, ownerUid],
-        });
-        
-        when(mockQuery.docs).thenReturn([mockDoc]);
-
-        // Mock Firestore 쿼리 설정은 복잡하므로 실제 구현에서는
-        // 더 구체적인 모킹이 필요할 수 있습니다.
 
         // When
         final result = await profileAdapter.isViewerFriend(viewerUid, ownerUid);
@@ -298,30 +287,5 @@ void main() {
       expect(firestoreData['meta'], isA<Map<String, dynamic>>());
       expect(firestoreData['meta']['meetupId'], equals('meetup-123'));
     });
-  });
-}
-
-// Post 클래스 임시 정의 (실제로는 ../lib/models/post.dart에서 import)
-class Post {
-  final String id;
-  final String title;
-  final String content;
-  final String author;
-  final DateTime createdAt;
-  final String userId;
-  final int likes;
-  final int commentCount;
-  final List<String> imageUrls;
-
-  Post({
-    required this.id,
-    required this.title,
-    required this.content,
-    required this.author,
-    required this.createdAt,
-    required this.userId,
-    this.likes = 0,
-    this.commentCount = 0,
-    this.imageUrls = const [],
   });
 }

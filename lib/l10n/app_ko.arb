@@ -123,7 +123,7 @@
   "reportAction": "신고하기",
   "blockUser": "사용자 차단",
   "userBlocked": "사용자를 차단했습니다.",
-  "visibilityScope": "공개 범위",
+  "visibilityScope": "공개범위",
   "publicPost": "전체 공개",
   "categorySpecific": "카테고리별",
   "authorAndCommenterInfo": "작성자와 댓 작성자의 설명이 표시됩니다",

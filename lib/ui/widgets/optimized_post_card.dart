@@ -5,11 +5,14 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
+import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
 import '../../services/dm_service.dart';
+import '../../services/user_info_cache_service.dart';
 import '../../widgets/country_flag_circle.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
@@ -68,6 +71,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final DMService _dmService = DMService();
   bool _isSaved = false;
   bool _isLoading = false;
+  bool _didPrecache = false;
 
   // 카드/이미지 라운드 (스크린샷 기준으로 조금 더 둥글게)
   static const double _cardRadius = 6;
@@ -78,6 +82,45 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   void initState() {
     super.initState();
     _checkSavedStatus();
+    // precacheImage는 MediaQuery 등 ImageConfiguration을 사용하므로 첫 프레임 이후 실행
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _maybePrecacheCriticalImages();
+    });
+  }
+
+  void _maybePrecacheCriticalImages() {
+    if (_didPrecache) return;
+    if (!widget.preloadImage) return;
+    final post = widget.post;
+
+    // 게시글 첫 이미지 프리캐시 (상단 카드 UX 개선 + 재다운로드 방지)
+    final firstPostImage =
+        (post.imageUrls.isNotEmpty ? post.imageUrls.first : '').trim();
+    if (firstPostImage.isNotEmpty) {
+      try {
+        final provider = CachedNetworkImageProvider(
+          firstPostImage,
+          cacheManager: AppImageCacheManager.instance,
+        );
+        // precacheImage 실패는 UX 치명적이지 않으므로 무시
+        precacheImage(provider, context).catchError((_) {});
+      } catch (_) {}
+    }
+
+    // 작성자 프로필 이미지도 프리캐시 (탭 전환 시 깜빡임 감소)
+    final authorPhoto = post.authorPhotoURL.trim();
+    if (!post.isAnonymous && authorPhoto.isNotEmpty) {
+      try {
+        final provider = CachedNetworkImageProvider(
+          authorPhoto,
+          cacheManager: AppImageCacheManager.instance,
+        );
+        precacheImage(provider, context).catchError((_) {});
+      } catch (_) {}
+    }
+
+    _didPrecache = true;
   }
 
   Future<void> _checkSavedStatus() async {
@@ -477,123 +520,167 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final bool canOpenProfile =
         !isAnonymous && post.userId.isNotEmpty && post.userId != 'deleted';
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 프로필 이미지
-            GestureDetector(
-              onTap: canOpenProfile
-                  ? () {
-                      _openProfileOrMyPage(
-                        userId: post.userId,
-                        nickname: post.author,
-                        photoURL: post.authorPhotoURL,
-                      );
-                    }
-                  : null,
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.grey.shade300,
-                ),
-                child: (authorImageUrl != null && !isAnonymous)
-                    ? ClipOval(
-                        child: Image.network(
-                          authorImageUrl,
-                          width: 40,
-                          height: 40,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.person,
-                            size: 24,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      )
-                    : Icon(
-                        Icons.person,
-                        size: 24,
-                        color: Colors.grey[600],
-                      ),
-              ),
-            ),
-            
-            const SizedBox(width: 12),
-            
-            // 작성자 이름과 시간
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: GestureDetector(
-                          onTap: canOpenProfile
-                              ? () {
-                                  _openProfileOrMyPage(
-                                    userId: post.userId,
-                                    nickname: post.author,
-                                    photoURL: post.authorPhotoURL,
-                                  );
-                                }
-                              : null,
-                          child: Text(
-                            authorName,
-                            style: TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: colorScheme.onSurface,
-                              height: 1.05,
-                              letterSpacing: -0.2,
+    final cache = UserInfoCacheService();
+    final shouldUseLiveUserInfo = canOpenProfile;
+
+    Widget content({
+      required String resolvedNickname,
+      required String resolvedPhotoURL,
+    }) {
+      final String? resolvedImageUrl = (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
+          ? resolvedPhotoURL.trim()
+          : authorImageUrl;
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 프로필 이미지
+              GestureDetector(
+                onTap: canOpenProfile
+                    ? () {
+                        _openProfileOrMyPage(
+                          userId: post.userId,
+                          nickname: resolvedNickname,
+                          photoURL: resolvedPhotoURL,
+                        );
+                      }
+                    : null,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey.shade300,
+                  ),
+                  child: (resolvedImageUrl != null && !isAnonymous)
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: resolvedImageUrl,
+                            cacheManager: AppImageCacheManager.instance,
+                            width: 40,
+                            height: 40,
+                            fit: BoxFit.cover,
+                            fadeInDuration: const Duration(milliseconds: 120),
+                            fadeOutDuration: const Duration(milliseconds: 120),
+                            placeholder: (_, __) => Container(
+                              color: Colors.grey.shade300,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            errorWidget: (_, __, ___) => Icon(
+                              Icons.person,
+                              size: 24,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        )
+                      : Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Colors.grey[600],
+                        ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // 작성자 이름과 시간
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: canOpenProfile
+                                ? () {
+                                    _openProfileOrMyPage(
+                                      userId: post.userId,
+                                      nickname: resolvedNickname,
+                                      photoURL: resolvedPhotoURL,
+                                    );
+                                  }
+                                : null,
+                            child: Text(
+                              resolvedNickname,
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.onSurface,
+                                height: 1.05,
+                                letterSpacing: -0.2,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                      // 국적 표시 (항상)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 1),
-                        child: CountryFlagCircle(
-                          nationality: post.authorNationality,
-                          // 닉네임과 시각적 크기를 맞추기 위해 국기 이모지를 조금 더 키움
-                          size: 22,
+                        const SizedBox(width: 6),
+                        // 국적 표시 (항상)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: CountryFlagCircle(
+                            nationality: post.authorNationality,
+                            // 닉네임과 시각적 크기를 맞추기 위해 국기 이모지를 조금 더 키움
+                            size: 22,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _formatTimeAgo(post.createdAt),
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                      ],
                     ),
-                  ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _formatTimeAgo(post.createdAt),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // 공개 범위 배지를 오른쪽 상단에 배치
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildVisibilityIndicator(post),
                 ],
               ),
-            ),
-            
-            // 공개 범위 배지를 오른쪽 상단에 배치
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildVisibilityIndicator(post),
-              ],
-            ),
-          ],
-        ),
-        
-        // 제목 영역 제거 (요구사항: 제목을 없애고, 기존 title은 본문으로 인식)
-      ],
+            ],
+          ),
+
+          // 제목 영역 제거 (요구사항: 제목을 없애고, 기존 title은 본문으로 인식)
+        ],
+      );
+    }
+
+    if (!shouldUseLiveUserInfo) {
+      return content(
+        resolvedNickname: authorName,
+        resolvedPhotoURL: post.authorPhotoURL,
+      );
+    }
+
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(post.userId),
+      initialData: cache.getCachedUserInfo(post.userId),
+      builder: (context, snapshot) {
+        final live = snapshot.data;
+        final liveName = (live?.nickname ?? '').trim();
+        final livePhoto = (live?.photoURL ?? '').trim();
+
+        final resolvedNickname = liveName.isNotEmpty ? liveName : authorName;
+        final resolvedPhotoURL =
+            livePhoto.isNotEmpty ? livePhoto : post.authorPhotoURL;
+
+        return content(
+          resolvedNickname: resolvedNickname,
+          resolvedPhotoURL: resolvedPhotoURL,
+        );
+      },
     );
   }
 
@@ -609,19 +696,23 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         children: [
           AspectRatio(
             aspectRatio: 4 / 3,
-            child: Image.network(
-              imageUrls.first,
+            child: CachedNetworkImage(
+              imageUrl: imageUrls.first,
+              cacheManager: AppImageCacheManager.instance,
               fit: BoxFit.cover,
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Container(
-                  color: Colors.grey[300],
-                  child: const Center(
-                    child: CircularProgressIndicator(),
+              fadeInDuration: const Duration(milliseconds: 140),
+              fadeOutDuration: const Duration(milliseconds: 120),
+              placeholder: (context, url) => Container(
+                color: Colors.grey[300],
+                child: const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                );
-              },
-              errorBuilder: (_, __, ___) => Container(
+                ),
+              ),
+              errorWidget: (_, __, ___) => Container(
                 color: Colors.grey[300],
                 child: const Icon(Icons.image_not_supported),
               ),

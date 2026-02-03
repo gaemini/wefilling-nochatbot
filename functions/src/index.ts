@@ -13,6 +13,310 @@ admin.initializeApp();
 // Firestore 인스턴스
 const db = admin.firestore();
 
+// ===== User Profile Propagation (denormalized author fields) =====
+// - 목적: 프로필(닉네임/사진/국적) 변경 시, 과거 게시글/댓글/DM 메타를 서버에서 비동기로 갱신
+// - 클라이언트에서 대량 배치 업데이트를 수행하면 UX가 급격히 느려지므로 서버 트리거로 분리한다.
+function toStr(v: unknown): string {
+  return (v ?? '').toString();
+}
+
+function toInt(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.trunc(v);
+  const parsed = parseInt(toStr(v), 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export const onUserProfileUpdatedPropagateAuthorInfo = functions
+  .runWith({ timeoutSeconds: 540, memory: '1GB' })
+  .firestore.document('users/{userId}')
+  .onUpdate(async (change, context) => {
+    const userId = toStr(context.params.userId).trim();
+    if (!userId) return null;
+
+    const before = (change.before.data() || {}) as Record<string, unknown>;
+    const after = (change.after.data() || {}) as Record<string, unknown>;
+
+    const beforeNickname = toStr(before.nickname || before.displayName).trim();
+    const afterNickname = toStr(after.nickname || after.displayName).trim();
+    const beforePhotoURL = toStr(before.photoURL).trim();
+    const afterPhotoURL = toStr(after.photoURL).trim();
+    const beforeNationality = toStr(before.nationality).trim();
+    const afterNationality = toStr(after.nationality).trim();
+    const beforePhotoVersion = toInt(before.photoVersion);
+    const afterPhotoVersion = toInt(after.photoVersion);
+
+    const nicknameChanged = beforeNickname !== afterNickname && afterNickname.length > 0;
+    const photoChanged = beforePhotoURL !== afterPhotoURL || beforePhotoVersion !== afterPhotoVersion;
+    const nationalityChanged = beforeNationality !== afterNationality;
+
+    // 관심 필드 변화가 없으면 스킵
+    if (!nicknameChanged && !photoChanged && !nationalityChanged) {
+      return null;
+    }
+
+    const newNickname = (afterNickname || beforeNickname || 'User').trim();
+    const newPhotoURL = afterPhotoURL; // 빈 문자열 허용(기본 이미지)
+    const newNationality = afterNationality;
+
+    console.log(
+      `onUserProfileUpdatedPropagateAuthorInfo: 시작 userId=${userId} nicknameChanged=${nicknameChanged} photoChanged=${photoChanged} nationalityChanged=${nationalityChanged}`
+    );
+
+    const ts = admin.firestore.FieldValue.serverTimestamp();
+
+    async function updatePosts() {
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      let updated = 0;
+      while (true) {
+        let q = db
+          .collection('posts')
+          .where('userId', '==', userId)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(450);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() as any;
+          const need =
+            toStr(data?.authorNickname).trim() !== newNickname ||
+            toStr(data?.authorPhotoURL).trim() !== newPhotoURL ||
+            toStr(data?.authorNationality).trim() !== newNationality;
+          if (!need) continue;
+
+          batch.update(doc.ref, {
+            authorNickname: newNickname,
+            authorPhotoURL: newPhotoURL,
+            authorNationality: newNationality,
+            authorInfoUpdatedAt: ts,
+          });
+          ops += 1;
+          updated += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+      }
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: posts updated=${updated}`);
+    }
+
+    async function updateMeetups() {
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      let updated = 0;
+      while (true) {
+        let q = db
+          .collection('meetups')
+          .where('userId', '==', userId)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(450);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() as any;
+          const need =
+            toStr(data?.hostNickname).trim() !== newNickname ||
+            toStr(data?.hostPhotoURL).trim() !== newPhotoURL ||
+            toStr(data?.hostNationality).trim() !== newNationality;
+          if (!need) continue;
+
+          batch.update(doc.ref, {
+            hostNickname: newNickname,
+            hostPhotoURL: newPhotoURL,
+            hostNationality: newNationality,
+            hostInfoUpdatedAt: ts,
+          });
+          ops += 1;
+          updated += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+      }
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: meetups updated=${updated}`);
+    }
+
+    async function updateCommentsCollectionGroup() {
+      // posts/{postId}/comments + meetups/{meetupId}/comments 같이 "서브컬렉션 comments"는 collectionGroup으로 일괄 처리
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      let updated = 0;
+      while (true) {
+        let q = db
+          .collectionGroup('comments')
+          .where('userId', '==', userId)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(450);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() as any;
+          const need =
+            toStr(data?.authorNickname).trim() !== newNickname ||
+            toStr(data?.authorPhotoUrl).trim() !== newPhotoURL;
+          if (!need) continue;
+
+          batch.update(doc.ref, {
+            authorNickname: newNickname,
+            authorPhotoUrl: newPhotoURL,
+            authorInfoUpdatedAt: ts,
+          });
+          ops += 1;
+          updated += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+      }
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(subcollections) updated=${updated}`);
+    }
+
+    async function updateCommentsRoot() {
+      // 최상위 comments 컬렉션은 collectionGroup에 포함되지 않으므로 별도 처리
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      let updated = 0;
+      while (true) {
+        let q = db
+          .collection('comments')
+          .where('userId', '==', userId)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(450);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() as any;
+          const need =
+            toStr(data?.authorNickname).trim() !== newNickname ||
+            toStr(data?.authorPhotoUrl).trim() !== newPhotoURL;
+          if (!need) continue;
+
+          batch.update(doc.ref, {
+            authorNickname: newNickname,
+            authorPhotoUrl: newPhotoURL,
+            authorInfoUpdatedAt: ts,
+          });
+          ops += 1;
+          updated += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+      }
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(root) updated=${updated}`);
+    }
+
+    async function updateConversations() {
+      let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+      let updated = 0;
+      while (true) {
+        let q = db
+          .collection('conversations')
+          .where('participants', 'array-contains', userId)
+          .orderBy(admin.firestore.FieldPath.documentId())
+          .limit(450);
+        if (lastDoc) q = q.startAfter(lastDoc);
+        const snap = await q.get();
+        if (snap.empty) break;
+
+        let batch = db.batch();
+        let ops = 0;
+
+        for (const doc of snap.docs) {
+          const data = doc.data() as any;
+          const currentName = toStr(data?.participantNames?.[userId]).trim();
+          const currentPhoto = toStr(data?.participantPhotos?.[userId]).trim();
+
+          const need = currentName !== newNickname || currentPhoto !== newPhotoURL;
+          if (!need) continue;
+
+          const updateData: Record<string, unknown> = {
+            [`participantNames.${userId}`]: newNickname,
+            [`participantPhotos.${userId}`]: newPhotoURL,
+            participantNamesUpdatedAt: ts,
+          };
+
+          // 1:1 대화방인 경우에만 displayTitle 갱신 (그 외는 기존 유지)
+          const participants = Array.isArray(data?.participants) ? data.participants.map((s: any) => toStr(s)) : [];
+          if (participants.length === 2) {
+            const otherId = participants[0] === userId ? participants[1] : participants[0];
+            const otherName = toStr(data?.participantNames?.[otherId]).trim() || 'User';
+            updateData.displayTitle = `${newNickname} ↔ ${otherName}`;
+          }
+
+          batch.update(doc.ref, updateData);
+          ops += 1;
+          updated += 1;
+
+          if (ops >= 450) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        }
+
+        if (ops > 0) await batch.commit();
+        lastDoc = snap.docs[snap.docs.length - 1];
+      }
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: conversations updated=${updated}`);
+    }
+
+    try {
+      // 순차 실행: 한 번의 프로필 변경으로 과도한 병렬 쿼리/커밋을 피한다.
+      await updatePosts();
+      await updateMeetups();
+      await updateCommentsCollectionGroup();
+      await updateCommentsRoot();
+      await updateConversations();
+
+      console.log(`onUserProfileUpdatedPropagateAuthorInfo: 완료 userId=${userId}`);
+      return null;
+    } catch (error) {
+      console.error(`onUserProfileUpdatedPropagateAuthorInfo 오류 userId=${userId}:`, error);
+      return null;
+    }
+  });
+
 // ===== Gmail Config Helpers =====
 const DEFAULT_GMAIL_USER = 'wefilling@gmail.com';
 const PLACEHOLDER_GMAIL_PASSWORD = '여기에16자리앱비밀번호입력';
@@ -716,7 +1020,8 @@ export const onAdBannerChanged = functions.firestore
           priority: 'high',
           notification: { channelId: 'high_importance_channel', sound: 'default' },
         },
-        apns: { payload: { aps: { sound: 'default', badge: 1 } } },
+        // ⚠️ topic 브로드캐스트는 사용자별 "정확한 배지 수"를 계산할 수 없으므로 badge는 포함하지 않음
+        apns: { payload: { aps: { sound: 'default' } } },
       };
 
       await admin.messaging().send(message);
@@ -2829,16 +3134,82 @@ export const onNotificationCreated = functions.firestore
       }
 
       const userData = userDoc.data();
-      const fcmToken = userData?.fcmToken;
 
-      if (!fcmToken) {
+      // 멀티 디바이스 지원:
+      // - 레거시 fcmToken(단일) + 신규 fcmTokens(배열) 모두 수집 후 중복 제거
+      const tokenSet = new Set<string>();
+      const legacyToken = userData?.fcmToken;
+      if (typeof legacyToken === 'string' && legacyToken.length > 0) {
+        tokenSet.add(legacyToken);
+      }
+      const tokenArray = userData?.fcmTokens;
+      if (Array.isArray(tokenArray)) {
+        tokenArray.forEach((t) => {
+          if (typeof t === 'string' && t.length > 0) {
+            tokenSet.add(t);
+          }
+        });
+      }
+
+      const tokens = Array.from(tokenSet);
+      if (tokens.length === 0) {
         console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
         return null;
       }
 
-      // 푸시 알림 메시지 구성
-      const pushMessage: admin.messaging.Message = {
-        token: fcmToken,
+      // iOS 앱 아이콘 배지: "읽지 않은 알림 수 + 안 읽은 DM 수"
+      // - 일반 알림: dm_received 타입 제외 (Notifications 탭 기준)
+      // - DM: conversations 컬렉션의 unreadCount 합산
+      let badgeCount = 0;
+      try {
+        // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
+        const unreadAllSnap = await db
+          .collection('notifications')
+          .where('userId', '==', userId)
+          .where('isRead', '==', false)
+          .count()
+          .get();
+        const unreadAll = (unreadAllSnap.data().count as number) || 0;
+
+        const unreadDmSnap = await db
+          .collection('notifications')
+          .where('userId', '==', userId)
+          .where('isRead', '==', false)
+          .where('type', '==', 'dm_received')
+          .count()
+          .get();
+        const unreadDm = (unreadDmSnap.data().count as number) || 0;
+
+        const notificationCount = Math.max(0, unreadAll - unreadDm);
+
+        // 2) DM 안 읽은 수 (conversations 컬렉션의 unreadCount 합산)
+        const convsSnap = await db
+          .collection('conversations')
+          .where('participants', 'array-contains', userId)
+          .get();
+
+        let dmUnreadCount = 0;
+        convsSnap.docs.forEach((doc) => {
+          const data = doc.data();
+          const archivedBy = data.archivedBy || [];
+          if (archivedBy.includes(userId)) return; // 보관된 대화방 제외
+          
+          const unreadCount = data.unreadCount || {};
+          const myUnread = unreadCount[userId] || 0;
+          dmUnreadCount += myUnread;
+        });
+
+        badgeCount = notificationCount + dmUnreadCount;
+        console.log(`📊 배지 계산: 일반 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
+      } catch (e) {
+        // count()가 실패하거나 권한/인덱스 문제일 경우, 배지는 안전하게 생략/0 처리
+        console.warn('⚠️ badgeCount 계산 실패 (0으로 처리):', e);
+        badgeCount = 0;
+      }
+
+      // 푸시 알림 메시지 구성 (멀티캐스트)
+      const pushMessage: admin.messaging.MulticastMessage = {
+        tokens,
         notification: {
           title,
           body: message,
@@ -2855,7 +3226,7 @@ export const onNotificationCreated = functions.firestore
           payload: {
             aps: {
               sound: 'default',
-              badge: 1,
+              badge: badgeCount,
             },
           },
         },
@@ -2869,8 +3240,49 @@ export const onNotificationCreated = functions.firestore
       };
 
       // 푸시 알림 전송
-      await admin.messaging().send(pushMessage);
-      console.log(`✅ 알림 전송 성공: ${userId}`);
+      const response = await admin.messaging().sendEachForMulticast(pushMessage);
+      console.log(`✅ 알림 전송 결과: ${response.successCount}/${tokens.length} (userId=${userId})`);
+
+      // 실패 토큰 자동 정리 (iOS/Android 공통)
+      if (response.failureCount > 0) {
+        const invalidTokens: string[] = [];
+
+        response.responses.forEach((resp, idx) => {
+          if (resp.success) return;
+          const code = (resp.error as any)?.code as string | undefined;
+          // 흔한 "토큰 폐기" 케이스만 우선 정리
+          if (code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token') {
+            invalidTokens.push(tokens[idx]);
+          }
+        });
+
+        if (invalidTokens.length > 0) {
+          const userRef = db.collection('users').doc(userId);
+
+          // fcmTokens 배열에서 제거 (chunk로 안전하게 처리)
+          const chunkSize = 10;
+          for (let i = 0; i < invalidTokens.length; i += chunkSize) {
+            const chunk = invalidTokens.slice(i, i + chunkSize);
+            await userRef.set({
+              fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
+            }, { merge: true });
+          }
+
+          // 레거시 단일 토큰이 무효면 대체/삭제
+          if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
+              invalidTokens.includes(legacyToken)) {
+            const remaining = tokens.filter((t) => !invalidTokens.includes(t));
+            await userRef.set({
+              fcmToken: remaining.length > 0
+                ? remaining[0]
+                : admin.firestore.FieldValue.delete(),
+            }, { merge: true });
+          }
+
+          console.log(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
+        }
+      }
 
       return null;
     } catch (error) {
@@ -2979,12 +3391,17 @@ export const onMeetupCreated = functions.firestore
         
         const allUsersSnapshot = await db
           .collection('users')
-          .where('fcmToken', '!=', null)
           .limit(100)
           .get();
 
         allUsersSnapshot.forEach((doc) => {
-          if (doc.id !== hostId) { // 본인 제외
+          if (doc.id === hostId) return; // 본인 제외
+          const data = doc.data();
+          const legacy = data?.fcmToken;
+          const arr = data?.fcmTokens;
+          const hasLegacy = typeof legacy === 'string' && legacy.length > 0;
+          const hasArr = Array.isArray(arr) && arr.some((t: any) => typeof t === 'string' && t.length > 0);
+          if (hasLegacy || hasArr) {
             targetUserIds.push(doc.id);
           }
         });
@@ -3063,7 +3480,7 @@ export const onMeetupCreated = functions.firestore
       console.log(`알림 대상: ${targetUserIds.length}명`);
 
       // 대상 사용자들의 FCM 토큰 가져오기 (최대 10명씩 배치 처리)
-      const fcmTokens: string[] = [];
+      const fcmTokenSet = new Set<string>();
       const batchSize = 10;
       
       for (let i = 0; i < targetUserIds.length; i += batchSize) {
@@ -3075,12 +3492,22 @@ export const onMeetupCreated = functions.firestore
 
         usersSnapshot.forEach((doc) => {
           const userData = doc.data();
-          if (userData.fcmToken) {
-            fcmTokens.push(userData.fcmToken);
+          const legacy = userData?.fcmToken;
+          if (typeof legacy === 'string' && legacy.length > 0) {
+            fcmTokenSet.add(legacy);
+          }
+          const arr = userData?.fcmTokens;
+          if (Array.isArray(arr)) {
+            arr.forEach((t) => {
+              if (typeof t === 'string' && t.length > 0) {
+                fcmTokenSet.add(t);
+              }
+            });
           }
         });
       }
 
+      const fcmTokens = Array.from(fcmTokenSet);
       console.log(`FCM 토큰: ${fcmTokens.length}개`);
 
       if (fcmTokens.length === 0) {
@@ -3120,7 +3547,6 @@ export const onMeetupCreated = functions.firestore
           payload: {
             aps: {
               sound: 'default',
-              badge: 1,
             },
           },
         },
@@ -3427,6 +3853,200 @@ export const onMeetupReviewDeleted = functions.firestore
       return null;
     } catch (error) {
       console.error('onMeetupReviewDeleted 오류:', error);
+      return null;
+    }
+  });
+
+// DM 메시지 생성 시 푸시 알림 전송
+export const onDMMessageCreated = functions.firestore
+  .document('conversations/{conversationId}/messages/{messageId}')
+  .onCreate(async (snapshot, context) => {
+    try {
+      const messageData = snapshot.data();
+      const conversationId = context.params.conversationId;
+      const messageId = context.params.messageId;
+      const senderId = messageData.senderId;
+      const text = messageData.text || '';
+      const imageUrl = messageData.imageUrl;
+
+      console.log(`📨 새 DM 메시지 감지: ${conversationId}/${messageId}`);
+      console.log(`  - 발신자: ${senderId}`);
+
+      // 대화방 정보 조회
+      const convDoc = await db.collection('conversations').doc(conversationId).get();
+      if (!convDoc.exists) {
+        console.log('❌ 대화방을 찾을 수 없음');
+        return null;
+      }
+
+      const convData = convDoc.data()!;
+      const participants = convData.participants || [];
+      
+      // 수신자 UID 찾기 (발신자가 아닌 다른 참여자)
+      const recipientId = participants.find((id: string) => id !== senderId);
+      if (!recipientId) {
+        console.log('⚠️ 수신자를 찾을 수 없음');
+        return null;
+      }
+
+      console.log(`  - 수신자: ${recipientId}`);
+
+      // 발신자 정보 조회
+      const senderDoc = await db.collection('users').doc(senderId).get();
+      const senderData = senderDoc.data();
+      const isAnonymous = convData.isAnonymous?.[senderId] || false;
+      const senderName = isAnonymous ? '익명' : (senderData?.nickname || senderData?.name || '익명');
+
+      // 수신자 FCM 토큰 조회
+      const recipientDoc = await db.collection('users').doc(recipientId).get();
+      if (!recipientDoc.exists) {
+        console.log('⚠️ 수신자 문서를 찾을 수 없음');
+        return null;
+      }
+
+      const recipientData = recipientDoc.data();
+      const tokenSet = new Set<string>();
+      
+      // 레거시 토큰
+      if (typeof recipientData?.fcmToken === 'string' && recipientData.fcmToken.length > 0) {
+        tokenSet.add(recipientData.fcmToken);
+      }
+      
+      // 멀티 디바이스 토큰
+      if (Array.isArray(recipientData?.fcmTokens)) {
+        recipientData.fcmTokens.forEach((t: string) => {
+          if (typeof t === 'string' && t.length > 0) {
+            tokenSet.add(t);
+          }
+        });
+      }
+
+      const tokens = Array.from(tokenSet);
+      if (tokens.length === 0) {
+        console.log('⚠️ 수신자의 FCM 토큰이 없음');
+        return null;
+      }
+
+      console.log(`  - FCM 토큰: ${tokens.length}개`);
+
+      // 배지 계산: 일반 알림 + DM 안 읽은 수
+      let badgeCount = 0;
+      try {
+        // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
+        const unreadNotifSnap = await db
+          .collection('notifications')
+          .where('userId', '==', recipientId)
+          .where('isRead', '==', false)
+          .count()
+          .get();
+        const unreadNotifAll = unreadNotifSnap.data().count || 0;
+
+        const unreadDmNotifSnap = await db
+          .collection('notifications')
+          .where('userId', '==', recipientId)
+          .where('isRead', '==', false)
+          .where('type', '==', 'dm_received')
+          .count()
+          .get();
+        const unreadDmNotif = unreadDmNotifSnap.data().count || 0;
+        const notificationCount = Math.max(0, unreadNotifAll - unreadDmNotif);
+
+        // 2) DM 안 읽은 수 (conversations 컬렉션의 unreadCount 합산)
+        const convsSnap = await db
+          .collection('conversations')
+          .where('participants', 'array-contains', recipientId)
+          .get();
+
+        let dmUnreadCount = 0;
+        convsSnap.docs.forEach((doc) => {
+          const data = doc.data();
+          const archivedBy = data.archivedBy || [];
+          if (archivedBy.includes(recipientId)) return; // 보관된 대화방 제외
+          
+          const unreadCount = data.unreadCount || {};
+          const myUnread = unreadCount[recipientId] || 0;
+          dmUnreadCount += myUnread;
+        });
+
+        badgeCount = notificationCount + dmUnreadCount;
+        console.log(`  📊 배지 계산: 일반 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
+      } catch (e) {
+        console.warn('  ⚠️ 배지 계산 실패 (0으로 처리):', e);
+        badgeCount = 0;
+      }
+
+      // 메시지 프리뷰 생성
+      let messagePreview = '';
+      if (text && text.trim().length > 0) {
+        messagePreview = text.trim().substring(0, 100);
+      } else if (imageUrl) {
+        messagePreview = '📷 사진';
+      } else {
+        messagePreview = '메시지';
+      }
+
+      // FCM 메시지 구성
+      const pushMessage: admin.messaging.MulticastMessage = {
+        tokens,
+        notification: {
+          title: `From '${senderName}'`,
+          body: messagePreview,
+        },
+        data: {
+          type: 'dm_received',
+          conversationId: conversationId,
+          senderId: senderId,
+          senderName: senderName,
+        },
+        apns: {
+          payload: {
+            aps: {
+              sound: 'default',
+              badge: badgeCount,
+            },
+          },
+        },
+        android: {
+          priority: 'high',
+          notification: {
+            sound: 'default',
+            channelId: 'high_importance_channel',
+          },
+        },
+      };
+
+      // 푸시 전송
+      const response = await admin.messaging().sendEachForMulticast(pushMessage);
+      console.log(`✅ DM 푸시 전송 완료: ${response.successCount}/${tokens.length}`);
+
+      // 실패 토큰 정리
+      if (response.failureCount > 0) {
+        const invalidTokens: string[] = [];
+        response.responses.forEach((resp, idx) => {
+          if (resp.success) return;
+          const code = (resp.error as any)?.code as string | undefined;
+          if (code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token') {
+            invalidTokens.push(tokens[idx]);
+          }
+        });
+
+        if (invalidTokens.length > 0) {
+          const recipientRef = db.collection('users').doc(recipientId);
+          const chunkSize = 10;
+          for (let i = 0; i < invalidTokens.length; i += chunkSize) {
+            const chunk = invalidTokens.slice(i, i + chunkSize);
+            await recipientRef.set({
+              fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
+            }, { merge: true });
+          }
+          console.log(`  🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ onDMMessageCreated 오류:', error);
       return null;
     }
   });

@@ -38,13 +38,21 @@ class CacheManager {
       await Hive.openBox<CacheMetadata>('metadata');
       await Hive.openBox<CachedPost>('posts');
       await Hive.openBox<CachedComment>('comments');
+      // DM 메시지 로컬 캐시(문자앱 UX): 타입 어댑터 없이 dynamic(Map/List)로 저장한다.
+      // - Hive 초기화만 되면 언제든 접근 가능
+      // - 실패해도 DM은 네트워크 경로로 계속 동작 (best-effort)
+      try {
+        await Hive.openBox<dynamic>('dm_messages_v1');
+      } catch (e) {
+        Logger.error('⚠️ DM 메시지 캐시 박스 오픈 실패(무시): $e');
+      }
       // 추가 박스는 다음 Phase에서 열기
       // await Hive.openBox<CachedMeetup>('meetups');
       // await Hive.openBox<CachedMessage>('messages');
       
       _initialized = true;
       Logger.log('✅ 캐시 시스템 초기화 완료');
-      Logger.log('📊 초기화된 박스: metadata, posts, comments');
+      Logger.log('📊 초기화된 박스: metadata, posts, comments, dm_messages_v1');
     } catch (e, stackTrace) {
       Logger.error('❌ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
       Logger.error('스택 트레이스: $stackTrace');
@@ -62,6 +70,7 @@ class CacheManager {
       await Hive.deleteBoxFromDisk('metadata');
       await Hive.deleteBoxFromDisk('posts');
       await Hive.deleteBoxFromDisk('comments');
+      await Hive.deleteBoxFromDisk('dm_messages_v1');
       // 추가 박스는 다음 Phase에서 삭제
       // await Hive.deleteBoxFromDisk('meetups');
       // await Hive.deleteBoxFromDisk('messages');

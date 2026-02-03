@@ -47,8 +47,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
   
   // 스크롤 위치 복원을 위한 ScrollController들
-  final ScrollController _todayScrollController = ScrollController();
-  final ScrollController _allScrollController = ScrollController();
+  late final ScrollController _todayScrollController;
+  late final ScrollController _allScrollController;
+  bool _controllersInitialized = false;
+  static const String _psTabIndexId = 'board.tabIndex.v1';
+  static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
+  static const String _psAllOffsetId = 'board.allScrollOffset.v1';
   
   // 캐시된 데이터를 저장하여 부드러운 전환 구현
   List<Post>? _cachedTodayPosts;
@@ -68,15 +72,106 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
     _loadCachedData();
     
+    // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _initControllersIfNeeded();
+  }
+
+  void _initControllersIfNeeded() {
+    if (_controllersInitialized) return;
+
+    final storage = PageStorage.of(context);
+    final savedTabIndex =
+        (storage.readState(context, identifier: _psTabIndexId) as int?) ?? 0;
+    final savedTodayOffset =
+        (storage.readState(context, identifier: _psTodayOffsetId) as double?) ??
+            0.0;
+    final savedAllOffset =
+        (storage.readState(context, identifier: _psAllOffsetId) as double?) ??
+            0.0;
+
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: savedTabIndex.clamp(0, 1),
+    );
+    _todayScrollController = ScrollController(
+      initialScrollOffset: savedTodayOffset < 0 ? 0 : savedTodayOffset,
+    );
+    _allScrollController = ScrollController(
+      initialScrollOffset: savedAllOffset < 0 ? 0 : savedAllOffset,
+    );
+
     // 스크롤 상태 감지 (Today/All 탭 모두)
     _todayScrollController.addListener(_handleScrollChanged);
     _allScrollController.addListener(_handleScrollChanged);
     _tabController.addListener(_handleTabChanged);
+
+    _controllersInitialized = true;
+
+    // 첫 프레임 이후 스크롤 "최대값 초과" 방지용 보정
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _clampScrollOffsetsIfNeeded();
+    });
   }
-  
+
+  void _persistBoardState({bool persistOffsets = true}) {
+    final storage = PageStorage.of(context);
+    storage.writeState(
+      context,
+      _tabController.index,
+      identifier: _psTabIndexId,
+    );
+
+    if (!persistOffsets) return;
+    if (_todayScrollController.hasClients) {
+      storage.writeState(
+        context,
+        _todayScrollController.offset,
+        identifier: _psTodayOffsetId,
+      );
+    }
+    if (_allScrollController.hasClients) {
+      storage.writeState(
+        context,
+        _allScrollController.offset,
+        identifier: _psAllOffsetId,
+      );
+    }
+  }
+
+  void _clampScrollOffsetsIfNeeded() {
+    // 데이터/레이아웃 변화로 saved offset이 maxScrollExtent보다 클 수 있어
+    // attach 이후 안전하게 clamp한다.
+    if (_todayScrollController.hasClients) {
+      final pos = _todayScrollController.position;
+      final target = _todayScrollController.offset.clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      );
+      if (target != _todayScrollController.offset) {
+        _todayScrollController.jumpTo(target);
+      }
+    }
+    if (_allScrollController.hasClients) {
+      final pos = _allScrollController.position;
+      final target = _allScrollController.offset.clamp(
+        pos.minScrollExtent,
+        pos.maxScrollExtent,
+      );
+      if (target != _allScrollController.offset) {
+        _allScrollController.jumpTo(target);
+      }
+    }
+  }
+
   /// 캐시된 데이터를 먼저 로드하여 즉시 화면에 표시
   Future<void> _loadCachedData() async {
     try {
@@ -129,12 +224,19 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
-    _tabController.removeListener(_handleTabChanged);
-    _todayScrollController.removeListener(_handleScrollChanged);
-    _allScrollController.removeListener(_handleScrollChanged);
-    _tabController.dispose();
-    _todayScrollController.dispose();
-    _allScrollController.dispose();
+    if (_controllersInitialized) {
+      // 마지막 상태 저장
+      try {
+        _persistBoardState();
+      } catch (_) {}
+
+      _tabController.removeListener(_handleTabChanged);
+      _todayScrollController.removeListener(_handleScrollChanged);
+      _allScrollController.removeListener(_handleScrollChanged);
+      _tabController.dispose();
+      _todayScrollController.dispose();
+      _allScrollController.dispose();
+    }
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
   }
@@ -148,11 +250,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     // 탭 전환 시 현재 탭의 스크롤 위치에 맞춰 버튼 노출 상태 동기화
     if (!mounted) return;
     if (_tabController.indexIsChanging) return;
+    _persistBoardState(persistOffsets: false);
     _syncScrollToTopVisibility();
   }
 
   void _handleScrollChanged() {
     if (!mounted) return;
+    _persistBoardState(persistOffsets: true);
     _syncScrollToTopVisibility();
   }
 

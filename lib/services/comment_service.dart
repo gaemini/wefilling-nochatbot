@@ -150,49 +150,10 @@ class CommentService {
       targetAuthorId ??= reviewOwnerUserId;
       if (reviewTitle != null) notificationTitle = reviewTitle;
 
-      Logger.log('💬 댓글 작성 완료 - 알림 전송 확인 중');
-      Logger.log('   대상 작성자: $targetAuthorId');
-      Logger.log('   댓글 작성자: ${user.uid}');
-      Logger.log('   제목: $notificationTitle');
-
-      // 대댓글인 경우: 원댓글 작성자에게 알림 전송
-      if (parentCommentId != null && replyToUserId != null && replyToUserId != user.uid) {
-        Logger.log('🔔 대댓글 알림 전송 시작... (대상: $replyToUserId)');
-        final notificationSent = await _notificationService
-            .sendNewCommentNotification(
-              postId,
-              notificationTitle,
-              replyToUserId, // 원댓글 작성자에게 알림
-              nickname,
-              user.uid,
-              thumbnailUrl: thumbnailUrl,
-            )
-            .timeout(const Duration(seconds: 6), onTimeout: () => false);
-        Logger.log(notificationSent ? '✅ 대댓글 알림 전송 성공' : '❌ 대댓글 알림 전송 실패');
-      } 
-      // 원댓글: 대상 작성자에게 알림 (자기 자신 제외)
-      else if (parentCommentId == null && targetAuthorId != null && targetAuthorId != user.uid) {
-        Logger.log('🔔 댓글 알림 전송 시작... (작성자: $targetAuthorId)');
-        
-        // 리뷰 댓글인 경우 별도 알림 타입 사용
-        final isReview = reviewOwnerUserId != null;
-        
-        final notificationSent = await _notificationService
-            .sendNewCommentNotification(
-              postId,
-              notificationTitle,
-              targetAuthorId,
-              nickname,
-              user.uid,
-              isReview: isReview,
-              reviewOwnerUserId: reviewOwnerUserId,
-              thumbnailUrl: thumbnailUrl,
-            )
-            .timeout(const Duration(seconds: 6), onTimeout: () => false);
-        Logger.log(notificationSent ? '✅ 댓글 알림 전송 성공' : '❌ 댓글 알림 전송 실패');
-      } else {
-        Logger.log('⏭️ 알림 전송 건너뜀 (본인 댓글/작성자 미확인)');
-      }
+      // ✅ 알림은 Cloud Functions(onCommentCreated)에서 처리
+      // - 클라이언트에서 알림을 보내면 중복 전송됨
+      // - 서버에서만 처리하도록 변경
+      Logger.log('💬 댓글 작성 완료 - 알림은 Cloud Functions에서 자동 처리됨');
 
       // 댓글 수 정합성 보정:
       // - posts/meetups의 commentCount는 Cloud Functions 트리거가 담당 (rules 이슈/중복 방지)

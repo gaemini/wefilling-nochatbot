@@ -86,6 +86,37 @@ class FeatureFlagService {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Backward-compatible API (tests / legacy call sites)
+  // ---------------------------------------------------------------------------
+  /// (Legacy) 비동기 형태의 플래그 확인 API
+  /// - 기존 테스트/코드가 `await isEnabled(...)` 형태를 기대하는 경우를 위해 제공한다.
+  Future<bool> isEnabled(String featureKey) async {
+    if (!_isInitialized) {
+      // init 실패는 기능을 막지 않도록 흡수
+      try {
+        await init();
+      } catch (_) {}
+    }
+    return isFeatureEnabled(featureKey);
+  }
+
+  /// (Legacy) 로컬 플래그 설정 API (setLocalOverride의 별칭)
+  Future<void> setLocalFlag(String featureKey, bool value) async {
+    if (!_isInitialized) {
+      try {
+        await init();
+      } catch (_) {}
+    }
+    await setLocalOverride(featureKey, value);
+  }
+
+  /// (Legacy) 캐시 초기화 API
+  /// - 현재 서비스는 별도의 in-memory 캐시를 두지 않지만, 테스트 호환을 위해 제공한다.
+  void clearCache() {
+    Logger.log('🚩 FeatureFlagService.clearCache() 호출됨 (no-op)');
+  }
+
   /// 로컬에서 Feature Flag 오버라이드 (개발/테스트용)
   Future<void> setLocalOverride(String featureKey, bool value) async {
     if (!_isInitialized) {

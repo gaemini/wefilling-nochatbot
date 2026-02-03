@@ -4,17 +4,24 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'content_filter_service.dart';
+import 'dm_message_cache_service.dart';
+import 'badge_service.dart';
 import '../utils/dm_feature_flags.dart';
 import '../utils/logger.dart';
 
 class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final DMMessageCacheService _localMessageCache = DMMessageCacheService();
   static bool _rulesTestDone = false;
   static const String _imageLastMessageFallback = '📷 Photo';
+
+  static String _visibilityPrefsKey(String myUid, String conversationId) =>
+      'dm_visibility_start__${myUid}__${conversationId}';
 
   // 캐시 관리
   final Map<String, Conversation> _conversationCache = {};
@@ -886,6 +893,110 @@ class DMService {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // 로컬 캐시 + 서버 동기화 (문자앱 UX)
+  // ---------------------------------------------------------------------------
+
+  /// 로컬에 저장된 메시지를 즉시 반환한다 (descending, 최신→과거).
+  /// - 대화방 진입 시 전체를 매번 네트워크로 다시 읽지 않도록 하기 위함.
+  Future<List<DMMessage>> loadCachedMessages(
+    String conversationId, {
+    int limit = 150,
+    DateTime? visibilityStartTime,
+  }) async {
+    try {
+      return await _localMessageCache.getMessages(
+        conversationId,
+        limit: limit,
+        visibilityStartTime: visibilityStartTime,
+      );
+    } catch (e) {
+      Logger.error('loadCachedMessages 실패(무시): $e');
+      return const [];
+    }
+  }
+
+  /// 서버의 "최근 N개" 스트림을 구독하면서, 수신한 메시지를 로컬에도 저장한다.
+  /// - UI는 로컬 캐시를 먼저 보여주고, 서버 스냅샷으로 자연스럽게 최신화된다.
+  Stream<List<DMMessage>> watchRecentMessagesAndCache(
+    String conversationId, {
+    int limit = 50,
+    DateTime? visibilityStartTime,
+  }) {
+    final base = getMessages(
+      conversationId,
+      limit: limit,
+      visibilityStartTime: visibilityStartTime,
+    );
+
+    return base.asyncMap((messages) async {
+      // best-effort 로컬 저장
+      try {
+        await _localMessageCache.upsertMessages(conversationId, messages);
+      } catch (_) {}
+      return messages;
+    });
+  }
+
+  /// 과거 메시지 페이지 로드 (descending)
+  /// - 문자 앱처럼 스크롤 시점에만 추가 로드한다.
+  Future<List<DMMessage>> fetchOlderMessages(
+    String conversationId, {
+    required DateTime before,
+    int limit = 50,
+    DateTime? visibilityStartTime,
+  }) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return const [];
+
+    try {
+      Query messageQuery = _firestore
+          .collection('conversations')
+          .doc(conversationId)
+          .collection('messages')
+          .orderBy('createdAt', descending: true);
+
+      // 나가기(leave) 기반 가시성 필터: createdAt >= visibilityStartTime
+      if (visibilityStartTime != null) {
+        messageQuery = messageQuery.where(
+          'createdAt',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(visibilityStartTime),
+        );
+      }
+
+      // 현재 로드된 가장 오래된 메시지보다 "더 과거"만 가져오기
+      messageQuery = messageQuery.where(
+        'createdAt',
+        isLessThan: Timestamp.fromDate(before),
+      );
+
+      final snap = await messageQuery.limit(limit).get();
+      final messages = snap.docs
+          .map((d) {
+            try {
+              return DMMessage.fromFirestore(d);
+            } catch (e) {
+              Logger.error('⚠️ fetchOlderMessages 파싱 실패(${d.id}): $e');
+              return null;
+            }
+          })
+          .whereType<DMMessage>()
+          .toList();
+
+      if (messages.isNotEmpty) {
+        // best-effort 로컬 저장
+        try {
+          await _localMessageCache.upsertMessages(conversationId, messages);
+        } catch (_) {}
+      }
+
+      return messages;
+    } catch (e) {
+      Logger.error('fetchOlderMessages 실패: $e');
+      return const [];
+    }
+  }
+
   /// 사용자의 메시지 가시성 시작 시간 계산
   Future<DateTime?> getUserMessageVisibilityStartTime(String conversationId) async {
     Logger.log('🔍 getUserMessageVisibilityStartTime 호출');
@@ -898,31 +1009,64 @@ class DMService {
     }
 
     try {
-      final convSnapshot = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .get();
-          
+      // 0) 로컬(SharedPreferences) 우선: 재진입 시 서버/네트워크 대기를 줄이기 위함
+      // - 같은 디바이스에서 leave를 수행한 경우 즉시 필터 적용 가능
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final ms = prefs.getInt(_visibilityPrefsKey(currentUser.uid, conversationId));
+        if (ms != null && ms > 0) {
+          final leftTime = DateTime.fromMillisecondsSinceEpoch(ms);
+          Logger.log('  - 결과(로컬): $leftTime');
+          return leftTime;
+        }
+      } catch (_) {
+        // best-effort
+      }
+
+      final docRef = _firestore.collection('conversations').doc(conversationId);
+
+      // 1) Firestore 로컬 캐시 우선 (오프라인 퍼시스턴스/최근 접근 시 빠름)
+      DocumentSnapshot<Map<String, dynamic>>? convSnapshot;
+      try {
+        convSnapshot = await docRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        convSnapshot = null;
+      }
+
+      // 2) 캐시에 없거나 정보가 없으면 서버로 폴백
+      if (convSnapshot == null || !convSnapshot.exists) {
+        convSnapshot = await docRef.get(const GetOptions(source: Source.server));
+      }
+
       if (!convSnapshot.exists) {
         Logger.log('  - 결과: null (대화방 없음)');
         return null;
       }
-      
+
       final convData = convSnapshot.data() as Map<String, dynamic>;
       final userLeftAtData = convData['userLeftAt'] as Map<String, dynamic>? ?? {};
-      
+
       Logger.log('  - userLeftAt: ${userLeftAtData.keys.toList()}');
-      
+
       // 나간 적이 있으면 그 시점부터만 메시지 표시
       if (userLeftAtData.containsKey(currentUser.uid)) {
         final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
         if (leftTimestamp != null) {
           final leftTime = leftTimestamp.toDate();
+          // 로컬에 저장하여 다음 진입을 가속 (best-effort)
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setInt(
+              _visibilityPrefsKey(currentUser.uid, conversationId),
+              leftTime.millisecondsSinceEpoch,
+            );
+          } catch (_) {}
+
           Logger.log('  - 결과: $leftTime (나간 시점부터 표시)');
           return leftTime;
         }
       }
-      
+
       Logger.log('  - 결과: null (나간 적 없음 - 모든 메시지 표시)');
       return null;
     } catch (e) {
@@ -1221,13 +1365,11 @@ class DMService {
         rethrow;
       }
 
-      // DM은 알림(Notifications) 탭으로 올리지 않음.
-      // - DM은 DM 화면(대화 목록/뱃지)에서만 확인하도록 정책 변경
-      // - 따라서 notifications 컬렉션에 dm_received 문서를 생성하지 않는다.
-      Logger.log('🔕 DM 알림 생성 스킵 (Notifications 탭 미표시 정책)');
-
-      // (기존) notifications 컬렉션에 dm_received 생성 로직 제거됨
-      // 필요 시, 시스템 푸시(FCM)만 별도로 보내는 구조로 확장 가능.
+      // DM 푸시 알림은 서버에서 자동 처리 (Cloud Functions 트리거)
+      // - conversations/{conversationId}/messages 생성 시 자동으로 FCM 발송
+      // - 잠금화면/알림센터에 표시, 앱 배지는 일반 알림 + DM 통합
+      // - Notifications 탭에는 표시 안 함 (DM 탭에서만 확인)
+      Logger.log('📤 DM 메시지 전송 완료 - 서버가 FCM 푸시 자동 발송');
 
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.log('✅ sendMessage 완료 - 모든 단계 성공');
@@ -1336,6 +1478,17 @@ class DMService {
         'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
         'updatedAt': Timestamp.fromDate(now),
       });
+
+      // 로컬에 leave 시점을 저장하여 재진입 시 즉시 필터링되도록 한다 (best-effort)
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt(
+          _visibilityPrefsKey(currentUser.uid, conversationId),
+          now.millisecondsSinceEpoch,
+        );
+      } catch (_) {
+        // best-effort
+      }
       
       Logger.log('✅ 대화방 나가기 완료');
       Logger.log('  - archivedBy에 추가: ${currentUser.uid}');
@@ -1436,6 +1589,10 @@ class DMService {
       _messageCache.remove(conversationId);
       
       Logger.log('✓ 캐시 클리어 완료 - 스트림 리스너 업데이트 예정');
+      
+      // 배지 동기화 (일반 알림 + DM 통합)
+      await BadgeService.syncNotificationBadge();
+      Logger.log('✓ 배지 동기화 완료');
       
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {

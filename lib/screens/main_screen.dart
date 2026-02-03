@@ -13,6 +13,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
 import '../services/notification_service.dart';
+import '../services/badge_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../utils/logger.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
@@ -47,6 +48,7 @@ class _MainScreenState extends State<MainScreen> {
   late VoidCallback _cleanupCallback;
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
   AuthProvider? _authProvider;
+  late final List<Widget?> _screenCache;
 
   @override
   void initState() {
@@ -56,6 +58,8 @@ class _MainScreenState extends State<MainScreen> {
     _selectedIndex = widget.initialTabIndex;
     // 알림으로 넘어온 모임 ID는 최초 1회만 사용하도록 보관
     _pendingMeetupId = widget.initialMeetupId;
+    _screenCache = List<Widget?>.filled(5, null);
+    _ensureScreenBuilt(_selectedIndex);
 
     // 스트림 정리 콜백 등록
     _cleanupCallback = () {
@@ -82,6 +86,11 @@ class _MainScreenState extends State<MainScreen> {
           _pendingMeetupId = null;
         });
       }
+      
+      // 앱 시작 시 배지 동기화 (일반 알림 + DM 통합)
+      BadgeService.syncNotificationBadge().catchError((e) {
+        Logger.error('앱 시작 배지 동기화 실패: $e');
+      });
     });
   }
 
@@ -96,21 +105,35 @@ class _MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
-  // 화면 목록 - 검색어를 전달할 수 있도록 수정
-  List<Widget> get _screens => [
-        const BoardScreen(),
+  Widget _buildScreenForIndex(int index) {
+    switch (index) {
+      case 0:
+        return const BoardScreen();
+      case 1:
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
-        MeetupHomePage(initialMeetupId: _pendingMeetupId),
-        const FriendCategoriesScreen(),
-        const MyPageScreen(),
-        const DMListScreen(),
-      ];
+        return MeetupHomePage(initialMeetupId: _pendingMeetupId);
+      case 2:
+        return const FriendCategoriesScreen();
+      case 3:
+        return const MyPageScreen();
+      case 4:
+        return const DMListScreen();
+      default:
+        return const SizedBox.shrink();
+    }
+  }
+
+  void _ensureScreenBuilt(int index) {
+    if (_screenCache[index] != null) return;
+    _screenCache[index] = _buildScreenForIndex(index);
+  }
   // 프로덕션 배포: 디버그 헬퍼 제거
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
   void _onItemTapped(int index) {
     setState(() {
       _selectedIndex = index;
+      _ensureScreenBuilt(index);
     });
 
     // Meetups 탭으로 이동하는 순간, 아직 소모되지 않은 모임 ID가 있다면 바로 소모 처리
@@ -121,6 +144,13 @@ class _MainScreenState extends State<MainScreen> {
             _pendingMeetupId = null;
           });
         }
+      });
+    }
+    
+    // DM 탭(index 4) 진입 시 배지 동기화 (알림 탭도 동일)
+    if (index == 4 || index == 0) {
+      BadgeService.syncNotificationBadge().catchError((e) {
+        Logger.error('배지 동기화 실패: $e');
       });
     }
   }
@@ -310,7 +340,11 @@ class _MainScreenState extends State<MainScreen> {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const NotificationScreen(),
+                          // 종 아이콘으로 알림 화면을 열면 즉시 "모두 읽음" 처리하여
+                          // 배지(앱 아이콘/상단 뱃지)를 0으로 동기화한다.
+                          builder: (_) => const NotificationScreen(
+                            markAllAsReadOnOpen: true,
+                          ),
                         ),
                       );
                     },
@@ -323,7 +357,13 @@ class _MainScreenState extends State<MainScreen> {
           ],
         ),
       ),
-      body: _screens[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: List.generate(
+          5,
+          (i) => _screenCache[i] ?? const SizedBox.shrink(),
+        ),
+      ),
 
       // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
       bottomNavigationBar: StreamBuilder<int>(

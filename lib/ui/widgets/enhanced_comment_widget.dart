@@ -6,10 +6,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
+import '../../services/user_info_cache_service.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
 import '../../screens/friend_profile_screen.dart';
@@ -50,7 +50,6 @@ class EnhancedCommentWidget extends StatefulWidget {
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
   bool _showReplies = true;
-  String? _currentNickname; // 캐시된 현재 닉네임
 
   Future<void> _openLinkUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -492,52 +491,18 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       MaterialPageRoute(
         builder: (_) => FriendProfileScreen(
           userId: widget.comment.userId,
-          nickname: widget.comment.authorNickname,
-          photoURL: widget.comment.authorPhotoUrl,
+          nickname: UserInfoCacheService()
+                  .getCachedUserInfo(widget.comment.userId)
+                  ?.nickname ??
+              widget.comment.authorNickname,
+          photoURL: UserInfoCacheService()
+                  .getCachedUserInfo(widget.comment.userId)
+                  ?.photoURL ??
+              widget.comment.authorPhotoUrl,
           allowNonFriendsPreview: true,
         ),
       ),
     );
-  }
-
-  // 사용자의 현재 닉네임을 실시간으로 조회
-  Future<String> _getCurrentNickname(String userId) async {
-    final deletedText = AppLocalizations.of(context)!.deletedAccount;
-    // 이미 캐시된 닉네임이 있으면 반환
-    if (_currentNickname != null) {
-      return _currentNickname!;
-    }
-    
-    try {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
-      
-      if (userDoc.exists) {
-        final data = userDoc.data();
-        final nickname = data?['nickname'] ?? widget.comment.authorNickname;
-        // 캐시에 저장
-        if (mounted) {
-          setState(() {
-            _currentNickname = nickname;
-          });
-        }
-        return nickname;
-      } else {
-        // 사용자 문서가 없으면 탈퇴한 계정으로 표시
-        if (mounted) {
-          setState(() {
-            _currentNickname = deletedText;
-          });
-        }
-        return deletedText;
-      }
-    } catch (e) {
-      Logger.error('닉네임 조회 오류: $e');
-    }
-    // 조회 실패 시 댓글에 저장된 닉네임 반환
-    return widget.comment.authorNickname;
   }
 
   // 좋아요 토글
@@ -604,10 +569,21 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         widget.comment.replyToUserId != null &&
         (widget.comment.replyToUserNickname?.isNotEmpty ?? false);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onLongPress: () => _showCommentActionsSheet(isMyComment: isMyComment),
-      child: Container(
+    final cache = UserInfoCacheService();
+    final canUseLiveUserInfo = !widget.isAnonymousPost &&
+        widget.comment.userId.isNotEmpty &&
+        widget.comment.userId != 'deleted';
+    final anonymousDisplayName = widget.getDisplayName?.call(widget.comment) ??
+        AppLocalizations.of(context)!.anonymous;
+
+    Widget buildContent({
+      required String displayName,
+      required String photoUrl,
+    }) {
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onLongPress: () => _showCommentActionsSheet(isMyComment: isMyComment),
+        child: Container(
         margin: EdgeInsets.only(
           left: 16.0 + (widget.comment.depth * 20.0),
           // 대댓글은 부모 컨테이너(우측 16px) 안에 렌더링되므로
@@ -632,11 +608,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       shape: BoxShape.circle,
                       color: Colors.grey[200],
                     ),
-                    child: (!widget.isAnonymousPost &&
-                            widget.comment.authorPhotoUrl.isNotEmpty)
+                    child: (!widget.isAnonymousPost && photoUrl.trim().isNotEmpty)
                         ? ClipOval(
                             child: Image.network(
-                              widget.comment.authorPhotoUrl,
+                              photoUrl.trim(),
                               width: 32,
                               height: 32,
                               fit: BoxFit.cover,
@@ -663,30 +638,17 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     children: [
                       Row(
                         children: [
-                          FutureBuilder<String>(
-                            future: widget.isAnonymousPost
-                                ? Future.value(
-                                    widget.getDisplayName?.call(widget.comment) ??
-                                        AppLocalizations.of(context)!.anonymous,
-                                  )
-                                : _getCurrentNickname(widget.comment.userId),
-                            builder: (context, snapshot) {
-                              final displayName = snapshot.data ??
-                                  (widget.getDisplayName?.call(widget.comment) ??
-                                      widget.comment.authorNickname);
-                              return GestureDetector(
-                                onTap: _openCommentAuthorProfile,
-                                child: Text(
-                                  displayName,
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF111827),
-                                  ),
-                                ),
-                              );
-                            },
+                          GestureDetector(
+                            onTap: _openCommentAuthorProfile,
+                            child: Text(
+                              displayName,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -839,7 +801,37 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             ],
           ],
         ),
-      ),
+        ),
+      );
+    }
+
+    if (widget.isAnonymousPost) {
+      return buildContent(
+        displayName: anonymousDisplayName,
+        photoUrl: '',
+      );
+    }
+
+    if (!canUseLiveUserInfo) {
+      return buildContent(
+        displayName: widget.comment.authorNickname,
+        photoUrl: widget.comment.authorPhotoUrl,
+      );
+    }
+
+    return StreamBuilder<DMUserInfo?>(
+      stream: cache.watchUserInfo(widget.comment.userId),
+      initialData: cache.getCachedUserInfo(widget.comment.userId),
+      builder: (context, snapshot) {
+        final live = snapshot.data;
+        final liveName = (live?.nickname ?? '').trim();
+        final livePhoto = (live?.photoURL ?? '').trim();
+        return buildContent(
+          displayName:
+              liveName.isNotEmpty ? liveName : widget.comment.authorNickname,
+          photoUrl: livePhoto.isNotEmpty ? livePhoto : widget.comment.authorPhotoUrl,
+        );
+      },
     );
   }
 }

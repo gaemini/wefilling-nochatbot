@@ -839,7 +839,7 @@ abstract class AppLocalizations {
   /// No description provided for @visibilityScope.
   ///
   /// In ko, this message translates to:
-  /// **'공개 범위'**
+  /// **'공개범위'**
   String get visibilityScope;
 
   /// No description provided for @publicPost.

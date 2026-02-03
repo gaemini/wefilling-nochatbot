@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
@@ -21,6 +23,7 @@ import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
+import '../design/tokens.dart';
 import 'package:intl/intl.dart';
 import 'post_detail_screen.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
@@ -75,8 +78,23 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
   
-  // 대화방이 없을 수 있으므로 초기에 스트림을 구독하지 않는다.
-  Stream<List<DMMessage>>? _messagesStream;
+  // 대화방이 없을 수 있으므로 초기에 서버 구독을 시작하지 않는다.
+  StreamSubscription<List<DMMessage>>? _recentMessagesSub;
+  List<DMMessage> _messages = <DMMessage>[];
+  Object? _messagesError;
+  bool _isMessagesLoading = false; // 캐시/서버 초기 로드
+  bool _isLoadingMore = false; // 과거 페이지 로드
+  bool _hasMore = true; // 더 과거 메시지가 있는지(추정)
+  DateTime? _visibilityStartTime; // leave 기록 기반 가시성 시작 시간
+  // 초기 진입 체감 속도를 위해 "최근 N개"만 먼저 보여준다.
+  // (과거 메시지는 사용자가 위로 스크롤하면 자동으로 추가 로드)
+  static const int _recentLimit = 40;
+  static const int _pageSize = 50;
+  // 로컬 캐시도 과하게 많이 읽으면 첫 렌더가 무거워질 수 있어 recentLimit에 맞춘다.
+  static const int _initialCacheLimit = _recentLimit;
+
+  // 첫 메시지 전송으로 실제 conversationId가 바뀔 수 있어, 화면 내에서는 별도로 추적한다.
+  late String _activeConversationId;
   // null: 아직 확인 전(초기 로딩), false: 없음(첫 메시지 전송 시 생성), true: 존재
   bool? _conversationExists;
   bool _isConversationInitializing = true;
@@ -97,7 +115,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   @override
   void initState() {
     super.initState();
+    _activeConversationId = widget.conversationId;
     _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
+    _scrollController.addListener(_onScroll);
     
     // 🔍 디버그: Firestore 직접 조회로 실제 저장된 데이터 확인
     if (kDebugMode) {
@@ -250,7 +270,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       } catch (_) {}
 
       // 대화방 문서에 dmContent가 비어있을 때만 best-effort로 업데이트 (목록도 같이 정상화)
-      final convRef = FirebaseFirestore.instance.collection('conversations').doc(widget.conversationId);
+      final convRef = FirebaseFirestore.instance.collection('conversations').doc(_activeConversationId);
       final convDoc = await convRef.get();
       if (convDoc.exists) {
         final data = convDoc.data() as Map<String, dynamic>;
@@ -279,10 +299,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
           _conversationExists = null;
         });
       }
-      Logger.log('🚀 대화방 초기화: ${widget.conversationId}');
+      Logger.log('🚀 대화방 초기화: $_activeConversationId');
       
       // conversationId 형식 확인
-      Logger.log('🔍 대화방 ID 확인: ${widget.conversationId}');
+      Logger.log('🔍 대화방 ID 확인: $_activeConversationId');
       Logger.log('🔍 상대방 ID: ${widget.otherUserId}');
       
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
@@ -308,8 +328,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       // DM conversation ID 형식 검증 (타임스탬프 포함 형식도 지원)
       final validIdPattern = RegExp(r'^(anon_)?[a-zA-Z0-9_-]+_[a-zA-Z0-9_-]+(_[a-zA-Z0-9_-]+)?(_\d{13})?(__\d+)?$');
-      if (!validIdPattern.hasMatch(widget.conversationId)) {
-        Logger.log('❌ 잘못된 conversation ID 형식: ${widget.conversationId}');
+      if (!validIdPattern.hasMatch(_activeConversationId)) {
+        Logger.log('❌ 잘못된 conversation ID 형식: $_activeConversationId');
         if (mounted) {
           Navigator.of(context).pop();
           ScaffoldMessenger.of(context).showSnackBar(
@@ -322,17 +342,41 @@ class _DMChatScreenState extends State<DMChatScreen> {
         return;
       }
       
-      final conv = await FirebaseFirestore.instance
+      final convRef = FirebaseFirestore.instance
           .collection('conversations')
-          .doc(widget.conversationId)
-          .get();
-      
+          .doc(_activeConversationId);
+
+      // 0) Firestore 로컬 캐시 우선으로 빠르게 존재 여부를 판단 (재진입 UX 개선)
+      DocumentSnapshot<Map<String, dynamic>>? cachedConv;
+      try {
+        cachedConv = await convRef.get(const GetOptions(source: Source.cache));
+      } catch (_) {
+        cachedConv = null;
+      }
+
+      if (cachedConv != null && cachedConv.exists) {
+        _conversationExists = true;
+        if (mounted) {
+          setState(() {
+            // 캐시에 존재하면 메시지/캐시 로딩을 바로 시작하고 스켈레톤을 빨리 해제한다.
+            _isConversationInitializing = false;
+          });
+        }
+        // 메시지/대화방 로딩은 백그라운드에서 진행 (UI 블로킹 방지)
+        unawaited(_initializeMessagesStream(conversationId: _activeConversationId));
+        unawaited(_loadConversation());
+        unawaited(_markAsRead());
+      }
+
+      // 1) 서버로 최종 확인 (권한/참여자 검증 포함)
+      final conv = await convRef.get(const GetOptions(source: Source.server));
+
       _conversationExists = conv.exists;
       if (mounted) setState(() {});
       
       // 대화방이 존재하지 않으면 메시지 전송 시까지 대기
       if (_conversationExists == false) {
-        Logger.log('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: ${widget.conversationId}');
+        Logger.log('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: $_activeConversationId');
         
         // 본인 DM 체크
         if (widget.otherUserId == _currentUser?.uid) {
@@ -403,10 +447,15 @@ class _DMChatScreenState extends State<DMChatScreen> {
       }
       
       // 대화방이 존재하면 정상 진행
-      await _initializeMessagesStream();
-      if (mounted) setState(() {});
-      await _loadConversation();
-      await _markAsRead();
+      if (_conversationExists == true) {
+        // 이미 캐시 경로에서 시작했을 수 있으므로, 중복 구독/중복 로딩을 피하기 위해
+        // 메시지 스트림이 아직 없다면 시작한다.
+        if (_recentMessagesSub == null) {
+          unawaited(_initializeMessagesStream(conversationId: _activeConversationId));
+        }
+        unawaited(_loadConversation());
+        unawaited(_markAsRead());
+      }
     } catch (e) {
       Logger.error('대화 초기화 오류: $e');
       Logger.error('오류 상세: ${e.runtimeType} - ${e.toString()}');
@@ -435,7 +484,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   @override
   void dispose() {
     _autoMarkReadDebounce?.cancel();
+    _recentMessagesSub?.cancel();
     _messageController.dispose();
+    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
@@ -457,7 +508,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (_autoMarkReadInFlight) return;
       _autoMarkReadInFlight = true;
       try {
-        await _dmService.markAsRead(widget.conversationId);
+        await _dmService.markAsRead(_activeConversationId);
       } catch (_) {
         // best-effort
       } finally {
@@ -471,7 +522,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     try {
       final doc = await FirebaseFirestore.instance
           .collection('conversations')
-          .doc(widget.conversationId)
+          .doc(_activeConversationId)
           .get();
       
       if (doc.exists && mounted) {
@@ -508,32 +559,180 @@ class _DMChatScreenState extends State<DMChatScreen> {
   /// - 예외: 사용자가 실제로 '채팅방 나가기'를 한 기록이 있으면, 그 시점 이후만 표시
   Future<void> _initializeMessagesStream({String? conversationId}) async {
     try {
-      final targetConversationId = conversationId ?? widget.conversationId;
+      final targetConversationId = conversationId ?? _activeConversationId;
+      _activeConversationId = targetConversationId;
       Logger.log('📱 메시지 스트림 초기화:');
       Logger.log('  - 대상 conversationId: $targetConversationId');
 
       // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
       final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(targetConversationId);
       Logger.log('  - 가시성 시작 시간(leave 기록 기반): $visibilityStartTime');
+      _visibilityStartTime = visibilityStartTime;
 
-      _messagesStream = _dmService.getMessages(
+      // 1) 로컬 캐시를 먼저 읽어 즉시 렌더링 (문자앱 UX)
+      setState(() {
+        _isMessagesLoading = true;
+        _messagesError = null;
+        _hasMore = true;
+      });
+      final cached = await _dmService.loadCachedMessages(
         targetConversationId,
-        visibilityStartTime: visibilityStartTime, // null이면 전체 표시
+        limit: _initialCacheLimit,
+        visibilityStartTime: visibilityStartTime,
       );
+      if (mounted && cached.isNotEmpty) {
+        setState(() {
+          _messages = cached..sort(_compareMessagesDesc);
+        });
+      }
+
+      // 2) 서버 최근 N개 스트림 구독 + 로컬 캐시 저장
+      await _recentMessagesSub?.cancel();
+      _recentMessagesSub = _dmService
+          .watchRecentMessagesAndCache(
+            targetConversationId,
+            limit: _recentLimit,
+            visibilityStartTime: visibilityStartTime,
+          )
+          .listen((recent) {
+        if (!mounted) return;
+        setState(() {
+          _messages = _mergeRecentIntoAll(recent, _messages);
+          _isMessagesLoading = false;
+        });
+      }, onError: (e) {
+        if (!mounted) return;
+        setState(() {
+          _messagesError = e;
+          _isMessagesLoading = false;
+        });
+      });
     } catch (e) {
       Logger.error('메시지 스트림 초기화 실패: $e');
-      final targetConversationId = conversationId ?? widget.conversationId;
-      _messagesStream = _dmService.getMessages(targetConversationId);
+      if (!mounted) return;
+      setState(() {
+        _messagesError = e;
+        _isMessagesLoading = false;
+      });
     }
+  }
+
+  int _compareMessagesDesc(DMMessage a, DMMessage b) {
+    final t = b.createdAt.compareTo(a.createdAt);
+    if (t != 0) return t;
+    return b.id.compareTo(a.id);
+  }
+
+  List<DMMessage> _mergeRecentIntoAll(List<DMMessage> recent, List<DMMessage> existingAll) {
+    final byId = <String, DMMessage>{};
+    for (final m in existingAll) {
+      byId[m.id] = m;
+    }
+    for (final m in recent) {
+      byId[m.id] = m;
+    }
+    final merged = byId.values.toList(growable: false)..sort(_compareMessagesDesc);
+    // 메모리 상한: 너무 오래 열어두거나 과거를 많이 불러와도 과도한 메모리 사용을 방지
+    const int hardCap = 800;
+    if (merged.length > hardCap) {
+      return merged.take(hardCap).toList(growable: false);
+    }
+    return merged;
+  }
+
+  void _onScroll() {
+    if (!mounted) return;
+    if (_conversationExists != true) return;
+    if (_isLoadingMore) return;
+    if (!_hasMore) return;
+    if (_isConversationInitializing) return;
+    if (_messages.isEmpty) return;
+    if (!_scrollController.hasClients) return;
+
+    // reverse=true에서 "더 과거(위)"로 스크롤할수록 pixels가 maxScrollExtent에 가까워진다.
+    const threshold = 240.0;
+    final pos = _scrollController.position;
+    // ✅ 중요: 초기 attach/레이아웃 단계에서 maxScrollExtent가 0인 경우,
+    // pos.pixels(대개 0)가 조건을 만족해 자동으로 과거 페이지를 연쇄 로드할 수 있다.
+    // "사용자가 실제로 스크롤했을 때만" 과거 로드를 트리거한다.
+    if (pos.maxScrollExtent <= 0) return;
+    if (pos.userScrollDirection == ScrollDirection.idle) return;
+
+    if (pos.pixels >= (pos.maxScrollExtent - threshold)) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (!mounted) return;
+    if (_conversationExists != true) return;
+    if (_isLoadingMore) return;
+    if (!_hasMore) return;
+    if (_messages.isEmpty) return;
+
+    setState(() {
+      _isLoadingMore = true;
+    });
+
+    try {
+      final before = _messages.last.createdAt; // 가장 오래된 메시지보다 더 과거를 로드
+      final older = await _dmService.fetchOlderMessages(
+        _activeConversationId,
+        before: before,
+        limit: _pageSize,
+        visibilityStartTime: _visibilityStartTime,
+      );
+
+      if (!mounted) return;
+
+      if (older.isEmpty) {
+        setState(() {
+          _hasMore = false;
+          _isLoadingMore = false;
+        });
+        return;
+      }
+
+      setState(() {
+        _messages = _mergeRecentIntoAll(older, _messages);
+        _isLoadingMore = false;
+        if (older.length < _pageSize) {
+          _hasMore = false;
+        }
+      });
+    } catch (e) {
+      Logger.error('이전 메시지 로드 실패(무시): $e');
+      if (!mounted) return;
+      setState(() {
+        _isLoadingMore = false;
+      });
+    }
+  }
+
+  Widget _buildLoadMoreIndicator() {
+    if (_isLoadingMore) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    // 버튼은 제거하고(요청사항), 스크롤 자동 로드만 사용한다.
+    return const SizedBox.shrink();
   }
 
   /// 읽음 처리
   Future<void> _markAsRead() async {
-    Logger.log('📖 읽음 처리 시작: ${widget.conversationId}');
+    Logger.log('📖 읽음 처리 시작: $_activeConversationId');
     await Future.delayed(const Duration(milliseconds: 500));
     try {
-      await _dmService.markAsRead(widget.conversationId);
-      Logger.log('✅ 읽음 처리 완료: ${widget.conversationId}');
+      await _dmService.markAsRead(_activeConversationId);
+      Logger.log('✅ 읽음 처리 완료: $_activeConversationId');
       
       // UI 강제 업데이트를 위해 스트림 재초기화
       if (mounted) {
@@ -575,7 +774,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
 
   bool get _isAnonymous {
-    return widget.conversationId.startsWith('anon_') || 
+    return _activeConversationId.startsWith('anon_') || 
         (_conversation?.isOtherUserAnonymous(_currentUser!.uid) ?? false);
   }
 
@@ -583,7 +782,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   PreferredSizeWidget _buildAppBar() {
     final otherUserId = widget.otherUserId;
     final dmContent = (_conversation?.dmContent ?? _preloadedDmContent)?.trim();
-    final postId = _conversation?.postId ?? _extractPostIdFromConversationId(widget.conversationId);
+    final postId = _conversation?.postId ?? _extractPostIdFromConversationId(_activeConversationId);
     final isPostBasedAnonymous = _isAnonymous && (postId != null && postId.isNotEmpty);
     
     // ⏳ 로딩 상태: 데이터가 준비되지 않았을 때
@@ -1001,7 +1200,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   /// 채팅방 보관(삭제) - 서버 플래그 기반
   Future<void> _archiveConversation() async {
     try {
-      await _dmService.archiveConversation(widget.conversationId);
+      await _dmService.archiveConversation(_activeConversationId);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1017,34 +1216,119 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 나가기 확인 다이얼로그
   Future<void> _confirmLeaveConversation() async {
+    // 중요한 액션임을 알림 (로그아웃 다이얼로그와 동일 UX)
+    HapticFeedback.mediumImpact();
+
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          Localizations.localeOf(context).languageCode == 'ko'
-              ? AppLocalizations.of(context)!.leaveChatRoom
-              : 'Leave chat',
-        ),
-        content: Text(
-          Localizations.localeOf(context).languageCode == 'ko'
-              ? '이 채팅방에서 나가시겠습니까?'
-              : 'Are you sure you want to leave this chat?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        final l10n = AppLocalizations.of(dialogContext)!;
+        final isKo = Localizations.localeOf(dialogContext).languageCode == 'ko';
+
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          elevation: 8,
+          contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+          title: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: BrandColors.error.withAlpha(26),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.exit_to_app_rounded,
+                  color: BrandColors.error,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                l10n.leaveChatRoom,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'ko' ? '나가기' : 'Leave',
-              style: const TextStyle(color: Colors.red),
+          content: Text(
+            isKo ? '이 채팅방에서 나가시겠습니까?' : 'Are you sure you want to leave this chat?',
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF374151),
+              height: 1.5,
             ),
           ),
-        ],
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.of(dialogContext).pop(false);
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                      backgroundColor: Colors.white,
+                    ),
+                    child: Text(
+                      l10n.cancel ?? '',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      HapticFeedback.heavyImpact();
+                      Navigator.of(dialogContext).pop(true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: BrandColors.error,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      disabledBackgroundColor: const Color(0xFFE5E7EB),
+                    ),
+                    child: Text(
+                      isKo ? '나가기' : 'Leave',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
 
     if (confirmed == true) {
@@ -1059,11 +1343,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (mounted) {
         setState(() {
           _isLeaving = true;
-          _messagesStream = null; // StreamBuilder가 기존 구독을 해제함
+          _recentMessagesSub?.cancel();
+          _recentMessagesSub = null;
+          _messages = <DMMessage>[];
+          _messagesError = null;
         });
       }
 
-      await _dmService.leaveConversation(widget.conversationId);
+      await _dmService.leaveConversation(_activeConversationId);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1104,161 +1391,155 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 메시지 목록 빌드
   Widget _buildMessageList() {
-    // ✅ 초기 로딩 단계에서는 "대화방 없음" 문구가 먼저 뜨지 않도록 로딩 스켈레톤을 노출한다.
-    if (_isConversationInitializing || _conversationExists == null) {
-      return _buildConversationLoadingSkeleton();
-    }
-
-    if (_messagesStream == null) {
-      // 여기까지 왔다는 건 "대화방이 없음"이 확정된 케이스(또는 스트림 초기화 실패)다.
+    // ✅ 대화방이 없다고 확정되기 전까지는(초기화 중) '없음' 문구 대신 스켈레톤을 유지한다.
+    if (_conversationExists == false && !_isConversationInitializing) {
       return _buildStartConversationPlaceholder(isConversationCreated: false);
     }
 
-    return StreamBuilder<List<DMMessage>>(
-      stream: _messagesStream!,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          // ✅ 로딩 중에도 동일한 스켈레톤을 유지해 화면이 바뀌며 깜빡이는 느낌을 줄인다.
-          return _buildConversationLoadingSkeleton();
-        }
+    // ✅ 초기화/존재 확인 중이라도, 메시지가 이미 있으면(로컬 캐시 등) 바로 렌더링한다.
+    if ((_isConversationInitializing || _conversationExists == null) && _messages.isEmpty) {
+      return _buildConversationLoadingSkeleton();
+    }
 
-        if (snapshot.hasError) {
-          Logger.error('❌ 메시지 로드 오류: ${snapshot.error}');
-          
-          // Permission denied 오류 감지
-          final errorMessage = snapshot.error.toString();
-          if (errorMessage.contains('permission-denied')) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.lock_outline, size: 64, color: Colors.red[300]),
-                    const SizedBox(height: 16),
-                    Text(
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? '권한 오류'
-                          : 'Permission Error',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.red,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      Localizations.localeOf(context).languageCode == 'ko'
-                          ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
-                          : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.bold,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            );
-          }
-          
-          return Center(
-            child: Text(
-              '${AppLocalizations.of(context)!.error}: ${snapshot.error}',
-              style: const TextStyle(color: Colors.red),
-            ),
-          );
-        }
-
-        final messages = snapshot.data ?? [];
-
-        if (messages.isEmpty) {
-          return _buildStartConversationPlaceholder(
-            isConversationCreated: _conversationExists == true,
-          );
-        }
-
-        // ✅ 실시간 채팅 중에도 읽음 상태를 서버에 반영
-        // - 상대방 기기에서도 동일 로직이 동작해야 내 메시지의 "1"이 빠르게 "Read"로 전환됨
-        _scheduleAutoMarkAsRead(messages);
-
-        // ✅ 읽음/안읽음 표시는 "최신 안읽음 1개 + 최신 읽음 1개"만 노출
-        // - 안읽음: 숫자 1로 표시
-        // - 읽음: locale에 따른 라벨(AppLocalizations.read)
-        final myUid = _currentUser!.uid;
-        String? latestMyUnreadMessageId;
-        String? latestMyReadMessageId;
-        for (final m in messages) {
-          if (m.senderId != myUid) continue;
-          if (!m.isRead && latestMyUnreadMessageId == null) {
-            latestMyUnreadMessageId = m.id;
-          } else if (m.isRead && latestMyReadMessageId == null) {
-            latestMyReadMessageId = m.id;
-          }
-          if (latestMyUnreadMessageId != null && latestMyReadMessageId != null) break;
-        }
-
-        // ✅ "메시지 옆 정보(시간/읽음)" 중복 노출 방지
-        // - 동일 라벨이 연속되면 마지막(= 더 최신, 아래쪽) 메시지에만 표시한다.
-        String? _statusFor(DMMessage m) {
-          if (m.senderId != myUid) return null;
-          if (m.id == latestMyUnreadMessageId) return '1';
-          if (m.id == latestMyReadMessageId) return AppLocalizations.of(context)!.read;
-          return null;
-        }
-
-        final timeLabels = List<String>.generate(
-          messages.length,
-          (i) => TimeFormatter.formatMessageTime(context, messages[i].createdAt),
-          growable: false,
-        );
-        final statusLabels = List<String?>.generate(
-          messages.length,
-          (i) => _statusFor(messages[i]),
-          growable: false,
-        );
-
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          reverse: true,
-          itemCount: messages.length,
-          itemBuilder: (context, index) {
-            final message = messages[index];
-            final isMine = message.isMine(_currentUser!.uid);
-            final String? statusText = statusLabels[index];
-
-            // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
-            final String timeText = timeLabels[index];
-            final String? prevTimeText = index > 0 ? timeLabels[index - 1] : null;
-            final String? prevStatusText = index > 0 ? statusLabels[index - 1] : null;
-            final bool showTimeText = prevTimeText == null || timeText != prevTimeText;
-            final bool showStatusText = statusText != null && (prevStatusText == null || statusText != prevStatusText);
-            
-            // 같은 발신자의 연속 메시지인지 확인
-            final isConsecutive = index < messages.length - 1 &&
-                messages[index + 1].senderId == message.senderId;
-
-            // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
-            final showDateSeparator = index == messages.length - 1 ||
-                !_isSameDay(message.createdAt, messages[index + 1].createdAt);
-
-            return Column(
+    if (_messagesError != null) {
+      Logger.error('❌ 메시지 로드 오류: $_messagesError');
+      final errorMessage = _messagesError.toString();
+      if (errorMessage.contains('permission-denied')) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (showDateSeparator) _buildDateSeparator(message.createdAt),
-                _buildMessageBubble(
-                  message,
-                  isMine,
-                  isConsecutive,
-                  timeText: timeText,
-                  showTimeText: showTimeText,
-                  statusText: statusText,
-                  showStatusText: showStatusText,
+                Icon(Icons.lock_outline, size: 64, color: Colors.red[300]),
+                const SizedBox(height: 16),
+                Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? '권한 오류'
+                      : 'Permission Error',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  Localizations.localeOf(context).languageCode == 'ko'
+                      ? 'Firebase Security Rules가 배포되지 않았거나\n권한이 없습니다.\n\n앱을 다시 시작해주세요.'
+                      : 'Firebase Security Rules are not deployed\nor you don\'t have permission.\n\nPlease restart the app.',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
               ],
-            );
-          },
+            ),
+          ),
+        );
+      }
+
+      return Center(
+        child: Text(
+          '${AppLocalizations.of(context)!.error}: $_messagesError',
+          style: const TextStyle(color: Colors.red),
+        ),
+      );
+    }
+
+    if (_isMessagesLoading && _messages.isEmpty) {
+      return _buildConversationLoadingSkeleton();
+    }
+
+    final messages = _messages;
+    if (messages.isEmpty) {
+      // 대화방 존재 확인이 끝나지 않았으면 스켈레톤을 유지한다.
+      if (_conversationExists == null || _isConversationInitializing) {
+        return _buildConversationLoadingSkeleton();
+      }
+      return _buildStartConversationPlaceholder(isConversationCreated: true);
+    }
+
+    // ✅ 실시간 채팅 중에도 읽음 상태를 서버에 반영
+    _scheduleAutoMarkAsRead(messages);
+
+    // ✅ 읽음/안읽음 표시는 "최신 안읽음 1개 + 최신 읽음 1개"만 노출
+    final myUid = _currentUser!.uid;
+    String? latestMyUnreadMessageId;
+    String? latestMyReadMessageId;
+    for (final m in messages) {
+      if (m.senderId != myUid) continue;
+      if (!m.isRead && latestMyUnreadMessageId == null) {
+        latestMyUnreadMessageId = m.id;
+      } else if (m.isRead && latestMyReadMessageId == null) {
+        latestMyReadMessageId = m.id;
+      }
+      if (latestMyUnreadMessageId != null && latestMyReadMessageId != null) break;
+    }
+
+    String? _statusFor(DMMessage m) {
+      if (m.senderId != myUid) return null;
+      if (m.id == latestMyUnreadMessageId) return '1';
+      if (m.id == latestMyReadMessageId) return AppLocalizations.of(context)!.read;
+      return null;
+    }
+
+    final timeLabels = List<String>.generate(
+      messages.length,
+      (i) => TimeFormatter.formatMessageTime(context, messages[i].createdAt),
+      growable: false,
+    );
+    final statusLabels = List<String?>.generate(
+      messages.length,
+      (i) => _statusFor(messages[i]),
+      growable: false,
+    );
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      reverse: true,
+      itemCount: messages.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        // reverse=true에서 "마지막 인덱스"는 화면 상단(가장 과거) 영역에 위치한다.
+        if (_hasMore && index == messages.length) {
+          return _buildLoadMoreIndicator();
+        }
+
+        final message = messages[index];
+        final isMine = message.isMine(_currentUser!.uid);
+        final String? statusText = statusLabels[index];
+
+        // 시간/읽음 라벨은 동일 내용이 연속될 때 마지막(더 최신) 1개만 노출
+        final String timeText = timeLabels[index];
+        final String? prevTimeText = index > 0 ? timeLabels[index - 1] : null;
+        final String? prevStatusText = index > 0 ? statusLabels[index - 1] : null;
+        final bool showTimeText = prevTimeText == null || timeText != prevTimeText;
+        final bool showStatusText =
+            statusText != null && (prevStatusText == null || statusText != prevStatusText);
+
+        // 같은 발신자의 연속 메시지인지 확인
+        final isConsecutive = index < messages.length - 1 &&
+            messages[index + 1].senderId == message.senderId;
+
+        // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
+        final showDateSeparator = index == messages.length - 1 ||
+            !_isSameDay(message.createdAt, messages[index + 1].createdAt);
+
+        return Column(
+          children: [
+            if (showDateSeparator) _buildDateSeparator(message.createdAt),
+            _buildMessageBubble(
+              message,
+              isMine,
+              isConsecutive,
+              timeText: timeText,
+              showTimeText: showTimeText,
+              statusText: statusText,
+              showStatusText: showStatusText,
+            ),
+          ],
         );
       },
     );
@@ -1646,19 +1927,20 @@ class _DMChatScreenState extends State<DMChatScreen> {
                   child: CachedNetworkImage(
                     imageUrl: img,
                     fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      color: isMine ? Colors.white.withOpacity(0.12) : Colors.grey.shade200,
-                      alignment: Alignment.center,
+                    fadeInDuration: const Duration(milliseconds: 150),
+                    fadeOutDuration: const Duration(milliseconds: 150),
+                    placeholder: (_, __) => _buildMediaPlaceholder(
+                      isMine: isMine,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
                       child: const SizedBox(
                         width: 18,
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
-                    errorWidget: (_, __, ___) => Container(
-                      color: isMine ? Colors.white.withOpacity(0.12) : Colors.grey.shade200,
-                      height: 120,
-                      alignment: Alignment.center,
+                    errorWidget: (_, __, ___) => _buildMediaPlaceholder(
+                      isMine: isMine,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
                       child: Icon(
                         Icons.image_outlined,
                         size: 20,
@@ -1749,19 +2031,20 @@ class _DMChatScreenState extends State<DMChatScreen> {
             child: CachedNetworkImage(
               imageUrl: imageUrl,
               fit: BoxFit.cover,
-              placeholder: (context, url) => Container(
-                color: isMine ? Colors.white.withOpacity(0.2) : Colors.grey[200],
-                child: const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+              fadeInDuration: const Duration(milliseconds: 150),
+              fadeOutDuration: const Duration(milliseconds: 150),
+              placeholder: (_, __) => _buildMediaPlaceholder(
+                isMine: isMine,
+                borderRadius: BorderRadius.circular(14),
+                child: const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              errorWidget: (context, url, error) => Container(
-                color: isMine ? Colors.white.withOpacity(0.2) : Colors.grey[200],
-                padding: const EdgeInsets.all(12),
+              errorWidget: (_, __, ___) => _buildMediaPlaceholder(
+                isMine: isMine,
+                borderRadius: BorderRadius.circular(14),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -1787,6 +2070,25 @@ class _DMChatScreenState extends State<DMChatScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMediaPlaceholder({
+    required bool isMine,
+    required BorderRadius borderRadius,
+    required Widget child,
+  }) {
+    final bg = isMine ? Colors.white.withOpacity(0.16) : const Color(0xFFF3F4F6);
+    final border =
+        isMine ? Colors.white.withOpacity(0.22) : Colors.black.withOpacity(0.06);
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: borderRadius,
+        border: Border.all(color: border),
+      ),
+      alignment: Alignment.center,
+      child: child,
     );
   }
 
@@ -2278,18 +2580,18 @@ class _DMChatScreenState extends State<DMChatScreen> {
     String? uploadedImageUrl;
     try {
       // 실제로 메시지를 보낼 conversationId를 결정
-      String actualConversationId = widget.conversationId;
+      String actualConversationId = _activeConversationId;
       
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (_conversationExists != true) {
         Logger.log('📝 첫 메시지 전송 - 대화방 생성 시도');
-        Logger.log('📝 기존 conversationId: ${widget.conversationId}');
+        Logger.log('📝 기존 conversationId: $_activeConversationId');
         
         // conversationId에서 익명 여부와 postId 추출
-        final isAnonymousConv = widget.conversationId.startsWith('anon_');
+        final isAnonymousConv = _activeConversationId.startsWith('anon_');
         String? postId;
         if (isAnonymousConv) {
-          final parts = widget.conversationId.split('_');
+          final parts = _activeConversationId.split('_');
           if (parts.length >= 4) {
             postId = parts.sublist(3).join('_');
             // __timestamp 형식의 접미사 제거
@@ -2328,8 +2630,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
         Logger.log('✅ 대화방 생성 성공: $newConversationId');
         Logger.log('📝 생성된 conversationId와 기존 ID 비교:');
         Logger.log('   - 생성된 ID: $newConversationId');
-        Logger.log('   - 기존 ID: ${widget.conversationId}');
-        Logger.log('   - 일치 여부: ${newConversationId == widget.conversationId}');
+        Logger.log('   - 기존 ID: $_activeConversationId');
+        Logger.log('   - 일치 여부: ${newConversationId == _activeConversationId}');
         
         // ✅ 수정: 새로 생성된 conversationId를 사용
         actualConversationId = newConversationId;
@@ -2384,23 +2686,19 @@ class _DMChatScreenState extends State<DMChatScreen> {
           });
         }
         
-        // 첫 메시지 전송 시 대화방이 없었다면 생성 되었으므로 스트림을 초기화
-        if (_messagesStream == null) {
-          Logger.log('📱 메시지 스트림이 null - 초기화 시작 (actualConversationId 사용)');
-          Logger.log('⚠️  첫 메시지 전송이므로 가시성 필터 없이 스트림 초기화');
-          
-          // 첫 메시지 전송 직후에는 가시성 필터를 적용하지 않음
-          // (방금 보낸 메시지가 필터링되는 것을 방지)
-          _messagesStream = _dmService.getMessages(
-            actualConversationId,
-            visibilityStartTime: null,  // 가시성 필터 없이 모든 메시지 표시
-          );
-          
-          if (mounted) {
-            setState(() {});
-            Logger.log('✅ setState 호출 완료 - UI 업데이트 예정');
-          }
+        // 첫 메시지 전송으로 conversationId가 실제로 확정/변경될 수 있으므로,
+        // 로컬 캐시 기반 메시지 로딩 + 서버 동기화를 해당 ID로 재시작한다.
+        if (_activeConversationId != actualConversationId) {
+          Logger.log('🔄 activeConversationId 업데이트: $_activeConversationId → $actualConversationId');
+          _activeConversationId = actualConversationId;
         }
+        if (mounted) {
+          setState(() {
+            _conversationExists = true;
+          });
+        }
+        await _initializeMessagesStream(conversationId: actualConversationId);
+
         if (_conversation == null) {
           Logger.log('📖 대화방 정보 로드 시작');
           await _loadConversation();

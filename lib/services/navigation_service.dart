@@ -13,6 +13,7 @@ import '../screens/meetup_detail_screen.dart';
 import '../screens/requests_page.dart';
 import '../screens/ad_showcase_screen.dart';
 import '../screens/notification_screen.dart';
+import '../screens/dm_chat_screen.dart';
 
 class NavigationService {
   static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -25,6 +26,24 @@ class NavigationService {
     final type = data['type'] as String? ?? '';
     try {
       switch (type) {
+        case 'dm_received': {
+          // DM 푸시 알림 클릭 시 대화방으로 이동
+          final conversationId = data['conversationId'] as String?;
+          final senderId = data['senderId'] as String?;
+          
+          if (conversationId != null && conversationId.isNotEmpty) {
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => DMChatScreen(
+                  conversationId: conversationId,
+                  otherUserId: senderId ?? '',
+                ),
+              ),
+            );
+            return;
+          }
+          break;
+        }
         case 'post_private':
         case 'new_comment':
         case 'new_like': {

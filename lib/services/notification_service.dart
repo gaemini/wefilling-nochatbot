@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_notification.dart';
 import '../models/meetup.dart';
 import 'notification_settings_service.dart';
+import 'badge_service.dart';
 import '../utils/logger.dart';
 
 class NotificationService {
@@ -273,6 +274,8 @@ class NotificationService {
       await _firestore.collection('notifications').doc(notificationId).update({
         'isRead': true,
       });
+      // 배지 동기화 (정책 A)
+      await BadgeService.syncNotificationBadge();
       return true;
     } catch (e) {
       Logger.error('알림 읽음 처리 오류: $e');
@@ -301,6 +304,8 @@ class NotificationService {
       }
 
       await batch.commit();
+      // 배지 동기화 (정책 A)
+      await BadgeService.syncNotificationBadge();
       return true;
     } catch (e) {
       Logger.error('모든 알림 읽음 처리 오류: $e');

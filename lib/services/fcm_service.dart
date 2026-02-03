@@ -208,43 +208,66 @@ class FCMService {
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {
     try {
-      await _firestore.collection('users').doc(userId).update({
+      // 단일 토큰(fcmToken)은 "최근 토큰" 용도로 유지(레거시 호환)
+      // 멀티 디바이스 지원을 위해 fcmTokens 배열에도 누적 저장
+      await _firestore.collection('users').doc(userId).set({
         'fcmToken': token,
+        'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      });
-      Logger.log('✅ FCM 토큰 저장 완료');
+      }, SetOptions(merge: true));
+      Logger.log('✅ FCM 토큰 저장 완료 (fcmTokens arrayUnion 포함)');
     } catch (e) {
       Logger.error('❌ FCM 토큰 저장 실패: $e');
-      
-      // 문서가 없는 경우 set으로 생성
-      try {
-        await _firestore.collection('users').doc(userId).set({
-          'fcmToken': token,
-          'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-        Logger.log('✅ FCM 토큰 병합 저장 완료');
-      } catch (e2) {
-        Logger.error('❌ FCM 토큰 병합 저장 실패: $e2');
-      }
     }
   }
 
   // FCM 토큰 삭제 (로그아웃 시)
   Future<void> deleteFCMToken(String userId) async {
     try {
+      // 멀티 디바이스 지원:
+      // - 현재 기기의 토큰만 fcmTokens에서 제거
+      // - fcmToken(레거시 단일 토큰)은 "현재 토큰과 일치할 때만" 삭제/대체
+      final String? token = await _messaging.getToken();
+
       // 5초 타임아웃 설정 (네트워크 불안정 시 무한 대기 방지)
       await Future.wait([
         // FCM 토큰 삭제
         _messaging.deleteToken().then((_) {
           Logger.log('✅ FCM 토큰 삭제 완료');
         }),
-        // Firestore에서도 토큰 제거
-        _firestore.collection('users').doc(userId).update({
-          'fcmToken': FieldValue.delete(),
-          'fcmTokenUpdatedAt': FieldValue.delete(),
-        }).then((_) {
-          Logger.log('✅ Firestore에서 FCM 토큰 제거 완료');
-        }),
+        // Firestore에서도 "해당 토큰"만 제거 (다른 기기 토큰은 보존)
+        if (token != null && token.isNotEmpty)
+          _firestore.runTransaction((tx) async {
+            final ref = _firestore.collection('users').doc(userId);
+            final snap = await tx.get(ref);
+            if (!snap.exists) return;
+
+            final data = snap.data() as Map<String, dynamic>? ?? {};
+            final currentSingle = data['fcmToken'] as String?;
+            final currentList = (data['fcmTokens'] as List?)
+                    ?.whereType<String>()
+                    .where((t) => t.isNotEmpty)
+                    .toList() ??
+                <String>[];
+
+            final newList = currentList.where((t) => t != token).toList();
+
+            final updates = <String, dynamic>{
+              // 배열이 비면 필드 자체 제거
+              'fcmTokens': newList.isEmpty ? FieldValue.delete() : newList,
+              'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
+            };
+
+            // 레거시 단일 토큰이 현재 토큰과 같으면 삭제/대체
+            if (currentSingle == token) {
+              updates['fcmToken'] =
+                  newList.isEmpty ? FieldValue.delete() : newList.first;
+            }
+
+            tx.set(ref, updates, SetOptions(merge: true));
+          }).then((_) {
+            Logger.log('✅ Firestore에서 현재 기기 FCM 토큰 제거 완료');
+          }),
       ]).timeout(
         const Duration(seconds: 5),
         onTimeout: () {

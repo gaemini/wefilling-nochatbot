@@ -801,17 +801,11 @@ class AuthProvider with ChangeNotifier {
             }
           }
           
-          // 🔥 조건 없이 항상 모든 게시글과 모임글 업데이트
-          Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          Logger.log("🔥 모든 과거 콘텐츠 업데이트 시작!");
-          Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-          
-          // photoURL이 없으면 기존 것을 사용하거나 빈 문자열
+          // ✅ 성능 최적화:
+          // - 과거 게시글/댓글/DM 메타(작성자 닉네임/사진 등) 전파는 클라이언트에서 동기 처리하지 않는다.
+          // - `users/{uid}` 변경을 감지하는 Cloud Function이 백그라운드에서 배치 갱신한다.
+          // - 따라서 여기서는 users 문서 업데이트를 "즉시 성공"으로 처리하여 UX를 빠르게 만든다.
           final finalPhotoURL = photoURL ?? oldPhotoURL ?? '';
-          await _updateAllUserContent(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null, nationality);
-          
-          // 🔥 하이브리드 동기화: DM 대화방 업데이트
-          await _updateAllConversationsForUser(nickname, finalPhotoURL.isNotEmpty ? finalPhotoURL : null);
 
           // ✅ DM 자연스러운 전환을 위해 "내" 아바타는 로컬에도 프리페치/정리
           if (photoChanged) {
@@ -969,14 +963,8 @@ class AuthProvider with ChangeNotifier {
         // Auth 업데이트 실패해도 계속 진행
       }
 
-      // 4. 과거 게시글 및 댓글의 authorPhotoUrl 업데이트
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      Logger.log("🔥 모든 과거 콘텐츠 업데이트 시작!");
-      Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      
-      final nickname = _userData?['nickname'] ?? '익명';
-      final nationality = _userData?['nationality'] ?? '';
-      await _updateAllUserContent(nickname, null, nationality); // null로 전달하면 빈 문자열로 업데이트됨
+      // ✅ 성능 최적화:
+      // - 과거 게시글/댓글 메타(작성자 사진 등) 전파는 Cloud Functions에서 비동기로 처리한다.
 
       // 5. 사용자 데이터 다시 로드
       await _loadUserData();

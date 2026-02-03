@@ -7,6 +7,7 @@ import '../models/user_profile.dart';
 import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
 import '../services/user_info_cache_service.dart';
+import '../services/badge_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';

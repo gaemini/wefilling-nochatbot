@@ -1155,6 +1155,7 @@ export const onCommentCreated = functions.firestore
       if (!postDoc.exists) return null;
       const post = postDoc.data()!;
       const postAuthorId = post.userId;
+      const postIsAnonymous = post.isAnonymous === true; // 익명 게시글 여부
       const rawTitle = typeof (post as any).title === 'string' ? String((post as any).title) : '';
       const rawContent = typeof (post as any).content === 'string' ? String((post as any).content) : '';
       const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
@@ -1172,19 +1173,26 @@ export const onCommentCreated = functions.firestore
       const commentOn = noti.new_comment !== false;
       if (!allOn || !commentOn) return null;
 
+      // 익명 게시글이면 작성자 정보를 노출하지 않음
+      const notificationTitle = postIsAnonymous ? 'New comment on your post' : '새 댓글이 달렸습니다';
+      const notificationMessage = postIsAnonymous
+        ? 'A new comment was added to your post.'
+        : `${commenterName}님이 회원님의 게시글에 댓글을 남겼습니다.`;
+
       await db.collection('notifications').add({
         userId: postAuthorId,
-        title: '새 댓글이 달렸습니다',
-        message: `${commenterName}님이 회원님의 게시글 "${postTitle}"에 댓글을 남겼습니다.`,
+        title: notificationTitle,
+        message: notificationMessage,
         type: 'new_comment',
         postId,
-        actorId: commenterId,
-        actorName: commenterName,
+        actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
+        actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
         data: {
           postId: postId,
           postTitle: postTitle,
-          commenterName: commenterName,
+          commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
           thumbnailUrl,
+          postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
@@ -1291,16 +1299,17 @@ export const onCommentLiked = functions.firestore
       // 사용자 표시 이름
       const likerDoc = await db.collection('users').doc(newLiker).get();
       const likerName = likerDoc.exists ? (likerDoc.data()?.nickname || likerDoc.data()?.displayName || 'User') : 'User';
-      const commentContent = (after.content || '').slice(0, 50);
       
-      // 게시글 정보 가져오기
+      // 게시글 정보 가져오기 (익명 여부 확인 포함)
       const postId = after.postId;
       let postTitle = '';
       let thumbnailUrl = '';
+      let postIsAnonymous = false;
       if (postId) {
         const postDoc = await db.collection('posts').doc(postId).get();
         if (postDoc.exists) {
           const postData = postDoc.data() as any;
+          postIsAnonymous = postData.isAnonymous === true; // 익명 게시글 여부
           const rawTitle = typeof postData?.title === 'string' ? String(postData.title) : '';
           const rawContent = typeof postData?.content === 'string' ? String(postData.content) : '';
           const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
@@ -1313,21 +1322,28 @@ export const onCommentLiked = functions.firestore
         }
       }
 
+      // 익명 게시글의 댓글이면 좋아요 누른 사람 정보를 노출하지 않음
+      const notificationTitle = postIsAnonymous ? 'New like on your comment' : '댓글에 좋아요가 추가되었습니다';
+      const notificationMessage = postIsAnonymous
+        ? 'A new like was added to your comment.'
+        : `${likerName}님이 회원님의 댓글을 좋아합니다.`;
+
       await db.collection('notifications').add({
         userId: commentAuthorId,
-        title: '댓글에 좋아요가 추가되었습니다',
-        message: `${likerName}님이 회원님의 댓글 "${commentContent}"을 좋아합니다.`,
+        title: notificationTitle,
+        message: notificationMessage,
         type: 'comment_like',
         postId: postId,
         commentId: context.params.commentId,
-        actorId: newLiker,
-        actorName: likerName,
+        actorId: postIsAnonymous ? null : newLiker, // 익명이면 actorId 제거
+        actorName: postIsAnonymous ? null : likerName, // 익명이면 이름도 제거
         data: {
           postId: postId,
           postTitle: postTitle,
           commentId: context.params.commentId,
-          likerName: likerName,
+          likerName: postIsAnonymous ? null : likerName, // 익명이면 이름 제거
           thumbnailUrl,
+          postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
@@ -1394,23 +1410,28 @@ export const onPostLiked = functions.firestore
         : '';
       const postTitle = rawTitle.trim() || contentPreview || '게시글';
       const postIsAnonymous = after.isAnonymous === true;
-      const safeLikerName = postIsAnonymous ? '익명' : likerName;
       const postImages: any[] = Array.isArray((after as any).imageUrls) ? (after as any).imageUrls : [];
       const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
 
+      // 익명 게시글이면 작성자 정보를 노출하지 않음
+      const notificationTitle = postIsAnonymous ? 'New like on your post' : '게시글에 좋아요가 추가되었습니다';
+      const notificationMessage = postIsAnonymous
+        ? 'A new like was added to your post.'
+        : `${likerName}님이 회원님의 게시글을 좋아합니다.`;
+
       await db.collection('notifications').add({
         userId: postAuthorId,
-        title: '게시글에 좋아요가 추가되었습니다',
-        message: `${safeLikerName}님이 회원님의 게시글 "${postTitle}"을 좋아합니다.`,
+        title: notificationTitle,
+        message: notificationMessage,
         type: 'new_like',
         postId: context.params.postId,
-        actorId: newLiker,
-        actorName: safeLikerName,
+        actorId: postIsAnonymous ? null : newLiker, // 익명이면 actorId 제거
+        actorName: postIsAnonymous ? null : likerName, // 익명이면 이름도 제거
         data: {
           postId: context.params.postId,
           postTitle: postTitle,
           postIsAnonymous: postIsAnonymous,
-          likerName: safeLikerName,
+          likerName: postIsAnonymous ? null : likerName, // 익명이면 이름 제거
           thumbnailUrl,
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3159,7 +3180,7 @@ export const onNotificationCreated = functions.firestore
 
       // iOS 앱 아이콘 배지: "읽지 않은 알림 수 + 안 읽은 DM 수"
       // - 일반 알림: dm_received 타입 제외 (Notifications 탭 기준)
-      // - DM: conversations 컬렉션의 unreadCount 합산
+      // - DM: users/{uid}.dmUnreadTotal(증분 유지) 우선, 없으면 fallback 스캔
       let badgeCount = 0;
       try {
         // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
@@ -3182,22 +3203,28 @@ export const onNotificationCreated = functions.firestore
 
         const notificationCount = Math.max(0, unreadAll - unreadDm);
 
-        // 2) DM 안 읽은 수 (conversations 컬렉션의 unreadCount 합산)
-        const convsSnap = await db
-          .collection('conversations')
-          .where('participants', 'array-contains', userId)
-          .get();
-
+        // 2) DM 총 안 읽은 수
         let dmUnreadCount = 0;
-        convsSnap.docs.forEach((doc) => {
-          const data = doc.data();
-          const archivedBy = data.archivedBy || [];
-          if (archivedBy.includes(userId)) return; // 보관된 대화방 제외
-          
-          const unreadCount = data.unreadCount || {};
-          const myUnread = unreadCount[userId] || 0;
-          dmUnreadCount += myUnread;
-        });
+        const v = (userData as any)?.dmUnreadTotal;
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          dmUnreadCount = Math.max(0, Math.trunc(v));
+        } else {
+          // fallback: dmUnreadTotal이 아직 없는 기존 계정 호환
+          const convsSnap = await db
+            .collection('conversations')
+            .where('participants', 'array-contains', userId)
+            .get();
+
+          convsSnap.docs.forEach((doc) => {
+            const data = doc.data();
+            const archivedBy = data.archivedBy || [];
+            if (archivedBy.includes(userId)) return; // 보관된 대화방 제외
+            
+            const unreadCount = data.unreadCount || {};
+            const myUnread = unreadCount[userId] || 0;
+            dmUnreadCount += myUnread;
+          });
+        }
 
         badgeCount = notificationCount + dmUnreadCount;
         console.log(`📊 배지 계산: 일반 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
@@ -3873,23 +3900,25 @@ export const onDMMessageCreated = functions.firestore
       console.log(`  - 발신자: ${senderId}`);
 
       // 대화방 정보 조회
-      const convDoc = await db.collection('conversations').doc(conversationId).get();
+      const convRef = db.collection('conversations').doc(conversationId);
+      const convDoc = await convRef.get();
       if (!convDoc.exists) {
         console.log('❌ 대화방을 찾을 수 없음');
         return null;
       }
 
       const convData = convDoc.data()!;
-      const participants = convData.participants || [];
-      
-      // 수신자 UID 찾기 (발신자가 아닌 다른 참여자)
-      const recipientId = participants.find((id: string) => id !== senderId);
-      if (!recipientId) {
+      const participants: string[] = Array.isArray(convData.participants) ? convData.participants : [];
+      const recipients = participants.filter((id) => id && id !== senderId);
+      if (recipients.length === 0) {
         console.log('⚠️ 수신자를 찾을 수 없음');
         return null;
       }
 
-      console.log(`  - 수신자: ${recipientId}`);
+      // DM은 1:1이 기본이므로 첫 번째 수신자를 기준으로 "푸시/배지"를 구성한다.
+      // (그룹 DM이 생기더라도 unreadCount/dmUnreadTotal 증분은 recipients 전체에 반영됨)
+      const recipientId = recipients[0];
+      console.log(`  - 수신자: ${recipientId} (recipients=${recipients.length})`);
 
       // 발신자 정보 조회
       const senderDoc = await db.collection('users').doc(senderId).get();
@@ -3897,8 +3926,9 @@ export const onDMMessageCreated = functions.firestore
       const isAnonymous = convData.isAnonymous?.[senderId] || false;
       const senderName = isAnonymous ? '익명' : (senderData?.nickname || senderData?.name || '익명');
 
-      // 수신자 FCM 토큰 조회
-      const recipientDoc = await db.collection('users').doc(recipientId).get();
+      // 수신자 정보(토큰/총 DM 안읽음) 조회
+      const recipientRef = db.collection('users').doc(recipientId);
+      const recipientDoc = await recipientRef.get();
       if (!recipientDoc.exists) {
         console.log('⚠️ 수신자 문서를 찾을 수 없음');
         return null;
@@ -3929,7 +3959,72 @@ export const onDMMessageCreated = functions.firestore
 
       console.log(`  - FCM 토큰: ${tokens.length}개`);
 
-      // 배지 계산: 일반 알림 + DM 안 읽은 수
+      // -----------------------------------------------------------------------
+      // ✅ DM unreadCount + users.dmUnreadTotal 증분 업데이트 (이벤트 기반)
+      // - 목적: "대화방 전체 스캔" 없이 총 DM 안읽음(dmUnreadTotal)을 유지
+      // - 동시에 archivedBy(보관/나가기)가 설정된 수신자에게 새 메시지가 오면 자동 복원
+      // -----------------------------------------------------------------------
+      let newDmUnreadTotal = 0;
+      try {
+        await db.runTransaction(async (tx) => {
+          const convSnap = await tx.get(convRef);
+          if (!convSnap.exists) return;
+          const data = convSnap.data() as any;
+
+          const archivedBy: string[] = Array.isArray(data?.archivedBy)
+            ? data.archivedBy.filter((v: any) => typeof v === 'string')
+            : [];
+
+          const unreadCount: Record<string, number> = (data?.unreadCount && typeof data.unreadCount === 'object')
+            ? { ...data.unreadCount }
+            : {};
+
+          // recipients 전체에 unread +1, archivedBy 자동 복원
+          let archivedChanged = false;
+          for (const rid of recipients) {
+            if (!rid) continue;
+
+            if (archivedBy.includes(rid)) {
+              // 새 메시지가 오면 "목록/배지"에서 다시 보이도록 복원
+              const idx = archivedBy.indexOf(rid);
+              if (idx >= 0) archivedBy.splice(idx, 1);
+              archivedChanged = true;
+            }
+
+            const cur = typeof unreadCount[rid] === 'number' ? unreadCount[rid] : 0;
+            unreadCount[rid] = cur + 1;
+
+            // 총 DM 안읽음은 users/{rid}.dmUnreadTotal로 증분 유지
+            const userRef = db.collection('users').doc(rid);
+            tx.set(userRef, { dmUnreadTotal: admin.firestore.FieldValue.increment(1) }, { merge: true });
+          }
+
+          const update: Record<string, any> = {
+            unreadCount,
+            // updatedAt은 서버 기준으로도 최신화 (정렬 안정성)
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          };
+          if (archivedChanged) {
+            update.archivedBy = archivedBy;
+          }
+          tx.set(convRef, update, { merge: true });
+
+          // 배지 계산용: recipient의 dmUnreadTotal은 "현재값 + 1"로 가정
+          // (동시성 경쟁이 있어도 badge는 다음 sync/다음 푸시에서 정정됨)
+          const curTotal = typeof (recipientData as any)?.dmUnreadTotal === 'number'
+            ? (recipientData as any).dmUnreadTotal
+            : 0;
+          newDmUnreadTotal = curTotal + 1;
+        });
+      } catch (e) {
+        console.warn('⚠️ DM unreadCount/dmUnreadTotal 증분 업데이트 실패(푸시 계속):', e);
+        // 실패 시에도 푸시는 전송하되, badge는 fallback 계산을 사용
+        newDmUnreadTotal = typeof (recipientData as any)?.dmUnreadTotal === 'number'
+          ? (recipientData as any).dmUnreadTotal
+          : 0;
+      }
+
+      // 배지 계산: 일반 알림 + (증분 기반) DM 총 안읽음
       let badgeCount = 0;
       try {
         // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
@@ -3951,25 +4046,8 @@ export const onDMMessageCreated = functions.firestore
         const unreadDmNotif = unreadDmNotifSnap.data().count || 0;
         const notificationCount = Math.max(0, unreadNotifAll - unreadDmNotif);
 
-        // 2) DM 안 읽은 수 (conversations 컬렉션의 unreadCount 합산)
-        const convsSnap = await db
-          .collection('conversations')
-          .where('participants', 'array-contains', recipientId)
-          .get();
-
-        let dmUnreadCount = 0;
-        convsSnap.docs.forEach((doc) => {
-          const data = doc.data();
-          const archivedBy = data.archivedBy || [];
-          if (archivedBy.includes(recipientId)) return; // 보관된 대화방 제외
-          
-          const unreadCount = data.unreadCount || {};
-          const myUnread = unreadCount[recipientId] || 0;
-          dmUnreadCount += myUnread;
-        });
-
-        badgeCount = notificationCount + dmUnreadCount;
-        console.log(`  📊 배지 계산: 일반 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
+        badgeCount = notificationCount + Math.max(0, newDmUnreadTotal);
+        console.log(`  📊 배지 계산: 일반 알림(${notificationCount}) + DM총안읽음(${newDmUnreadTotal}) = ${badgeCount}`);
       } catch (e) {
         console.warn('  ⚠️ 배지 계산 실패 (0으로 처리):', e);
         badgeCount = 0;

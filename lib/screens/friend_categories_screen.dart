@@ -204,11 +204,28 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
             future: _getActualFriendCount(category.friendIds),
             builder: (context, snapshot) {
               final count = snapshot.data ?? category.friendIds.length;
-              return Text(
-                AppLocalizations.of(context)!.friendsInGroup(count),
-                style: TypographyStyles.bodySmall.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF6B7280), // gray 계열 유지 + 가독성 향상
+              final isKo = Localizations.localeOf(context).languageCode == 'ko';
+              final baseStyle = TypographyStyles.bodySmall.copyWith(
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFF4B5563), // 기존보다 한 톤 진하게
+              );
+
+              // 숫자가 묻히지 않도록 숫자만 굵기/색을 더 강하게 준다.
+              return Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '$count',
+                      style: baseStyle.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
+                    TextSpan(
+                      text: isKo ? '명의 친구' : ' friend(s)',
+                      style: baseStyle,
+                    ),
+                  ],
                 ),
               );
             },

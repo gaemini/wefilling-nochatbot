@@ -72,27 +72,36 @@ class AppEmptyState extends StatelessWidget {
   });
 
   /// 모임이 없을 때 표시하는 빈 상태 (프리셋)
-  factory AppEmptyState.noMeetups({required BuildContext context, VoidCallback? onCreateMeetup}) {
+  factory AppEmptyState.noMeetups({
+    required BuildContext context,
+    VoidCallback? onCreateMeetup,
+    bool centerVertically = false,
+  }) {
     return AppEmptyState(
       icon: IconStyles.groups,
       title: AppLocalizations.of(context)!.wefillingMeaning,
       description: AppLocalizations.of(context)!.wefillingExplanation,
       // ctaText 및 onCtaPressed 제거하여 "Create Your First Meetup" 버튼 숨김
       secondaryCtaText: AppLocalizations.of(context)!.searchMeetups,
+      centerVertically: centerVertically,
       // 위필링 로고를 표시
       illustration: Center(
-        child: Container(
-          width: 90,
-          height: 90,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Image.asset(
-              'assets/images/wefilling_logo.png',
-              fit: BoxFit.contain,
+        child: Transform.translate(
+          // 로고가 살짝 아래로 느껴져, 모임 탭에서는 조금 더 위로 올려 밸런스를 맞춘다.
+          offset: const Offset(0, -10),
+          child: Container(
+            width: 90,
+            height: 90,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Image.asset(
+                'assets/images/wefilling_logo.png',
+                fit: BoxFit.contain,
+              ),
             ),
           ),
         ),

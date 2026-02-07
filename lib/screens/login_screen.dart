@@ -233,9 +233,11 @@ class _LoginScreenState extends State<LoginScreen>
                                 crossAxisAlignment: CrossAxisAlignment.center,
                                 children: [
                                   Image.asset(
-                                    'assets/icons/app_logo.png',
+                                    // 투명 배경 로고 사용 (흰 배경 박힘 방지)
+                                    'assets/images/wefilling_boot_logo.png',
                                     width: 100,
                                     height: 100,
+                                    fit: BoxFit.contain,
                                     errorBuilder: (context, error, stackTrace) {
                                       return Icon(
                                         Icons.people_alt_rounded,

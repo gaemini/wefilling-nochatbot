@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
@@ -126,6 +127,213 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   // 최대 인원 선택 목록
   final List<int> _participantOptions = [3, 4];
 
+  String _formatHHmm(DateTime dt) {
+    final h = dt.hour.toString().padLeft(2, '0');
+    final m = dt.minute.toString().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  (int hour, int minute)? _tryParseHHmm(String value) {
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    if (h < 0 || h > 23) return null;
+    if (m < 0 || m > 59) return null;
+    return (h, m);
+  }
+
+  Future<void> _showTimePickerSheet() async {
+    final l10n = AppLocalizations.of(context)!;
+    final use24h = MediaQuery.of(context).alwaysUse24HourFormat;
+
+    final current = _selectedTime;
+    DateTime initial = DateTime(2020, 1, 1, 12, 0);
+    if (current != null && current.isNotEmpty && current != l10n.undecided) {
+      final parsed = _tryParseHHmm(current);
+      if (parsed != null) {
+        initial = DateTime(2020, 1, 1, parsed.$1, parsed.$2);
+      }
+    } else {
+      final now = DateTime.now();
+      // 10분 단위로 올림(기본값)
+      final nextMinute = ((now.minute + 9) ~/ 10) * 10;
+      final carryHour = nextMinute >= 60 ? 1 : 0;
+      final minute = nextMinute % 60;
+      final hour = (now.hour + carryHour) % 24;
+      initial = DateTime(2020, 1, 1, hour, minute);
+    }
+
+    DateTime picked = initial;
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        final isUndecidedSelected = _selectedTime == l10n.undecided;
+
+        return SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.timeSelection,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                // 미정 빠른 선택 (선택 상태 표시만, 불필요한 chevron 제거)
+                InkWell(
+                  onTap: () => Navigator.pop(sheetContext, l10n.undecided),
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isUndecidedSelected ? AppColors.pointColor : const Color(0xFFE5E7EB),
+                        width: isUndecidedSelected ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l10n.undecided,
+                            style: _inputTextStyle,
+                          ),
+                        ),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isUndecidedSelected ? AppColors.pointColor : Colors.transparent,
+                            border: Border.all(
+                              color: isUndecidedSelected
+                                  ? AppColors.pointColor
+                                  : const Color(0xFFD1D5DB),
+                              width: 2,
+                            ),
+                          ),
+                          child: isUndecidedSelected
+                              ? const Icon(Icons.check, size: 14, color: Colors.white)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+
+                // iOS 스타일 휠 타임피커 (높이를 고정하되, 시트가 작으면 스크롤로 자연스럽게 처리)
+                Container(
+                  height: 216,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: CupertinoTheme(
+                    data: const CupertinoThemeData(
+                      textTheme: CupertinoTextThemeData(
+                        dateTimePickerTextStyle: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    child: CupertinoDatePicker(
+                      mode: CupertinoDatePickerMode.time,
+                      minuteInterval: 10,
+                      use24hFormat: use24h,
+                      initialDateTime: initial,
+                      onDateTimeChanged: (dt) {
+                        picked = dt;
+                      },
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF6B7280),
+                          side: const BorderSide(color: Color(0xFFE5E7EB)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(
+                          l10n.cancel,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(sheetContext, _formatHHmm(picked)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.pointColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: Text(
+                          l10n.done,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return;
+    setState(() {
+      _selectedTime = selected;
+    });
+  }
+
   Future<void> _showMaxParticipantsSheet() async {
     final l10n = AppLocalizations.of(context)!;
 
@@ -250,8 +458,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   // 추천 장소는 카테고리 선택 화면에서만 노출 (생성 화면에서는 숨김)
 
-  // 30분 간격 시간 옵션 저장 리스트
-  List<String> _timeOptions = [];
   bool _isInitialized = false;
 
   MeetupFavoriteTemplate _buildFavoritesDraft() {
@@ -331,12 +537,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         _selectedTime = l10n.undecided;
       } else {
         final timeValue = t.time;
-        if (timeValue != null && _timeOptions.contains(timeValue)) {
-          _selectedTime = timeValue;
-        } else {
-          // 현재 선택된 날짜 기준으로 불가능한 시간이면 미정으로 폴백
-          _selectedTime = l10n.undecided;
-        }
+        _selectedTime = (timeValue == null || timeValue.isEmpty) ? l10n.undecided : timeValue;
       }
 
       // 카테고리
@@ -367,12 +568,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     super.didChangeDependencies();
     if (!_isInitialized) {
       _isInitialized = true;
-      // 선택된 날짜에 맞는 시간 옵션 생성 - context가 준비된 후 호출
+      // time의 기본값(미정) 초기화: locale 문자열이 필요하므로 여기서 처리
       _updateTimeOptions();
-      
-      // 디버깅 출력 추가
-      Logger.log('초기 시간 옵션: $_timeOptions');
-      Logger.log('초기 선택된 시간: $_selectedTime');
     }
   }
 
@@ -385,53 +582,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   // 선택된 날짜에 맞는 시간 옵션 업데이트
   void _updateTimeOptions() {
-    // 현재 시간 가져오기
-    final now = DateTime.now();
-    // 선택된 날짜 가져오기
-    final selectedDate = _getWeekDates()[_selectedDayIndex];
-
-    // 선택한 날짜가 오늘인지 확인
-    final bool isToday =
-        selectedDate.year == now.year &&
-        selectedDate.month == now.month &&
-        selectedDate.day == now.day;
-
-    // 새로운 시간 옵션 리스트 - '미정' 옵션을 먼저 추가
-    List<String> newOptions = [AppLocalizations.of(context)!.undecided];
-
-    // 오늘이면 현재 시간 이후만, 아니면 하루 전체 시간
-    for (int hour = 0; hour < 24; hour++) {
-      for (int minute = 0; minute < 60; minute += 30) {
-        // 시간 문자열 생성
-        final String hourStr = hour.toString().padLeft(2, '0');
-        final String minuteStr = minute.toString().padLeft(2, '0');
-        final String timeString = '$hourStr:$minuteStr';
-
-        // 오늘이고 현재 시간 이후인 경우만 추가
-        if (isToday) {
-          // 현재 시간과 비교
-          if (hour < now.hour || (hour == now.hour && minute <= now.minute)) {
-            // 이미 지난 시간이면 추가하지 않음
-            continue;
-          }
-        }
-
-        // 유효한 시간 옵션 추가
-        newOptions.add(timeString);
-      }
-    }
-
-    // 디버깅 출력
-    Logger.log('현재 시간: ${now.hour}:${now.minute}');
-    Logger.log('선택된 날짜: ${selectedDate.day}일 (오늘? $isToday)');
-    Logger.log('생성된 시간 옵션: $newOptions');
-
-    // 상태 업데이트
+    final l10n = AppLocalizations.of(context)!;
+    if (_selectedTime != null && _selectedTime!.isNotEmpty) return;
     setState(() {
-      _timeOptions = newOptions;
-
-      // 항상 '미정'을 기본 선택으로 설정
-      _selectedTime = AppLocalizations.of(context)!.undecided ?? "";
+      _selectedTime = l10n.undecided;
     });
   }
 
@@ -729,67 +883,37 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           ),
                           const SizedBox(height: 6),
 
-                          // 시간 옵션이 미정만 있는 경우 안내 메시지
-                          if (_timeOptions.length <= 1)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8.0),
-                              child: Text(
-                                AppLocalizations.of(context)!.todayTimePassed,
-                                style: TextStyle(
-                                  color: Colors.orange[700],
-                                  fontSize: 12,
-                                  fontFamily: 'Pretendard',
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.25,
-                                ),
-                              ),
-                            ),
-                          
-                          // 시간 선택 드롭다운 (항상 표시)
-                          DropdownButtonFormField<String>(
-                            value: _selectedTime,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
+                          InkWell(
+                            onTap: _showTimePickerSheet,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 16,
                               ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFE6EAF0),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _selectedTime ?? AppLocalizations.of(context)!.undecided,
+                                      style: _inputTextStyle,
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.expand_more,
+                                    color: Color(0xFF9CA3AF),
+                                  ),
+                                ],
+                              ),
                             ),
-                            style: _inputTextStyle,
-                            dropdownColor: Colors.white,
-                            items: _timeOptions.map((String time) {
-                              return DropdownMenuItem<String>(
-                                value: time,
-                                child: Text(time, style: _inputTextStyle),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                setState(() {
-                                  _selectedTime = value;
-                                });
-                              }
-                            },
-                            validator: (value) {
-                              if (value == null || value.isEmpty) {
-                                return AppLocalizations.of(context)!.pleaseSelectTime;
-                              }
-                              return null;
-                            },
                           ),
                         ],
                       ),
@@ -1184,11 +1308,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       child: SizedBox(
                         height: 52,
                         child: ElevatedButton(
-                          onPressed: (_isSubmitting ||
-                                  _selectedTime == null)
+                          onPressed: _isSubmitting
                               ? null
                               : () async {
                                 if (_formKey.currentState!.validate()) {
+                                  final l10n = AppLocalizations.of(context)!;
+
                                   // 카테고리 유효성 검사
                                   if (_selectedCategory == null) {
                                     AppSnackBar.show(
@@ -1199,6 +1324,38 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                     return;
                                   }
                                   
+                                  // 시간 유효성 검사 + 과거 시간 방지
+                                  final selectedTime = _selectedTime;
+                                  if (selectedTime == null || selectedTime.isEmpty) {
+                                    AppSnackBar.show(
+                                      context,
+                                      message: l10n.pleaseSelectTime,
+                                      type: AppSnackBarType.warning,
+                                    );
+                                    return;
+                                  }
+
+                                  if (selectedTime != l10n.undecided) {
+                                    final parsed = _tryParseHHmm(selectedTime);
+                                    if (parsed != null) {
+                                      final dt = DateTime(
+                                        selectedDate.year,
+                                        selectedDate.month,
+                                        selectedDate.day,
+                                        parsed.$1,
+                                        parsed.$2,
+                                      );
+                                      if (dt.isBefore(DateTime.now())) {
+                                        AppSnackBar.show(
+                                          context,
+                                          message: l10n.todayTimePassed,
+                                          type: AppSnackBarType.warning,
+                                        );
+                                        return;
+                                      }
+                                    }
+                                  }
+
                                   // 공개 범위 유효성 검사
                                   if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
                                     AppSnackBar.show(

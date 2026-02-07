@@ -787,20 +787,22 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                               _filterMeetupsByCategory(meetups);
 
                           if (filteredMeetups.isEmpty) {
-                            return ListView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              children: [
-                                SizedBox(height: 60), // 상단 여백 추가
-                                SizedBox(
-                                  height:
-                                      MediaQuery.of(context).size.height * 0.5,
-                                  child: AppEmptyState.noMeetups(
-                                    context: context,
-                                    onCreateMeetup: () =>
-                                        _navigateToCreateMeetup(),
-                                  ),
-                                ),
-                              ],
+                            return LayoutBuilder(
+                              builder: (context, constraints) {
+                                return ListView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  children: [
+                                    SizedBox(
+                                      height: constraints.maxHeight,
+                                      child: AppEmptyState.noMeetups(
+                                        context: context,
+                                        onCreateMeetup: () => _navigateToCreateMeetup(),
+                                        centerVertically: true,
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
                             );
                           }
 

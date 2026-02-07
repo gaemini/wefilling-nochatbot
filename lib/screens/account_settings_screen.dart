@@ -16,6 +16,8 @@ import 'account_delete_stepper_screen.dart';
 import 'licenses_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
+import '../utils/ui_utils.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -274,49 +276,82 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
   
   /// 언어 선택 다이얼로그 (국기 없이)
   void _showLanguageDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
     final currentLocale = Localizations.localeOf(context).languageCode;
-    
-    showDialog(
+
+    void applyAndClose(String code, BuildContext sheetContext) {
+      MeetupApp.of(context)?.changeLanguage(code);
+      Navigator.pop(sheetContext);
+    }
+
+    showModalBottomSheet<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          AppLocalizations.of(context)!.selectLanguage,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)!.korean ?? ""),
-              value: 'ko',
-              groupValue: currentLocale,
-              onChanged: (value) {
-                if (value != null) {
-                  MeetupApp.of(context)?.changeLanguage(value);
-                  Navigator.pop(dialogContext);
-                }
-              },
-            ),
-            RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)!.english ?? ""),
-              value: 'en',
-              groupValue: currentLocale,
-              onChanged: (value) {
-                if (value != null) {
-                  MeetupApp.of(context)?.changeLanguage(value);
-                  Navigator.pop(dialogContext);
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-          ),
-        ],
+      isScrollControlled: false,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.selectLanguage,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                _LanguageOptionTile(
+                  title: l10n.korean ?? "",
+                  code: 'KR',
+                  selected: currentLocale == 'ko',
+                  onTap: () => applyAndClose('ko', sheetContext),
+                ),
+                const SizedBox(height: 8),
+                _LanguageOptionTile(
+                  title: l10n.english,
+                  code: 'EN',
+                  selected: currentLocale == 'en',
+                  onTap: () => applyAndClose('en', sheetContext),
+                ),
+
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B7280),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text(
+                      l10n.cancel ?? "",
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -530,6 +565,93 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _LanguageOptionTile extends StatelessWidget {
+  final String title;
+  final String code;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LanguageOptionTile({
+    required this.title,
+    required this.code,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final borderColor =
+        selected ? AppColors.pointColor : const Color(0xFFE5E7EB);
+    final bgColor =
+        selected ? UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.08) : const Color(0xFFF9FAFB);
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: borderColor, width: selected ? 2 : 1),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 28,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F4F6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                code,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF111827),
+                ),
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? AppColors.pointColor : Colors.transparent,
+                border: Border.all(
+                  color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
+                  width: 2,
+                ),
+              ),
+              child: selected
+                  ? const Icon(Icons.check, size: 14, color: Colors.white)
+                  : null,
+            ),
+          ],
+        ),
       ),
     );
   }

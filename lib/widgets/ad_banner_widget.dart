@@ -31,7 +31,6 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   @override
   void initState() {
     super.initState();
-    Logger.log('📢 AdBannerWidget 초기화: ${widget.widgetId ?? "기본"}');
     _loadBanners();
   }
 

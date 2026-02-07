@@ -10,18 +10,19 @@ import '../utils/logger.dart';
 class FriendCategoryService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  /// 사용자당 생성 가능한 최대 카테고리 수
+  static const int maxCategoriesPerUser = 10;
   
   // 활성 스트림 구독 관리
   final List<StreamSubscription> _activeSubscriptions = [];
 
   // 모든 스트림 구독 정리
   void dispose() {
-    Logger.log('FriendCategoryService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
     _activeSubscriptions.clear();
-    Logger.log('FriendCategoryService: 모든 스트림 정리 완료');
   }
 
   // 현재 사용자의 모든 카테고리 가져오기
@@ -72,6 +73,17 @@ class FriendCategoryService {
     try {
       final user = _auth.currentUser;
       if (user == null) return null;
+
+      // 안전장치: 서버/다른 화면에서 호출되더라도 최대 개수 제한
+      final existing = await _firestore
+          .collection('friend_categories')
+          .where('userId', isEqualTo: user.uid)
+          .limit(maxCategoriesPerUser)
+          .get();
+      if (existing.docs.length >= maxCategoriesPerUser) {
+        Logger.log('카테고리 생성 차단: 최대 개수($maxCategoriesPerUser개) 도달');
+        return null;
+      }
 
       final now = DateTime.now();
       final categoryData = {

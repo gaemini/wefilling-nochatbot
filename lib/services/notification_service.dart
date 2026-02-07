@@ -44,10 +44,6 @@ class NotificationService {
     Map<String, dynamic>? data, // 알림 번역을 위한 추가 데이터
   }) async {
     try {
-      Logger.log('📬 알림 생성 시도: $type - $title');
-      Logger.log('   대상 사용자: $userId');
-      Logger.log('   게시글 ID: $postId');
-      
       // 알림 설정 확인 - 해당 유형의 알림이 비활성화되어 있으면 알림 생성 안 함
       final isEnabled = await _settingsService.isNotificationEnabled(type);
       if (!isEnabled) {
@@ -262,7 +258,6 @@ class NotificationService {
             final data = d.data() as Map<String, dynamic>?;
             return (data?['type']?.toString() ?? '') != 'dm_received';
           }).length;
-          Logger.log('📬 읽지 않은 알림 수 업데이트: $nonDmCount개 (DM 제외)');
           return nonDmCount;
         })
         .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
@@ -274,8 +269,7 @@ class NotificationService {
       await _firestore.collection('notifications').doc(notificationId).update({
         'isRead': true,
       });
-      // 배지 동기화 (정책 A)
-      await BadgeService.syncNotificationBadge();
+      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
       return true;
     } catch (e) {
       Logger.error('알림 읽음 처리 오류: $e');
@@ -304,8 +298,8 @@ class NotificationService {
       }
 
       await batch.commit();
-      // 배지 동기화 (정책 A)
-      await BadgeService.syncNotificationBadge();
+      
+      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
       return true;
     } catch (e) {
       Logger.error('모든 알림 읽음 처리 오류: $e');

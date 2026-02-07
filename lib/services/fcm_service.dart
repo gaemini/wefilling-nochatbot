@@ -7,16 +7,25 @@ import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:app_badge_plus/app_badge_plus.dart';
+import 'badge_service.dart';
 import 'navigation_service.dart';
 import '../utils/logger.dart';
 
 // 백그라운드 메시지 핸들러 (최상위 함수여야 함)
+// iOS에서 앱이 백그라운드/종료 상태일 때 메시지를 처리
+// ⚠️ 중요: 이 핸들러에서는 배지를 직접 설정하지 않음
+//    iOS는 APNs payload의 badge 값을 자동으로 처리함
+//    Android만 필요 시 여기서 배지 설정 가능
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   Logger.log('📱 백그라운드 메시지 수신: ${message.messageId}');
   Logger.log('📱 제목: ${message.notification?.title}');
   Logger.log('📱 내용: ${message.notification?.body}');
   Logger.log('📱 데이터: ${message.data}');
+  
+  // iOS: APNs payload의 badge가 자동으로 적용됨 (여기서 처리 불필요)
+  // Android: 필요 시 여기서 배지 설정 가능
 }
 
 class FCMService {
@@ -76,14 +85,11 @@ class FCMService {
         }
       },
     );
-
-    Logger.log('✅ 로컬 알림 초기화 완료');
   }
 
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
-      Logger.log('📱 FCM 초기화 시작: $userId');
 
       // 로컬 알림 초기화
       await _initializeLocalNotifications();
@@ -99,26 +105,21 @@ class FCMService {
         sound: true,
       );
 
-      Logger.log('📱 알림 권한 상태: ${settings.authorizationStatus}');
-
       if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        Logger.log('✅ 알림 권한 승인됨');
+        // 알림 권한 승인됨
       } else if (settings.authorizationStatus ==
           AuthorizationStatus.provisional) {
-        Logger.log('⚠️ 임시 알림 권한 승인됨');
+        // 임시 알림 권한 승인됨
       } else {
         Logger.log('❌ 알림 권한 거부됨');
         return;
       }
 
-      // FCM 토큰 가져오기
-      String? token = await _messaging.getToken();
-      if (token != null) {
-        Logger.log('📱 FCM 토큰: $token');
-        await _saveFCMToken(userId, token);
-      } else {
-        Logger.log('❌ FCM 토큰을 가져올 수 없습니다');
-      }
+      // ✅ iOS: AppDelegate의 UNUserNotificationCenterDelegate가 알림 표시 처리
+      // ✅ Android: Firebase Cloud Messaging이 자동으로 알림 표시
+
+      // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
+      _startTokenSync(userId);
 
       // 토큰 갱신 리스너 등록
       _messaging.onTokenRefresh.listen((newToken) {
@@ -133,8 +134,12 @@ class FCMService {
         Logger.log('📱 내용: ${message.notification?.body}');
         Logger.log('📱 데이터: ${message.data}');
 
-        // 로컬 알림 표시
-        _showLocalNotification(message);
+        // iOS: setForegroundNotificationPresentationOptions 설정으로
+        //      FCM이 자동으로 알림을 표시하므로 로컬 알림 불필요
+        // Android: Firebase Cloud Messaging이 자동으로 처리
+        //          (notification 필드가 있으면 자동으로 알림 표시)
+        
+        // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
       });
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
@@ -152,14 +157,66 @@ class FCMService {
         await NavigationService.handlePushNavigation(initialMessage.data);
       }
 
-      Logger.log('✅ FCM 초기화 완료');
     } catch (e) {
-      Logger.error('❌ FCM 초기화 실패: $e');
+      Logger.error('FCM 초기화 실패', e);
       rethrow;
     }
   }
 
-  // 로컬 알림 표시
+  void _startTokenSync(String userId) {
+    // 로그인/초기화 흐름을 막지 않도록 비동기 작업으로 분리
+    Future.microtask(() async {
+      await _syncTokenWithRetries(userId);
+    });
+  }
+
+  Future<void> _syncTokenWithRetries(String userId) async {
+    const List<int> retrySeconds = [0, 2, 4, 8, 16];
+
+    for (int i = 0; i < retrySeconds.length; i++) {
+      if (retrySeconds[i] > 0) {
+        await Future.delayed(Duration(seconds: retrySeconds[i]));
+      }
+
+      // iOS에서 APNs 토큰 먼저 확인 (필수)
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        try {
+          final String? apnsToken = await _messaging.getAPNSToken();
+          if (apnsToken == null || apnsToken.isEmpty) {
+            Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            continue;
+          } else {
+            Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
+          }
+        } catch (e) {
+          Logger.error('❌ APNs 토큰 가져오기 실패: $e');
+          continue;
+        }
+      }
+
+      // FCM 토큰 가져오기
+      try {
+        final String? token = await _messaging.getToken();
+        if (token != null && token.isNotEmpty) {
+          Logger.log('📱 FCM 토큰: $token');
+          await _saveFCMToken(userId, token);
+          return;
+        }
+        Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+      } catch (e) {
+        Logger.error('❌ FCM 토큰 가져오기 실패: $e');
+      }
+    }
+
+    Logger.log('❌ FCM 토큰 동기화 실패 - 다음 실행에서 재시도됩니다');
+  }
+
+  // 로컬 알림 표시 (현재 미사용)
+  // iOS: setForegroundNotificationPresentationOptions로 자동 처리
+  // Android: Firebase Cloud Messaging이 자동으로 notification 표시
+  // 
+  // 향후 커스텀 알림 UI가 필요할 경우를 위해 코드 보존
+  /*
   Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
       final notification = message.notification;
@@ -204,6 +261,7 @@ class FCMService {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
   }
+  */
 
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {

@@ -44,7 +44,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // 카테고리 키 (Firestore에 저장되는 값)
-  final List<String> _categoryKeys = ['study', 'meal', 'cafe', 'culture', 'etc'];
+  final List<String> _categoryKeys = ['study', 'meal', 'cafe', 'drink', 'culture', 'etc'];
   final List<int> _participantOptions = [3, 4];
 
   @override
@@ -75,6 +75,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       '스터디': 'study',
       '식사': 'meal',
       '카페': 'cafe',
+      '술': 'drink',
       '문화': 'culture',
       '기타': 'etc',
     };
@@ -170,6 +171,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         return AppLocalizations.of(context)!.meal;
       case 'cafe':
         return AppLocalizations.of(context)!.cafe;
+      case 'drink':
+        return AppLocalizations.of(context)!.drink;
       case 'culture':
         return AppLocalizations.of(context)!.culture;
       case 'etc':

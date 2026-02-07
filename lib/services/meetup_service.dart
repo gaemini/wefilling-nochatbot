@@ -63,12 +63,43 @@ class MeetupService {
     String category = '기타', // 카테고리 매개변수 추가
     String thumbnailContent = '', // 썸네일 텍스트 컨텐츠 추가
     File? thumbnailImage, // 썸네일 이미지 파일 추가
+    String? thumbnailImageUrl, // 썸네일 이미지 URL(업로드 없이 사용)
+    List<File>? images, // 추가 이미지 파일들(최대 3장)
+    List<String>? imageUrls, // 추가 이미지 URL들(최대 3장)
     String visibility = 'public', // 공개 범위
     List<String> visibleToCategoryIds = const [], // 특정 카테고리에만 공개
   }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
+
+      // ---- 이미지 입력 정규화 (최대 3장) ----
+      final remoteUrls = <String>[];
+      void addRemote(String? u) {
+        final v = u?.trim();
+        if (v == null || v.isEmpty) return;
+        if (!remoteUrls.contains(v)) remoteUrls.add(v);
+      }
+
+      addRemote(thumbnailImageUrl);
+      if (imageUrls != null) {
+        for (final u in imageUrls) {
+          addRemote(u);
+        }
+      }
+
+      final localFiles = <File>[];
+      if (thumbnailImage != null) localFiles.add(thumbnailImage);
+      if (images != null) localFiles.addAll(images);
+
+      // 최대 3장 제한(원격 우선)
+      if (remoteUrls.length > 3) {
+        remoteUrls.removeRange(3, remoteUrls.length);
+      }
+      final remainingForLocal = 3 - remoteUrls.length;
+      final uploadFiles = remainingForLocal <= 0
+          ? <File>[]
+          : localFiles.take(remainingForLocal).toList();
 
       // 사용자 데이터 가져오기
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
@@ -98,6 +129,8 @@ class MeetupService {
         'category': category, // 카테고리 필드 추가
         'hostNationality': nationality, // 주최자 국적 추가
         'thumbnailContent': thumbnailContent, // 썸네일 텍스트 컨텐츠 추가
+        if (remoteUrls.isNotEmpty) 'thumbnailImageUrl': remoteUrls.first,
+        if (remoteUrls.isNotEmpty) 'imageUrls': remoteUrls,
         'visibility': visibility, // 공개 범위 추가
         'visibleToCategoryIds': visibleToCategoryIds, // 특정 카테고리 공개 추가
       };
@@ -105,21 +138,30 @@ class MeetupService {
       // Firestore에 저장
       final docRef = await _firestore.collection('meetups').add(meetupData);
 
-      // 이미지 업로드 처리
-      if (thumbnailImage != null) {
+      // 이미지 업로드 처리(최대 3장)
+      if (uploadFiles.isNotEmpty) {
         try {
           final storage = FirebaseStorage.instance;
-          final Reference storageRef = storage.ref().child(
-            'meetup_thumbnails/${docRef.id}',
-          );
+          final uploadedUrls = <String>[];
 
-          await storageRef.putFile(thumbnailImage);
-          final imageUrl = await storageRef.getDownloadURL();
+          for (var i = 0; i < uploadFiles.length; i++) {
+            final file = uploadFiles[i];
+            final ref = storage.ref().child('meetup_images/${docRef.id}/$i');
+            await ref.putFile(file);
+            final url = await ref.getDownloadURL();
+            uploadedUrls.add(url);
+          }
 
-          // 이미지 URL 업데이트
-          await docRef.update({'thumbnailImageUrl': imageUrl});
+          final combined = <String>[...remoteUrls, ...uploadedUrls];
+          if (combined.isNotEmpty) {
+            await docRef.update({
+              'imageUrls': combined,
+              // remoteUrls가 없었으면 업로드 첫 장을 썸네일로
+              if (remoteUrls.isEmpty) 'thumbnailImageUrl': combined.first,
+            });
+          }
         } catch (e) {
-          Logger.error('썸네일 이미지 업로드 오류: $e');
+          Logger.error('모임 이미지 업로드 오류: $e');
         }
       }
 
@@ -179,10 +221,18 @@ class MeetupService {
                       : (data['hostNationality'] ??
                           ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
               hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
-              imageUrl:
-                  data['thumbnailImageUrl'] ?? '',
+              imageUrl: data['thumbnailImageUrl'] ?? '',
               thumbnailContent: data['thumbnailContent'] ?? '',
               thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+              imageUrls: (data['imageUrls'] is List)
+                  ? List<String>.from(data['imageUrls'] as List)
+                      .map((e) => e.toString())
+                      .map((s) => s.trim())
+                      .where((s) => s.isNotEmpty)
+                      .toList()
+                  : ((data['thumbnailImageUrl'] ?? '').toString().trim().isNotEmpty
+                      ? [data['thumbnailImageUrl'].toString().trim()]
+                      : const []),
               date: meetupDate,
               category: data['category'] ?? '기타', // 카테고리 필드 추가
               userId: data['userId'], // 모임 주최자 ID 추가
@@ -279,6 +329,15 @@ class MeetupService {
         imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+        imageUrls: (data['imageUrls'] is List)
+            ? List<String>.from(data['imageUrls'] as List)
+                .map((e) => e.toString())
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList()
+            : ((data['thumbnailImageUrl'] ?? '').toString().trim().isNotEmpty
+                ? [data['thumbnailImageUrl'].toString().trim()]
+                : const []),
         date: meetupDate,
         category: data['category'] ?? '기타',
         userId: data['userId'], // 모임 주최자 ID 추가
@@ -328,6 +387,15 @@ class MeetupService {
         imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+        imageUrls: (data['imageUrls'] is List)
+            ? List<String>.from(data['imageUrls'] as List)
+                .map((e) => e.toString())
+                .map((s) => s.trim())
+                .where((s) => s.isNotEmpty)
+                .toList()
+            : ((data['thumbnailImageUrl'] ?? '').toString().trim().isNotEmpty
+                ? [data['thumbnailImageUrl'].toString().trim()]
+                : const []),
         date: meetupDate,
         category: data['category'] ?? '기타', // 카테고리 필드 추가
         userId: data['userId'], // 모임 주최자 ID 추가
@@ -1052,8 +1120,6 @@ class MeetupService {
 
       // 호스트 포함하여 +1
       final participantCount = participantsQuery.docs.length + 1;
-      
-      Logger.log('🔢 실시간 참여자 수 조회: $meetupId -> $participantCount명 (호스트 포함)');
       return participantCount;
     } catch (e) {
       Logger.error('❌ 실시간 참여자 수 조회 오류: $e');

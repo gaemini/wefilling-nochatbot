@@ -34,6 +34,13 @@ cd scripts
 node setup_recommended_places.js
 ```
 
+### Drinks 추천 장소 "추가" (덮어쓰기 아님)
+
+```bash
+cd scripts
+npm run add-drinks
+```
+
 ## 실행 결과
 
 스크립트가 성공적으로 실행되면 다음과 같은 출력을 볼 수 있습니다:
@@ -100,3 +107,21 @@ Service Account에 Firestore 쓰기 권한이 있는지 확인하세요.
 - 이 스크립트는 기존 데이터를 덮어씁니다
 - 프로덕션 환경에서 실행하기 전에 백업을 권장합니다
 - Service Account Key는 절대 공개하지 마세요
+
+---
+
+# 앱 아이콘(launcher icon) 생성
+
+이 프로젝트는 `flutter_launcher_icons`로 iOS/Android 런처 아이콘을 자동 생성합니다.
+
+## 실행
+
+프로젝트 루트에서:
+
+```bash
+bash scripts/generate_app_icons.sh
+```
+
+## 원본(소스) 아이콘
+
+- `assets/app_icon/wefilling_app_icon_1024.png` (1024×1024 PNG)

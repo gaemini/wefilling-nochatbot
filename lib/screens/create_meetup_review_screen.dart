@@ -12,6 +12,7 @@ import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import 'main_screen.dart';
 import '../utils/logger.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class CreateMeetupReviewScreen extends StatefulWidget {
   final Meetup meetup;
@@ -70,11 +71,13 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       // 현재 선택된 총 이미지 수 확인
       final currentCount = _selectedImages.length + _imageUrls.length;
       if (currentCount >= maxImages) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('최대 ${maxImages}장까지 선택 가능합니다'),
-            backgroundColor: Colors.orange,
-          ),
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
+        AppSnackBar.show(
+          context,
+          message: isKo
+              ? '최대 ${maxImages}장까지 선택 가능합니다'
+              : 'You can select up to $maxImages images',
+          type: AppSnackBarType.warning,
         );
         return;
       }
@@ -97,19 +100,23 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         });
 
         if (pickedFiles.length > remainingSlots) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${filesToAdd.length}장의 사진이 추가되었습니다 (최대 ${maxImages}장 제한)'),
-              backgroundColor: Colors.blue,
-            ),
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
+          AppSnackBar.show(
+            context,
+            message: isKo
+                ? '${filesToAdd.length}장의 사진이 추가되었습니다 (최대 ${maxImages}장 제한)'
+                : '${filesToAdd.length} images added (max $maxImages)',
+            type: AppSnackBarType.info,
           );
         }
       }
     } catch (e) {
       Logger.error('❌ 이미지 선택 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.imagePickFailed ?? "")),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.imagePickFailed ?? "",
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -158,8 +165,10 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         _isUploading = false;
       });
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.imageUploadFailed ?? "")),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.imageUploadFailed ?? "",
+          type: AppSnackBarType.error,
         );
       }
       return null;
@@ -168,15 +177,20 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
   Future<void> _submitReview() async {
     if (_selectedImages.isEmpty && _imageUrls.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('최소 1장의 사진을 선택해주세요')),
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKo ? '최소 1장의 사진을 선택해주세요' : 'Please select at least 1 photo',
+        type: AppSnackBarType.warning,
       );
       return;
     }
 
     if (_contentController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.pleaseEnterReviewContent ?? "")),
+      AppSnackBar.show(
+        context,
+        message: AppLocalizations.of(context)!.pleaseEnterReviewContent ?? "",
+        type: AppSnackBarType.warning,
       );
       return;
     }
@@ -205,13 +219,17 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
         );
 
         if (success && mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewUpdated ?? "")),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.reviewUpdated ?? "",
+            type: AppSnackBarType.success,
           );
           Navigator.of(context).pop(true);
         } else if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewUpdateFailed ?? "")),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.reviewUpdateFailed ?? "",
+            type: AppSnackBarType.error,
           );
         }
       } else {
@@ -224,8 +242,10 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
         if (reviewId == null) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.reviewCreateFailed ?? "")),
+            AppSnackBar.show(
+              context,
+              message: AppLocalizations.of(context)!.reviewCreateFailed ?? "",
+              type: AppSnackBarType.error,
             );
           }
           setState(() {
@@ -252,18 +272,16 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
         if (mounted) {
           if (requestSent) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context)!.reviewCreatedAndRequestsSent(participantIds.length) ?? ""),
-                backgroundColor: Colors.green,
-              ),
+            AppSnackBar.show(
+              context,
+              message: AppLocalizations.of(context)!.reviewCreatedAndRequestsSent(participantIds.length) ?? "",
+              type: AppSnackBarType.success,
             );
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context)!.reviewCreatedButNotificationFailed ?? ""),
-                backgroundColor: Colors.orange,
-              ),
+            AppSnackBar.show(
+              context,
+              message: AppLocalizations.of(context)!.reviewCreatedButNotificationFailed ?? "",
+              type: AppSnackBarType.warning,
             );
           }
           
@@ -285,8 +303,10 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     } catch (e) {
       Logger.error('❌ 후기 제출 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.error ?? "")),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.error ?? "",
+          type: AppSnackBarType.error,
         );
       }
     } finally {

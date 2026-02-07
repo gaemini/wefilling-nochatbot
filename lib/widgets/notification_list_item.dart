@@ -22,6 +22,22 @@ class NotificationListItem extends StatelessWidget {
     this.previewImageUrl,
   });
 
+  // actorId로부터 최신 닉네임 가져오기
+  String _getLatestActorName() {
+    final actorId = notification.actorId;
+    if (actorId == null || actorId.isEmpty) {
+      return notification.actorName ?? '';
+    }
+    
+    final cache = UserInfoCacheService();
+    final userInfo = cache.getCachedUserInfo(actorId);
+    if (userInfo != null && userInfo.nickname.isNotEmpty) {
+      return userInfo.nickname;
+    }
+    
+    return notification.actorName ?? '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUnread = !notification.isRead;
@@ -81,10 +97,24 @@ class NotificationListItem extends StatelessWidget {
                                 color: baseColor,
                               );
 
-                              // 메시지에서 "아이디(actorName)"만 굵게 처리
-                              final actor = notification.actorName?.trim();
-                              String? key = (actor != null && actor.isNotEmpty)
-                                  ? actor
+                              // 익명 알림인지 확인 (actorId가 없거나 actorName이 없으면 익명)
+                              final isAnonymous = notification.actorId == null || 
+                                                  notification.actorId!.isEmpty ||
+                                                  notification.actorName == null ||
+                                                  notification.actorName!.isEmpty;
+                              
+                              // 익명 알림이면 전체 텍스트를 굵게 표시
+                              if (isAnonymous) {
+                                return <InlineSpan>[
+                                  TextSpan(text: primaryText, style: strongStyle),
+                                ];
+                              }
+                              
+                              // 일반 알림: 메시지에서 "아이디(actorName)"만 굵게 처리
+                              // 실시간 닉네임 가져오기
+                              final latestActorName = _getLatestActorName();
+                              String? key = latestActorName.isNotEmpty
+                                  ? latestActorName
                                   : null;
 
                               key ??= RegExp(r'^\S+')
@@ -147,7 +177,11 @@ class NotificationListItem extends StatelessWidget {
   }
 
   Widget _buildLeadingAvatar(BuildContext context) {
-    final actorId = notification.actorId;
+    // 익명 게시글인지 확인 (data에서 postIsAnonymous 플래그 확인)
+    final isAnonymousPost = notification.data?['postIsAnonymous'] == true;
+    
+    // 익명 게시글이면 actorId를 null로 처리 (시스템 아이콘 표시)
+    final actorId = isAnonymousPost ? null : notification.actorId;
     final badge = _badgeSpecForType(notification.type);
 
     return Stack(

@@ -4,6 +4,8 @@
 // 앱 전체에서 일관된 에러처리 목적
 
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class ErrorHandlingUtils {
   // 일반적인 에러 핸들링 메서드
@@ -11,20 +13,12 @@ class ErrorHandlingUtils {
     // 에러 로깅 (개발 중에만 출력)
     debugPrint('Error: $error');
 
-    // 사용자에게 에러 메시지 표시
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('오류가 발생했습니다: ${_getErrorMessage(error)}'),
-        backgroundColor: Colors.red[700],
-        duration: const Duration(seconds: 3),
-        action: SnackBarAction(
-          label: '확인',
-          textColor: Colors.white,
-          onPressed: () {
-            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          },
-        ),
-      ),
+    final l10n = AppLocalizations.of(context)!;
+    final message = '${l10n.error}: ${_getErrorMessage(error)}';
+    AppSnackBar.show(
+      context,
+      message: message,
+      type: AppSnackBarType.error,
     );
   }
 

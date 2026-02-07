@@ -1,21 +1,20 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
 import '../constants/app_constants.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
-import '../providers/auth_provider.dart';
-import '../widgets/country_flag_circle.dart';
-import '../widgets/friend_category_selector.dart';
 import '../widgets/date_selector.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
-import '../services/recommended_places_service.dart';
+import 'meetup_visibility_group_select_screen.dart';
+import 'meetup_category_select_screen.dart';
+import '../models/meetup_favorite_template.dart';
+import 'meetup_favorites_screen.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 // 모임 생성화면
 // 모임 정보 입력 및 저장
@@ -81,22 +80,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     color: Color(0xFF9CA3AF),
   );
 
-  static const TextStyle _radioTitleStyle = TextStyle(
-    fontFamily: 'Pretendard',
-    fontSize: 15,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-    color: Color(0xFF111827),
-  );
-
-  static const TextStyle _radioSubtitleStyle = TextStyle(
-    fontFamily: 'Pretendard',
-    fontSize: 13,
-    fontWeight: FontWeight.w400,
-    height: 1.25,
-    color: Color(0xFF6B7280),
-  );
-
   static const TextStyle _primaryButtonTextStyle = TextStyle(
     fontFamily: 'Pretendard',
     fontSize: 16,
@@ -134,22 +117,234 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   List<FriendCategory> _friendCategories = [];
   List<String> _selectedCategoryIds = [];
 
-  // 썸네일 관련 변수
-  File? _thumbnailImage;
+  // 이미지 관련 변수 (최대 3장)
+  static const int _maxMeetupImages = 3;
+  final List<File> _meetupImageFiles = [];
+  final List<String> _meetupImageUrls = []; // 추천 장소 이미지 등(업로드 없이 URL 사용)
   final ImagePicker _picker = ImagePicker();
 
   // 최대 인원 선택 목록
   final List<int> _participantOptions = [3, 4];
 
-  // 추천 장소 관련 변수
-  final _recommendedPlacesService = RecommendedPlacesService();
-  List<RecommendedPlace> _recommendedPlaces = [];
-  bool _isLoadingPlaces = false;
-  bool _showRecommendedPlaces = false;
+  Future<void> _showMaxParticipantsSheet() async {
+    final l10n = AppLocalizations.of(context)!;
+
+    final selected = await showModalBottomSheet<int>(
+      context: context,
+      isScrollControlled: false,
+      backgroundColor: Colors.white,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.maxParticipants,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ..._participantOptions.map((value) {
+                  final isSelected = value == _maxParticipants;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(sheetContext, value),
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              isSelected ? AppColors.pointColor.withOpacity(0.08) : const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color:
+                                isSelected ? AppColors.pointColor : const Color(0xFFE5E7EB),
+                            width: isSelected ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '$value${l10n.people}',
+                                style: _inputTextStyle,
+                              ),
+                            ),
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 22,
+                              height: 22,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: isSelected ? AppColors.pointColor : Colors.transparent,
+                                border: Border.all(
+                                  color: isSelected
+                                      ? AppColors.pointColor
+                                      : const Color(0xFFD1D5DB),
+                                  width: 2,
+                                ),
+                              ),
+                              child: isSelected
+                                  ? const Icon(
+                                      Icons.check,
+                                      size: 14,
+                                      color: Colors.white,
+                                    )
+                                  : null,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(sheetContext),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B7280),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text(
+                      l10n.cancel,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || selected == null) return;
+    setState(() {
+      _maxParticipants = selected;
+    });
+  }
+
+  // 추천 장소는 카테고리 선택 화면에서만 노출 (생성 화면에서는 숨김)
 
   // 30분 간격 시간 옵션 저장 리스트
   List<String> _timeOptions = [];
   bool _isInitialized = false;
+
+  MeetupFavoriteTemplate _buildFavoritesDraft() {
+    // time 저장은 locale 영향 제거: undecided 여부 + HH:mm만 저장
+    final l10n = AppLocalizations.of(context)!;
+    final selectedTime = _selectedTime;
+    final isUndecided = selectedTime == null || selectedTime == l10n.undecided;
+    final timeValue = isUndecided ? null : selectedTime;
+
+    final title = _titleController.text.trim();
+    final name = title.isNotEmpty ? title : '';
+
+    final primaryFile =
+        _meetupImageFiles.isNotEmpty ? _meetupImageFiles.first : null;
+    final primaryUrl = primaryFile == null && _meetupImageUrls.isNotEmpty
+        ? _meetupImageUrls.first
+        : null;
+
+    return MeetupFavoriteTemplate(
+      id: 'draft',
+      name: name,
+      title: title,
+      description: _descriptionController.text.trim(),
+      location: _locationController.text.trim(),
+      categoryKey: _selectedCategory ?? 'study',
+      isUndecidedTime: isUndecided,
+      time: timeValue,
+      maxParticipants: _maxParticipants,
+      thumbnailImagePath: primaryFile?.path,
+      thumbnailImageUrl: primaryUrl,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  Future<void> _openMeetupFavorites() async {
+    final draft = _buildFavoritesDraft();
+    final selected = await Navigator.of(context).push<MeetupFavoriteTemplate>(
+      MaterialPageRoute(
+        builder: (context) => MeetupFavoritesScreen(
+          draftFromCreateScreen: draft,
+        ),
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+    _applyFavoriteTemplate(selected);
+  }
+
+  void _applyFavoriteTemplate(MeetupFavoriteTemplate t) {
+    final l10n = AppLocalizations.of(context)!;
+
+    setState(() {
+      _titleController.text = t.title;
+      _descriptionController.text = t.description;
+      _locationController.text = t.location;
+      _maxParticipants = t.maxParticipants;
+
+      // 이미지(1장) 복원 (즐겨찾기 템플릿은 썸네일 1장만 저장)
+      _meetupImageFiles.clear();
+      _meetupImageUrls.clear();
+
+      final thumbPath = t.thumbnailImagePath?.trim();
+      if (thumbPath != null && thumbPath.isNotEmpty) {
+        final f = File(thumbPath);
+        if (f.existsSync()) {
+          _meetupImageFiles.add(f);
+        }
+      } else {
+        final url = t.thumbnailImageUrl?.trim();
+        if (url != null && url.isNotEmpty) {
+          _meetupImageUrls.add(url);
+        }
+      }
+
+      // 시간
+      if (t.isUndecidedTime) {
+        _selectedTime = l10n.undecided;
+      } else {
+        final timeValue = t.time;
+        if (timeValue != null && _timeOptions.contains(timeValue)) {
+          _selectedTime = timeValue;
+        } else {
+          // 현재 선택된 날짜 기준으로 불가능한 시간이면 미정으로 폴백
+          _selectedTime = l10n.undecided;
+        }
+      }
+
+      // 카테고리
+      _selectedCategory = t.categoryKey;
+    });
+
+    _onCategorySelected(t.categoryKey);
+  }
 
   @override
   void initState() {
@@ -285,19 +480,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       dateStr = '$monthName ${selectedDate.day} ($weekdayName)';
     }
 
-    // 사용자 닉네임 가져오기
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final nickname =
-        authProvider.userData?['nickname'] ?? AppConstants.DEFAULT_HOST;
-    final nationality = authProvider.userData?['nationality'] ?? '';
-    final photoURL = authProvider.user?.photoURL;
-
     return Scaffold(
       backgroundColor: const Color(0xFFFAFBFC),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: false,
+        centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
           onPressed: () => Navigator.of(context).pop(),
@@ -306,6 +494,18 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           AppLocalizations.of(context)!.createNewMeetup,
           style: _appBarTitleStyle,
         ),
+        actions: [
+          IconButton(
+            tooltip: Localizations.localeOf(context).languageCode == 'ko'
+                ? '즐겨찾기'
+                : 'Favorites',
+            onPressed: _openMeetupFavorites,
+            icon: const Icon(
+              Icons.star_border_rounded,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
           child: Container(
@@ -325,86 +525,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                // 개선된 주최자 정보 카드
-                Container(
-                  height: 56,
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3FAFF), // 연한 프라이머리 틴트
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE1E6EE)),
-                  ),
-                  child: Row(
-                    children: [
-                      // 개선된 프로필 아바타
-                      Container(
-                        width: 40,
-                        height: 40,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.grey[300],
-                        ),
-                        child: photoURL != null
-                            ? ClipOval(
-                                child: Image.network(
-                                  photoURL,
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Icon(
-                                    Icons.person,
-                                    size: 20,
-                                    color: Colors.grey[600],
-                                  ),
-                                ),
-                              )
-                            : Icon(
-                                Icons.person,
-                                size: 20,
-                                color: Colors.grey[600],
-                              ),
-                      ),
-                      const SizedBox(width: 12),
-                      // 호스트 정보 (왼쪽 정렬)
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Row(
-                              children: [
-                                Text(
-                                  nickname,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 16,
-                                    color: Color(0xFF1A1A1A),
-                                  ),
-                                ),
-                                if (nationality.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 6.0),
-                                    child: CountryFlagCircle(
-                                      nationality: nationality,
-                                      size: 20, // 16 → 20으로 증가
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            Text(
-                              AppLocalizations.of(context)!.host,
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
+                // 공개 범위 (최상단)
+                _buildMeetupVisibilitySection(),
                 const SizedBox(height: 22),
 
                 // 개선된 날짜 및 요일 선택
@@ -417,24 +539,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         Text(
                           AppLocalizations.of(context)!.dateSelection,
                           style: _sectionTitleStyle,
-                        ),
-                        // 선택된 날짜 표시
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.pointColor,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            dateStr,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              height: 1.1,
-                              color: Colors.white,
-                            ),
-                          ),
                         ),
                       ],
                     ),
@@ -511,59 +615,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     ),
                 const SizedBox(height: 18),
 
-                // 설명 필드
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.description,
-                          style: _sectionTitleStyle,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          AppLocalizations.of(context)!.optionalField,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)!.enterMeetupDescription,
-                        hintStyle: _hintTextStyle,
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.all(16),
-                      ),
-                      style: _inputTextStyle,
-                      minLines: 4,
-                      maxLines: 6,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-
                 // 개선된 카테고리 선택
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -587,23 +638,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        _buildCategoryChip('study', AppLocalizations.of(context)!.study),
-                        _buildCategoryChip('meal', AppLocalizations.of(context)!.meal),
-                        _buildCategoryChip('cafe', AppLocalizations.of(context)!.cafe),
-                        _buildCategoryChip('culture', AppLocalizations.of(context)!.culture),
-                        _buildCategoryChip('other', AppLocalizations.of(context)!.other),
-                      ],
-                    ),
+                    _buildCategorySelectField(),
                     
-                    // 추천 장소 섹션 (카테고리 선택 시 표시)
-                    if (_showRecommendedPlaces) ...[
-                      const SizedBox(height: 16),
-                      _buildRecommendedPlacesSection(),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 18),
@@ -785,47 +821,37 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                             ],
                           ),
                           const SizedBox(height: 6),
-                          DropdownButtonFormField<int>(
-                            value: _maxParticipants,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
+                          InkWell(
+                            onTap: _showMaxParticipantsSheet,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
                                 horizontal: 16,
                                 vertical: 16,
                               ),
-                            ),
-                            style: _inputTextStyle,
-                            dropdownColor: Colors.white,
-                            items: _participantOptions.map((int value) {
-                              return DropdownMenuItem<int>(
-                                value: value,
-                                child: Text(
-                                  '$value${AppLocalizations.of(context)!.people}',
-                                  style: _inputTextStyle,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFE6EAF0),
+                                  width: 1,
                                 ),
-                              );
-                            }).toList(),
-                            onChanged: (value) {
-                              if (value != null) {
-                                setState(() {
-                                  _maxParticipants = value;
-                                });
-                              }
-                            },
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      '$_maxParticipants${AppLocalizations.of(context)!.people}',
+                                      style: _inputTextStyle,
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.expand_more,
+                                    color: Color(0xFF9CA3AF),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ],
                       ),
@@ -834,166 +860,55 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // 공개 범위 선택
+                // 세부 설명 (맨 아래에서 두 번째)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.visibilityScope,
-                      style: _sectionTitleStyle,
-                    ),
-                    const SizedBox(height: 8),
-                    
-                    // 공개 범위 옵션들
-                    Column(
+                    Row(
                       children: [
-                        // 전체 공개
-                        RadioListTile<String>(
-                          title: Text(
-                            AppLocalizations.of(context)!.publicPost ?? "",
-                            style: _radioTitleStyle,
-                          ),
-                          subtitle: Text(
-                            AppLocalizations.of(context)!.everyoneCanSee ?? "",
-                            style: _radioSubtitleStyle,
-                          ),
-                          value: 'public',
-                          groupValue: _visibility,
-                          onChanged: (value) {
-                            setState(() {
-                              _visibility = value!;
-                              _selectedCategoryIds.clear();
-                            });
-                          },
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: AppColors.pointColor,
+                        Text(
+                          AppLocalizations.of(context)!.description,
+                          style: _sectionTitleStyle,
                         ),
-                        
-                        // 친구만 공개
-                        RadioListTile<String>(
-                          title: Text(
-                            AppLocalizations.of(context)!.myFriendsOnly ?? "",
-                            style: _radioTitleStyle,
+                        const SizedBox(width: 4),
+                        Text(
+                          AppLocalizations.of(context)!.optionalField,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            height: 1.2,
+                            color: Color(0xFF9CA3AF),
                           ),
-                          subtitle: Text(
-                            AppLocalizations.of(context)!.myFriendsOnly ?? "",
-                            style: _radioSubtitleStyle,
-                          ),
-                          value: 'friends',
-                          groupValue: _visibility,
-                          onChanged: (value) {
-                            setState(() {
-                              _visibility = value!;
-                              _selectedCategoryIds.clear();
-                            });
-                          },
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: AppColors.pointColor,
-                        ),
-                        
-                        // 특정 그룹만 공개
-                        RadioListTile<String>(
-                          title: Text(
-                            AppLocalizations.of(context)!.selectedFriendGroupOnly ?? "",
-                            style: _radioTitleStyle,
-                          ),
-                          subtitle: Text(
-                            AppLocalizations.of(context)!.selectedGroupOnly ?? "",
-                            style: _radioSubtitleStyle,
-                          ),
-                          value: 'category',
-                          groupValue: _visibility,
-                          onChanged: (value) {
-                            setState(() {
-                              _visibility = value!;
-                            });
-                          },
-                          contentPadding: EdgeInsets.zero,
-                          activeColor: AppColors.pointColor,
                         ),
                       ],
                     ),
-                    
-                    // 특정 그룹 선택 UI (category 선택 시에만 표시)
-                    if (_visibility == 'category') ...[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8F9FA),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFE1E6EE)),
+                    const SizedBox(height: 6),
+                    TextFormField(
+                      controller: _descriptionController,
+                      decoration: InputDecoration(
+                        hintText: AppLocalizations.of(context)!.enterMeetupDescription,
+                        hintStyle: _hintTextStyle,
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(
-                                  Icons.info_outline,
-                                  size: 16,
-                                  color: Colors.orange[600],
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    AppLocalizations.of(context)!.selectFriendGroupsForMeetup,
-                                    style: _helperStyle.copyWith(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            FriendCategorySelector(
-                              categories: _friendCategories,
-                              selectedCategoryIds: _selectedCategoryIds,
-                              onSelectionChanged: (newSelection) {
-                                setState(() {
-                                  _selectedCategoryIds = newSelection;
-                                });
-                              },
-                            ),
-                            
-                            // 선택된 그룹이 없을 때 경고 메시지
-                            if (_selectedCategoryIds.isEmpty && _friendCategories.isNotEmpty) ...[
-                              const SizedBox(height: 12),
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange[50],
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.orange[200]!),
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.warning_amber,
-                                      size: 16,
-                                      color: Colors.orange[700],
-                                    ),
-                                    const SizedBox(width: 6),
-                                    Expanded(
-                                      child: Text(
-                                        AppLocalizations.of(context)!.noGroupSelectedWarning,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.orange[700],
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ],
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
                         ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
+                        ),
+                        contentPadding: const EdgeInsets.all(16),
                       ),
-                    ],
+                      style: _inputTextStyle,
+                      minLines: 4,
+                      maxLines: 6,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1002,132 +917,218 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      AppLocalizations.of(context)!.thumbnailSettingsOptional,
-                      style: _helperStyle,
-                    ),
-                    const SizedBox(height: 8),
-
-                    // 썸네일 컨테이너
-                    Container(
-                      height: 130,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: const Color(0xFFE6EAF0),
-                          width: 1,
+                    // 썸네일 이미지 첨부 (외곽 테두리 제거 + 높이/패딩 통일)
+                    Semantics(
+                      button: true,
+                      label: AppLocalizations.of(context)!.thumbnailImage,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        curve: Curves.easeOut,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _hasMeetupImages()
+                                ? AppColors.pointColor
+                                : const Color(0xFFE6EAF0),
+                            width: _hasMeetupImages() ? 1.6 : 1,
+                          ),
                         ),
-                      ),
-                      child: _thumbnailImage != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Stack(
-                                children: [
-                                  Image.file(
-                                    _thumbnailImage!,
-                                    width: double.infinity,
-                                    height: 130,
-                                    fit: BoxFit.cover,
-                                  ),
-                                  Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() {
-                                          _thumbnailImage = null;
-                                        });
-                                      },
-                                      child: Container(
-                                        width: 28,
-                                        height: 28,
-                                        decoration: BoxDecoration(
-                                          color: Colors.black54,
-                                          borderRadius: BorderRadius.circular(14),
-                                        ),
-                                        child: const Icon(
-                                          Icons.close,
-                                          color: Colors.white,
-                                          size: 16,
+                        child: Material(
+                          color: Colors.transparent,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: _selectThumbnailImage,
+                            child: SizedBox(
+                              height: 52,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 14),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 34,
+                                      height: 34,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.pointColor.withValues(alpha: 0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(
+                                        Icons.image_outlined,
+                                        size: 18,
+                                        color: AppColors.pointColor,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        AppLocalizations.of(context)!.thumbnailImage,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF111827),
                                         ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    const Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: Color(0xFF9CA3AF),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            )
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.image_outlined,
-                                  size: 32,
-                                  color: Colors.grey[400],
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  AppLocalizations.of(context)!.thumbnailImage,
-                                  style: _helperStyle.copyWith(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: const Color(0xFF6B7280),
-                                  ),
-                                ),
-                              ],
                             ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // 이미지 첨부 버튼
-                    SizedBox(
-                      height: 48,
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          final XFile? image = await _picker.pickImage(
-                            source: ImageSource.gallery,
-                            maxWidth: 800,
-                            maxHeight: 800,
-                          );
-                          if (image != null) {
-                            setState(() {
-                              _thumbnailImage = File(image.path);
-                            });
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(AppLocalizations.of(context)!.imageSelected),
-                                duration: const Duration(seconds: 1),
-                              ),
-                            );
-                          }
-                        },
-                        icon: Icon(
-                          Icons.add_photo_alternate,
-                          size: 20,
-                          color: AppColors.pointColor,
-                        ),
-                        label: Text(
-                          _thumbnailImage != null 
-                              ? (AppLocalizations.of(context)!.changeImage ?? "") : AppLocalizations.of(context)!.attachImage,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            color: AppColors.pointColor,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            height: 1.1,
                           ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: AppColors.pointColor),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
                         ),
                       ),
                     ),
+                    if (_hasMeetupImages()) ...[
+                      const SizedBox(height: 12),
+                      Builder(
+                        builder: (context) {
+                          final primaryUrl =
+                              _meetupImageUrls.isNotEmpty ? _meetupImageUrls.first : null;
+                          final primaryFile =
+                              _meetupImageFiles.isNotEmpty ? _meetupImageFiles.first : null;
+                          final total = _currentMeetupImageCount();
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 실제 모임 화면처럼: 가로 전체 큰 미리보기
+                              Container(
+                                width: double.infinity,
+                                constraints: const BoxConstraints(maxHeight: 260),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFE2E8F0),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Stack(
+                                    children: [
+                                      if (primaryFile != null)
+                                        Image.file(
+                                          primaryFile,
+                                          width: double.infinity,
+                                          height: 220,
+                                          fit: BoxFit.cover,
+                                        )
+                                      else if (primaryUrl != null)
+                                        Image.network(
+                                          primaryUrl,
+                                          width: double.infinity,
+                                          height: 220,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Container(
+                                            height: 220,
+                                            alignment: Alignment.center,
+                                            color: const Color(0xFFF3F4F6),
+                                            child: const Icon(
+                                              Icons.image_not_supported_outlined,
+                                              color: Color(0xFF9CA3AF),
+                                            ),
+                                          ),
+                                        ),
+                                      Positioned(
+                                        top: 10,
+                                        right: 10,
+                                        child: GestureDetector(
+                                          onTap: () => _removeMeetupImageAt(0),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(6),
+                                            decoration: const BoxDecoration(
+                                              color: Color(0xCC111827),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.close_rounded,
+                                              color: Colors.white,
+                                              size: 18,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                      if (total > 1)
+                                        Positioned(
+                                          bottom: 10,
+                                          right: 10,
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xCC111827),
+                                              borderRadius: BorderRadius.circular(16),
+                                            ),
+                                            child: Text(
+                                              '$total/$_maxMeetupImages',
+                                              style: const TextStyle(
+                                                fontFamily: 'Pretendard',
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w800,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              if (total > 1) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  height: 64,
+                                  child: ListView(
+                                    scrollDirection: Axis.horizontal,
+                                    children: [
+                                      ...List.generate(_meetupImageUrls.length, (i) {
+                                        final url = _meetupImageUrls[i];
+                                        return _MiniImageThumb(
+                                          onRemove: () => _removeMeetupImageAt(i),
+                                          child: Image.network(
+                                            url,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.image_not_supported_outlined,
+                                              color: Color(0xFF9CA3AF),
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                      ...List.generate(_meetupImageFiles.length, (j) {
+                                        final idx = _meetupImageUrls.length + j;
+                                        final f = _meetupImageFiles[j];
+                                        return _MiniImageThumb(
+                                          onRemove: () => _removeMeetupImageAt(idx),
+                                          child: Image.file(
+                                            f,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => const Icon(
+                                              Icons.image_not_supported_outlined,
+                                              color: Color(0xFF9CA3AF),
+                                            ),
+                                          ),
+                                        );
+                                      }),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          );
+                        },
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 24),
@@ -1190,22 +1191,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 if (_formKey.currentState!.validate()) {
                                   // 카테고리 유효성 검사
                                   if (_selectedCategory == null) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(AppLocalizations.of(context)!.pleaseSelectCategory),
-                                        backgroundColor: Colors.orange,
-                                      ),
+                                    AppSnackBar.show(
+                                      context,
+                                      message: AppLocalizations.of(context)!.pleaseSelectCategory,
+                                      type: AppSnackBarType.warning,
                                     );
                                     return;
                                   }
                                   
                                   // 공개 범위 유효성 검사
                                   if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(AppLocalizations.of(context)!.noGroupSelectedWarning),
-                                        backgroundColor: Colors.orange,
-                                      ),
+                                    AppSnackBar.show(
+                                      context,
+                                      message: AppLocalizations.of(context)!.noGroupSelectedWarning,
+                                      type: AppSnackBarType.warning,
                                     );
                                     return;
                                   }
@@ -1232,8 +1231,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           category:
                                               _selectedCategory!, // 선택된 카테고리 전달
                                           thumbnailContent: '',
-                                          thumbnailImage:
-                                              _thumbnailImage, // 이미지 전달
+                                          images: _meetupImageFiles,
+                                          imageUrls: _meetupImageUrls,
                                           visibility: _visibility, // 공개 범위 추가
                                           visibleToCategoryIds: _selectedCategoryIds, // 선택된 카테고리 ID들 추가
                                         );
@@ -1253,7 +1252,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                           hostNationality: '',
                                           imageUrl: '',
                                           thumbnailContent: '',
-                                          thumbnailImageUrl: '',
+                                          thumbnailImageUrl:
+                                              _meetupImageUrls.isNotEmpty
+                                                  ? _meetupImageUrls.first
+                                                  : '',
                                           date: selectedDate,
                                           category: _selectedCategory!,
                                         );
@@ -1262,27 +1264,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         widget.onCreateMeetup(widget.initialDayIndex, dummyMeetup);
                                         
                                         Navigator.of(context).pop();
-                                        ScaffoldMessenger.of(
+                                        AppSnackBar.show(
                                           context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(AppLocalizations.of(context)!.meetupCreated ?? ""),
-                                            backgroundColor: Colors.green,
-                                          ),
+                                          message: AppLocalizations.of(context)!.meetupCreated ?? "",
+                                          type: AppSnackBarType.success,
                                         );
                                       }
                                     } else if (mounted) {
                                       setState(() {
                                         _isSubmitting = false;
                                       });
-                                      ScaffoldMessenger.of(
+                                      AppSnackBar.show(
                                         context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            AppLocalizations.of(context)!.meetupCreateFailed,
-                                          ),
-                                        ),
+                                        message: AppLocalizations.of(context)!.meetupCreateFailed,
+                                        type: AppSnackBarType.error,
                                       );
                                     }
                                   } catch (e) {
@@ -1290,12 +1285,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                       setState(() {
                                         _isSubmitting = false;
                                       });
-                                      ScaffoldMessenger.of(
+                                      AppSnackBar.show(
                                         context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text('${AppLocalizations.of(context)!.error}: $e'),
-                                        ),
+                                        message: '${AppLocalizations.of(context)!.error}: $e',
+                                        type: AppSnackBarType.error,
                                       );
                                     }
                                   }
@@ -1335,63 +1328,127 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     );
 }
 
-  /// 카테고리 선택 시 추천 장소 로드
+  /// 카테고리 선택 시 상태 반영
   void _onCategorySelected(String category) async {
     setState(() {
       _selectedCategory = category;
-      _isLoadingPlaces = true;
-      _showRecommendedPlaces = true;
     });
+  }
 
-    // 추천 장소 로드
-    final places = await _recommendedPlacesService.getRecommendedPlaces(category);
-    
-    if (mounted) {
-      setState(() {
-        _recommendedPlaces = places;
-        _isLoadingPlaces = false;
-      });
+  Future<void> _openMeetupCategorySelection() async {
+    final selected =
+        await Navigator.of(context).push<MeetupCategorySelectionResult>(
+      MaterialPageRoute(
+        builder: (context) => MeetupCategorySelectScreen(
+          initialSelectedCategoryKey: _selectedCategory,
+        ),
+      ),
+    );
+
+    if (!mounted || selected == null) return;
+    _onCategorySelected(selected.categoryKey);
+    setState(() {
+      if (selected.placeUrl != null) {
+        _locationController.text = selected.placeUrl!;
+      }
+      void insertUrlAt(int index, String url) {
+        final u = url.trim();
+        if (u.isEmpty) return;
+        _meetupImageUrls.removeWhere((x) => x == u);
+        final safeIndex = index.clamp(0, _meetupImageUrls.length);
+        _meetupImageUrls.insert(safeIndex, u);
+      }
+
+      final main = selected.placeMainImageUrl?.trim();
+      final map = selected.placeMapImageUrl?.trim();
+      if (main != null && main.isNotEmpty) {
+        insertUrlAt(0, main);
+      }
+      if (map != null && map.isNotEmpty) {
+        // main이 있으면 map은 1번, 없으면 0번
+        insertUrlAt((main != null && main.isNotEmpty) ? 1 : 0, map);
+
+        // 최대 3장 유지(뒤에서부터 제거)
+        while (_meetupImageUrls.length + _meetupImageFiles.length >
+            _maxMeetupImages) {
+          if (_meetupImageFiles.isNotEmpty) {
+            _meetupImageFiles.removeLast();
+          } else if (_meetupImageUrls.length > 1) {
+            _meetupImageUrls.removeLast();
+          } else {
+            break;
+          }
+        }
+      }
+    });
+  }
+
+  String _meetupCategoryLabel(AppLocalizations l10n, String categoryKey) {
+    switch (categoryKey) {
+      case 'study':
+        return l10n.study;
+      case 'meal':
+        return l10n.meal;
+      case 'cafe':
+        return l10n.cafe;
+      case 'drink':
+        return l10n.drink;
+      case 'culture':
+        return l10n.culture;
+      default:
+        return categoryKey;
     }
   }
 
-  /// 카테고리 칩 위젯 생성
-  Widget _buildCategoryChip(String key, String label) {
-    final isSelected = _selectedCategory == key;
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      child: InkWell(
-        onTap: () => _onCategorySelected(key),
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          height: 44,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          decoration: BoxDecoration(
-            color: isSelected 
-                ? AppColors.pointColor
-                : Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isSelected 
-                  ? AppColors.pointColor
-                  : const Color(0xFFE1E6EE),
-              width: 1,
-            ),
-            boxShadow: isSelected ? [
-              BoxShadow(
-                color: AppColors.pointColor.withOpacity(0.2),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+  Widget _buildCategorySelectField() {
+    final l10n = AppLocalizations.of(context)!;
+    final selectedKey = _selectedCategory;
+    final displayText = selectedKey == null
+        ? l10n.pleaseSelectCategory
+        : _meetupCategoryLabel(l10n, selectedKey);
+
+    final isSelected = selectedKey != null;
+
+    return Semantics(
+      label: l10n.category,
+      button: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _openMeetupCategorySelection,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFE6EAF0),
               ),
-            ] : null,
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? Colors.white : const Color(0xFF1A1A1A),
-              fontSize: 14,
-              fontFamily: 'Pretendard',
-              fontWeight: FontWeight.w600,
-              height: 1.1,
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    displayText,
+                    style: _inputTextStyle.copyWith(
+                      color: isSelected
+                          ? const Color(0xFF111827)
+                          : const Color(0xFF9CA3AF),
+                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 22,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ],
             ),
           ),
         ),
@@ -1399,136 +1456,290 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     );
   }
 
-  /// 추천 장소 섹션 위젯
-  Widget _buildRecommendedPlacesSection() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE1E6EE)),
+  int _currentMeetupImageCount() =>
+      _meetupImageUrls.length + _meetupImageFiles.length;
+
+  bool _hasMeetupImages() => _currentMeetupImageCount() > 0;
+
+  void _removeMeetupImageAt(int index) {
+    setState(() {
+      if (index < _meetupImageUrls.length) {
+        _meetupImageUrls.removeAt(index);
+        return;
+      }
+      final fileIndex = index - _meetupImageUrls.length;
+      if (fileIndex >= 0 && fileIndex < _meetupImageFiles.length) {
+        _meetupImageFiles.removeAt(fileIndex);
+      }
+    });
+  }
+
+
+  Future<void> _selectThumbnailImage() async {
+    final pickedFiles = await _picker.pickMultiImage();
+    if (pickedFiles.isEmpty) return;
+
+    final remaining = _maxMeetupImages - _currentMeetupImageCount();
+    if (remaining <= 0) {
+      if (!mounted) return;
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '이미지는 최대 $_maxMeetupImages장까지 첨부할 수 있어요'
+            : 'You can attach up to $_maxMeetupImages images',
+        type: AppSnackBarType.warning,
+      );
+      return;
+    }
+
+    final toAdd = pickedFiles
+        .take(remaining)
+        .map((x) => File(x.path))
+        .toList();
+
+    setState(() {
+      _meetupImageFiles.addAll(toAdd);
+    });
+
+    if (pickedFiles.length > remaining && mounted) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '이미지는 최대 $_maxMeetupImages장까지만 추가했어요'
+            : 'Only the first $_maxMeetupImages images were added',
+        type: AppSnackBarType.info,
+      );
+    }
+
+    await _checkThumbnailImageSize();
+  }
+
+  void _removeThumbnailImage() {
+    setState(() {
+      _meetupImageFiles.clear();
+      _meetupImageUrls.clear();
+    });
+  }
+
+  Future<void> _checkThumbnailImageSize() async {
+    if (_meetupImageFiles.isEmpty) return;
+
+    int totalBytes = 0;
+    for (final f in _meetupImageFiles) {
+      try {
+        totalBytes += await f.length();
+      } catch (_) {}
+    }
+
+    final sizeInMB = totalBytes / (1024 * 1024);
+    if (sizeInMB <= 10) return;
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocalizations.of(context)!.totalImageSizeWarning(
+            sizeInMB.toStringAsFixed(1),
+          ),
+        ),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    );
+  }
+
+  Widget _buildMeetupVisibilitySection() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.visibilityScope,
+          style: _sectionTitleStyle,
+        ),
+        const SizedBox(height: 12),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
             children: [
-              Icon(Icons.place, size: 20, color: AppColors.pointColor),
-              const SizedBox(width: 6),
-              Text(
-                AppLocalizations.of(context)!.recommendedPlaces,
-                style: _sectionTitleStyle.copyWith(fontSize: 14),
+              _buildVisibilityButton(
+                label: l10n.publicPost,
+                isSelected: _visibility == 'public',
+                onTap: () {
+                  setState(() {
+                    _visibility = 'public';
+                    _selectedCategoryIds.clear();
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              _buildVisibilityButton(
+                label: l10n.meetupVisibilityFriendsAll,
+                isSelected: _visibility == 'friends',
+                onTap: () {
+                  setState(() {
+                    _visibility = 'friends';
+                    _selectedCategoryIds.clear();
+                  });
+                },
+              ),
+              const SizedBox(width: 10),
+              _buildVisibilityButton(
+                label: l10n.meetupVisibilityGroupSelect,
+                isSelected: _visibility == 'category',
+                onTap: _openMeetupGroupSelection,
               ),
             ],
           ),
-          const SizedBox(height: 12),
-          
-          if (_isLoadingPlaces)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: CircularProgressIndicator(
-                  color: AppColors.pointColor,
-                ),
+        ),
+        if (_visibility == 'category') ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _openMeetupGroupSelection,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE6EAF0)),
               ),
-            )
-          else if (_recommendedPlaces.isEmpty)
-            Text(
-              AppLocalizations.of(context)!.noRecommendedPlaces,
-              style: _helperStyle.copyWith(fontSize: 14),
-            )
-          else
-            Column(
-              children: [
-                ..._recommendedPlaces.map((place) => 
-                  _buildPlaceItem(place)
-                ).toList(),
-                
-                // 직접 입력 옵션
-                _buildCustomLocationOption(),
-              ],
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.meetupVisibilityGroupSelect,
+                      style: _inputTextStyle,
+                    ),
+                  ),
+                  if (_selectedCategoryIds.isNotEmpty)
+                    Text(
+                      '${_selectedCategoryIds.length}${l10n.selectedCount}',
+                      style: _helperStyle,
+                    ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 20,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ],
+              ),
             ),
+          ),
         ],
-      ),
+      ],
     );
   }
 
-  /// 개별 장소 아이템 위젯
-  Widget _buildPlaceItem(RecommendedPlace place) {
-    final isSelected = _locationController.text == place.url;
-    
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _locationController.text = place.url;
-          _showRecommendedPlaces = false; // 선택 후 닫기
-        });
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? AppColors.pointColor.withOpacity(0.1) : Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isSelected ? AppColors.pointColor : const Color(0xFFE6EAF0),
-            width: isSelected ? 2 : 1,
+  Widget _buildVisibilityButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.pointColor : Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: isSelected ? AppColors.pointColor : const Color(0xFFE1E6EE),
+              width: 1.2,
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              color: isSelected ? Colors.white : const Color(0xFF111827),
+            ),
           ),
         ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.location_on,
-              size: 20,
-              color: isSelected ? AppColors.pointColor : Colors.grey[600],
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                place.name,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
-                  color: isSelected ? AppColors.pointColor : const Color(0xFF111827),
-                ),
-              ),
-            ),
-            if (isSelected)
-              Icon(Icons.check_circle, color: AppColors.pointColor, size: 20),
-          ],
-        ),
       ),
     );
   }
 
-  /// 직접 입력 옵션 위젯
-  Widget _buildCustomLocationOption() {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _locationController.clear();
-          _showRecommendedPlaces = false;
-        });
-      },
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Color(0xFFE6EAF0)),
+  Future<void> _openMeetupGroupSelection() async {
+    final result = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        builder: (_) => MeetupVisibilityGroupSelectScreen(
+          categories: _friendCategories,
+          initialSelectedCategoryIds: _selectedCategoryIds,
         ),
-        child: Row(
-          children: [
-            Icon(Icons.edit_location_alt, size: 20, color: Colors.grey[600]),
-            const SizedBox(width: 12),
-            Text(
-              AppLocalizations.of(context)!.customLocation,
-              style: _inputTextStyle,
+      ),
+    );
+
+    if (!mounted) return;
+    if (result == null) return;
+
+    setState(() {
+      _visibility = 'category';
+      _selectedCategoryIds = result;
+    });
+  }
+}
+
+class _MiniImageThumb extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onRemove;
+
+  const _MiniImageThumb({
+    required this.child,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 64,
+      height: 64,
+      margin: const EdgeInsets.only(right: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+        color: const Color(0xFFF3F4F6),
+      ),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox.expand(child: child),
+          ),
+          Positioned(
+            top: 6,
+            right: 6,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Color(0xCC111827),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white,
+                  size: 14,
+                ),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

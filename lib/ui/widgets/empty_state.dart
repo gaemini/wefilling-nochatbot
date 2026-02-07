@@ -50,6 +50,11 @@ class AppEmptyState extends StatelessWidget {
   /// 패딩
   final EdgeInsets padding;
 
+  /// 아이콘/문구 블록을 화면 중앙에 배치할지 여부
+  /// - 기본은 기존 동작 유지
+  /// - Friend 그룹 빈 상태처럼 "화면 중앙 정렬"이 필요한 경우 true 사용
+  final bool centerVertically;
+
   const AppEmptyState({
     super.key,
     required this.icon,
@@ -63,6 +68,7 @@ class AppEmptyState extends StatelessWidget {
     this.illustration,
     this.backgroundColor,
     this.padding = const EdgeInsets.all(DesignTokens.s24),
+    this.centerVertically = false,
   });
 
   /// 모임이 없을 때 표시하는 빈 상태 (프리셋)
@@ -158,46 +164,56 @@ class AppEmptyState extends StatelessWidget {
     return Container(
       width: double.infinity,
       color: backgroundColor,
-      child: SingleChildScrollView(
-        padding: padding,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // 일러스트 또는 아이콘
-            _buildIllustration(colorScheme),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // padding이 적용된 영역 안에서만 중앙 정렬이 되도록, 최소 높이를 보장한다.
+          final minHeight = (constraints.maxHeight - padding.vertical).clamp(0.0, double.infinity);
 
-            const SizedBox(height: DesignTokens.s24),
+          return SingleChildScrollView(
+            padding: padding,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight),
+              child: Column(
+                mainAxisSize: centerVertically ? MainAxisSize.max : MainAxisSize.min,
+                mainAxisAlignment: centerVertically ? MainAxisAlignment.center : MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 일러스트 또는 아이콘
+                  _buildIllustration(colorScheme),
 
-            // 제목
-            Text(
-              title,
-              style: theme.textTheme.headlineSmall?.copyWith(
-                color: colorScheme.onSurface,
-                fontWeight: FontWeight.w600,
+                  const SizedBox(height: DesignTokens.s24),
+
+                  // 제목
+                  Text(
+                    title,
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: DesignTokens.s12),
+
+                  // 설명
+                  Text(
+                    description,
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+
+                  const SizedBox(height: DesignTokens.s24),
+
+                  // CTA 버튼들
+                  _buildActionButtons(theme, colorScheme),
+                ],
               ),
-              textAlign: TextAlign.center,
             ),
-
-            const SizedBox(height: DesignTokens.s12),
-
-            // 설명
-            Text(
-              description,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-
-            const SizedBox(height: DesignTokens.s24),
-
-            // CTA 버튼들
-            _buildActionButtons(theme, colorScheme),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

@@ -45,11 +45,10 @@ class CommentCacheManager extends BaseCacheManager<CachedComment> {
         final comments = (cached.data['comments'] as List)
           .map((data) => Comment.fromMap(data, data['id']))
           .toList();
-        Logger.log('📦 댓글 캐시 히트: ${comments.length}개 (게시글: $postId)');
         return comments;
       }
     } catch (e) {
-      Logger.error('댓글 캐시 읽기 실패: $e');
+      Logger.error('댓글 캐시 읽기 실패', e);
     }
     
     return [];
@@ -68,9 +67,8 @@ class CommentCacheManager extends BaseCacheManager<CachedComment> {
         },
         cachedAt: DateTime.now(),
       ));
-      Logger.log('💾 댓글 캐시 저장: ${comments.length}개 (게시글: $postId)');
     } catch (e) {
-      Logger.error('댓글 캐시 저장 실패 (무시): $e');
+      Logger.error('댓글 캐시 저장 실패', e);
     }
   }
   
@@ -81,9 +79,8 @@ class CommentCacheManager extends BaseCacheManager<CachedComment> {
     try {
       final cacheKey = 'post_$postId';
       invalidate(key: cacheKey);
-      Logger.log('💾 댓글 캐시 무효화 (게시글: $postId)');
     } catch (e) {
-      Logger.error('댓글 캐시 무효화 실패 (무시): $e');
+      Logger.error('댓글 캐시 무효화 실패', e);
     }
   }
 }

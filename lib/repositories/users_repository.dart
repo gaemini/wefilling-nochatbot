@@ -93,11 +93,8 @@ class UsersRepository {
       }
       
       if (uncachedIds.isEmpty) {
-        Logger.log('💾 모든 프로필을 캐시에서 로드: ${userIds.length}개');
         return profiles;
       }
-      
-      Logger.log('🔍 Firestore에서 프로필 조회: ${uncachedIds.length}개 (캐시: ${profiles.length}개)');
       
       // 2. Firestore에서 배치로 조회 (최대 10개씩)
       final batches = <List<String>>[];
@@ -462,10 +459,6 @@ class UsersRepository {
 
             // 2단계: 배치로 프로필 조회 (캐싱 + 병렬 처리)
             final profiles = await getUserProfilesBatch(friendIds);
-            
-            final elapsed = DateTime.now().difference(startTime).inMilliseconds;
-            Logger.log('✅ 친구 목록 로드 완료: ${profiles.length}명 (${elapsed}ms)');
-
             return profiles;
           });
     } catch (e) {

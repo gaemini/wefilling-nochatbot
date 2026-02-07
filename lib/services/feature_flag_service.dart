@@ -45,7 +45,6 @@ class FeatureFlagService {
       await _fetchRemoteConfig();
       
       _isInitialized = true;
-      Logger.log('🚩 FeatureFlagService 초기화 완료');
     } catch (e) {
       Logger.error('⚠️ FeatureFlagService 초기화 오류: $e');
       // 초기화 실패 시에도 로컬 설정은 사용할 수 있도록 함
@@ -77,7 +76,6 @@ class FeatureFlagService {
 
       // 3. Firebase Remote Config 확인
       final remoteValue = _remoteConfig.getBool(featureKey);
-      Logger.log('🚩 Remote Config에서 $featureKey = $remoteValue');
       return remoteValue;
 
     } catch (e) {
@@ -148,7 +146,6 @@ class FeatureFlagService {
   Future<void> _fetchRemoteConfig() async {
     try {
       await _remoteConfig.fetchAndActivate();
-      Logger.log('🚩 Remote Config 업데이트 완료');
     } catch (e) {
       Logger.error('⚠️ Remote Config 가져오기 오류: $e');
       // 실패해도 캐시된 값 사용

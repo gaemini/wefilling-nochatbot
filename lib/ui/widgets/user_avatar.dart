@@ -37,20 +37,7 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 🔍 디버그: UserAvatar가 받은 파라미터 로그
-    if (kDebugMode) {
-      Logger.log('🎨 UserAvatar 렌더링:');
-      Logger.log('   - uid: $uid');
-      Logger.log('   - photoUrl: "$photoUrl"');
-      Logger.log('   - photoVersion: $photoVersion');
-      Logger.log('   - isAnonymous: $isAnonymous');
-      Logger.log('   - size: $size');
-    }
-    
     if (isAnonymous || photoUrl.isEmpty) {
-      if (kDebugMode) {
-        Logger.log('   → placeholder 표시 (익명 또는 빈 URL)');
-      }
       return _placeholder();
     }
 

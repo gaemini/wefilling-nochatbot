@@ -55,7 +55,6 @@ class AuthProvider with ChangeNotifier {
       final clientId = AppConfig.getGoogleClientId();
       
       await _googleSignIn.initialize(clientId: clientId);
-      Logger.log('Google Sign-In 초기화 완료');
     } catch (e) {
       Logger.error('Google Sign-In 초기화 실패: $e');
     }
@@ -1470,10 +1469,8 @@ class AuthProvider with ChangeNotifier {
     }
     
     try {
-      Logger.log('📱 자동 로그인 감지 - FCM 초기화 시작: ${_user!.uid}');
       await FCMService().initialize(_user!.uid);
       _fcmInitialized = true;
-      Logger.log('✅ FCM 자동 초기화 완료');
     } catch (e) {
       Logger.error('⚠️ FCM 자동 초기화 실패 (계속 진행): $e');
       // 실패해도 앱 사용에는 지장 없음 (best-effort)

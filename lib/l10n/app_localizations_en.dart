@@ -388,6 +388,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get publicPost => 'Public';
 
   @override
+  String get meetupVisibilityFriendsAll => 'All Friends';
+
+  @override
+  String get meetupVisibilityGroupSelect => 'Select Groups';
+
+  @override
+  String get selectMeetupGroupsTitle => 'Select Groups';
+
+  @override
+  String get meetupThumbnailUsesFirstOnly =>
+      'Only one thumbnail is used. Using the first image.';
+
+  @override
   String get categorySpecific => 'Category Specific';
 
   @override
@@ -401,7 +414,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get anonymous => 'Anonymous';
 
   @override
-  String get idWillBeShown => 'ID will be shown';
+  String get idWillBeShown => 'Your ID will not be shown';
 
   @override
   String get createMeetup => 'Create Meetup';
@@ -498,6 +511,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get category => 'Category';
+
+  @override
+  String get groups => 'Groups';
 
   @override
   String get categories => 'Categories';
@@ -671,23 +687,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noGroup => 'No Group';
 
   @override
-  String get groupSettings => 'Category Settings';
+  String get groupSettings => 'Group Settings';
 
   @override
-  String get selectCategoriesToShare => 'Select categories to share';
+  String get selectCategoriesToShare => 'Select groups to share';
 
   @override
-  String get friendCategories => 'Friend Categories';
+  String get friendCategories => 'Friend Groups';
 
   @override
   String get noFriendCategories =>
-      'No friend categories created. Please create a category first.';
+      'No friend groups created. Please create a group first.';
 
   @override
-  String get defaultCategoryCreated => 'Default category created';
+  String get defaultCategoryCreated => 'Default group created';
 
   @override
-  String get defaultCategoryFailed => 'Failed to create default category';
+  String get defaultCategoryFailed => 'Failed to create default group';
 
   @override
   String get colorSelection => 'Select Color';
@@ -873,11 +889,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchToSendRequest => 'Search for users to send friend requests';
 
   @override
-  String get friendCategoriesManagement => 'Friend Categories Management';
+  String get friendCategoriesManagement => 'Friend Groups';
 
   @override
   String get noFriendGroupsYet =>
-      'No friend groups created yet.\nCreate groups in Friend Categories Management.';
+      'No friend groups created yet.\nCreate groups in Friend Groups.';
 
   @override
   String friendsCount(Object count) {
@@ -1094,23 +1110,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get loadingComments => 'An error occurred while loading comments';
 
   @override
-  String get editCategory => 'Edit Category';
+  String get editCategory => 'Edit Group';
 
   @override
-  String get newCategory => 'New Category';
+  String get newCategory => 'New Group';
 
   @override
-  String get categoryName => 'Category Name';
+  String get categoryName => 'Group Name';
 
   @override
   String get categoryNameHint => 'e.g., University Friends';
 
   @override
-  String get createFirstCategory => 'Manage Friends with Categories';
+  String get createFirstCategory => 'Manage Friends with Groups';
 
   @override
   String get createFirstCategoryDescription =>
-      'Create categories\nto organize your friends into groups.';
+      'Manage your friends with groups.\nCreate a group using the add button below.';
 
   @override
   String get editAction => 'Edit';
@@ -1126,7 +1142,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String groupSettingsFor(String name) {
-    return '$name\'s Category Settings';
+    return '$name\'s Group Settings';
   }
 
   @override
@@ -1138,32 +1154,32 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get categoryCreated => 'Category created';
+  String get categoryCreated => 'Group created';
 
   @override
-  String get categoryUpdated => 'Category updated';
+  String get categoryUpdated => 'Group updated';
 
   @override
-  String get categoryDeleted => 'Category deleted';
+  String get categoryDeleted => 'Group deleted';
 
   @override
-  String get categoryCreateFailed => 'Failed to create category';
+  String get categoryCreateFailed => 'Failed to create group';
 
   @override
-  String get categoryUpdateFailed => 'Failed to update category';
+  String get categoryUpdateFailed => 'Failed to update group';
 
   @override
-  String get categoryDeleteFailed => 'Failed to delete category';
+  String get categoryDeleteFailed => 'Failed to delete group';
 
   @override
-  String get enterCategoryName => 'Please enter category name';
+  String get enterCategoryName => 'Please enter group name';
 
   @override
-  String get deleteCategory => 'Delete Category';
+  String get deleteCategory => 'Delete Group';
 
   @override
   String deleteCategoryConfirm(String name) {
-    return 'Are you sure you want to delete \'$name\' category?\n\nFriends in this category will be moved to other categories.';
+    return 'Are you sure you want to delete \'$name\' group?\n\nFriends in this group will be moved to other groups.';
   }
 
   @override
@@ -1212,10 +1228,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get friendStatus => 'Friend';
 
   @override
-  String get addCategory => 'Add Category';
+  String get addCategory => 'Add Group';
 
   @override
-  String get newCategoryCreate => 'Create New Category';
+  String get newCategoryCreate => 'Create Your First Group';
 
   @override
   String get participatedReviews => 'Participated Reviews';
@@ -2295,6 +2311,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cafe => 'Cafe';
 
   @override
+  String get drink => 'Drinks';
+
+  @override
   String get friendsOnlyBadge => 'Friends Only';
 
   @override
@@ -2314,7 +2333,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get noFriendsInCategory => 'No friends yet';
 
   @override
-  String get addFriendsToCategory => 'Add friends to this category';
+  String get addFriendsToCategory => 'Add friends to this group';
 
   @override
   String get registrationRequired => 'Registration required';

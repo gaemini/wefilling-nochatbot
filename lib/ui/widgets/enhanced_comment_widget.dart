@@ -16,6 +16,7 @@ import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
 import '../dialogs/block_dialog.dart';
+import '../snackbar/app_snackbar.dart';
 
 class EnhancedCommentWidget extends StatefulWidget {
   final Comment comment;
@@ -313,8 +314,11 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     if (confirmed == true && mounted) {
       final reason = reasonController.text.trim();
       if (reason.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('신고 사유를 입력해주세요.')),
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
+        AppSnackBar.show(
+          context,
+          message: isKo ? '신고 사유를 입력해주세요.' : 'Please enter a report reason.',
+          type: AppSnackBarType.warning,
         );
         return;
       }
@@ -336,12 +340,16 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     if (mounted) {
       if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reportSubmitted)),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.reportSubmitted,
+          type: AppSnackBarType.success,
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reportError)),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.reportError,
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -510,8 +518,10 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.loginRequired)),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.loginRequired,
+          type: AppSnackBarType.warning,
         );
       }
       return;
@@ -522,15 +532,19 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       final success = await _commentService.toggleCommentLike(widget.comment.id, user.uid);
       
       if (!success && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed)),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.commentLikeFailed,
+          type: AppSnackBarType.error,
         );
       }
     } catch (e) {
       Logger.error('댓글 좋아요 토글 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        AppSnackBar.show(
+          context,
+          message: '${AppLocalizations.of(context)!.error}: $e',
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -597,39 +611,41 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 프로필 이미지
-                GestureDetector(
-                  onTap: _openCommentAuthorProfile,
-                  child: Container(
-                    width: 32,
-                    height: 32,
-                    margin: const EdgeInsets.only(top: 2),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.grey[200],
-                    ),
-                    child: (!widget.isAnonymousPost && photoUrl.trim().isNotEmpty)
-                        ? ClipOval(
-                            child: Image.network(
-                              photoUrl.trim(),
-                              width: 32,
-                              height: 32,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Icon(
-                                Icons.person,
-                                size: 18,
-                                color: Colors.grey[500],
+                // 익명 게시글이 아닐 때만 프로필 이미지 표시
+                if (!widget.isAnonymousPost) ...[
+                  GestureDetector(
+                    onTap: _openCommentAuthorProfile,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      margin: const EdgeInsets.only(top: 2),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.grey[200],
+                      ),
+                      child: photoUrl.trim().isNotEmpty
+                          ? ClipOval(
+                              child: Image.network(
+                                photoUrl.trim(),
+                                width: 32,
+                                height: 32,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Icon(
+                                  Icons.person,
+                                  size: 18,
+                                  color: Colors.grey[500],
+                                ),
                               ),
+                            )
+                          : Icon(
+                              Icons.person,
+                              size: 18,
+                              color: Colors.grey[500],
                             ),
-                          )
-                        : Icon(
-                            Icons.person,
-                            size: 18,
-                            color: Colors.grey[500],
-                          ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
+                  const SizedBox(width: 10),
+                ],
 
                 // 댓글 내용 영역
                 Expanded(
@@ -638,18 +654,29 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                     children: [
                       Row(
                         children: [
-                          GestureDetector(
-                            onTap: _openCommentAuthorProfile,
-                            child: Text(
-                              displayName,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
-                            ),
-                          ),
+                          // 익명 게시글이면 클릭 불가능한 텍스트, 아니면 클릭 가능
+                          widget.isAnonymousPost
+                              ? Text(
+                                  displayName,
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF111827),
+                                  ),
+                                )
+                              : GestureDetector(
+                                  onTap: _openCommentAuthorProfile,
+                                  child: Text(
+                                    displayName,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF111827),
+                                    ),
+                                  ),
+                                ),
                           const SizedBox(width: 6),
                           Text(
                             widget.comment.getFormattedTime(context),

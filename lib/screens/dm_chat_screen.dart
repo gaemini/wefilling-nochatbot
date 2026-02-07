@@ -6,7 +6,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -27,8 +26,10 @@ import '../design/tokens.dart';
 import 'package:intl/intl.dart';
 import 'post_detail_screen.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import 'dm_image_send_preview_screen.dart';
 import '../ui/widgets/user_avatar.dart';
 import '../utils/logger.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 // DM 전용 색상
 class DMColors {
@@ -119,11 +120,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
     _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _scrollController.addListener(_onScroll);
     
-    // 🔍 디버그: Firestore 직접 조회로 실제 저장된 데이터 확인
-    if (kDebugMode) {
-      _debugCheckFirestoreData();
-    }
-    
     _checkBlockStatus(); // 차단 상태 확인
     _preloadPostContentIfAnonymous(); // 익명이면 게시글 본문 미리 로드
     _initConversationState();
@@ -161,27 +157,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
   
   /// 디버그: Firestore에 실제로 저장된 데이터 확인
-  Future<void> _debugCheckFirestoreData() async {
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(widget.otherUserId)
-          .get();
-      
-      if (doc.exists) {
-        final data = doc.data()!;
-        Logger.log('🔍 [디버그] Firestore 직접 조회 (otherUserId=${widget.otherUserId}):');
-        Logger.log('   - nickname: "${data['nickname']}"');
-        Logger.log('   - photoURL: "${data['photoURL']}"');
-        Logger.log('   - photoVersion: ${data['photoVersion']}');
-      } else {
-        Logger.log('🔍 [디버그] Firestore 문서 없음: ${widget.otherUserId}');
-      }
-    } catch (e) {
-      Logger.error('🔍 [디버그] Firestore 조회 실패: $e');
-    }
-  }
-  
   /// 차단 상태 확인
   Future<void> _checkBlockStatus() async {
     try {
@@ -299,11 +274,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
           _conversationExists = null;
         });
       }
-      Logger.log('🚀 대화방 초기화: $_activeConversationId');
-      
-      // conversationId 형식 확인
-      Logger.log('🔍 대화방 ID 확인: $_activeConversationId');
-      Logger.log('🔍 상대방 ID: ${widget.otherUserId}');
       
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
@@ -376,7 +346,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       // 대화방이 존재하지 않으면 메시지 전송 시까지 대기
       if (_conversationExists == false) {
-        Logger.log('📝 대화방이 존재하지 않음 - 메시지 전송 시까지 대기: $_activeConversationId');
         
         // 본인 DM 체크
         if (widget.otherUserId == _currentUser?.uid) {
@@ -399,7 +368,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
         
         // 대화방이 없으면 생성하지 않고 대기 상태로 설정
-        Logger.log('📝 대화방 미생성 상태 - 첫 메시지 전송 시 생성됨');
       }
       
       // 참여자 확인 (대화방이 이미 존재했던 경우에만)
@@ -561,12 +529,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
     try {
       final targetConversationId = conversationId ?? _activeConversationId;
       _activeConversationId = targetConversationId;
-      Logger.log('📱 메시지 스트림 초기화:');
-      Logger.log('  - 대상 conversationId: $targetConversationId');
 
       // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
       final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(targetConversationId);
-      Logger.log('  - 가시성 시작 시간(leave 기록 기반): $visibilityStartTime');
       _visibilityStartTime = visibilityStartTime;
 
       // 1) 로컬 캐시를 먼저 읽어 즉시 렌더링 (문자앱 UX)
@@ -728,16 +693,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 읽음 처리
   Future<void> _markAsRead() async {
-    Logger.log('📖 읽음 처리 시작: $_activeConversationId');
     await Future.delayed(const Duration(milliseconds: 500));
     try {
       await _dmService.markAsRead(_activeConversationId);
-      Logger.log('✅ 읽음 처리 완료: $_activeConversationId');
       
       // UI 강제 업데이트를 위해 스트림 재초기화
       if (mounted) {
         await Future.delayed(const Duration(milliseconds: 100));
-        Logger.log('🔄 스트림 리스너 업데이트 트리거');
       }
     } catch (e) {
       Logger.error('⚠️ 읽음 처리 중 오류: $e');
@@ -997,28 +959,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
               ? (isCachedDeleted ? deletedLabel : '')
               : (resolved.nickname == 'DELETED_ACCOUNT' ? deletedLabel : resolved.nickname);
           
-          // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
-          if (kDebugMode) {
-            Logger.log('📸 DM채팅 AppBar 아바타 데이터 (대화방=${widget.conversationId.substring(0, 8)}...):');
-            Logger.log('   - otherUserId: $otherUserId');
-            Logger.log('   - isCachedDeleted: $isCachedDeleted');
-            Logger.log('   - info: ${info != null ? "있음" : "null"}');
-            if (info != null) {
-              Logger.log('   - isFromCache: ${info.isFromCache}');
-              Logger.log('   - photoURL: "${info.photoURL}"');
-              Logger.log('   - photoVersion: ${info.photoVersion}');
-              Logger.log('   - nickname: "${info.nickname}"');
-            }
-          }
-          
           // photoURL이 있으면 표시하되, 캐시 스냅샷은 노출하지 않는다.
           final otherUserPhoto = (isCachedDeleted || resolved == null) ? '' : resolved.photoURL;
           final otherUserPhotoVersion =
               (isCachedDeleted || resolved == null) ? 0 : resolved.photoVersion;
-          
-          if (kDebugMode) {
-            Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
-          }
           
           final primaryTitle =
               _isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
@@ -1203,13 +1147,20 @@ class _DMChatScreenState extends State<DMChatScreen> {
       await _dmService.archiveConversation(_activeConversationId);
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('채팅방이 목록에서 삭제되었습니다')),
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      AppSnackBar.show(
+        context,
+        message: isKo
+            ? '채팅방이 목록에서 삭제되었습니다'
+            : 'This chat has been removed from your list.',
+        type: AppSnackBarType.info,
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+      AppSnackBar.show(
+        context,
+        message: '${AppLocalizations.of(context)!.error}: $e',
+        type: AppSnackBarType.error,
       );
     }
   }
@@ -2547,10 +2498,24 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (xfile == null) return;
 
       if (!mounted) return;
+
+      final pickedFile = File(xfile.path);
+      final shouldSend = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DMImageSendPreviewScreen(imageFile: pickedFile),
+          fullscreenDialog: true,
+        ),
+      );
+
+      if (!mounted) return;
+      if (shouldSend != true) return;
+
       setState(() {
-        _pendingImage = File(xfile.path);
+        _pendingImage = pickedFile;
         _uploadProgress = null;
       });
+      await _sendMessage();
     } catch (e) {
       Logger.error('이미지 선택 오류: $e');
       if (!mounted) return;
@@ -2584,8 +2549,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (_conversationExists != true) {
-        Logger.log('📝 첫 메시지 전송 - 대화방 생성 시도');
-        Logger.log('📝 기존 conversationId: $_activeConversationId');
         
         // conversationId에서 익명 여부와 postId 추출
         final isAnonymousConv = _activeConversationId.startsWith('anon_');
@@ -2627,10 +2590,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
           return;
         }
         
-        Logger.log('✅ 대화방 생성 성공: $newConversationId');
-        Logger.log('📝 생성된 conversationId와 기존 ID 비교:');
-        Logger.log('   - 생성된 ID: $newConversationId');
-        Logger.log('   - 기존 ID: $_activeConversationId');
         Logger.log('   - 일치 여부: ${newConversationId == _activeConversationId}');
         
         // ✅ 수정: 새로 생성된 conversationId를 사용

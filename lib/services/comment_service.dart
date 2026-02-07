@@ -153,7 +153,6 @@ class CommentService {
       // ✅ 알림은 Cloud Functions(onCommentCreated)에서 처리
       // - 클라이언트에서 알림을 보내면 중복 전송됨
       // - 서버에서만 처리하도록 변경
-      Logger.log('💬 댓글 작성 완료 - 알림은 Cloud Functions에서 자동 처리됨');
 
       // 댓글 수 정합성 보정:
       // - posts/meetups의 commentCount는 Cloud Functions 트리거가 담당 (rules 이슈/중복 방지)
@@ -421,19 +420,14 @@ class CommentService {
   // 댓글과 대댓글을 계층적으로 가져오기
   Stream<List<Comment>> getCommentsWithReplies(String postId) {
     try {
-      Logger.log('💬 댓글 스트림 시작: postId=$postId');
       return _firestore
           .collection('comments')
           .where('postId', isEqualTo: postId)
           .snapshots(includeMetadataChanges: true)
           .handleError((e, st) {
-            Logger.error('❌ 댓글 스트림 오류(postId=$postId): $e');
+            Logger.error('댓글 스트림 오류(postId=$postId)', e);
           })
           .map((snapshot) {
-            Logger.log(
-              '💬 댓글 스냅샷 수신(postId=$postId): ${snapshot.docs.length}개'
-              ' (fromCache=${snapshot.metadata.isFromCache})',
-            );
             List<Comment> allComments = snapshot.docs.map((doc) {
               return Comment.fromFirestore(doc);
             }).toList();

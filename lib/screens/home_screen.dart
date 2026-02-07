@@ -24,6 +24,7 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../utils/ui_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -66,6 +67,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   final Map<String, bool> _participationStatusCache = {};
   final Map<String, DateTime> _participationCacheTime = {};
   static const Duration _cacheValidDuration = Duration(minutes: 5); // 5분으로 연장
+
+  // 참여/나가기 연타 방지 + 최소 로딩 표시(1초)
+  final Set<String> _joinLeaveInFlight = <String>{};
 
   // Stream 구독 관리
   final Map<String, StreamSubscription?> _participationSubscriptions = {};
@@ -287,6 +291,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           'study': '스터디',
           'meal': '식사',
           'cafe': '카페',
+          'drink': '술',
           'culture': '문화',
           'other': '기타',
         };
@@ -409,6 +414,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       {'key': 'study', 'label': AppLocalizations.of(context)!.study},
       {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
       {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
+      {'key': 'drink', 'label': AppLocalizations.of(context)!.drink},
       {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
     ];
 
@@ -840,8 +846,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       _loadParticipationStatus(meetup.id);
     }
     
-    // 로딩 표시는 구독이 진행 중일 때만 (타임아웃 전까지만)
-    final isLoadingStatus = shouldLoad && 
+    // 로딩 표시는 참여 상태 조회(in-flight) 중일 때만
+    final isLoadingStatus = shouldLoad &&
         _participationSubscriptions.containsKey(meetup.id) &&
         _participationSubscriptions[meetup.id] == null;
 
@@ -1121,6 +1127,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     }
 
     final isParticipating = cachedStatus;
+    final inFlight = _joinLeaveInFlight.contains(meetup.id);
 
     // 모임이 완료된 경우 처리
     if (meetup.isCompleted) {
@@ -1217,7 +1224,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     }
 
     return GestureDetector(
-      onTap: () async {
+      onTap: inFlight
+          ? null
+          : () async {
         if (isParticipating) {
           await _leaveMeetup(meetup);
         } else {
@@ -1233,61 +1242,84 @@ class _MeetupHomePageState extends State<MeetupHomePage>
               : AppColors.pointColor,
           borderRadius: BorderRadius.circular(20),
         ),
-        child: Text(
-          isParticipating
-              ? AppLocalizations.of(context)!.leaveMeetup
-              : AppLocalizations.of(context)!.joinMeetup,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.white,
-          ),
-        ),
+        child: inFlight
+            ? const SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
+            : Text(
+                isParticipating
+                    ? AppLocalizations.of(context)!.leaveMeetup
+                    : AppLocalizations.of(context)!.joinMeetup,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
       ),
     );
   }
 
+  Future<void> _runWithMinimumButtonLoading(Future<void> Function() operation) async {
+    final start = DateTime.now();
+    try {
+      await operation();
+    } finally {
+      final elapsed = DateTime.now().difference(start);
+      const min = Duration(seconds: 1);
+      if (elapsed < min) {
+        await Future.delayed(min - elapsed);
+      }
+    }
+  }
+
   // 참여 상태를 백그라운드에서 로드
-  void _loadParticipationStatus(String meetupId) {
+  Future<void> _loadParticipationStatus(String meetupId) async {
     if (!mounted) return;
 
-    // 이미 구독이 있으면 무시
+    // 이미 로딩 중이면 무시
     if (_participationSubscriptions.containsKey(meetupId)) return;
 
-    _participationSubscriptions[meetupId] = null; // 플래그 설정
+    // in-flight 플래그 설정 (로딩 오버레이 표시)
+    _participationSubscriptions[meetupId] = null;
 
-    // 타임아웃 500ms
-    _meetupService.getUserParticipationStatus(meetupId)
-      .timeout(
-        const Duration(milliseconds: 500),
-        onTimeout: () {
-          Logger.log('⏰ 참여 상태 확인 타임아웃: $meetupId (500ms)');
-          // 타임아웃 시 즉시 캐시 업데이트하여 로딩 종료
-          if (mounted) {
-            _updateParticipationCache(meetupId, false);
-            setState(() {});
-          }
-          return null;
-        },
-      )
-      .then((participant) {
-        if (mounted) {
-          final isParticipating =
-              participant?.status == ParticipantStatus.approved;
-          _updateParticipationCache(meetupId, isParticipating);
-          // 상태가 변경되었으면 UI 업데이트
-          setState(() {});
-          Logger.log('✅ 참여 상태 로드 완료: $meetupId -> $isParticipating');
-        }
-      }).catchError((e) {
-        Logger.error('❌ 참여 상태 로드 오류: $e');
-        // 에러 발생 시 캐시 업데이트
-        if (mounted) {
-          _updateParticipationCache(meetupId, false);
-          setState(() {});
-        }
-      });
+    try {
+      final participant = await _meetupService
+          .getUserParticipationStatus(meetupId)
+          .timeout(
+            const Duration(milliseconds: 500),
+            onTimeout: () {
+              Logger.log('⏰ 참여 상태 확인 타임아웃: $meetupId (500ms)');
+              return null;
+            },
+          );
+
+      final isParticipating = participant?.status == ParticipantStatus.approved;
+      if (mounted) {
+        _updateParticipationCache(meetupId, isParticipating);
+      }
+    } catch (e) {
+      Logger.error('❌ 참여 상태 로드 오류: $e');
+      if (mounted) {
+        _updateParticipationCache(meetupId, false);
+      }
+    } finally {
+      // IMPORTANT: 로딩 플래그는 반드시 해제해야 함.
+      // 해제하지 않으면 캐시가 비었을 때(혹은 만료) 무한 로딩 오버레이가 고착될 수 있음.
+      if (mounted) {
+        setState(() {
+          _participationSubscriptions.remove(meetupId);
+        });
+      } else {
+        _participationSubscriptions.remove(meetupId);
+      }
+    }
   }
 
   // 캐시된 참여 상태 조회
@@ -1413,28 +1445,32 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 모임 참여하기
   Future<void> _joinMeetup(Meetup meetup) async {
-    // 즉시 캐시 업데이트 (깜빡임 방지)
-    if (mounted) {
-                  setState(() {
-        _updateParticipationCache(meetup.id, true);
-      });
-    }
-
     try {
-      final success = await _meetupService.joinMeetup(meetup.id);
+      if (_joinLeaveInFlight.contains(meetup.id)) return;
+      if (mounted) {
+        setState(() {
+          _joinLeaveInFlight.add(meetup.id);
+        });
+      }
+
+      bool success = false;
+      await _runWithMinimumButtonLoading(() async {
+        success = await _meetupService.joinMeetup(meetup.id);
+      });
 
       if (success) {
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, true);
+            _joinLeaveInFlight.remove(meetup.id);
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  AppLocalizations.of(context)!.meetupJoined ?? '모임에 참여했습니다'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.meetupJoined ??
+                (Localizations.localeOf(context).languageCode == 'ko'
+                    ? '모임에 참여했습니다'
+                    : 'Joined the meetup'),
+            type: AppSnackBarType.success,
           );
         }
       } else {
@@ -1442,14 +1478,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, false);
+            _joinLeaveInFlight.remove(meetup.id);
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.meetupJoinFailed ??
-                  '모임 참여에 실패했습니다'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 2),
-            ),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.meetupJoinFailed ??
+                (Localizations.localeOf(context).languageCode == 'ko'
+                    ? '모임 참여에 실패했습니다'
+                    : 'Failed to join the meetup'),
+            type: AppSnackBarType.error,
           );
         }
       }
@@ -1458,16 +1495,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         setState(() {
           _updateParticipationCache(meetup.id, false);
+          _joinLeaveInFlight.remove(meetup.id);
         });
       }
       Logger.error('모임 참여 오류: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${AppLocalizations.of(context)!.error}: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 2),
-          ),
+        AppSnackBar.show(
+          context,
+          message: '${AppLocalizations.of(context)!.error}: $e',
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -1475,28 +1511,32 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
   // 모임 나가기
   Future<void> _leaveMeetup(Meetup meetup) async {
-    // 즉시 캐시 업데이트 (깜빡임 방지)
-    if (mounted) {
-      setState(() {
-        _updateParticipationCache(meetup.id, false);
-      });
-    }
-
     try {
-      final success = await _meetupService.cancelMeetupParticipation(meetup.id);
+      if (_joinLeaveInFlight.contains(meetup.id)) return;
+      if (mounted) {
+        setState(() {
+          _joinLeaveInFlight.add(meetup.id);
+        });
+      }
+
+      bool success = false;
+      await _runWithMinimumButtonLoading(() async {
+        success = await _meetupService.cancelMeetupParticipation(meetup.id);
+      });
 
       if (success) {
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, false);
+            _joinLeaveInFlight.remove(meetup.id);
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                  AppLocalizations.of(context)!.leaveMeetup ?? '모임에서 나갔습니다'),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 2),
-            ),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.leaveMeetup ??
+                (Localizations.localeOf(context).languageCode == 'ko'
+                    ? '모임에서 나갔습니다'
+                    : 'Left the meetup'),
+            type: AppSnackBarType.info,
           );
         }
       } else {
@@ -1504,14 +1544,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         if (mounted) {
           setState(() {
             _updateParticipationCache(meetup.id, true);
+            _joinLeaveInFlight.remove(meetup.id);
           });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context)!.leaveMeetupFailed ??
-                  '모임 나가기에 실패했습니다'),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 2),
-            ),
+          AppSnackBar.show(
+            context,
+            message: AppLocalizations.of(context)!.leaveMeetupFailed ??
+                (Localizations.localeOf(context).languageCode == 'ko'
+                    ? '모임 나가기에 실패했습니다'
+                    : 'Failed to leave the meetup'),
+            type: AppSnackBarType.error,
           );
         }
       }
@@ -1520,22 +1561,25 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (mounted) {
         setState(() {
           _updateParticipationCache(meetup.id, true);
+          _joinLeaveInFlight.remove(meetup.id);
         });
       }
       Logger.error('모임 나가기 오류: $e');
 
-      String errorMessage = '모임 나가기에 실패했습니다';
+      String errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+          ? '모임 나가기에 실패했습니다'
+          : 'Failed to leave the meetup';
       if (e.toString().contains('permission-denied')) {
-        errorMessage = '권한이 없습니다. 다시 시도해주세요';
+        errorMessage = Localizations.localeOf(context).languageCode == 'ko'
+            ? '권한이 없습니다. 다시 시도해주세요'
+            : 'You don’t have permission. Please try again.';
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errorMessage),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
+        AppSnackBar.show(
+          context,
+          message: errorMessage,
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -1560,8 +1604,8 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   }
 
   /// 모임 상세 화면으로 이동
-  void _navigateToMeetupDetail(Meetup meetup) {
-    Navigator.push(
+  Future<void> _navigateToMeetupDetail(Meetup meetup) async {
+    await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => MeetupDetailScreen(
@@ -1574,6 +1618,31 @@ class _MeetupHomePageState extends State<MeetupHomePage>
         ),
       ),
     );
+
+    // 상세 화면에서 참여/나가기 했을 수 있으므로, 돌아오는 시점에 참여 상태를 재조회하여
+    // 홈 카드 버튼 상태가 새로고침 없이도 바로 반영되도록 캐시를 갱신한다.
+    if (!mounted) return;
+
+    // 로딩/캐시 플래그 정리(이전 값이 남아있으면 카드 버튼이 안 바뀜)
+    _participationSubscriptions.remove(meetup.id);
+    _participationStatusCache.remove(meetup.id);
+    _participationCacheTime.remove(meetup.id);
+
+    try {
+      final participant = await _meetupService
+          .getUserParticipationStatus(meetup.id)
+          .timeout(
+            const Duration(milliseconds: 800),
+            onTimeout: () => null,
+          );
+      final isParticipating = participant?.status == ParticipantStatus.approved;
+      _updateParticipationCache(meetup.id, isParticipating);
+    } catch (e) {
+      // 재조회 실패 시에도 UI는 업데이트 (다음 카드 렌더 때 백그라운드 로드로 보정)
+      Logger.error('참여 상태 재조회 실패(상세 화면 복귀): $e');
+    }
+
+    if (mounted) setState(() {});
   }
 
   /// 모임 생성 화면으로 이동

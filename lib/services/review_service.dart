@@ -66,8 +66,6 @@ class ReviewService {
           .asyncMap((snapshot) async {
         final reviews = <ReviewPost>[];
         
-        Logger.log('📊 후기 조회: ${snapshot.docs.length}개 문서 발견');
-        
         // 실제 사용자 정보 한 번만 조회
         String authorName = '익명';
         String authorProfileImage = '';
@@ -114,20 +112,14 @@ class ReviewService {
             );
             
             reviews.add(review);
-            if (data['isHidden'] == true) {
-              Logger.log('👁️ 숨겨진 후기 포함 (본인): ${doc.id} - ${review.meetupTitle}');
-            } else {
-              Logger.log('✅ 후기 추가: ${doc.id} - ${review.meetupTitle}');
-            }
           } catch (e) {
-            Logger.error('❌ 개별 후기 파싱 오류: $e');
+            Logger.error('개별 후기 파싱 오류', e);
             // 개별 문서 오류는 건너뛰고 계속 진행
           }
         }
         
         // 메모리에서 정렬 (인덱스 문제 회피)
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        Logger.log('📋 최종 후기 목록: ${reviews.length}개');
         return reviews;
       }).handleError((error) {
         Logger.error('❌ 후기 스트림 오류: $error');
@@ -296,15 +288,12 @@ class ReviewService {
           .map((snapshot) {
         final reviews = <ReviewPost>[];
         
-        Logger.log('📊 친구 후기 조회: ${snapshot.docs.length}개 문서 발견 (userId: $userId)');
-        
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data();
             
             // 다른 사람 프로필: isHidden이 true인 경우 건너뛰기
             if (data['isHidden'] == true) {
-              Logger.log('⏭️ 숨겨진 후기 건너뛰기 (다른 사람 프로필): ${doc.id}');
               continue;
             }
             
@@ -332,9 +321,8 @@ class ReviewService {
             );
             
             reviews.add(review);
-            Logger.log('✅ 친구 후기 추가: ${doc.id} - ${review.meetupTitle}');
           } catch (e) {
-            Logger.error('❌ 후기 파싱 오류: $e');
+            Logger.error('후기 파싱 오류', e);
             // 개별 문서 오류는 무시하고 계속 진행
           }
         }

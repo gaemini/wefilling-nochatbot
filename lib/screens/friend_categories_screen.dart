@@ -11,6 +11,7 @@ import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
+import '../ui/widgets/category_shapes_illustration.dart';
 import '../providers/auth_provider.dart';
 import 'category_detail_screen.dart';
 import '../l10n/app_localizations.dart';
@@ -40,6 +41,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   late VoidCallback _cleanupCallback;
   AuthProvider? _authProvider;
+  static const int _maxCategories = FriendCategoryService.maxCategoriesPerUser;
 
   @override
   void initState() {
@@ -69,83 +71,91 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB),
-      body: SafeArea(
-        child: StreamBuilder<List<FriendCategory>>(
-        stream: _categoryService.getCategoriesStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return StreamBuilder<List<FriendCategory>>(
+      stream: _categoryService.getCategoriesStream(),
+      builder: (context, snapshot) {
+        final categories = snapshot.data ?? const <FriendCategory>[];
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    IconStyles.error,
-                    size: 64,
-                    color: BrandColors.error,
+        return Scaffold(
+          backgroundColor: const Color(0xFFEBEBEB),
+          body: SafeArea(
+            child: Builder(
+              builder: (context) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          IconStyles.error,
+                          size: 64,
+                          color: BrandColors.error,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          AppLocalizations.of(context)!.error,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${snapshot.error}',
+                          style: Theme.of(context).textTheme.bodyMedium,
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                if (categories.isEmpty) {
+                  return AppEmptyState(
+                    icon: IconStyles.group,
+                    title: AppLocalizations.of(context)!.createFirstCategory,
+                    description: AppLocalizations.of(context)!.createFirstCategoryDescription,
+                    illustration: const Center(
+                      child: CategoryShapesIllustration(),
+                    ),
+                    centerVertically: true,
+                    // ctaText 및 onCtaPressed 제거하여 버튼 숨김 (FAB로 생성 유도)
+                  );
+                }
+
+                // 안드로이드 하단 네비게이션 바 높이 감지
+                final bottomPadding = MediaQuery.of(context).padding.bottom;
+
+                return ListView.builder(
+                  padding: EdgeInsets.only(
+                    top: 8,
+                    bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    AppLocalizations.of(context)!.error,
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${snapshot.error}',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              ),
-            );
-          }
-
-          final categories = snapshot.data ?? [];
-
-          if (categories.isEmpty) {
-            return SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 40),
-                child: AppEmptyState(
-              icon: IconStyles.group,
-              title: AppLocalizations.of(context)!.createFirstCategory,
-              description: AppLocalizations.of(context)!.createFirstCategoryDescription,
-                  // ctaText 및 onCtaPressed 제거하여 "Create New Category" 버튼 숨김
-                ),
-              ),
-            );
-          }
-
-          // 안드로이드 하단 네비게이션 바 높이 감지
-          final bottomPadding = MediaQuery.of(context).padding.bottom;
-          
-          return ListView.builder(
-            padding: EdgeInsets.only(
-              top: 8,
-              bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+                  itemCount: categories.length,
+                  itemBuilder: (context, index) {
+                    final category = categories[index];
+                    return _buildCategoryCard(category);
+                  },
+                );
+              },
             ),
-            itemCount: categories.length,
-            itemBuilder: (context, index) {
-              final category = categories[index];
-              return _buildCategoryCard(category);
+          ),
+          floatingActionButton: AppFab(
+            icon: IconStyles.add,
+            onPressed: () {
+              if (categories.length >= _maxCategories) {
+                _showCategoryLimitReachedSnackBar();
+                return;
+              }
+              _showCreateCategoryDialog();
             },
-          );
-        },
-        ),
-      ),
-      floatingActionButton: AppFab(
-        icon: IconStyles.add,
-        onPressed: () => _showCreateCategoryDialog(),
-        semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
-        tooltip: AppLocalizations.of(context)!.addCategory,
-        heroTag: 'add_category_fab',
-      ),
+            semanticLabel: AppLocalizations.of(context)!.newCategoryCreate,
+            tooltip: AppLocalizations.of(context)!.addCategory,
+            heroTag: 'add_category_fab',
+          ),
+        );
+      },
     );
   }
 
@@ -184,7 +194,9 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
         ),
         title: Text(
           category.name,
-          style: TypographyStyles.titleMedium,
+          style: TypographyStyles.titleMedium.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
         subtitle: Padding(
           padding: const EdgeInsets.only(top: 6), // 간격 증가 (4 → 6)
@@ -195,7 +207,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
               return Text(
                 AppLocalizations.of(context)!.friendsInGroup(count),
                 style: TypographyStyles.bodySmall.copyWith(
-                  color: BrandColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF6B7280), // gray 계열 유지 + 가독성 향상
                 ),
               );
             },
@@ -320,6 +333,15 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
 
   void _showCreateCategoryDialog() {
     _showCategoryDialog();
+  }
+
+  void _showCategoryLimitReachedSnackBar() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('그룹은 최대 10개까지 생성할 수 있어요.'),
+      ),
+    );
   }
 
   void _showEditCategoryDialog(FriendCategory category) {

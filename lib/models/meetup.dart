@@ -21,6 +21,7 @@ class Meetup {
   final String imageUrl;
   final String thumbnailContent;
   final String thumbnailImageUrl;
+  final List<String> imageUrls; // 첨부 이미지 URL들(최대 3장)
   final DateTime date;
   final String category;
   final String? userId; // 모임 주최자 ID
@@ -47,6 +48,7 @@ class Meetup {
     required this.imageUrl,
     this.thumbnailContent = '',
     this.thumbnailImageUrl = '',
+    this.imageUrls = const [],
     required this.date,
     this.category = '기타',
     this.userId,
@@ -74,6 +76,7 @@ class Meetup {
     String? imageUrl,
     String? thumbnailContent,
     String? thumbnailImageUrl,
+    List<String>? imageUrls,
     DateTime? date,
     String? category,
     String? userId,
@@ -100,6 +103,7 @@ class Meetup {
       imageUrl: imageUrl ?? this.imageUrl,
       thumbnailContent: thumbnailContent ?? this.thumbnailContent,
       thumbnailImageUrl: thumbnailImageUrl ?? this.thumbnailImageUrl,
+      imageUrls: imageUrls ?? this.imageUrls,
       date: date ?? this.date,
       category: category ?? this.category,
       userId: userId ?? this.userId,
@@ -304,8 +308,10 @@ class Meetup {
 
   // 표시할 이미지 URL 가져오기 (실제 이미지가 있으면 그것을, 없으면 기본 이미지 반환)
   String getDisplayImageUrl() {
-    // 우선순위: imageUrl > thumbnailImageUrl > 기본 이미지
-    if (imageUrl.isNotEmpty) {
+    // 우선순위: imageUrls[0] > imageUrl > thumbnailImageUrl > 기본 이미지
+    if (imageUrls.isNotEmpty) {
+      return imageUrls.first;
+    } else if (imageUrl.isNotEmpty) {
       return imageUrl;
     } else if (thumbnailImageUrl.isNotEmpty) {
       return thumbnailImageUrl;
@@ -316,11 +322,20 @@ class Meetup {
 
   // 이미지가 기본 이미지인지 확인
   bool isDefaultImage() {
-    return imageUrl.isEmpty && thumbnailImageUrl.isEmpty;
+    return imageUrls.isEmpty && imageUrl.isEmpty && thumbnailImageUrl.isEmpty;
   }
 
   // Firebase에서 데이터를 가져올 때 사용
   factory Meetup.fromJson(Map<String, dynamic> json) {
+    final rawUrls = json['imageUrls'];
+    final parsedUrls = (rawUrls is List)
+        ? rawUrls
+            .map((e) => e.toString())
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList()
+        : <String>[];
+
     return Meetup(
       id: json['id'] ?? '',
       title: json['title'] ?? '',
@@ -335,6 +350,7 @@ class Meetup {
       imageUrl: json['imageUrl'] ?? '',
       thumbnailContent: json['thumbnailContent'] ?? '',
       thumbnailImageUrl: json['thumbnailImageUrl'] ?? '',
+      imageUrls: parsedUrls,
       date: json['date']?.toDate() ?? DateTime.now(),
       category: json['category'] ?? '기타',
       userId: json['userId'],
@@ -379,6 +395,7 @@ class Meetup {
       'imageUrl': imageUrl,
       'thumbnailContent': thumbnailContent,
       'thumbnailImageUrl': thumbnailImageUrl,
+      'imageUrls': imageUrls,
       'date': date,
       'category': category,
       'userId': userId,

@@ -50,6 +50,21 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: cs,
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        contentTextStyle: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          height: 1.25,
+          color: Colors.white,
+        ),
+        actionTextColor: Colors.white,
+      ),
       // cardTheme 타입 불일치 시 주석 처리 (STEP C-3에서 다룸)
       // cardTheme: const CardTheme(),
       elevatedButtonTheme: _elevatedButtonTheme(cs),

@@ -23,7 +23,6 @@ class ViewHistoryService {
   }
   
   ViewHistoryService._internal() {
-    Logger.log('🔍 ViewHistoryService 초기화됨');
   }
   
   // 조회 이력 저장소 (contentType_contentId 형식)
@@ -46,13 +45,6 @@ class ViewHistoryService {
   bool hasViewed(String contentType, String contentId) {
     final key = _makeKey(contentType, contentId);
     final viewed = _viewedItems.contains(key);
-    
-    if (viewed) {
-      Logger.log('🔍 [ViewHistory] 이미 조회한 항목: $contentType ($contentId)');
-    } else {
-      Logger.log('🔍 [ViewHistory] 처음 조회하는 항목: $contentType ($contentId)');
-    }
-    
     return viewed;
   }
   
@@ -63,9 +55,6 @@ class ViewHistoryService {
   void markAsViewed(String contentType, String contentId) {
     final key = _makeKey(contentType, contentId);
     _viewedItems.add(key);
-    
-    Logger.log('✅ [ViewHistory] 조회 이력 추가: $contentType ($contentId)');
-    Logger.log('📊 [ViewHistory] 현재 조회 이력 수: ${_viewedItems.length}개');
   }
   
   /// 조회 이력 초기화 (테스트 또는 로그아웃 시 사용)

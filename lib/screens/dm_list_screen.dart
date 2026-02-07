@@ -7,7 +7,6 @@ import '../models/user_profile.dart';
 import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
 import '../services/user_info_cache_service.dart';
-import '../services/badge_service.dart';
 import '../utils/time_formatter.dart';
 import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
@@ -263,8 +262,6 @@ class _DMListScreenState extends State<DMListScreen> {
         }
 
         // 필터 적용: 친구 / 익명
-        Logger.log('🔍 DM 필터링 시작 (필터: ${_filter == DMFilter.friends ? "친구" : "익명"})');
-        
         final filtered = conversations.where((c) {
           // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
           final isSelfDM = c.participants.length == 2 && 
@@ -273,7 +270,6 @@ class _DMListScreenState extends State<DMListScreen> {
           
           // 본인 DM은 무조건 숨김
           if (isSelfDM) {
-            Logger.log('  ❌ 제외: ${c.id} (본인 DM)');
             return false;
           }
 
@@ -281,7 +277,6 @@ class _DMListScreenState extends State<DMListScreen> {
           
           // 친구 탭: 비익명 대화는 모두 표시(게시글에서 시작된 DM 포함)
           // 익명 탭: 익명 대화만 표시
-          final isPostDM = (c.postId != null && c.postId!.isNotEmpty);
           final passesType = _filter == DMFilter.friends
               ? !isAnon
               : isAnon;
@@ -292,21 +287,8 @@ class _DMListScreenState extends State<DMListScreen> {
           // 상대방이 나가서 참여자가 1명만 남은 경우도 숨김 (메시지 전송/조회 불가)
           final hasOtherParticipant = c.participants.length >= 2;
           
-          final result = passesType && notHiddenLocal && hasOtherParticipant;
-          
-          if (!result) {
-            Logger.log('  ❌ 제외: ${c.id}');
-            Logger.log('     - isAnon: $isAnon, isPostDM: $isPostDM');
-            Logger.log('     - passesType: $passesType, notHidden: $notHiddenLocal');
-            Logger.log('     - hasOther: $hasOtherParticipant');
-          } else {
-            Logger.log('  ✅ 포함: ${c.id} (${c.getOtherUserName(_currentUser!.uid)})');
-          }
-          
-          return result;
+          return passesType && notHiddenLocal && hasOtherParticipant;
         }).toList();
-        
-        Logger.log('📊 필터링 결과: ${filtered.length}개 대화방 표시');
 
         if (filtered.isEmpty) {
           return _buildEmptyState(
@@ -322,9 +304,19 @@ class _DMListScreenState extends State<DMListScreen> {
 
         return ListView.builder(
           padding: EdgeInsets.zero,
+          // ✅ 목록 아이템 높이는 항상 76으로 고정(카드 컨테이너)되어 있어
+          // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
+          // (최신 대화가 상단으로 재정렬되어도 스크롤/렌더가 더 안정적)
+          itemExtent: 76,
           itemCount: filtered.length,
           itemBuilder: (context, index) {
-            return _buildConversationCard(filtered[index]);
+            final conversation = filtered[index];
+            // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
+            // 각 Row의 Stream/Future 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
+            return KeyedSubtree(
+              key: ValueKey<String>('dm_conv_${conversation.id}'),
+              child: _buildConversationCard(conversation),
+            );
           },
         );
       },
@@ -451,9 +443,14 @@ class _DMListScreenState extends State<DMListScreen> {
     );
 
     if (isPostBasedAnonymous) {
+      // ✅ 목록 배지(대화방별 안읽음)는 실제 메시지(isRead=false) 기반으로 계산한다.
+      // - 서버 unreadCount가 아직 반영되지 않은 환경에서도 배지가 정확히 보이도록 하기 위함
+      // - (성능 이슈가 있으면 서버 unreadCount 기반으로 다시 전환 가능)
       return StreamBuilder<int>(
-        stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
-        initialData: 0,
+        stream: _dmService
+            .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
+            .distinct(),
+        initialData: conversation.getMyUnreadCount(_currentUser!.uid),
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
 
@@ -499,8 +496,10 @@ class _DMListScreenState extends State<DMListScreen> {
     if (isCachedDeleted) {
       // 탈퇴로 확정이면 굳이 user 문서를 구독하지 않음
       return StreamBuilder<int>(
-        stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
-        initialData: 0,
+        stream: _dmService
+            .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
+            .distinct(),
+        initialData: conversation.getMyUnreadCount(_currentUser!.uid),
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
           return _buildConversationCardContent(
@@ -542,19 +541,6 @@ class _DMListScreenState extends State<DMListScreen> {
         final DMUserInfo? resolved = freshFromServerMap ?? freshFromStream;
         final bool isUserInfoReady = resolved != null;
         final otherUserName = resolved?.nickname ?? '';
-        
-        // 🔍 디버그: 스트림에서 받은 실제 데이터 로그
-        if (kDebugMode) {
-          Logger.log('📸 DM목록 아바타 데이터 (대화방=${conversation.id.substring(0, 8)}...):');
-          Logger.log('   - otherUserId: $otherUserId');
-          Logger.log('   - info: ${info != null ? "있음" : "null"}');
-          if (info != null) {
-            Logger.log('   - isFromCache: ${info.isFromCache}');
-            Logger.log('   - photoURL: "${info.photoURL}"');
-            Logger.log('   - photoVersion: ${info.photoVersion}');
-            Logger.log('   - nickname: "${info.nickname}"');
-          }
-        }
 
         // 스트림에서 서버 스냅샷을 받으면, 목록 전체에서 재사용할 수 있게 저장
         if (freshFromStream != null) {
@@ -565,16 +551,14 @@ class _DMListScreenState extends State<DMListScreen> {
         final otherUserPhoto = resolved?.photoURL ?? '';
         final otherUserPhotoVersion = resolved?.photoVersion ?? 0;
         
-        if (kDebugMode) {
-          Logger.log('   → 최종 전달: photoURL="${otherUserPhoto}", photoVersion=$otherUserPhotoVersion');
-        }
-        
         final displayName =
             isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
 
         return StreamBuilder<int>(
-          stream: _dmService.getActualUnreadCountStream(conversation.id, _currentUser!.uid),
-          initialData: 0,
+          stream: _dmService
+              .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
+              .distinct(),
+          initialData: conversation.getMyUnreadCount(_currentUser!.uid),
           builder: (context, badgeSnapshot) {
             final unreadCount = badgeSnapshot.data ?? 0;
             return _buildConversationCardContent(
@@ -586,7 +570,7 @@ class _DMListScreenState extends State<DMListScreen> {
               isAnonymous: isAnonymous,
               timeString: timeString,
               unreadCount: unreadCount,
-              hideProfile: isAnonymous,  // 익명이면 프로필 숨김
+              hideProfile: isAnonymous, // 익명이면 프로필 숨김
               isTitleLoading: !isAnonymous && !isUserInfoReady,
             );
           },

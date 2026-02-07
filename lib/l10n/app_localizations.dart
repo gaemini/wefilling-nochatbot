@@ -848,6 +848,30 @@ abstract class AppLocalizations {
   /// **'전체 공개'**
   String get publicPost;
 
+  /// No description provided for @meetupVisibilityFriendsAll.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 전체'**
+  String get meetupVisibilityFriendsAll;
+
+  /// No description provided for @meetupVisibilityGroupSelect.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 선택'**
+  String get meetupVisibilityGroupSelect;
+
+  /// No description provided for @selectMeetupGroupsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 선택'**
+  String get selectMeetupGroupsTitle;
+
+  /// No description provided for @meetupThumbnailUsesFirstOnly.
+  ///
+  /// In ko, this message translates to:
+  /// **'썸네일은 1장만 적용돼요. 첫 번째 이미지를 사용합니다'**
+  String get meetupThumbnailUsesFirstOnly;
+
   /// No description provided for @categorySpecific.
   ///
   /// In ko, this message translates to:
@@ -875,7 +899,7 @@ abstract class AppLocalizations {
   /// No description provided for @idWillBeShown.
   ///
   /// In ko, this message translates to:
-  /// **'아이디가 공개됩니다'**
+  /// **'아이디가 공개되지 않습니다'**
   String get idWillBeShown;
 
   /// No description provided for @createMeetup.
@@ -1069,6 +1093,12 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'카테고리'**
   String get category;
+
+  /// No description provided for @groups.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹'**
+  String get groups;
 
   /// No description provided for @categories.
   ///
@@ -1409,37 +1439,37 @@ abstract class AppLocalizations {
   /// No description provided for @groupSettings.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 설정'**
+  /// **'그룹 설정'**
   String get groupSettings;
 
   /// No description provided for @selectCategoriesToShare.
   ///
   /// In ko, this message translates to:
-  /// **'공개할 카테고리 선택'**
+  /// **'공개할 그룹 선택'**
   String get selectCategoriesToShare;
 
   /// No description provided for @friendCategories.
   ///
   /// In ko, this message translates to:
-  /// **'친구 카테고리'**
+  /// **'친구 그룹'**
   String get friendCategories;
 
   /// No description provided for @noFriendCategories.
   ///
   /// In ko, this message translates to:
-  /// **'생성된 친구 카테고리가 없습니다. 먼저 카테고리를 생성해주세요.'**
+  /// **'생성된 친구 그룹이 없습니다. 먼저 그룹을 생성해주세요.'**
   String get noFriendCategories;
 
   /// No description provided for @defaultCategoryCreated.
   ///
   /// In ko, this message translates to:
-  /// **'기본 카테고리가 생성되었습니다'**
+  /// **'기본 그룹이 생성되었습니다'**
   String get defaultCategoryCreated;
 
   /// No description provided for @defaultCategoryFailed.
   ///
   /// In ko, this message translates to:
-  /// **'기본 카테고리 생성에 실패했습니다'**
+  /// **'기본 그룹 생성에 실패했습니다'**
   String get defaultCategoryFailed;
 
   /// No description provided for @colorSelection.
@@ -1799,13 +1829,13 @@ abstract class AppLocalizations {
   /// No description provided for @friendCategoriesManagement.
   ///
   /// In ko, this message translates to:
-  /// **'친구 카테고리 관리'**
+  /// **'친구 그룹 관리'**
   String get friendCategoriesManagement;
 
   /// No description provided for @noFriendGroupsYet.
   ///
   /// In ko, this message translates to:
-  /// **'생성된 친구 그룹이 없습니다.\n친구 카테고리 관리에서 그룹을 만들어보세요.'**
+  /// **'생성된 친구 그룹이 없습니다.\n친구 그룹 관리에서 그룹을 만들어보세요.'**
   String get noFriendGroupsYet;
 
   /// No description provided for @friendsCount.
@@ -2165,19 +2195,19 @@ abstract class AppLocalizations {
   /// No description provided for @editCategory.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 수정'**
+  /// **'그룹 수정'**
   String get editCategory;
 
   /// No description provided for @newCategory.
   ///
   /// In ko, this message translates to:
-  /// **'새 카테고리'**
+  /// **'새 그룹'**
   String get newCategory;
 
   /// No description provided for @categoryName.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 이름'**
+  /// **'그룹 이름'**
   String get categoryName;
 
   /// No description provided for @categoryNameHint.
@@ -2189,13 +2219,13 @@ abstract class AppLocalizations {
   /// No description provided for @createFirstCategory.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리로 친구 관리하기'**
+  /// **'그룹으로 친구 관리하기'**
   String get createFirstCategory;
 
   /// No description provided for @createFirstCategoryDescription.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리를 만들어 친구들을 그룹으로 관리해보세요.\n학교, 직장, 취미 등 다양한 그룹을 만들 수 있습니다.'**
+  /// **'친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.'**
   String get createFirstCategoryDescription;
 
   /// No description provided for @editAction.
@@ -2225,7 +2255,7 @@ abstract class AppLocalizations {
   /// No description provided for @groupSettingsFor.
   ///
   /// In ko, this message translates to:
-  /// **'{name}님의 카테고리 설정'**
+  /// **'{name}님의 그룹 설정'**
   String groupSettingsFor(String name);
 
   /// No description provided for @notInAnyGroup.
@@ -2243,55 +2273,55 @@ abstract class AppLocalizations {
   /// No description provided for @categoryCreated.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리가 생성되었습니다'**
+  /// **'그룹이 생성되었습니다'**
   String get categoryCreated;
 
   /// No description provided for @categoryUpdated.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리가 수정되었습니다'**
+  /// **'그룹이 수정되었습니다'**
   String get categoryUpdated;
 
   /// No description provided for @categoryDeleted.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리가 삭제되었습니다'**
+  /// **'그룹이 삭제되었습니다'**
   String get categoryDeleted;
 
   /// No description provided for @categoryCreateFailed.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 생성에 실패했습니다'**
+  /// **'그룹 생성에 실패했습니다'**
   String get categoryCreateFailed;
 
   /// No description provided for @categoryUpdateFailed.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 수정에 실패했습니다'**
+  /// **'그룹 수정에 실패했습니다'**
   String get categoryUpdateFailed;
 
   /// No description provided for @categoryDeleteFailed.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 삭제에 실패했습니다'**
+  /// **'그룹 삭제에 실패했습니다'**
   String get categoryDeleteFailed;
 
   /// No description provided for @enterCategoryName.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 이름을 입력해주세요'**
+  /// **'그룹 이름을 입력해주세요'**
   String get enterCategoryName;
 
   /// No description provided for @deleteCategory.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 삭제'**
+  /// **'그룹 삭제'**
   String get deleteCategory;
 
   /// No description provided for @deleteCategoryConfirm.
   ///
   /// In ko, this message translates to:
-  /// **'\'{name}\' 카테고리를 삭제하시겠습니까?\n\n이 카테고리에 속한 친구들은 다른 카테고리로 이동됩니다.'**
+  /// **'\'{name}\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.'**
   String deleteCategoryConfirm(String name);
 
   /// No description provided for @unfriendConfirm.
@@ -2369,13 +2399,13 @@ abstract class AppLocalizations {
   /// No description provided for @addCategory.
   ///
   /// In ko, this message translates to:
-  /// **'카테고리 추가'**
+  /// **'그룹 추가'**
   String get addCategory;
 
   /// No description provided for @newCategoryCreate.
   ///
   /// In ko, this message translates to:
-  /// **'첫 카테고리 만들기'**
+  /// **'첫 그룹 만들기'**
   String get newCategoryCreate;
 
   /// No description provided for @participatedReviews.
@@ -4298,6 +4328,12 @@ abstract class AppLocalizations {
   /// **'카페'**
   String get cafe;
 
+  /// No description provided for @drink.
+  ///
+  /// In ko, this message translates to:
+  /// **'술'**
+  String get drink;
+
   /// No description provided for @friendsOnlyBadge.
   ///
   /// In ko, this message translates to:
@@ -4337,7 +4373,7 @@ abstract class AppLocalizations {
   /// No description provided for @addFriendsToCategory.
   ///
   /// In ko, this message translates to:
-  /// **'이 카테고리에 친구를 추가해보세요'**
+  /// **'이 그룹에 친구를 추가해보세요'**
   String get addFriendsToCategory;
 
   /// No description provided for @registrationRequired.

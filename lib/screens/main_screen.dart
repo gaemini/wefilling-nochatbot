@@ -87,9 +87,9 @@ class _MainScreenState extends State<MainScreen> {
         });
       }
       
-      // 앱 시작 시 배지 동기화 (일반 알림 + DM 통합)
-      BadgeService.syncNotificationBadge().catchError((e) {
-        Logger.error('앱 시작 배지 동기화 실패: $e');
+      // 실시간 배지 리스너 시작 (알림/DM 변경 시 자동 업데이트)
+      BadgeService.startRealtimeBadgeSync().catchError((e) {
+        Logger.error('실시간 배지 동기화 시작 실패', e);
       });
     });
   }
@@ -102,6 +102,10 @@ class _MainScreenState extends State<MainScreen> {
 
     // 서비스 정리
     _notificationService.dispose();
+    
+    // 실시간 배지 리스너 중지
+    BadgeService.stopRealtimeBadgeSync();
+    
     super.dispose();
   }
 
@@ -147,12 +151,7 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
     
-    // DM 탭(index 4) 진입 시 배지 동기화 (알림 탭도 동일)
-    if (index == 4 || index == 0) {
-      BadgeService.syncNotificationBadge().catchError((e) {
-        Logger.error('배지 동기화 실패: $e');
-      });
-    }
+    // 실시간 리스너가 배지를 자동으로 업데이트하므로 수동 호출 불필요
   }
 
   void _navigateToSearchPage() {
@@ -370,16 +369,12 @@ class _MainScreenState extends State<MainScreen> {
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, snapshot) {
           final l10n = AppLocalizations.of(context)!;
-          Logger.log('📊 StreamBuilder 상태:');
-          Logger.log('  - hasData: ${snapshot.hasData}');
-          Logger.error('  - hasError: ${snapshot.hasError}');
-          Logger.log('  - data: ${snapshot.data}');
+          
           if (snapshot.hasError) {
-            Logger.error('  - error: ${snapshot.error}');
+            Logger.error('DM 배지 스트림 오류', snapshot.error);
           }
 
           final unreadDMCount = snapshot.data ?? 0;
-          Logger.log('  - unreadDMCount: $unreadDMCount');
 
           return AdaptiveBottomNavigation(
             selectedIndex: _selectedIndex,
@@ -398,7 +393,7 @@ class _MainScreenState extends State<MainScreen> {
               BottomNavigationItem(
                 icon: Icons.change_history_outlined,
                 selectedIcon: Icons.change_history,
-                label: l10n.category,
+                label: l10n.groups,
               ),
               BottomNavigationItem(
                 icon: Icons.person_outline,

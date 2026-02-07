@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../services/meetup_service.dart';
+import '../l10n/app_localizations.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class MeetupParticipantsScreen extends StatefulWidget {
   final Meetup meetup;
@@ -73,8 +75,13 @@ class _MeetupParticipantsScreenState extends State<MeetupParticipantsScreen>
       });
       if (mounted) {
         final isKo = Localizations.localeOf(context).languageCode == 'ko';
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(isKo ? '참여자 목록을 불러오는데 실패했습니다: $e' : 'Failed to load participants: $e')),
+        final l10n = AppLocalizations.of(context)!;
+        AppSnackBar.show(
+          context,
+          message: isKo
+              ? '참여자 목록을 불러오는데 실패했습니다: $e'
+              : '${l10n.error}: Failed to load participants: $e',
+          type: AppSnackBarType.error,
         );
       }
     }

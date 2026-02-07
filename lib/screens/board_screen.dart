@@ -460,7 +460,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           // 초기 로드 완료 표시
           if (_isInitialLoad) {
             _isInitialLoad = false;
-            Logger.log('✅ 초기 데이터 로드 완료');
           }
         }
 

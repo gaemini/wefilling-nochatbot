@@ -45,11 +45,10 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
         final posts = (cached.data['posts'] as List)
           .map((data) => Post.fromMap(data, data['id']))
           .toList();
-        Logger.log('📦 게시글 캐시 히트: ${posts.length}개');
         return posts;
       }
     } catch (e) {
-      Logger.error('게시글 캐시 읽기 실패: $e');
+      Logger.error('게시글 캐시 읽기 실패', e);
     }
     
     return [];
@@ -68,9 +67,8 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
         },
         cachedAt: DateTime.now(),
       ));
-      Logger.log('💾 게시글 캐시 저장: ${posts.length}개');
     } catch (e) {
-      Logger.error('게시글 캐시 저장 실패 (무시): $e');
+      Logger.error('게시글 캐시 저장 실패', e);
     }
   }
   
@@ -81,11 +79,10 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
     try {
       final cached = await get(postId);
       if (cached != null) {
-        Logger.log('📦 게시글 상세 캐시 히트: $postId');
         return cached.toPost();
       }
     } catch (e) {
-      Logger.error('게시글 상세 캐시 읽기 실패: $e');
+      Logger.error('게시글 상세 캐시 읽기 실패', e);
     }
     
     return null;
@@ -97,9 +94,8 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
     
     try {
       await put(post.id, CachedPost.fromPost(post));
-      Logger.log('💾 게시글 상세 캐시 저장: ${post.id}');
     } catch (e) {
-      Logger.error('게시글 상세 캐시 저장 실패 (무시): $e');
+      Logger.error('게시글 상세 캐시 저장 실패', e);
     }
   }
 }

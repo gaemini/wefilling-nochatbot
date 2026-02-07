@@ -67,15 +67,12 @@ class UserInfoCacheService {
     
     // 2단계: 서버에서 조회
     try {
-      Logger.log('🌐 서버에서 사용자 정보 조회: $userId');
-      
       final doc = await _firestore
           .collection('users')
           .doc(userId)
           .get(const GetOptions(source: Source.server)); // 강제로 서버에서 조회
       
       if (!doc.exists) {
-        Logger.log('⚠️ 사용자 문서 없음: $userId');
         return null;
       }
       
@@ -93,7 +90,6 @@ class UserInfoCacheService {
       _cache[userId] = userInfo;
       _cacheTimestamps[userId] = DateTime.now();
       
-      Logger.log('✅ 사용자 정보 조회 완료: ${userInfo.nickname}');
       return userInfo;
       
     } catch (e) {
@@ -129,17 +125,7 @@ class UserInfoCacheService {
 
         final data = doc.data()!;
         final fromCache = doc.metadata.isFromCache;
-        
-        // 🔍 디버그: Firestore에서 실제로 읽은 원본 데이터 로그
-        if (kDebugMode) {
-          Logger.log('🔥 watchUserInfo Firestore 스냅샷 (userId=$userId):');
-          Logger.log('   - fromCache: $fromCache');
-          Logger.log('   - nickname: "${data['nickname']}"');
-          Logger.log('   - displayName: "${data['displayName']}"');
-          Logger.log('   - photoURL: "${data['photoURL']}"');
-          Logger.log('   - photoVersion: ${data['photoVersion']} (타입: ${data['photoVersion'].runtimeType})');
-        }
-        
+
         final userInfo = DMUserInfo(
           uid: userId,
           nickname: (data['nickname'] ?? data['displayName'] ?? 'User').toString(),
@@ -149,10 +135,6 @@ class UserInfoCacheService {
               : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0,
           isFromCache: fromCache,
         );
-        
-        if (kDebugMode) {
-          Logger.log('   → DMUserInfo 생성: photoURL="${userInfo.photoURL}", photoVersion=${userInfo.photoVersion}');
-        }
 
         // write-through 캐시 갱신
         _cache[userId] = userInfo;
@@ -167,7 +149,7 @@ class UserInfoCacheService {
             prev.photoVersion == next.photoVersion &&
             prev.isFromCache == next.isFromCache;
       }).handleError((e) {
-        Logger.error('❌ watchUserInfo 오류: userId=$userId, error=$e');
+        Logger.error('사용자 정보 스트림 오류', e);
       });
     });
   }

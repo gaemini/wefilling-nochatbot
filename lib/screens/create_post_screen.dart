@@ -707,81 +707,184 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        ElevatedButton.icon(
-                          onPressed: _selectImages,
-                          icon: const Icon(Icons.image, size: 20),
-                          label: Text(
-                            AppLocalizations.of(context)!.imageAttachment ?? "",
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontWeight: FontWeight.w600,
-                            ),
+                        // 다른 섹션(게시글 유형/공개범위)과 톤 통일: 카드 안에 "선택 항목"처럼 배치
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.only(bottom: 16.0),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
                           ),
-                          style: ElevatedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                            backgroundColor: AppColors.pointColor,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        if (_selectedImages.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(vertical: 8.0),
-                            height: 120,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: _selectedImages.length,
-                              itemBuilder: (context, index) {
-                                return Container(
-                                  margin: const EdgeInsets.only(right: 8.0),
-                                  width: 100,
-                                  height: 100,
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(color: Colors.grey.shade300),
-                                  ),
-                                  child: Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(8),
-                                        child: Image.file(
-                                          _selectedImages[index],
-                                          width: 100,
-                                          height: 100,
-                                          fit: BoxFit.cover,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: Semantics(
+                                      button: true,
+                                      label: AppLocalizations.of(context)!.imageAttachment ?? "",
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 160),
+                                        curve: Curves.easeOut,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: _selectedImages.isNotEmpty
+                                                ? AppColors.pointColor
+                                                : const Color(0xFFE5E7EB),
+                                            width: _selectedImages.isNotEmpty ? 1.4 : 1,
+                                          ),
                                         ),
-                                      ),
-                                      Positioned(
-                                        top: 0,
-                                        right: 0,
-                                        child: GestureDetector(
-                                          onTap: () => _removeImage(index),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(4),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.close,
-                                              color: Colors.white,
-                                              size: 16,
+                                        child: Material(
+                                          color: Colors.transparent,
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: InkWell(
+                                            borderRadius: BorderRadius.circular(12),
+                                            onTap: _selectImages,
+                                            child: Padding(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 12,
+                                              ),
+                                              child: Row(
+                                                children: [
+                                                  Container(
+                                                    width: 34,
+                                                    height: 34,
+                                                    decoration: BoxDecoration(
+                                                      color: AppColors.pointColor.withValues(alpha: 0.12),
+                                                      borderRadius: BorderRadius.circular(10),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.image_outlined,
+                                                      size: 18,
+                                                      color: AppColors.pointColor,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(width: 10),
+                                                  Expanded(
+                                                    child: Column(
+                                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                                      children: [
+                                                        Text(
+                                                          AppLocalizations.of(context)!.imageAttachment ?? "",
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Pretendard',
+                                                            fontSize: 14,
+                                                            fontWeight: FontWeight.w800,
+                                                            color: Color(0xFF111827),
+                                                          ),
+                                                        ),
+                                                        const SizedBox(height: 2),
+                                                        Text(
+                                                          _selectedImages.isNotEmpty
+                                                              ? '${_selectedImages.length}장 선택됨'
+                                                              : '여러 장을 한 번에 선택할 수 있어요',
+                                                          style: const TextStyle(
+                                                            fontFamily: 'Pretendard',
+                                                            fontSize: 12,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: Color(0xFF6B7280),
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                  const Icon(
+                                                    Icons.chevron_right_rounded,
+                                                    color: Color(0xFF9CA3AF),
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ],
+                                    ),
                                   ),
-                                );
-                              },
-                            ),
+                                  if (_selectedImages.isNotEmpty) ...[
+                                    const SizedBox(width: 10),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.pointColor.withValues(alpha: 0.10),
+                                        borderRadius: BorderRadius.circular(999),
+                                        border: Border.all(
+                                          color: AppColors.pointColor.withValues(alpha: 0.35),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '${_selectedImages.length}',
+                                        style: const TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF111827),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                              if (_selectedImages.isNotEmpty) ...[
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  height: 112,
+                                  child: ListView.builder(
+                                    scrollDirection: Axis.horizontal,
+                                    itemCount: _selectedImages.length,
+                                    itemBuilder: (context, index) {
+                                      return Container(
+                                        margin: const EdgeInsets.only(right: 8.0),
+                                        width: 96,
+                                        height: 96,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                                        ),
+                                        child: Stack(
+                                          children: [
+                                            ClipRRect(
+                                              borderRadius: BorderRadius.circular(10),
+                                              child: Image.file(
+                                                _selectedImages[index],
+                                                width: 96,
+                                                height: 96,
+                                                fit: BoxFit.cover,
+                                              ),
+                                            ),
+                                            Positioned(
+                                              top: 6,
+                                              right: 6,
+                                              child: GestureDetector(
+                                                onTap: () => _removeImage(index),
+                                                child: Container(
+                                                  padding: const EdgeInsets.all(5),
+                                                  decoration: const BoxDecoration(
+                                                    color: Color(0xCC111827), // gray-900 80%
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: const Icon(
+                                                    Icons.close_rounded,
+                                                    color: Colors.white,
+                                                    size: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
+                        ),
                       ],
                     ),
                   ),
@@ -975,36 +1078,80 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                               ],
                             ),
                           ),
-                          CheckboxListTile(
-                            title: Text(
-                              AppLocalizations.of(context)!.postAnonymously,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF111827),
+                          // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
+                          Container(
+                            margin: const EdgeInsets.only(top: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Semantics(
+                              container: true,
+                              button: true,
+                              checked: _isAnonymous,
+                              label: AppLocalizations.of(context)!.postAnonymously,
+                              child: Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(12),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: () {
+                                    setState(() {
+                                      _isAnonymous = !_isAnonymous;
+                                    });
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: IgnorePointer(
+                                            ignoring: true,
+                                            child: Checkbox(
+                                              value: _isAnonymous,
+                                              onChanged: (_) {},
+                                              activeColor: AppColors.pointColor,
+                                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                              visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                AppLocalizations.of(context)!.postAnonymously,
+                                                style: const TextStyle(
+                                                  fontFamily: 'Pretendard',
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF111827),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                AppLocalizations.of(context)!.idWillBeShown,
+                                                style: const TextStyle(
+                                                  fontFamily: 'Pretendard',
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF6B7280),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
-                            subtitle: Text(
-                              _isAnonymous
-                                  ? '✓ ${AppLocalizations.of(context)!.postAnonymously}'
-                                  : AppLocalizations.of(context)!.idWillBeShown,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: _isAnonymous ? const Color(0xFF10B981) : const Color(0xFF6B7280),
-                              ),
-                            ),
-                            value: _isAnonymous,
-                            onChanged: (value) {
-                              setState(() {
-                                _isAnonymous = value ?? false;
-                              });
-                            },
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            activeColor: AppColors.pointColor,
                           ),
                         ],
 

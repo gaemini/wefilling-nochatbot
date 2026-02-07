@@ -31,6 +31,7 @@ import 'profile_edit_screen.dart';
 import 'requests_page.dart';
 import 'friends_main_page.dart';
 import '../utils/logger.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class ProfileGridScreen extends StatefulWidget {
   final String? userId; // null이면 현재 사용자 프로필
@@ -177,11 +178,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       });
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  '${AppLocalizations.of(context)!.cannotLoadProfile}: $e')),
-        );
+        _showSnackBar('${AppLocalizations.of(context)!.cannotLoadProfile}: $e');
       }
     }
   }
@@ -279,11 +276,30 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
   }
 
   void _showSnackBar(String message, {Color? backgroundColor}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: backgroundColor,
-      ),
+    final theme = Theme.of(context);
+    final bg = backgroundColor;
+
+    AppSnackBarType type = AppSnackBarType.info;
+    if (bg == theme.colorScheme.error ||
+        bg == Colors.red ||
+        bg == Colors.redAccent) {
+      type = AppSnackBarType.error;
+    } else if (bg == Colors.orange || bg == Colors.amber) {
+      type = AppSnackBarType.warning;
+    } else if (bg == Colors.green || bg == Colors.greenAccent) {
+      type = AppSnackBarType.success;
+    }
+
+    AppSnackBar.show(
+      context,
+      message: message,
+      type: type,
+      backgroundColor: bg,
+      leadingIcon: type == AppSnackBarType.success
+          ? Icons.check_circle_rounded
+          : (type == AppSnackBarType.error
+              ? Icons.error_rounded
+              : Icons.info_rounded),
     );
   }
 
@@ -888,8 +904,12 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
             ));
           });
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('$title 하이라이트를 만들었습니다.')),
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
+          _showSnackBar(
+            isKo
+                ? '$title 하이라이트를 만들었습니다.'
+                : 'Created highlight: $title',
+            backgroundColor: Colors.green,
           );
         },
       ),

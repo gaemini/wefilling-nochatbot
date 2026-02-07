@@ -21,8 +21,6 @@ class CacheManager {
     }
     
     try {
-      Logger.log('🚀 캐시 시스템 초기화 시작...');
-      
       // Hive 초기화
       await Hive.initFlutter();
       
@@ -51,8 +49,6 @@ class CacheManager {
       // await Hive.openBox<CachedMessage>('messages');
       
       _initialized = true;
-      Logger.log('✅ 캐시 시스템 초기화 완료');
-      Logger.log('📊 초기화된 박스: metadata, posts, comments, dm_messages_v1');
     } catch (e, stackTrace) {
       Logger.error('❌ 캐시 시스템 초기화 실패 (앱은 정상 작동): $e');
       Logger.error('스택 트레이스: $stackTrace');

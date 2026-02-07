@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Firebase setup scripts for Wefilling",
   "scripts": {
+    "add-drinks": "node add_drinks_places.js",
     "setup-places": "node setup_recommended_places.js"
   },
   "dependencies": {

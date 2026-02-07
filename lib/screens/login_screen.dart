@@ -13,6 +13,7 @@ import '../screens/email_login_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showLogoutSuccess;
@@ -62,32 +63,10 @@ class _LoginScreenState extends State<LoginScreen>
       
       // 로그아웃 성공 메시지 표시
       if (widget.showLogoutSuccess) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Row(
-              children: [
-                const Icon(
-                  Icons.check_circle_outline,
-                  color: Colors.white,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  AppLocalizations.of(context)!.logoutSuccess,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: Colors.green.shade600,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            margin: const EdgeInsets.all(16),
-          ),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.logoutSuccess,
+          type: AppSnackBarType.success,
         );
       }
       

@@ -205,7 +205,7 @@ class _FriendsMainPageState extends State<FriendsMainPage>
                   const Icon(Icons.category_outlined, size: 20),
                   const SizedBox(height: 2),
                   Text(
-                    AppLocalizations.of(context)!.category,
+                    AppLocalizations.of(context)!.groups,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 11,

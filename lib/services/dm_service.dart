@@ -468,11 +468,6 @@ class DMService {
             final postData = postDoc.data()!;
             // 게시글 본문만 저장 (제목은 사용하지 않음)
             dmContent = postData['content'] as String?;
-            final preview = (dmContent ?? '').trim();
-            final shown = preview.isEmpty ? '없음' : (preview.length > 50 ? preview.substring(0, 50) : preview);
-            Logger.log('📝 게시글 본문 로드 성공: $shown');
-          } else {
-            Logger.log('⚠️ 게시글을 찾을 수 없음: $postId');
           }
         } catch (e) {
           Logger.error('게시글 본문 로드 실패: $e');
@@ -692,43 +687,12 @@ class DMService {
       final hasPendingWrites = snapshot.metadata.hasPendingWrites ||
           snapshot.docs.any((d) => d.metadata.hasPendingWrites);
       if (isCacheOnly && !hasPendingWrites) {
-        Logger.log('⚠️ getMyConversations: 캐시 전용 스냅샷 건너뜀(펜딩 라이트 없음)');
         if (_conversationCache.isNotEmpty) {
           return _conversationCache.values.toList();
         }
         return <Conversation>[];
       }
 
-      Logger.log('📋 getMyConversations 호출:');
-      Logger.log('  - 현재 사용자: ${currentUser.uid}');
-      Logger.log('  - Firestore에서 조회된 대화방: ${snapshot.docs.length}개');
-      
-      // 🔥 하이브리드 동기화: 캐시 소스 로깅
-      int cacheCount = 0;
-      int serverCount = 0;
-      
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final isFromCache = doc.metadata.isFromCache;
-        
-        if (isFromCache) {
-          cacheCount++;
-          Logger.log('  📦 [캐시] ${doc.id}');
-        } else {
-          serverCount++;
-          Logger.log('  🌐 [서버] ${doc.id}');
-        }
-        
-        Logger.log('    participants: ${data['participants']}');
-        Logger.log('    lastMessage: ${data['lastMessage']}');
-        
-        // displayTitle이 있으면 로깅
-        if (data['displayTitle'] != null) {
-          Logger.log('    displayTitle: ${data['displayTitle']}');
-        }
-      }
-      
-      Logger.log('  📊 소스 통계: 캐시 ${cacheCount}개 / 서버 ${serverCount}개');
       
       final conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
@@ -741,13 +705,8 @@ class DMService {
             if (isArchived) {
               // 보관했지만 새 메시지가 있으면 복원
               if (userLeftTime != null && lastMessageTime.compareTo(userLeftTime) > 0) {
-                Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: archivedBy이지만 새 메시지로 복원');
-                Logger.log('     - lastMessageTime: $lastMessageTime');
-                Logger.log('     - userLeftTime: $userLeftTime');
-                Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
                 // 계속 진행하여 표시
               } else {
-                Logger.log('  🔴 [${conv.id.substring(0, 8)}] 숨김: archivedBy에 포함 (새 메시지 없음)');
                 return false;
               }
             }
@@ -757,23 +716,14 @@ class DMService {
             // 나간 적이 없으면 표시
             if (userLeftTime == null) {
               show = true;
-              Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: 나간 적 없음');
             }
             // 나간 이후 새 활동(메시지)이 있으면 표시
             else if (lastMessageTime.compareTo(userLeftTime) > 0) {
               show = true;
-              Logger.log('  🟢 [${conv.id.substring(0, 8)}] 표시: 나간 후 새 메시지');
-              Logger.log('     - lastMessageTime: $lastMessageTime');
-              Logger.log('     - userLeftTime: $userLeftTime');
-              Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
             }
             // 나갔고 새 활동 없음 → 숨김
             else {
               show = false;
-              Logger.log('  🔴 [${conv.id.substring(0, 8)}] 숨김: 나갔고 새 메시지 없음');
-              Logger.log('     - lastMessageTime: $lastMessageTime');
-              Logger.log('     - userLeftTime: $userLeftTime');
-              Logger.log('     - 차이: ${lastMessageTime.difference(userLeftTime).inSeconds}초');
             }
             
             // ⭐ 추가: 익명 대화방에서 모든 상대방이 나간 경우만 숨김 (getTotalUnreadCount와 일치)
@@ -784,26 +734,12 @@ class DMService {
               
               if (allOthersLeft) {
                 show = false;
-                Logger.log('  - [${conv.id}] 숨김: 익명 대화방에서 모든 상대방이 나감');
               }
-            }
-            
-            // 문제 대화방 필터링 결과 로그
-            if (conv.id.contains('ewm0tYZ2jS0xc8uJ5ssy')) {
-              Logger.log('⚠️ [문제 대화방 목록 표시 여부]');
-              Logger.log('  - ID: ${conv.id}');
-              Logger.log('  - 표시됨: $show');
-              Logger.log('  - userLeftAt: ${conv.userLeftAt[currentUser.uid]}');
-              Logger.log('  - lastMessageTime: ${conv.lastMessageTime}');
             }
             
             return show;
           })
           .toList();
-
-      Logger.log('📋 대화방 목록 필터링 완료:');
-      Logger.log('  - 전체 대화방: ${snapshot.docs.length}개');
-      Logger.log('  - 필터링 후: ${conversations.length}개');
 
       // 캐시 업데이트
       for (var conv in conversations) {
@@ -816,23 +752,10 @@ class DMService {
 
   /// 메시지 목록 스트림 (사용자별 가시성 필터링 적용)
   Stream<List<DMMessage>> getMessages(String conversationId, {int limit = 50, DateTime? visibilityStartTime}) {
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    Logger.log('📱 getMessages 호출');
-    Logger.log('  - conversationId: $conversationId');
-    Logger.log('  - limit: $limit');
-    Logger.log('  - visibilityStartTime: $visibilityStartTime');
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      Logger.log('❌ 로그인된 사용자 없음 - 빈 스트림 반환');
       return Stream.value([]);
     }
-    Logger.log('✓ 현재 사용자: ${currentUser.uid}');
-
-    // Firestore 쿼리 레벨에서 필터링 (깜빡임 완전 방지)
-    Logger.log('🔍 Firestore 쿼리 생성 중...');
-    Logger.log('  - 경로: conversations/$conversationId/messages');
     
     Query messageQuery = _firestore
         .collection('conversations')
@@ -842,17 +765,13 @@ class DMService {
 
     // 가시성 시작 시간이 있으면 서버 사이드에서 필터링
     if (visibilityStartTime != null) {
-      Logger.log('  - 가시성 필터 적용: createdAt >= $visibilityStartTime');
       messageQuery = messageQuery.where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(visibilityStartTime));
     }
-
-    Logger.log('✓ 쿼리 생성 완료 - 스트림 리스닝 시작');
     
     return messageQuery
         .limit(limit)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      Logger.log('📨 스냅샷 수신: ${snapshot.docs.length}개 문서');
       
       final messages = snapshot.docs
           .map((doc) {
@@ -865,18 +784,6 @@ class DMService {
           })
           .whereType<DMMessage>()
           .toList();
-
-      Logger.log('📱 메시지 조회 완료:');
-      Logger.log('  - conversationId: $conversationId');
-      Logger.log('  - 사용자: ${currentUser.uid}');
-      Logger.log('  - 가시성 시작 시간: $visibilityStartTime');
-      Logger.log('  - 원본 문서 수: ${snapshot.docs.length}개');
-      Logger.log('  - 파싱 성공 메시지 수: ${messages.length}개');
-      
-      if (messages.isNotEmpty) {
-        Logger.log('  - 첫 메시지: "${messages.first.text}" (${messages.first.senderId})');
-        Logger.log('  - 마지막 메시지: "${messages.last.text}" (${messages.last.senderId})');
-      }
 
       // 캐시 업데이트
       _messageCache[conversationId] = messages;
@@ -999,12 +906,8 @@ class DMService {
 
   /// 사용자의 메시지 가시성 시작 시간 계산
   Future<DateTime?> getUserMessageVisibilityStartTime(String conversationId) async {
-    Logger.log('🔍 getUserMessageVisibilityStartTime 호출');
-    Logger.log('  - conversationId: $conversationId');
-    
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      Logger.log('  - 결과: null (사용자 없음)');
       return null;
     }
 
@@ -1016,7 +919,6 @@ class DMService {
         final ms = prefs.getInt(_visibilityPrefsKey(currentUser.uid, conversationId));
         if (ms != null && ms > 0) {
           final leftTime = DateTime.fromMillisecondsSinceEpoch(ms);
-          Logger.log('  - 결과(로컬): $leftTime');
           return leftTime;
         }
       } catch (_) {
@@ -1046,8 +948,6 @@ class DMService {
       final convData = convSnapshot.data() as Map<String, dynamic>;
       final userLeftAtData = convData['userLeftAt'] as Map<String, dynamic>? ?? {};
 
-      Logger.log('  - userLeftAt: ${userLeftAtData.keys.toList()}');
-
       // 나간 적이 있으면 그 시점부터만 메시지 표시
       if (userLeftAtData.containsKey(currentUser.uid)) {
         final leftTimestamp = userLeftAtData[currentUser.uid] as Timestamp?;
@@ -1062,12 +962,10 @@ class DMService {
             );
           } catch (_) {}
 
-          Logger.log('  - 결과: $leftTime (나간 시점부터 표시)');
           return leftTime;
         }
       }
 
-      Logger.log('  - 결과: null (나간 적 없음 - 모든 메시지 표시)');
       return null;
     } catch (e) {
       Logger.error('❌ 가시성 시간 계산 실패: $e');
@@ -1084,21 +982,11 @@ class DMService {
     String? postImageUrl,
     String? postPreview,
   }) async {
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    Logger.log('📤 sendMessage 시작');
-    Logger.log('  - conversationId: $conversationId');
-    Logger.log('  - text 길이: ${text.length}자');
-    Logger.log('  - imageUrl: ${imageUrl != null && imageUrl.isNotEmpty ? "있음" : "없음"}');
-    Logger.log('  - postContext: ${postId != null && postId.isNotEmpty ? "있음" : "없음"}');
-    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        Logger.log('❌ 로그인된 사용자가 없습니다');
         return false;
       }
-      Logger.log('✓ 현재 사용자: ${currentUser.uid}');
 
       final trimmedText = text.trim();
       final hasImage = imageUrl != null && imageUrl.trim().isNotEmpty;
@@ -1108,7 +996,6 @@ class DMService {
 
       // 메시지 유효성 검증: 텍스트/이미지 중 하나는 있어야 함
       if (trimmedText.isEmpty && !hasImage) {
-        Logger.log('❌ 메시지 내용이 비어 있습니다 (텍스트/이미지 모두 없음)');
         return false;
       }
 
@@ -1192,11 +1079,6 @@ class DMService {
               final postData = postDoc.data()!;
               // 게시글 본문만 저장 (제목은 사용하지 않음)
               dmContent = postData['content'] as String?;
-              final preview = (dmContent ?? '').trim();
-              final shown = preview.isEmpty ? '없음' : (preview.length > 50 ? preview.substring(0, 50) : preview);
-              Logger.log('📝 sendMessage: 게시글 본문 로드 성공: $shown');
-            } else {
-              Logger.log('⚠️ sendMessage: 게시글을 찾을 수 없음: ${parsed.postId}');
             }
           } catch (e) {
             Logger.error('게시글 본문 로드 실패: $e');
@@ -1263,8 +1145,6 @@ class DMService {
       }
 
       // 메시지 추가
-      Logger.log('📝 메시지 서브컬렉션에 추가 시도...');
-      Logger.log('  - 경로: conversations/$conversationId/messages');
       Logger.log('  - messageData: $messageData');
       
       try {
@@ -1280,82 +1160,21 @@ class DMService {
         rethrow;
       }
 
-      // 대화방 정보 업데이트 (마지막 메시지, 시간, 읽지 않은 메시지 수)
-      Logger.log('🔄 대화방 정보 업데이트 시작...');
-      final convDocAfter = await convRef.get();
-      if (!convDocAfter.exists) {
-        Logger.log('❌ 대화방을 찾을 수 없습니다');
-        return false;
-      }
-      Logger.log('✓ 대화방 문서 재조회 성공');
-
-      final convData = convDocAfter.data()!;
-      final participants = List<String>.from(convData['participants']);
-      final unreadCount = Map<String, int>.from(convData['unreadCount']);
-      final userLeftAt = convData['userLeftAt'] as Map<String, dynamic>?;
-
-      // 모든 상대방의 읽지 않은 메시지 수 증가 (나간 사용자 제외)
-      Logger.log('🔍 unreadCount 업데이트 시작 - 업데이트 전: $unreadCount');
-      for (final participantId in participants) {
-        if (participantId != currentUser.uid) {
-          // 상대방이 나간 경우 unreadCount 증가하지 않음 (최적화)
-          final hasLeft = userLeftAt != null && userLeftAt[participantId] != null;
-          if (!hasLeft) {
-            final currentCount = unreadCount[participantId] ?? 0;
-            unreadCount[participantId] = currentCount + 1;
-            Logger.log('  - [$participantId] unreadCount 증가: $currentCount → ${unreadCount[participantId]}');
-          } else {
-            Logger.log('  - [$participantId] 나간 사용자이므로 unreadCount 증가 안 함');
-          }
-        }
-      }
-      
-      // 강제 확인: unreadCount가 실제로 증가했는지 검증
-      final hasAnyUnread = unreadCount.values.any((count) => count > 0);
-      Logger.log('🔍 unreadCount 검증 완료:');
-      Logger.log('  - hasAnyUnread: $hasAnyUnread');
-      Logger.log('  - 최종 unreadCount 맵: $unreadCount');
-      
-      // 메시지 방향 상세 분석
-      Logger.log('📊 메시지 전송 방향 분석:');
-      Logger.log('  - 보내는 사람 (나): ${currentUser.uid}');
-      Logger.log('  - 받는 사람들: ${participants.where((id) => id != currentUser.uid).toList()}');
-      Logger.log('  - 내 배지 (변경 안 됨): ${unreadCount[currentUser.uid] ?? 0}');
-      for (final participantId in participants) {
-        if (participantId != currentUser.uid) {
-          Logger.log('  - ${participantId}의 배지 (증가함): ${unreadCount[participantId]}');
-        }
-      }
-
-      // 메시지 전송 시 대화방 업데이트
+      // 대화방 정보 업데이트 (마지막 메시지/시간)
+      // unreadCount 증감은 서버(Cloud Functions)가 단일 소스로 처리한다.
       final lastMessageForList = trimmedText.isNotEmpty ? trimmedText : _imageLastMessageFallback;
       final updateData = {
         'lastMessage': lastMessageForList,
         'lastMessageTime': Timestamp.fromDate(now),
         'lastMessageSenderId': currentUser.uid,
-        'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       };
       
       Logger.log('🔄 대화방 업데이트 데이터: $updateData');
-      Logger.log('  - 각 사용자별 unreadCount:');
-      unreadCount.forEach((userId, count) {
-        Logger.log('    • $userId: $count개 (읽지 않음)');
-      });
       
       try {
         await convRef.update(updateData);
         Logger.log('✅ 대화방 업데이트 성공');
-        
-        // 업데이트 확인: 즉시 재조회하여 변경사항 반영 확인
-        Logger.log('🔍 업데이트 확인 중...');
-        await Future.delayed(const Duration(milliseconds: 100));
-        final verifyDoc = await convRef.get();
-        if (verifyDoc.exists) {
-          final verifyData = verifyDoc.data()!;
-          final verifyUnread = Map<String, int>.from(verifyData['unreadCount'] ?? {});
-          Logger.log('  ✓ Firestore 확인 - unreadCount: $verifyUnread');
-        }
       } catch (e) {
         Logger.error('❌ 대화방 업데이트 실패: $e');
         if (e is FirebaseException) {
@@ -1369,23 +1188,9 @@ class DMService {
       // - conversations/{conversationId}/messages 생성 시 자동으로 FCM 발송
       // - 잠금화면/알림센터에 표시, 앱 배지는 일반 알림 + DM 통합
       // - Notifications 탭에는 표시 안 함 (DM 탭에서만 확인)
-      Logger.log('📤 DM 메시지 전송 완료 - 서버가 FCM 푸시 자동 발송');
-
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('✅ sendMessage 완료 - 모든 단계 성공');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return true;
     } catch (e) {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.error('❌ sendMessage 실패');
-      Logger.error('  - 오류: $e');
-      Logger.error('  - 오류 타입: ${e.runtimeType}');
-      if (e is FirebaseException) {
-        Logger.log('  - Firebase 코드: ${e.code}');
-        Logger.log('  - Firebase 메시지: ${e.message}');
-        Logger.log('  - Firebase 플러그인: ${e.plugin}');
-      }
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('DM 메시지 전송 실패', e);
       return false;
     }
   }
@@ -1443,41 +1248,45 @@ class DMService {
 
     final convRef = _firestore.collection('conversations').doc(conversationId);
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('🚪 leaveConversation 시작');
-      Logger.log('  - conversationId: $conversationId');
-      Logger.log('  - userId: ${currentUser.uid}');
-      
       final snap = await convRef.get();
       if (!snap.exists) {
-        Logger.log('❌ 대화방이 존재하지 않음');
         return;
       }
       
       final data = snap.data() as Map<String, dynamic>;
       final participants = List<String>.from(data['participants'] ?? []);
       if (!participants.contains(currentUser.uid)) {
-        Logger.log('❌ 사용자가 참여자가 아님');
         return;
       }
       
       final lastMessageTime = (data['lastMessageTime'] as Timestamp?)?.toDate();
       final now = DateTime.now();
-      
-      Logger.log('📊 나가기 전 상태:');
-      Logger.log('  - participants: $participants');
-      Logger.log('  - lastMessageTime: $lastMessageTime');
-      Logger.log('  - 현재 시간: $now');
       if (lastMessageTime != null) {
         Logger.log('  - 마지막 메시지로부터 ${now.difference(lastMessageTime).inSeconds}초 경과');
       }
 
-      // ✅ archivedBy와 userLeftAt 모두 설정 (확실한 제거)
-      await convRef.update({
+      // ✅ 나가기 시 정책:
+      // - archivedBy + userLeftAt 기록
+      // - 내 unreadCount는 0으로 리셋
+      // - users/{me}.dmUnreadTotal은 "이 대화방에서 사라지는 unread"만큼 감소
+      final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
+      final myUnread = unreadCount[currentUser.uid] ?? 0;
+      unreadCount[currentUser.uid] = 0;
+
+      final batch = _firestore.batch();
+      batch.update(convRef, {
         'archivedBy': FieldValue.arrayUnion([currentUser.uid]),
         'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
+        'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       });
+      if (myUnread > 0) {
+        final userRef = _firestore.collection('users').doc(currentUser.uid);
+        batch.set(userRef, {
+          'dmUnreadTotal': FieldValue.increment(-myUnread),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
 
       // 로컬에 leave 시점을 저장하여 재진입 시 즉시 필터링되도록 한다 (best-effort)
       try {
@@ -1492,14 +1301,11 @@ class DMService {
       
       Logger.log('✅ 대화방 나가기 완료');
       Logger.log('  - archivedBy에 추가: ${currentUser.uid}');
-      Logger.log('  - userLeftAt.${currentUser.uid}: $now');
-      Logger.log('  - 목록에서 즉시 제거됨 (archivedBy 체크)');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } on FirebaseException catch (e) {
-      Logger.error('leaveConversation Firebase 오류: code=${e.code}, message=${e.message}, path=${convRef.path}');
+      Logger.error('대화방 나가기 실패', e);
       rethrow;
     } catch (e) {
-      Logger.error('leaveConversation 일반 오류: $e');
+      Logger.error('대화방 나가기 오류', e);
       rethrow;
     }
   }
@@ -1507,33 +1313,23 @@ class DMService {
   /// 메시지 읽음 처리
   Future<void> markAsRead(String conversationId) async {
     try {
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      Logger.log('📖 markAsRead 시작');
-      Logger.log('  - conversationId: $conversationId');
-      
       final currentUser = _auth.currentUser;
       if (currentUser == null) {
-        Logger.log('❌ 현재 사용자 없음');
         return;
       }
-      Logger.log('  - currentUser.uid: ${currentUser.uid}');
 
       // 대화방 정보 가져오기
       final convDoc = await _firestore.collection('conversations').doc(conversationId).get();
       if (!convDoc.exists) {
-        Logger.log('❌ 대화방 존재하지 않음');
         return;
       }
-      Logger.log('✓ 대화방 존재 확인');
 
       final convData = convDoc.data()!;
       final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
-      Logger.log('  - 현재 unreadCount: $unreadCount');
-      Logger.log('  - 내 읽지 않은 메시지 수 (Firestore 필드): ${unreadCount[currentUser.uid] ?? 0}');
+      final prevMyUnread = unreadCount[currentUser.uid] ?? 0;
 
       // 🔥 핵심 수정: unreadCount 필드 무시, 항상 실제 메시지 확인
       // 읽지 않은 메시지 가져오기
-      Logger.log('🔍 실제 읽지 않은 메시지 조회 중...');
       // NOTE: Firestore의 !=(isNotEqualTo) 쿼리는 인덱스/정렬 제약으로 실패하거나
       //       실시간 상황에서 반영이 늦어질 수 있다. 안정성을 위해 isRead=false만 서버에서
       //       가져오고(senderId 필터는 클라이언트에서 처리) 읽음 처리한다.
@@ -1549,17 +1345,12 @@ class DMService {
         final data = d.data() as Map<String, dynamic>;
         return (data['senderId']?.toString() ?? '') != currentUser.uid;
       }).toList();
-      
-      Logger.log('  - isRead=false 문서: ${unreadSnap.docs.length}개');
-      Logger.log('  - 실제 읽지 않은(상대 발신) 메시지: ${unreadIncomingDocs.length}개');
 
       // 실제 메시지가 없으면 skip (정확한 확인)
       if (unreadIncomingDocs.isEmpty) {
-        Logger.log('✓ 실제로 읽지 않은 메시지 없음 - skip');
         return;
       }
-      
-      Logger.log('🔄 읽음 처리 실행: ${unreadIncomingDocs.length}개 메시지');
+      final actualReadCount = unreadIncomingDocs.length;
 
       // 배치로 읽음 처리
       final batch = _firestore.batch();
@@ -1571,7 +1362,6 @@ class DMService {
           'readAt': Timestamp.fromDate(now),
         });
       }
-      Logger.log('✓ ${unreadIncomingDocs.length}개 메시지 읽음 처리 준비');
 
       // 대화방의 unreadCount 업데이트
       unreadCount[currentUser.uid] = 0;
@@ -1579,25 +1369,25 @@ class DMService {
         'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       });
-      Logger.log('✓ unreadCount를 0으로 업데이트 준비: $unreadCount');
+
+      // users/{me}.dmUnreadTotal 감소
+      // - 서버/클라이언트 unreadCount가 어긋나는 경우(예: 2배로 증가)에도
+      //   실제로 읽음 처리한 메시지 개수만큼만 감소시켜 총합 드리프트를 막는다.
+      // - prevMyUnread는 참고용으로만 남긴다.
+      final userRef = _firestore.collection('users').doc(currentUser.uid);
+      batch.set(userRef, {
+        'dmUnreadTotal': FieldValue.increment(-actualReadCount),
+      }, SetOptions(merge: true));
 
       await batch.commit();
-      Logger.log('✅ 메시지 읽음 처리 완료');
       
       // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
       _conversationCache.remove(conversationId);
       _messageCache.remove(conversationId);
       
-      Logger.log('✓ 캐시 클리어 완료 - 스트림 리스너 업데이트 예정');
-      
-      // 배지 동기화 (일반 알림 + DM 통합)
-      await BadgeService.syncNotificationBadge();
-      Logger.log('✓ 배지 동기화 완료');
-      
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
     } catch (e) {
-      Logger.error('❌ 메시지 읽음 처리 오류: $e');
-      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.error('메시지 읽음 처리 오류', e);
     }
   }
 
@@ -1605,7 +1395,6 @@ class DMService {
   Stream<int> getTotalUnreadCount() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      Logger.log('❌ getTotalUnreadCount: 로그인 사용자 없음');
       return Stream.value(0);
     }
 
@@ -1617,31 +1406,23 @@ class DMService {
 
     return baseStream.asyncMap((snapshot) async {
       try {
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        Logger.log('🔢 getTotalUnreadCount 업데이트 - 시작');
-        Logger.log('  - 전체 대화방: ${snapshot.docs.length}개');
-        Logger.log('  - 메타데이터 변경: ${snapshot.metadata.hasPendingWrites}');
-        Logger.log('  - 현재 사용자: ${currentUser.uid}');
-        
         int totalUnread = 0;
-        int processedConv = 0;
-        int skippedConv = 0;
         
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data() as Map<String, dynamic>;
-            final convId = doc.id;
             final archivedBy = List<String>.from(data['archivedBy'] ?? []);
+            final participants =
+                (data['participants'] as List?)?.map((e) => e.toString()).toList() ??
+                    const <String>[];
             
             // 보관된 대화방은 제외
             if (archivedBy.contains(currentUser.uid)) {
-              Logger.log('  - [$convId] 건너뜀: 보관된 대화방');
-              skippedConv++;
               continue;
             }
             
             // 내가 나간 대화방만 필터링 (unreadCount는 상대방 나간 여부와 무관)
-            final userLeftAt = data['userLeftAt'];
+            final userLeftAt = (data['userLeftAt'] as Map?) ?? const {};
             final lastMessageTime = data['lastMessageTime'];
             
             // 내가 나간 대화방 + 새 메시지 없음인 경우만 건너뜀
@@ -1651,9 +1432,20 @@ class DMService {
                 final lastMsgTime = (lastMessageTime as Timestamp).toDate();
                 
                 // 나간 이후 새 메시지가 없으면 카운트하지 않음
-                if (lastMsgTime.compareTo(userLeftTime) < 0) {
-                  Logger.log('  - [$convId] 건너뜀: 나간 대화방 (새 메시지 없음)');
-                  skippedConv++;
+                // (DM 목록 표시 로직과 일치: lastMsgTime > userLeftTime 인 경우만 유지)
+                if (lastMsgTime.compareTo(userLeftTime) <= 0) {
+                  continue;
+                }
+              }
+            }
+
+            // ✅ 익명 대화방에서 "모든 상대방이 나간 경우"는 목록에서 숨기므로,
+            // 네비게이션 배지(totalUnread)에서도 동일하게 제외해 UX 불일치를 제거한다.
+            if (doc.id.startsWith('anon_') && participants.isNotEmpty) {
+              final otherParticipants = participants.where((id) => id != currentUser.uid).toSet();
+              if (otherParticipants.isNotEmpty) {
+                final allOthersLeft = otherParticipants.every((otherId) => userLeftAt[otherId] != null);
+                if (allOthersLeft) {
                   continue;
                 }
               }
@@ -1662,69 +1454,16 @@ class DMService {
             final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
             final myUnread = unreadCount[currentUser.uid] ?? 0;
             
-            Logger.log('  ✓ [$convId] 처리 완료 - 읽지 않음: ${myUnread}개');
-            
             totalUnread += myUnread;
-            processedConv++;
           } catch (e) {
-            Logger.error('⚠️ 대화방 [${doc.id}] 처리 중 오류 (건너뜀): $e');
-            skippedConv++;
+            Logger.error('대화방 처리 중 오류', e);
             continue;
           }
         }
         
-        Logger.log('  📊 처리 완료:');
-        Logger.log('    - 처리됨: $processedConv개');
-        Logger.log('    - 건너뜀: $skippedConv개');
-        Logger.log('  - 총 읽지 않은 메시지: $totalUnread개');
-        
-        // 상세 배지 계산 로그 추가 (실제 처리된 대화방만)
-        Logger.log('🔢 배지 계산 상세 결과 (실제 포함된 대화방만):');
-        if (totalUnread > 0) {
-          for (var doc in snapshot.docs) {
-            try {
-              final data = doc.data() as Map<String, dynamic>;
-              final convId = doc.id;
-              final archivedBy = List<String>.from(data['archivedBy'] ?? []);
-              
-              // 보관된 대화방은 제외
-              if (archivedBy.contains(currentUser.uid)) {
-                continue;
-              }
-              
-              // 내가 나간 대화방 체크
-              final userLeftAt = data['userLeftAt'];
-              final lastMessageTime = data['lastMessageTime'];
-              
-              if (userLeftAt != null && lastMessageTime != null) {
-                if (userLeftAt[currentUser.uid] != null) {
-                  final userLeftTime = (userLeftAt[currentUser.uid] as Timestamp).toDate();
-                  final lastMsgTime = (lastMessageTime as Timestamp).toDate();
-                  
-                  if (lastMsgTime.compareTo(userLeftTime) < 0) {
-                    continue; // 나간 이후 새 메시지 없음
-                  }
-                }
-              }
-              
-              final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
-              final myUnread = unreadCount[currentUser.uid] ?? 0;
-              if (myUnread > 0) {
-                Logger.log('  ✅ $convId: $myUnread개 (실제 배지에 포함됨)');
-              }
-            } catch (e) {
-              // 오류는 무시하고 계속 진행
-            }
-          }
-        } else {
-          Logger.log('  (배지에 포함된 대화방 없음)');
-        }
-        Logger.log('🔢 최종 배지 숫자: $totalUnread');
-        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return totalUnread;
       } catch (e) {
-        Logger.error('❌ getTotalUnreadCount 오류: $e');
-        Logger.log('  - 스택 트레이스: ${e.toString()}');
+        Logger.error('getTotalUnreadCount 오류', e);
         return 0;
       }
     }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지

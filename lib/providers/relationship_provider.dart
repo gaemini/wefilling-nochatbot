@@ -522,7 +522,6 @@ class RelationshipProvider with ChangeNotifier {
     _authProvider = authProvider;
     // 스트림 정리 콜백 등록
     _authProvider?.registerStreamCleanup(_cancelAllSubscriptions);
-    Logger.log('RelationshipProvider: AuthProvider 연결 완료');
   }
 
   /// 모든 Firestore 구독 취소

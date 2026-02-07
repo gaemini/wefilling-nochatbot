@@ -145,7 +145,6 @@ class AdBannerService {
   /// 초기 샘플 광고 데이터 생성
   Future<void> initializeSampleBanners() async {
     try {
-      Logger.log('🔄 광고 배너 초기화 시작...');
 
       // 샘플 광고 데이터
       final sampleBanners = [
@@ -205,9 +204,9 @@ class AdBannerService {
         Logger.log('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
       }
 
-      Logger.log('✅ 총 ${sampleBanners.length}개 광고 배너 업데이트 완료!');
     } catch (e) {
-      Logger.error('❌ 초기 광고 배너 생성 오류: $e');
+      // 광고 배너는 선택적 기능이므로 오류를 조용히 처리
+      Logger.error('광고 배너 초기화 오류', e);
     }
   }
 }

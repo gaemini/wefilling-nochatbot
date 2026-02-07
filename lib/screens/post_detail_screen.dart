@@ -850,17 +850,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 조회수 증가 메서드
   Future<void> _incrementViewCount() async {
     try {
-      Logger.log('🔍 게시글 상세 화면 - 조회수 증가 시작');
-      Logger.log('   - 게시글 제목: ${_currentPost.title}');
-      Logger.log('   - 게시글 ID: ${_currentPost.id}');
-      
       await _postService.incrementViewCount(widget.post.id);
 
       // UI 업데이트는 실제 Firestore에서 업데이트된 후에 하도록 개선
       // (실제로는 Firestore의 실시간 업데이트를 통해 자동으로 반영됨)
-      Logger.log('✅ 게시글 상세 화면 - 조회수 증가 완료');
     } catch (e) {
-      Logger.error('❌ 게시글 상세 화면 - 조회수 증가 실패: $e');
+      Logger.error('게시글 조회수 증가 실패', e);
     }
   }
 
@@ -1551,12 +1546,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 디버그용: 이미지 URL 로깅
   void _logImageUrls() {
-    Logger.log('📋 게시글 ID: ${_currentPost.id}');
-    Logger.log('📋 이미지 URL 개수: ${_currentPost.imageUrls.length}');
-    for (int i = 0; i < _currentPost.imageUrls.length; i++) {
-      Logger.log('📋 원본 이미지 URL $i: ${_currentPost.imageUrls[i]}');
-    }
-    Logger.log('✅ URL 변환 없이 원본 그대로 사용');
+    // 로깅 제거 (필요시 디버거 사용)
   }
   
   /// 익명 게시글의 댓글 작성자 표시명 생성

@@ -18,6 +18,7 @@ import '../services/review_service.dart';
 import '../utils/logger.dart';
 import 'dm_chat_screen.dart';
 import '../widgets/notification_list_item.dart';
+import '../services/user_info_cache_service.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -39,6 +40,7 @@ class NotificationScreen extends StatefulWidget {
 class _NotificationScreenState extends State<NotificationScreen> {
   final NotificationService _notificationService = NotificationService();
   final PostService _postService = PostService();
+  final UserInfoCacheService _userInfoCache = UserInfoCacheService();
   final Map<String, Future<String?>> _postPreviewFutures = {};
   bool _isLoading = false;
 
@@ -68,6 +70,34 @@ class _NotificationScreenState extends State<NotificationScreen> {
         });
       }
     }
+  }
+
+  // 일관된 스타일의 스낵바 표시
+  void _showStyledSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
+          ),
+        ),
+        backgroundColor: isError 
+            ? const Color(0xFFEF4444) // 에러: 빨간색
+            : const Color(0xFF374151), // 일반: 진한 회색
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   // 알림 클릭 처리
@@ -118,8 +148,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final meetupId = notification.data?['meetupId'] ?? notification.meetupId;
     
     if (meetupId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
       );
       return;
     }
@@ -153,8 +184,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
           (route) => false,
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.meetupNotFound)),
+        _showStyledSnackBar(
+          AppLocalizations.of(context)!.meetupNotFound,
+          isError: true,
         );
       }
     } catch (e) {
@@ -164,8 +196,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
@@ -177,8 +210,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final postId = notification.data?['postId'] ?? notification.postId;
     
     if (postId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
       );
       return;
     }
@@ -209,8 +243,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
           ),
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound)),
+        _showStyledSnackBar(
+          AppLocalizations.of(context)!.postNotFound,
+          isError: true,
         );
       }
     } catch (e) {
@@ -220,8 +255,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
@@ -234,8 +270,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final userId = notification.data?['userId'];
     
     if (reviewId == null || userId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
       );
       return;
     }
@@ -280,8 +317,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+        _showStyledSnackBar(
+          AppLocalizations.of(context)!.reviewNotFound,
+          isError: true,
         );
       }
     }
@@ -298,8 +336,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
@@ -316,8 +355,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final authorName = notification.actorName;
 
       if (requestId == null || reviewId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.reviewInfoMissing)),
+        _showStyledSnackBar(
+          AppLocalizations.of(context)!.reviewInfoMissing,
+          isError: true,
         );
         return;
       }
@@ -346,8 +386,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
@@ -360,8 +401,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final otherUserId = notification.actorId;
       
       if (conversationId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.notificationDataMissing)),
+        _showStyledSnackBar(
+          AppLocalizations.of(context)!.notificationDataMissing,
+          isError: true,
         );
         return;
       }
@@ -391,8 +433,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
@@ -409,11 +452,29 @@ class _NotificationScreenState extends State<NotificationScreen> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+        _showStyledSnackBar(
+          '${AppLocalizations.of(context)!.error}: $e',
+          isError: true,
         );
       }
     }
+  }
+
+  // actorId로부터 최신 닉네임 가져오기 (닉네임 변경 반영)
+  String _getActorName(AppNotification notification) {
+    final actorId = notification.actorId;
+    if (actorId == null || actorId.isEmpty) {
+      return notification.actorName ?? '';
+    }
+    
+    // 캐시된 최신 사용자 정보에서 닉네임 가져오기
+    final userInfo = _userInfoCache.getCachedUserInfo(actorId);
+    if (userInfo != null && userInfo.nickname.isNotEmpty) {
+      return userInfo.nickname;
+    }
+    
+    // 캐시에 없으면 알림에 저장된 이름 사용 (fallback)
+    return notification.actorName ?? '';
   }
 
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
@@ -435,52 +496,75 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final meetupTitle = data['meetupTitle'] ?? '';
           return l10n!.meetupCancelledMessage(meetupTitle);
         case 'meetup_participant_joined':
+          final participantName = data['participantName'] ?? _getActorName(notification);
           return l10n!.newParticipantJoinedMessage(
-            data['participantName'] ?? '',
+            participantName,
             data['meetupTitle'] ?? '',
           );
         case 'new_comment':
-          final commenterName = (data['commenterName'] ?? '').toString();
-          final postTitle = (data['postTitle'] ?? '').toString().trim();
-          if (postTitle.isEmpty) {
-            final lang = Localizations.localeOf(context).languageCode;
+          final bool postIsAnonymous = data['postIsAnonymous'] == true;
+          final lang = Localizations.localeOf(context).languageCode;
+          
+          // 익명 게시글이면 댓글 작성자 정보 노출 안 함
+          if (postIsAnonymous) {
             return lang == 'ko'
-                ? '$commenterName님이 회원님의 게시글에 댓글을 남겼습니다.'
-                : '$commenterName commented on your post.';
+                ? '게시글에 새 댓글이 달렸습니다.'
+                : 'A new comment was added to your post.';
           }
-          return l10n!.newCommentMessage(commenterName, postTitle);
+          
+          // 일반 게시글 - 실시간 닉네임 가져오기
+          final commenterName = _getActorName(notification);
+          return lang == 'ko'
+              ? '$commenterName님이 회원님의 게시글에 댓글을 남겼습니다.'
+              : '$commenterName commented on your post.';
         case 'new_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
-          final likerName = postIsAnonymous ? (l10n?.anonymous ?? '익명') : (data['likerName'] ?? '');
-          final postTitle = (data['postTitle'] ?? '').toString().trim();
-          if (postTitle.isEmpty) {
+          final lang = Localizations.localeOf(context).languageCode;
+          
+          // 익명 게시글이면 좋아요 누른 사람 정보 노출 안 함
+          if (postIsAnonymous) {
+            return lang == 'ko'
+                ? '게시글에 새 좋아요가 추가되었습니다.'
+                : 'A new like was added to your post.';
+          }
+          
+          // 일반 게시글 - 실시간 닉네임 가져오기
+          final likerName = _getActorName(notification);
+          return lang == 'ko'
+              ? '$likerName님이 회원님의 게시글을 좋아합니다.'
+              : '$likerName liked your post.';
+        case 'comment_like':
+          final bool postIsAnonymous = data['postIsAnonymous'] == true;
+          
+          // 익명 게시글의 댓글이면 좋아요 누른 사람 정보 노출 안 함
+          if (postIsAnonymous) {
             final lang = Localizations.localeOf(context).languageCode;
             return lang == 'ko'
-                ? '$likerName님이 회원님의 게시글을 좋아합니다.'
-                : '$likerName liked your post.';
+                ? '댓글에 새 좋아요가 추가되었습니다.'
+                : 'A new like was added to your comment.';
           }
-          return l10n!.newLikeMessage(likerName, postTitle);
-        case 'comment_like':
-          final likerName = data['likerName'] ?? notification.actorName ?? '';
+          
+          // 일반 댓글 - 실시간 닉네임 가져오기
+          final likerName = _getActorName(notification);
           return l10n!.newCommentLikeMessage(likerName);
         case 'friend_request':
-          final fromName = data['fromName'] ?? notification.actorName ?? '';
+          final fromName = _getActorName(notification);
           return l10n!.friendRequestMessage(fromName);
         case 'review_approval_request':
-          final author = notification.actorName ?? '';
+          final author = _getActorName(notification);
           final meetupTitle = data['meetupTitle'] ?? '';
           return l10n!.reviewApprovalRequestMessage(author, meetupTitle);
         case 'review_comment':
-          final commenterName = data['commenterName'] ?? notification.actorName ?? '';
+          final commenterName = _getActorName(notification);
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
           return l10n!.newCommentMessage(commenterName, reviewTitle);
         case 'review_like':
-          final likerName = data['likerName'] ?? notification.actorName ?? '';
+          final likerName = _getActorName(notification);
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
           return l10n!.newLikeMessage(likerName, reviewTitle);
         case 'post_private': {
           // 친구공개(허용된 사용자에게만 공개) 게시글 알림
-          final authorName = (data['authorName'] ?? notification.actorName ?? '').toString().trim();
+          final authorName = _getActorName(notification);
           final postTitle = (data['postTitle'] ?? '').toString().trim();
           final badge = l10n!.friendsOnlyBadge;
 

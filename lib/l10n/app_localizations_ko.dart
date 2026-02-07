@@ -384,6 +384,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get publicPost => '전체 공개';
 
   @override
+  String get meetupVisibilityFriendsAll => '친구 전체';
+
+  @override
+  String get meetupVisibilityGroupSelect => '그룹 선택';
+
+  @override
+  String get selectMeetupGroupsTitle => '그룹 선택';
+
+  @override
+  String get meetupThumbnailUsesFirstOnly => '썸네일은 1장만 적용돼요. 첫 번째 이미지를 사용합니다';
+
+  @override
   String get categorySpecific => '카테고리별';
 
   @override
@@ -396,7 +408,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get anonymous => '익명';
 
   @override
-  String get idWillBeShown => '아이디가 공개됩니다';
+  String get idWillBeShown => '아이디가 공개되지 않습니다';
 
   @override
   String get createMeetup => '모임 만들기';
@@ -493,6 +505,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get category => '카테고리';
+
+  @override
+  String get groups => '그룹';
 
   @override
   String get categories => '카테고리';
@@ -664,22 +679,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noGroup => '그룹 없음';
 
   @override
-  String get groupSettings => '카테고리 설정';
+  String get groupSettings => '그룹 설정';
 
   @override
-  String get selectCategoriesToShare => '공개할 카테고리 선택';
+  String get selectCategoriesToShare => '공개할 그룹 선택';
 
   @override
-  String get friendCategories => '친구 카테고리';
+  String get friendCategories => '친구 그룹';
 
   @override
-  String get noFriendCategories => '생성된 친구 카테고리가 없습니다. 먼저 카테고리를 생성해주세요.';
+  String get noFriendCategories => '생성된 친구 그룹이 없습니다. 먼저 그룹을 생성해주세요.';
 
   @override
-  String get defaultCategoryCreated => '기본 카테고리가 생성되었습니다';
+  String get defaultCategoryCreated => '기본 그룹이 생성되었습니다';
 
   @override
-  String get defaultCategoryFailed => '기본 카테고리 생성에 실패했습니다';
+  String get defaultCategoryFailed => '기본 그룹 생성에 실패했습니다';
 
   @override
   String get colorSelection => '색상 선택';
@@ -860,10 +875,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get searchToSendRequest => '사용자를 검색하여 친구요청을 보내보세요';
 
   @override
-  String get friendCategoriesManagement => '친구 카테고리 관리';
+  String get friendCategoriesManagement => '친구 그룹 관리';
 
   @override
-  String get noFriendGroupsYet => '생성된 친구 그룹이 없습니다.\n친구 카테고리 관리에서 그룹을 만들어보세요.';
+  String get noFriendGroupsYet => '생성된 친구 그룹이 없습니다.\n친구 그룹 관리에서 그룹을 만들어보세요.';
 
   @override
   String friendsCount(Object count) {
@@ -1072,23 +1087,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String get loadingComments => '댓글을 불러오는 중 오류가 발생했습니다';
 
   @override
-  String get editCategory => '카테고리 수정';
+  String get editCategory => '그룹 수정';
 
   @override
-  String get newCategory => '새 카테고리';
+  String get newCategory => '새 그룹';
 
   @override
-  String get categoryName => '카테고리 이름';
+  String get categoryName => '그룹 이름';
 
   @override
   String get categoryNameHint => '예: 대학 친구';
 
   @override
-  String get createFirstCategory => '카테고리로 친구 관리하기';
+  String get createFirstCategory => '그룹으로 친구 관리하기';
 
   @override
   String get createFirstCategoryDescription =>
-      '카테고리를 만들어 친구들을 그룹으로 관리해보세요.\n학교, 직장, 취미 등 다양한 그룹을 만들 수 있습니다.';
+      '친구들을 그룹으로 관리해보세요.\n아래 추가 버튼을 통해 그룹을 만들어보세요.';
 
   @override
   String get editAction => '수정';
@@ -1104,7 +1119,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String groupSettingsFor(String name) {
-    return '$name님의 카테고리 설정';
+    return '$name님의 그룹 설정';
   }
 
   @override
@@ -1116,32 +1131,32 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
-  String get categoryCreated => '카테고리가 생성되었습니다';
+  String get categoryCreated => '그룹이 생성되었습니다';
 
   @override
-  String get categoryUpdated => '카테고리가 수정되었습니다';
+  String get categoryUpdated => '그룹이 수정되었습니다';
 
   @override
-  String get categoryDeleted => '카테고리가 삭제되었습니다';
+  String get categoryDeleted => '그룹이 삭제되었습니다';
 
   @override
-  String get categoryCreateFailed => '카테고리 생성에 실패했습니다';
+  String get categoryCreateFailed => '그룹 생성에 실패했습니다';
 
   @override
-  String get categoryUpdateFailed => '카테고리 수정에 실패했습니다';
+  String get categoryUpdateFailed => '그룹 수정에 실패했습니다';
 
   @override
-  String get categoryDeleteFailed => '카테고리 삭제에 실패했습니다';
+  String get categoryDeleteFailed => '그룹 삭제에 실패했습니다';
 
   @override
-  String get enterCategoryName => '카테고리 이름을 입력해주세요';
+  String get enterCategoryName => '그룹 이름을 입력해주세요';
 
   @override
-  String get deleteCategory => '카테고리 삭제';
+  String get deleteCategory => '그룹 삭제';
 
   @override
   String deleteCategoryConfirm(String name) {
-    return '\'$name\' 카테고리를 삭제하시겠습니까?\n\n이 카테고리에 속한 친구들은 다른 카테고리로 이동됩니다.';
+    return '\'$name\' 그룹을 삭제하시겠습니까?\n\n이 그룹에 속한 친구들은 다른 그룹으로 이동됩니다.';
   }
 
   @override
@@ -1189,10 +1204,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendStatus => '친구';
 
   @override
-  String get addCategory => '카테고리 추가';
+  String get addCategory => '그룹 추가';
 
   @override
-  String get newCategoryCreate => '첫 카테고리 만들기';
+  String get newCategoryCreate => '첫 그룹 만들기';
 
   @override
   String get participatedReviews => '참여한 후기';
@@ -2233,6 +2248,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get cafe => '카페';
 
   @override
+  String get drink => '술';
+
+  @override
   String get friendsOnlyBadge => '친구 공개';
 
   @override
@@ -2251,7 +2269,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get noFriendsInCategory => '친구가 없습니다';
 
   @override
-  String get addFriendsToCategory => '이 카테고리에 친구를 추가해보세요';
+  String get addFriendsToCategory => '이 그룹에 친구를 추가해보세요';
 
   @override
   String get registrationRequired => '회원가입 필요';

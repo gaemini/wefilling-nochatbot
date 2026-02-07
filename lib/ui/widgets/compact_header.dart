@@ -519,6 +519,8 @@ String _getLocalizedLabel(BuildContext context, String label) {
       return localizations.study;
     case 'meal':
       return localizations.meal;
+    case 'drink':
+      return localizations.drink;
     case 'hobby':
       return localizations.hobby;
     case 'culture':

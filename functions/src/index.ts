@@ -26,6 +26,11 @@ function toInt(v: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function toNonNegativeInt(v: unknown): number {
+  const n = toInt(v);
+  return n < 0 ? 0 : n;
+}
+
 export const onUserProfileUpdatedPropagateAuthorInfo = functions
   .runWith({ timeoutSeconds: 540, memory: '1GB' })
   .firestore.document('users/{userId}')
@@ -1021,7 +1026,13 @@ export const onAdBannerChanged = functions.firestore
           notification: { channelId: 'high_importance_channel', sound: 'default' },
         },
         // ⚠️ topic 브로드캐스트는 사용자별 "정확한 배지 수"를 계산할 수 없으므로 badge는 포함하지 않음
-        apns: { payload: { aps: { sound: 'default' } } },
+        apns: {
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+          },
+          payload: { aps: { sound: 'default' } },
+        },
       };
 
       await admin.messaging().send(message);
@@ -3180,59 +3191,82 @@ export const onNotificationCreated = functions.firestore
 
       // iOS 앱 아이콘 배지: "읽지 않은 알림 수 + 안 읽은 DM 수"
       // - 일반 알림: dm_received 타입 제외 (Notifications 탭 기준)
-      // - DM: users/{uid}.dmUnreadTotal(증분 유지) 우선, 없으면 fallback 스캔
-      let badgeCount = 0;
-      try {
-        // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
-        const unreadAllSnap = await db
-          .collection('notifications')
-          .where('userId', '==', userId)
-          .where('isRead', '==', false)
-          .count()
-          .get();
-        const unreadAll = (unreadAllSnap.data().count as number) || 0;
+      // - DM: users/{uid}.dmUnreadTotal
+      //
+      // 안정성 개선:
+      // - count() 쿼리 실패 시 badge가 0으로 떨어지는 문제 방지
+      // - users/{uid}.notificationUnreadTotal 카운터를 서버에서 유지
+      // - 실패 시 재시도 로직 추가
+      let badgeCount: number | null = null;
+      
+      // 최대 2번 시도
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const userRef = db.collection('users').doc(userId);
+          const { notiUnreadTotal, dmUnreadTotal } = await db.runTransaction(async (tx) => {
+            const snap = await tx.get(userRef);
+            const d = (snap.data() || {}) as Record<string, unknown>;
 
-        const unreadDmSnap = await db
-          .collection('notifications')
-          .where('userId', '==', userId)
-          .where('isRead', '==', false)
-          .where('type', '==', 'dm_received')
-          .count()
-          .get();
-        const unreadDm = (unreadDmSnap.data().count as number) || 0;
+            const curNoti = toNonNegativeInt((d as any).notificationUnreadTotal);
+            const curDm = toNonNegativeInt((d as any).dmUnreadTotal);
 
-        const notificationCount = Math.max(0, unreadAll - unreadDm);
+            // 새 알림 문서 생성 트리거이므로 기본 정책상 isRead=false.
+            // dm_received는 "일반 알림" 카운트에서 제외하므로 카운터 증가 제외.
+            const delta = type === 'dm_received' ? 0 : 1;
+            const nextNoti = Math.max(0, curNoti + delta);
 
-        // 2) DM 총 안 읽은 수
-        let dmUnreadCount = 0;
-        const v = (userData as any)?.dmUnreadTotal;
-        if (typeof v === 'number' && Number.isFinite(v)) {
-          dmUnreadCount = Math.max(0, Math.trunc(v));
-        } else {
-          // fallback: dmUnreadTotal이 아직 없는 기존 계정 호환
-          const convsSnap = await db
-            .collection('conversations')
-            .where('participants', 'array-contains', userId)
-            .get();
-
-          convsSnap.docs.forEach((doc) => {
-            const data = doc.data();
-            const archivedBy = data.archivedBy || [];
-            if (archivedBy.includes(userId)) return; // 보관된 대화방 제외
-            
-            const unreadCount = data.unreadCount || {};
-            const myUnread = unreadCount[userId] || 0;
-            dmUnreadCount += myUnread;
+            tx.set(userRef, { notificationUnreadTotal: nextNoti }, { merge: true });
+            return { notiUnreadTotal: nextNoti, dmUnreadTotal: curDm };
           });
-        }
 
-        badgeCount = notificationCount + dmUnreadCount;
-        console.log(`📊 배지 계산: 일반 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
-      } catch (e) {
-        // count()가 실패하거나 권한/인덱스 문제일 경우, 배지는 안전하게 생략/0 처리
-        console.warn('⚠️ badgeCount 계산 실패 (0으로 처리):', e);
-        badgeCount = 0;
+          badgeCount = notiUnreadTotal + dmUnreadTotal;
+          console.log(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) = ${badgeCount}`);
+          break; // 성공하면 즉시 종료
+        } catch (e) {
+          console.warn(`⚠️ badgeCount(카운터) 계산 실패 (시도 ${attempt + 1}/2):`, e);
+          
+          // 마지막 시도가 아니면 재시도
+          if (attempt < 1) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            continue;
+          }
+          
+          // 최종 fallback: count() 쿼리
+          try {
+            const unreadAllSnap = await db
+              .collection('notifications')
+              .where('userId', '==', userId)
+              .where('isRead', '==', false)
+              .count()
+              .get();
+            const unreadAll = (unreadAllSnap.data().count as number) || 0;
+
+            const unreadDmSnap = await db
+              .collection('notifications')
+              .where('userId', '==', userId)
+              .where('isRead', '==', false)
+              .where('type', '==', 'dm_received')
+              .count()
+              .get();
+            const unreadDm = (unreadDmSnap.data().count as number) || 0;
+
+            const notificationCount = Math.max(0, unreadAll - unreadDm);
+            const dmUnreadCount = toNonNegativeInt((userData as any)?.dmUnreadTotal);
+            badgeCount = notificationCount + dmUnreadCount;
+
+            console.log(`📊 배지 계산(count fallback): 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
+          } catch (e2) {
+            console.warn('⚠️ badgeCount(count fallback)도 실패: badge 생략', e2);
+            badgeCount = null;
+          }
+        }
       }
+
+      // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
+      // 중요: iOS는 badge를 절대값으로 처리하므로 정확한 값을 보내야 함
+      const hasBadge = badgeCount !== null;
+      const finalBadge = hasBadge ? Math.max(0, badgeCount!) : 0;
+      console.log(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
 
       // 푸시 알림 메시지 구성 (멀티캐스트)
       const pushMessage: admin.messaging.MulticastMessage = {
@@ -3248,12 +3282,17 @@ export const onNotificationCreated = functions.firestore
           meetupId: notificationData.meetupId || '',
           actorId: notificationData.actorId || '',
           actorName: notificationData.actorName || '',
+          ...(hasBadge && { badge: String(finalBadge) }),
         },
         apns: {
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+          },
           payload: {
             aps: {
               sound: 'default',
-              badge: badgeCount,
+              ...(hasBadge && { badge: finalBadge }),
             },
           },
         },
@@ -3316,6 +3355,68 @@ export const onNotificationCreated = functions.firestore
       console.error('알림 전송 오류:', error);
       return null; // 알림 실패해도 알림 데이터는 유지
     }
+  });
+
+// 알림 읽음/안읽음 변경 시 users.notificationUnreadTotal 동기화
+// - dm_received는 일반 알림 카운트에서 제외
+export const onNotificationUpdatedSyncUnreadCounter = functions.firestore
+  .document('notifications/{notificationId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (!before || !after) return null;
+
+    const userId = (after as any).userId || (before as any).userId;
+    const type = (after as any).type || (before as any).type;
+    if (!userId || type === 'dm_received') return null;
+
+    const beforeRead = (before as any).isRead === true;
+    const afterRead = (after as any).isRead === true;
+    if (beforeRead === afterRead) return null;
+
+    // false -> true : -1, true -> false : +1
+    const delta = (!beforeRead && afterRead) ? -1 : 1;
+    const userRef = db.collection('users').doc(String(userId));
+
+    try {
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(userRef);
+        const cur = toNonNegativeInt((snap.data() as any)?.notificationUnreadTotal);
+        const next = Math.max(0, cur + delta);
+        tx.set(userRef, { notificationUnreadTotal: next }, { merge: true });
+      });
+    } catch (e) {
+      console.warn('⚠️ notificationUnreadTotal 동기화 실패(무시):', e);
+    }
+
+    return null;
+  });
+
+// 알림 삭제 시 users.notificationUnreadTotal 동기화
+export const onNotificationDeletedSyncUnreadCounter = functions.firestore
+  .document('notifications/{notificationId}')
+  .onDelete(async (snapshot, context) => {
+    const data = snapshot.data();
+    if (!data) return null;
+
+    const userId = (data as any).userId;
+    const type = (data as any).type;
+    const isRead = (data as any).isRead === true;
+    if (!userId || type === 'dm_received' || isRead) return null;
+
+    const userRef = db.collection('users').doc(String(userId));
+    try {
+      await db.runTransaction(async (tx) => {
+        const snap = await tx.get(userRef);
+        const cur = toNonNegativeInt((snap.data() as any)?.notificationUnreadTotal);
+        const next = Math.max(0, cur - 1);
+        tx.set(userRef, { notificationUnreadTotal: next }, { merge: true });
+      });
+    } catch (e) {
+      console.warn('⚠️ notificationUnreadTotal(삭제) 동기화 실패(무시):', e);
+    }
+
+    return null;
   });
 
 // 모임 참여 시 주최자에게 알림 전송
@@ -3571,6 +3672,10 @@ export const onMeetupCreated = functions.firestore
           visibility,
         },
         apns: {
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+          },
           payload: {
             aps: {
               sound: 'default',
@@ -3908,8 +4013,10 @@ export const onDMMessageCreated = functions.firestore
       }
 
       const convData = convDoc.data()!;
-      const participants: string[] = Array.isArray(convData.participants) ? convData.participants : [];
-      const recipients = participants.filter((id) => id && id !== senderId);
+      const participantsRaw: string[] = Array.isArray(convData.participants) ? convData.participants : [];
+      // 방어적 처리: participants 중복/빈 값이 있으면 unreadCount가 2배로 증가할 수 있으므로 정규화한다.
+      const participants = Array.from(new Set(participantsRaw.filter((id) => typeof id === 'string' && id.length > 0)));
+      const recipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
       if (recipients.length === 0) {
         console.log('⚠️ 수신자를 찾을 수 없음');
         return null;
@@ -4024,33 +4131,36 @@ export const onDMMessageCreated = functions.firestore
           : 0;
       }
 
-      // 배지 계산: 일반 알림 + (증분 기반) DM 총 안읽음
-      let badgeCount = 0;
-      try {
-        // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
-        const unreadNotifSnap = await db
-          .collection('notifications')
-          .where('userId', '==', recipientId)
-          .where('isRead', '==', false)
-          .count()
-          .get();
-        const unreadNotifAll = unreadNotifSnap.data().count || 0;
+      // 배지 계산: (카운터 기반) 일반 알림 + (증분 기반) DM 총 안읽음
+      // - 일반 알림 카운트: users/{uid}.notificationUnreadTotal 사용(없으면 0으로 간주)
+      // - DM 푸시는 배지 반영이 최우선이므로 재시도 로직 추가
+      let badgeCount: number | null = null;
+      
+      // 최대 2번 시도
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          let notificationCount = 0;
+          const vNoti = (recipientData as any)?.notificationUnreadTotal;
+          if (typeof vNoti === 'number' && Number.isFinite(vNoti)) {
+            notificationCount = Math.max(0, Math.trunc(vNoti));
+          }
 
-        const unreadDmNotifSnap = await db
-          .collection('notifications')
-          .where('userId', '==', recipientId)
-          .where('isRead', '==', false)
-          .where('type', '==', 'dm_received')
-          .count()
-          .get();
-        const unreadDmNotif = unreadDmNotifSnap.data().count || 0;
-        const notificationCount = Math.max(0, unreadNotifAll - unreadDmNotif);
-
-        badgeCount = notificationCount + Math.max(0, newDmUnreadTotal);
-        console.log(`  📊 배지 계산: 일반 알림(${notificationCount}) + DM총안읽음(${newDmUnreadTotal}) = ${badgeCount}`);
-      } catch (e) {
-        console.warn('  ⚠️ 배지 계산 실패 (0으로 처리):', e);
-        badgeCount = 0;
+          badgeCount = (notificationCount ?? 0) + Math.max(0, newDmUnreadTotal);
+          console.log(`  📊 배지 계산 (시도 ${attempt + 1}): 일반 알림(${notificationCount ?? 0}) + DM총안읽음(${newDmUnreadTotal}) = ${badgeCount}`);
+          break; // 성공하면 즉시 종료
+        } catch (e) {
+          console.warn(`  ⚠️ 배지 계산 실패 (시도 ${attempt + 1}/2):`, e);
+          
+          // 마지막 시도가 아니면 재시도
+          if (attempt < 1) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+            continue;
+          }
+          
+          // 모든 시도 실패 시 badge 생략
+          console.warn('  ⚠️ 배지 계산 완전 실패: badge 생략');
+          badgeCount = null;
+        }
       }
 
       // 메시지 프리뷰 생성
@@ -4062,6 +4172,12 @@ export const onDMMessageCreated = functions.firestore
       } else {
         messagePreview = '메시지';
       }
+
+      // badge 값: 계산된 실제 값 사용 (0이면 0으로, null이면 badge 필드 생략)
+      // 중요: iOS는 badge를 절대값으로 처리하므로 정확한 값을 보내야 함
+      const hasBadge = badgeCount !== null;
+      const finalBadge = hasBadge ? Math.max(0, badgeCount!) : 0;
+      console.log(`  📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
 
       // FCM 메시지 구성
       const pushMessage: admin.messaging.MulticastMessage = {
@@ -4075,12 +4191,17 @@ export const onDMMessageCreated = functions.firestore
           conversationId: conversationId,
           senderId: senderId,
           senderName: senderName,
+          ...(hasBadge && { badge: String(finalBadge) }),
         },
         apns: {
+          headers: {
+            'apns-push-type': 'alert',
+            'apns-priority': '10',
+          },
           payload: {
             aps: {
               sound: 'default',
-              badge: badgeCount,
+              ...(hasBadge && { badge: finalBadge }),
             },
           },
         },

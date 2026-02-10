@@ -2,14 +2,12 @@
 // 모임 상세화면, 모임 정보 표시
 // 모임 참여 및 취소 기능
 
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
 import '../services/meetup_service.dart';
-import '../widgets/country_flag_circle.dart';
 import 'package:intl/intl.dart';
 import '../utils/country_flag_helper.dart';
 import '../design/tokens.dart';
@@ -17,7 +15,6 @@ import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
-import 'meetup_participants_screen.dart';
 import 'edit_meetup_screen.dart';
 import 'create_meetup_review_screen.dart';
 import 'review_approval_screen.dart';
@@ -48,6 +45,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   bool _isLoading = false;
   bool _isHost = false;
   bool _isParticipant = false; // 현재 사용자가 승인된 참여자인지
+  bool _showAllParticipants = false; // 참여자 목록 펼치기/접기 (관리 페이지 제거)
   late Meetup _currentMeetup;
   List<MeetupParticipant> _participants = [];
   bool _isLoadingParticipants = true;
@@ -70,11 +68,33 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     super.initState();
     _currentMeetup = widget.meetup;
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _guardKickedUserAccess();
+    });
     _checkIfUserIsHost();
     _checkIfUserIsParticipant();
     _loadParticipants();
     // 모임 조회수 증가
     _incrementViewCount();
+  }
+
+  Future<void> _guardKickedUserAccess() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final kicked = await _meetupService.isUserKickedFromMeetup(
+      meetupId: widget.meetupId,
+      userId: user.uid,
+    );
+    if (!mounted) return;
+    if (!kicked) return;
+
+    AppSnackBar.show(
+      context,
+      message: '죄송합니다. 모임에 참여할 수 없습니다',
+      type: AppSnackBarType.error,
+    );
+    Navigator.of(context).pop();
   }
 
   // 모임 조회수 증가
@@ -1607,6 +1627,24 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임 참여하기
   Future<void> _joinMeetup() async {
+    // ✅ 강퇴된 사용자는 참여 불가 + 통일된 안내 문구
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final kicked = await _meetupService.isUserKickedFromMeetup(
+        meetupId: widget.meetupId,
+        userId: user.uid,
+      );
+      if (!mounted) return;
+      if (kicked) {
+        AppSnackBar.show(
+          context,
+          message: '죄송합니다. 모임에 참여할 수 없습니다',
+          type: AppSnackBarType.error,
+        );
+        return;
+      }
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -2998,40 +3036,38 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   )
                 : Column(
                     children: [
-                      // 참여자 목록 (최대 3명)
-                      ...(displayParticipants.take(3).map((participant) {
+                      // 참여자 목록 (관리 페이지 제거: 상세에서 펼치기/접기로 모두 확인)
+                      ...(((_showAllParticipants || displayParticipants.length <= 3)
+                              ? displayParticipants
+                              : displayParticipants.take(3))
+                          .map((participant) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: _buildSimpleParticipantItem(participant),
                         );
                       }).toList()),
                       
-                      // "모두 보기" 버튼 (3명 초과시)
-              if (displayParticipants.length > 3)
+                      // 펼치기/접기 (새 페이지 이동 제거)
+                      if (displayParticipants.length > 3)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),
                           child: TextButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => MeetupParticipantsScreen(
-                          meetup: _currentMeetup,
-                        ),
-                      ),
-                    );
-                  },
-                  child: Text(
-                    '모두 보기',
-                    style: TextStyle(
+                            onPressed: () {
+                              setState(() {
+                                _showAllParticipants = !_showAllParticipants;
+                              });
+                            },
+                            child: Text(
+                              _showAllParticipants ? '접기' : '모두 보기',
+                              style: TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.pointColor,
                               ),
-                    ),
-                  ),
-                ),
+                            ),
+                          ),
+                        ),
             ],
           ),
       ],
@@ -3040,10 +3076,23 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     );
   }
 
+  // NOTE: 호스트의 참여자 변화 로그 기능은 제거되었습니다.
+
   // 새로운 심플한 참여자 아이템
   Widget _buildSimpleParticipantItem(MeetupParticipant participant) {
-    return Row(
-      children: [
+    final hostId = _currentMeetup.userId;
+    final canKick = _isHost &&
+        hostId != null &&
+        participant.userId.isNotEmpty &&
+        participant.userId != hostId;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onLongPress: canKick ? () => _showKickActionSheet(participant) : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          children: [
         // 프로필 이미지
         CircleAvatar(
           radius: 20,
@@ -3110,8 +3159,107 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         ],
       ),
         ),
-      ],
+          ],
+        ),
+      ),
     );
+  }
+
+  Future<void> _showKickActionSheet(MeetupParticipant participant) async {
+    if (!mounted) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE5E7EB),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.logout_rounded, color: Color(0xFFEF4444)),
+                title: Text(
+                  isKo ? '퇴장시키기' : 'Remove from meetup',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFFEF4444),
+                  ),
+                ),
+                onTap: () => Navigator.pop(context, 'kick'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (action != 'kick') return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(isKo ? '참여자 퇴장' : 'Remove participant'),
+          content: Text(
+            isKo
+                ? '${participant.userName}님을 모임에서 퇴장시킬까요?'
+                : 'Remove ${participant.userName} from this meetup?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(isKo ? '취소' : 'Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(
+                isKo ? '퇴장' : 'Remove',
+                style: const TextStyle(color: Color(0xFFEF4444)),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    final ok = await _meetupService.kickParticipant(
+      meetupId: widget.meetupId,
+      targetUserId: participant.userId,
+    );
+
+    if (!mounted) return;
+    if (ok) {
+      AppSnackBar.show(
+        context,
+        message: isKo ? '퇴장 처리했습니다.' : 'Participant removed.',
+        type: AppSnackBarType.success,
+      );
+      await _loadParticipants();
+    } else {
+      AppSnackBar.show(
+        context,
+        message: isKo ? '퇴장 처리에 실패했습니다.' : 'Failed to remove participant.',
+        type: AppSnackBarType.error,
+      );
+    }
   }
 
   // 참여자 아이템

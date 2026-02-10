@@ -6,7 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:image_picker/image_picker.dart';
+import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import '../providers/auth_provider.dart';
 import '../services/post_service.dart';
 import '../constants/app_constants.dart';
@@ -15,6 +15,7 @@ import '../services/friend_category_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 import '../widgets/friend_category_selector.dart';
+import '../ui/widgets/fullscreen_file_image_viewer.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -33,6 +34,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   final _scrollController = ScrollController();
   final _step1ScrollController = ScrollController();
   final List<File> _selectedImages = [];
+  final List<AssetEntity> _selectedAssets = [];
   final PostService _postService = PostService();
   final List<TextEditingController> _pollOptionControllers = [];
   final GlobalKey _categorySectionKey = GlobalKey();
@@ -51,6 +53,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   bool _canProceed = false;
   int _stepIndex = 0; // 0: Content, 1: Visibility (UI/PopScope 상태용)
   bool _didDismissKeyboardOnTabDrag = false; // 가로 스와이프 시작 시 1회만 키보드 내림
+  bool _isResolvingSelectedImages = false; // Asset -> File 변환 중 (업로드/용량 체크용)
   
   // 공개 범위 설정
   String _visibility = 'category'; // 'public' 또는 'category' (기본: 카테고리별 공개)
@@ -141,7 +144,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         _canSubmit = _canProceed && categoryOk;
       } else {
         // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
-        _canProceed = (contentNotEmpty || _selectedImages.isNotEmpty);
+        _canProceed = (contentNotEmpty || _selectedAssets.isNotEmpty);
         _canSubmit = _canProceed && categoryOk;
       }
     });
@@ -292,27 +295,76 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     );
   }
 
-  Future<void> _selectImages() async {
-    final picker = ImagePicker();
-    final pickedFiles = await picker.pickMultiImage();
-    if (pickedFiles.isNotEmpty) {
+  Future<List<File>> _resolveSelectedAssetFiles() async {
+    if (_selectedAssets.isEmpty) return const <File>[];
+    final futures = _selectedAssets.map((asset) async {
+      try {
+        final origin = await asset.originFile;
+        if (origin != null) return origin;
+        return await asset.file;
+      } catch (_) {
+        return null;
+      }
+    }).toList(growable: false);
+    final resolved = await Future.wait(futures);
+    return resolved.whereType<File>().toList(growable: false);
+  }
+
+  Future<void> _syncSelectedImagesFromAssets() async {
+    if (!mounted) return;
+    if (_selectedAssets.isEmpty) {
       setState(() {
-        _selectedImages.clear(); // 기존 이미지 삭제
-        for (final xFile in pickedFiles) {
-          _selectedImages.add(File(xFile.path));
-        }
+        _selectedImages.clear();
+        _isResolvingSelectedImages = false;
       });
-
-      // 이미지 선택 후 용량 확인 및 경고
-      _checkImagesSize();
-
-      // 이미지 선택만으로도 등록 가능 상태가 바뀔 수 있음
-      _checkCanSubmit();
+      return;
     }
+
+    setState(() => _isResolvingSelectedImages = true);
+    final files = await _resolveSelectedAssetFiles();
+    if (!mounted) return;
+    setState(() {
+      _selectedImages
+        ..clear()
+        ..addAll(files);
+      _isResolvingSelectedImages = false;
+    });
+  }
+
+  Future<void> _selectImages() async {
+    // 기존 선택이 유지된 채로 다시 열리게 하려면 `selectedAssets`를 넘겨야 함
+    final pickedAssets = await AssetPicker.pickAssets(
+      context,
+      pickerConfig: AssetPickerConfig(
+        requestType: RequestType.image,
+        selectedAssets: _selectedAssets,
+        // 사용자가 많이 선택할 수 있게 넉넉하게
+        maxAssets: 30,
+      ),
+    );
+
+    if (!mounted) return;
+    if (pickedAssets == null) return; // 취소
+
+    setState(() {
+      _selectedAssets
+        ..clear()
+        ..addAll(pickedAssets);
+    });
+
+    // 업로드/용량 체크용 파일 리스트 동기화
+    await _syncSelectedImagesFromAssets();
+
+    // 이미지 선택 후 용량 확인 및 경고
+    await _checkImagesSize();
+
+    // 이미지 선택만으로도 등록 가능 상태가 바뀔 수 있음
+    _checkCanSubmit();
   }
 
   // 이미지 용량 체크
   Future<void> _checkImagesSize() async {
+    if (_selectedImages.isEmpty) return;
     int totalSize = 0;
     for (final image in _selectedImages) {
       totalSize += await image.length();
@@ -333,6 +385,42 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         );
       }
     }
+  }
+
+  Future<void> _previewSelectedImages({int initialIndex = 0}) async {
+    if (!mounted) return;
+    if (_selectedAssets.isEmpty) return;
+    // 미리보기는 File 기반 뷰어를 사용하므로, 필요 시 변환 동기화
+    if (_selectedImages.length != _selectedAssets.length) {
+      await _syncSelectedImagesFromAssets();
+    }
+    if (_selectedImages.isEmpty) return;
+    await showFullscreenFileImageViewer(
+      context,
+      imageFiles: List<File>.unmodifiable(_selectedImages),
+      initialIndex: initialIndex.clamp(0, _selectedImages.length - 1),
+      heroTag: 'create_post_selected_images',
+      showConfirmButton: false,
+    );
+  }
+
+  Future<bool> _confirmSelectedImagesBeforeUpload() async {
+    if (!mounted) return false;
+    if (_selectedAssets.isEmpty) return true;
+    // 업로드 확인은 File 기반 뷰어를 사용하므로, 필요 시 변환 동기화
+    if (_selectedImages.length != _selectedAssets.length) {
+      await _syncSelectedImagesFromAssets();
+    }
+    if (_selectedImages.isEmpty) return true;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return showFullscreenFileImageViewer(
+      context,
+      imageFiles: List<File>.unmodifiable(_selectedImages),
+      initialIndex: 0,
+      heroTag: 'create_post_selected_images_confirm',
+      showConfirmButton: true,
+      confirmLabel: isKo ? '이 사진으로 업로드' : 'Upload with these photos',
+    );
   }
 
   Future<void> _goToStep(int index) async {
@@ -379,6 +467,27 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     }
     
     if (_formKey.currentState!.validate()) {
+      // ✅ 업로드 전에 선택 사진을 다시 확인(게시글 이미지 뷰어 UX 적용)
+      if (_isResolvingSelectedImages) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Localizations.localeOf(context).languageCode == 'ko'
+                  ? '선택한 사진을 준비 중이에요. 잠시만 기다려주세요.'
+                  : 'Preparing selected photos. Please wait a moment.',
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+      if (_selectedAssets.isNotEmpty) {
+        // 업로드 직전에는 파일 리스트가 반드시 필요하므로 최종 동기화
+        await _syncSelectedImagesFromAssets();
+        final confirmed = await _confirmSelectedImagesBeforeUpload();
+        if (!confirmed) return;
+      }
+
       setState(() {
         _isSubmitting = true;
       });
@@ -391,7 +500,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         final nickname = userData?['nickname'] ?? '익명';
 
         // 이미지가 있는 경우 프로그레스 다이얼로그 표시
-        if (_selectedImages.isNotEmpty) {
+        if (_selectedAssets.isNotEmpty) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
@@ -461,11 +570,14 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     return colors[index];
   }
 
-  // 선택한 이미지 삭제
-  void _removeImage(int index) {
+  // 선택한 이미지 삭제 (Asset 기준)
+  Future<void> _removeImage(int index) async {
     setState(() {
-      _selectedImages.removeAt(index);
+      if (index >= 0 && index < _selectedAssets.length) {
+        _selectedAssets.removeAt(index);
+      }
     });
+    await _syncSelectedImagesFromAssets();
     _checkCanSubmit();
   }
 
@@ -707,15 +819,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 다른 섹션(게시글 유형/공개범위)과 톤 통일: 카드 안에 "선택 항목"처럼 배치
+                        // 이미지 첨부 버튼: 바깥 카드(테두리) 제거해서 이중 테두리 방지
                         Container(
-                          padding: const EdgeInsets.all(16),
                           margin: const EdgeInsets.only(bottom: 16.0),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -732,10 +838,10 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                           color: Colors.white,
                                           borderRadius: BorderRadius.circular(12),
                                           border: Border.all(
-                                            color: _selectedImages.isNotEmpty
+                                            color: _selectedAssets.isNotEmpty
                                                 ? AppColors.pointColor
                                                 : const Color(0xFFE5E7EB),
-                                            width: _selectedImages.isNotEmpty ? 1.4 : 1,
+                                            width: _selectedAssets.isNotEmpty ? 1.4 : 1,
                                           ),
                                         ),
                                         child: Material(
@@ -780,8 +886,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                                         ),
                                                         const SizedBox(height: 2),
                                                         Text(
-                                                          _selectedImages.isNotEmpty
-                                                              ? '${_selectedImages.length}장 선택됨'
+                                                          _selectedAssets.isNotEmpty
+                                                              ? '${_selectedAssets.length}장 선택됨'
                                                               : '여러 장을 한 번에 선택할 수 있어요',
                                                           style: const TextStyle(
                                                             fontFamily: 'Pretendard',
@@ -805,7 +911,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                       ),
                                     ),
                                   ),
-                                  if (_selectedImages.isNotEmpty) ...[
+                                  if (_selectedAssets.isNotEmpty) ...[
                                     const SizedBox(width: 10),
                                     Container(
                                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -817,7 +923,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                         ),
                                       ),
                                       child: Text(
-                                        '${_selectedImages.length}',
+                                        '${_selectedAssets.length}',
                                         style: const TextStyle(
                                           fontFamily: 'Pretendard',
                                           fontSize: 12,
@@ -829,53 +935,62 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                   ],
                                 ],
                               ),
-                              if (_selectedImages.isNotEmpty) ...[
+                              if (_selectedAssets.isNotEmpty) ...[
                                 const SizedBox(height: 12),
                                 SizedBox(
                                   height: 112,
                                   child: ListView.builder(
                                     scrollDirection: Axis.horizontal,
-                                    itemCount: _selectedImages.length,
+                                    itemCount: _selectedAssets.length,
                                     itemBuilder: (context, index) {
-                                      return Container(
-                                        margin: const EdgeInsets.only(right: 8.0),
-                                        width: 96,
-                                        height: 96,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(10),
-                                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                                        ),
-                                        child: Stack(
-                                          children: [
-                                            ClipRRect(
-                                              borderRadius: BorderRadius.circular(10),
-                                              child: Image.file(
-                                                _selectedImages[index],
-                                                width: 96,
-                                                height: 96,
-                                                fit: BoxFit.cover,
-                                              ),
-                                            ),
-                                            Positioned(
-                                              top: 6,
-                                              right: 6,
-                                              child: GestureDetector(
-                                                onTap: () => _removeImage(index),
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(5),
-                                                  decoration: const BoxDecoration(
-                                                    color: Color(0xCC111827), // gray-900 80%
-                                                    shape: BoxShape.circle,
+                                      final asset = _selectedAssets[index];
+                                      return GestureDetector(
+                                        onTap: () => _previewSelectedImages(initialIndex: index),
+                                        child: Container(
+                                          margin: const EdgeInsets.only(right: 8.0),
+                                          width: 96,
+                                          height: 96,
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(color: const Color(0xFFE5E7EB)),
+                                          ),
+                                          child: Stack(
+                                            children: [
+                                              ClipRRect(
+                                                borderRadius: BorderRadius.circular(10),
+                                                child: Image(
+                                                  image: AssetEntityImageProvider(
+                                                    asset,
+                                                    isOriginal: false,
+                                                    thumbnailSize: const ThumbnailSize.square(256),
                                                   ),
-                                                  child: const Icon(
-                                                    Icons.close_rounded,
-                                                    color: Colors.white,
-                                                    size: 16,
+                                                  width: 96,
+                                                  height: 96,
+                                                  fit: BoxFit.cover,
+                                                ),
+                                              ),
+                                              Positioned(
+                                                top: 6,
+                                                right: 6,
+                                                child: GestureDetector(
+                                                  behavior: HitTestBehavior.opaque,
+                                                  onTap: () => _removeImage(index),
+                                                  child: Container(
+                                                    padding: const EdgeInsets.all(5),
+                                                    decoration: const BoxDecoration(
+                                                      color: Color(0xCC111827), // gray-900 80%
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                      Icons.close_rounded,
+                                                      color: Colors.white,
+                                                      size: 16,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
                                       );
                                     },

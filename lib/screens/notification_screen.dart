@@ -112,6 +112,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'meetup_full':
       case 'meetup_cancelled':
       case 'meetup_participant_joined':
+      case 'meetup_participant_left':
         await _navigateToMeetup(notification);
         break;
       case 'new_comment':
@@ -501,6 +502,15 @@ class _NotificationScreenState extends State<NotificationScreen> {
             participantName,
             data['meetupTitle'] ?? '',
           );
+        case 'meetup_participant_left': {
+          final lang = Localizations.localeOf(context).languageCode;
+          final participantName = (data['participantName'] ?? _getActorName(notification)).toString();
+          final meetupTitle = (data['meetupTitle'] ?? '').toString();
+          if (lang == 'ko') {
+            return '$participantName님이 회원님의 모임 "$meetupTitle"에서 나갔습니다.';
+          }
+          return '$participantName left your meetup "$meetupTitle".';
+        }
         case 'new_comment':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
           final lang = Localizations.localeOf(context).languageCode;

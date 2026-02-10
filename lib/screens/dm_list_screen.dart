@@ -450,7 +450,10 @@ class _DMListScreenState extends State<DMListScreen> {
         stream: _dmService
             .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
             .distinct(),
-        initialData: conversation.getMyUnreadCount(_currentUser!.uid),
+        // ✅ initialData로 unreadCount(메타데이터)를 보여주면
+        // 캐시/드리프트 값이 잠깐 노출되며 "안 읽음이 떴다 사라지는" 플리커가 발생할 수 있다.
+        // 실제 메시지 기반 스트림이 곧바로 값을 내므로 0으로 고정해 UX를 안정화한다.
+        initialData: 0,
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
 
@@ -499,7 +502,7 @@ class _DMListScreenState extends State<DMListScreen> {
         stream: _dmService
             .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
             .distinct(),
-        initialData: conversation.getMyUnreadCount(_currentUser!.uid),
+        initialData: 0,
         builder: (context, badgeSnapshot) {
           final unreadCount = badgeSnapshot.data ?? 0;
           return _buildConversationCardContent(
@@ -558,7 +561,7 @@ class _DMListScreenState extends State<DMListScreen> {
           stream: _dmService
               .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
               .distinct(),
-          initialData: conversation.getMyUnreadCount(_currentUser!.uid),
+          initialData: 0,
           builder: (context, badgeSnapshot) {
             final unreadCount = badgeSnapshot.data ?? 0;
             return _buildConversationCardContent(

@@ -3,17 +3,23 @@
 // 검색, 필터링, 작성 기능 포함
 
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
+import '../models/meetup.dart';
 import '../constants/app_constants.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
+import '../services/meetup_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../ui/widgets/optimized_post_card.dart';
+import '../ui/widgets/board_meetup_card.dart';
+import '../ui/snackbar/app_snackbar.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
+import 'meetup_detail_screen.dart';
 import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -28,7 +34,13 @@ class BoardScreen extends StatefulWidget {
 class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStateMixin {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
+  final MeetupService _meetupService = MeetupService();
   late TabController _tabController;
+  Timer? _midnightTimer;
+  late final Stream<List<Meetup>> _todayMeetupsStream;
+
+  List<Meetup>? _cachedTodayMeetups;
+  DateTime? _lastNonEmptyMeetupsAt;
 
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
@@ -69,10 +81,31 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
   }
 
+  DateTime _startOfToday() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  bool _isPostInToday(Post post) {
+    final local = post.createdAt.toLocal();
+    return !local.isBefore(_startOfToday());
+  }
+
+  bool _isPostInAllTab(Post post) {
+    // All 탭: Today에 올라온 글은 제외하고(중복 방지),
+    // 날짜가 넘어가면 자동으로 All에 포함된다.
+    final local = post.createdAt.toLocal();
+    return local.isBefore(_startOfToday());
+  }
+
   @override
   void initState() {
     super.initState();
     _loadCachedData();
+    _scheduleMidnightRefresh();
+    _todayMeetupsStream = _meetupService
+        .getTodayTabMeetups()
+        .asyncMap((meetups) => _meetupService.filterMeetupsForCurrentUser(meetups));
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
@@ -180,19 +213,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
       
       if (cachedPosts.isNotEmpty) {
         setState(() {
-          _cachedAllPosts = cachedPosts;
-          
-          // 오늘 날짜의 게시글만 필터링
-          final now = DateTime.now();
-          final today = DateTime(now.year, now.month, now.day);
-          _cachedTodayPosts = cachedPosts.where((post) {
-            final postDate = DateTime(
-              post.createdAt.year,
-              post.createdAt.month,
-              post.createdAt.day,
-            );
-            return postDate.isAtSameMomentAs(today);
-          }).toList();
+          // 캐시에서 Today/All을 분리 저장 (Today는 All에 중복 포함하지 않음)
+          _cachedTodayPosts = cachedPosts.where(_isPostInToday).toList();
+          _cachedAllPosts = cachedPosts.where(_isPostInAllTab).toList();
         });
         Logger.log('✅ 캐시된 게시글 로드 완료: ${cachedPosts.length}개');
       }
@@ -224,6 +247,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   @override
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
+    _midnightTimer?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -239,6 +263,58 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     }
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
+  }
+
+  void _scheduleMidnightRefresh() {
+    _midnightTimer?.cancel();
+    final now = DateTime.now();
+    final startOfTomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
+    final delay = startOfTomorrow.difference(now) + const Duration(seconds: 1);
+    _midnightTimer = Timer(delay, () async {
+      if (!mounted) return;
+      // 날짜가 넘어가면 Today/All 분리가 바뀌므로 캐시를 갱신하고 화면을 리빌드
+      await _loadCachedData();
+      if (!mounted) return;
+      setState(() {
+        // 댓글 자동 리프레시 플래그는 날짜별로 다시 계산될 수 있게 초기화
+        _didAutoRefreshTodayCommentCounts = false;
+        _didAutoRefreshAllCommentCounts = false;
+      });
+      _scheduleMidnightRefresh();
+    });
+  }
+
+  Future<void> _navigateToMeetupDetail(Meetup meetup) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      final kicked = await _meetupService.isUserKickedFromMeetup(
+        meetupId: meetup.id,
+        userId: user.uid,
+      );
+      if (!mounted) return;
+      if (kicked) {
+        AppSnackBar.show(
+          context,
+          message: '죄송합니다. 모임에 참여할 수 없습니다',
+          type: AppSnackBarType.error,
+        );
+        return;
+      }
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MeetupDetailScreen(
+          meetup: meetup,
+          meetupId: meetup.id,
+          onMeetupDeleted: () => setState(() {}),
+        ),
+      ),
+    );
+
+    // 상세 화면에서 참여 상태가 바뀔 수 있으니 캐시를 비워 재조회
+    if (mounted) setState(() {});
   }
 
   ScrollController get _activeScrollController {
@@ -438,25 +514,14 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return _buildTodayErrorView();
         }
 
-        // 최신 데이터 또는 캐시된 데이터 사용
-        List<Post> posts = snapshot.data ?? _cachedAllPosts ?? [];
+        // 최신 데이터(전체) 또는 캐시된 Today 데이터 사용
+        final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
+        final todayPosts = sourcePosts.where(_isPostInToday).toList();
 
-        // 오늘 날짜의 게시글만 필터링
-        final now = DateTime.now();
-        final today = DateTime(now.year, now.month, now.day);
-        final todayPosts = posts.where((post) {
-          final postDate = DateTime(
-            post.createdAt.year,
-            post.createdAt.month,
-            post.createdAt.day,
-          );
-          return postDate.isAtSameMomentAs(today);
-        }).toList();
-
-        // 캐시 업데이트 (다음 로딩을 위해)
-        if (snapshot.hasData && todayPosts.isNotEmpty) {
+        // 캐시 업데이트 (날짜가 바뀌었을 때 "어제 Today"가 남지 않도록, 빈 리스트도 반영)
+        if (snapshot.hasData) {
           _cachedTodayPosts = todayPosts;
-          
+
           // 초기 로드 완료 표시
           if (_isInitialLoad) {
             _isInitialLoad = false;
@@ -473,12 +538,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           });
         }
 
-        // 빈 상태
-        if (todayPosts.isEmpty) {
-          return _buildTodayEmptyView();
-        }
-
-        // 게시글 목록 표시
+        // Today 탭은 "오늘의 모임" 섹션이 추가되므로,
+        // 게시글이 비어도 피드(모임 + 게시글)를 그대로 렌더링한다.
         return _buildTodayPostsView(todayPosts);
       },
     );
@@ -538,60 +599,40 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
   
-  // 빈 상태 뷰 (AdBanner + Empty State)
-  Widget _buildTodayEmptyView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _todayScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_today'),
-            widgetId: 'board_banner_today',
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  _safeL10n((l10n) => l10n.yourStoryMatters, '당신의 이야기가 중요합니다'),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  _safeL10n((l10n) => l10n.shareYourMoments, '순간을 공유해보세요'),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-          );
-        }
+  // NOTE: Today 탭은 "오늘의 모임 + 오늘의 게시글" 섹션이 항상 존재하므로
+  // 기존 단일 EmptyView는 더 이상 사용하지 않습니다(미사용 경고 방지).
 
   // 게시글 목록 뷰 (AdBanner + 게시글들)
   Widget _buildTodayPostsView(List<Post> todayPosts) {
+    return StreamBuilder<List<Meetup>>(
+      stream: _todayMeetupsStream,
+      builder: (context, meetupSnapshot) {
+        final bool isMeetupsLoading =
+            meetupSnapshot.connectionState == ConnectionState.waiting &&
+            !meetupSnapshot.hasData &&
+            _cachedTodayMeetups == null;
+
+        final todayMeetups =
+            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
+
+        // 캐시 업데이트:
+        // - empty가 순간적으로 들어와도(재구독/중간 emit) 카드가 사라졌다가 생기는 현상을 줄이기 위해
+        //   "최근에 non-empty를 받았다면" 짧게는 non-empty 캐시를 유지한다.
+        if (meetupSnapshot.hasData) {
+          final incoming = meetupSnapshot.data ?? const <Meetup>[];
+          final now = DateTime.now();
+          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
+            _cachedTodayMeetups = incoming;
+            _lastNonEmptyMeetupsAt = incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
+          } else {
+            // incoming empty + cached non-empty
+            final last = _lastNonEmptyMeetupsAt;
+            if (last == null || now.difference(last) > const Duration(seconds: 3)) {
+              _cachedTodayMeetups = incoming;
+            }
+          }
+        }
+
         return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
@@ -603,31 +644,233 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: todayPosts.length + 1, // AdBanner + 게시글들
+        itemCount:
+            1 + // AdBanner
+            1 + // meetups header
+                (isMeetupsLoading ? 2 : (todayMeetups.isNotEmpty ? todayMeetups.length : 1)) + // meetups skeleton or meetups or empty
+            1 + // posts header
+            (todayPosts.isNotEmpty ? todayPosts.length : 1), // posts or empty
             itemBuilder: (context, index) {
-          // 첫 번째는 AdBanner
-          if (index == 0) {
+          var i = index;
+
+          // 0) AdBanner
+          if (i == 0) {
             return AdBannerWidget(
               key: ValueKey('board_banner_today'),
               widgetId: 'board_banner_today',
             );
           }
-          
-          // 게시글 표시
-          final postIndex = index - 1;
+          i -= 1;
+
+          // 1) Meetups header
+          if (i == 0) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.event_available_rounded, size: 18, color: Color(0xFF111827)),
+                  const SizedBox(width: 8),
+                  const Text(
+                    '오늘의 모임',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (isMeetupsLoading)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Text(
+                      '${todayMeetups.length}',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          }
+          i -= 1;
+
+          // 2) Meetups list or empty
+          final meetupsCount =
+              isMeetupsLoading ? 2 : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
+          if (i < meetupsCount) {
+            if (isMeetupsLoading) {
+              // 로딩 중에도 카드 자리(스켈레톤)를 확보해서 레이아웃 점프를 줄인다.
+              return Padding(
+                padding: _boardPostCardMargin,
+                child: _buildMeetupSkeletonCard(),
+              );
+            }
+            if (todayMeetups.isEmpty) {
+              return const Padding(
+                padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Text(
+                  '오늘 올라온 모임이 없어요.',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              );
+            }
+
+            final meetup = todayMeetups[i];
+            return Padding(
+              padding: _boardPostCardMargin,
+              child: StreamBuilder<int>(
+                stream: _meetupService.participantCountStream(
+                  meetup.id,
+                  fallback: meetup.currentParticipants,
+                ),
+                builder: (context, countSnap) {
+                  final count = countSnap.data ?? meetup.currentParticipants;
+                  return BoardMeetupCard(
+                    key: ValueKey('board_meetup_${meetup.id}'),
+                    meetup: meetup,
+                    currentParticipants: count,
+                    onTap: () => _navigateToMeetupDetail(meetup),
+                  );
+                },
+              ),
+            );
+          }
+          i -= meetupsCount;
+
+          // 3) Posts header
+          if (i == 0) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: Row(
+                children: [
+                  Icon(Icons.article_rounded, size: 18, color: Color(0xFF111827)),
+                  SizedBox(width: 8),
+                  Text(
+                    '오늘의 게시글',
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          i -= 1;
+
+          // 4) Posts list or empty
+          if (todayPosts.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+              child: Text(
+                '오늘 올라온 게시글이 없어요.',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+            );
+          }
+
+          final postIndex = i;
           final post = todayPosts[postIndex];
-              return OptimizedPostCard(
-                key: ValueKey(post.id),
-                post: post,
+          return OptimizedPostCard(
+            key: ValueKey(post.id),
+            post: post,
             index: postIndex,
-                onTap: () => _navigateToPostDetail(post),
+            onTap: () => _navigateToPostDetail(post),
             externalCommentCountOverride: _commentCountOverrides[post.id],
             preloadImage: postIndex < 3,
             margin: _boardPostCardMargin,
             contentPadding: _boardPostCardContentPadding,
-              );
+          );
             },
           ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMeetupSkeletonCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: AppTextSkeleton(width: 180, height: 16, lines: 2, spacing: 10),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    AppSkeleton(width: 16, height: 16),
+                    SizedBox(width: 8),
+                    Expanded(child: AppTextSkeleton(height: 14)),
+                  ],
+                ),
+                SizedBox(height: 10),
+                Row(
+                  children: [
+                    AppSkeleton(width: 16, height: 16),
+                    SizedBox(width: 8),
+                    AppTextSkeleton(width: 120, height: 14),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(12),
+                bottomRight: Radius.circular(12),
+              ),
+            ),
+            child: const Row(
+              children: [
+                AppAvatarSkeleton(size: 32),
+                SizedBox(width: 8),
+                Expanded(child: AppTextSkeleton(width: 90, height: 14)),
+                AppSkeleton(width: 72, height: 32, borderRadius: BorderRadius.all(Radius.circular(20))),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -656,11 +899,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
           return _buildAllErrorView();
         }
 
-        // 최신 데이터 또는 캐시된 데이터 사용
-        List<Post> posts = snapshot.data ?? _cachedAllPosts ?? [];
+        // 최신 데이터(전체) 또는 캐시된 All 데이터 사용
+        final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
+        final posts = sourcePosts.where(_isPostInAllTab).toList();
 
-        // 캐시 업데이트 (다음 로딩을 위해)
-        if (snapshot.hasData && posts.isNotEmpty) {
+        // 캐시 업데이트 (빈 리스트도 반영: 글 삭제/날짜 변경 시 stale 방지)
+        if (snapshot.hasData) {
           _cachedAllPosts = posts;
         }
 

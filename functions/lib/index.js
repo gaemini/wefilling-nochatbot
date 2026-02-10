@@ -1038,10 +1038,15 @@ exports.onMeetupDeleted = functions.firestore
             const ref = db.collection('notifications').doc();
             batch.set(ref, {
                 userId: uid,
-                title: '모임이 취소되었습니다',
-                message: `참여 예정이던 "${title}" 모임이 취소되었습니다.`,
+                // 푸시/앱내 표시 시 수신자 언어로 i18n 하기 위해 key + data만 저장
+                title: 'meetup_cancelled',
+                message: '',
                 type: 'meetup_cancelled',
                 meetupId,
+                data: {
+                    meetupId,
+                    meetupTitle: title,
+                },
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 isRead: false,
             });
@@ -2622,7 +2627,188 @@ exports.fixDeletedAccountsInConversations = functions.https.onRequest(async (req
         });
     }
 });
-// 알림 생성 시 푸시 알림 전송
+function normalizeSupportedLang(raw) {
+    const s = (raw !== null && raw !== void 0 ? raw : '').toString().trim().toLowerCase();
+    if (!s)
+        return null;
+    if (s === 'ko' || s.startsWith('ko-'))
+        return 'ko';
+    if (s === 'en' || s.startsWith('en-'))
+        return 'en';
+    return null;
+}
+function inferLangFromNationality(nationalityRaw) {
+    const s = (nationalityRaw !== null && nationalityRaw !== void 0 ? nationalityRaw : '').toString().trim().toLowerCase();
+    if (!s)
+        return null;
+    // 한국 관련 흔한 표기
+    const koCandidates = new Set([
+        'kr',
+        'kor',
+        'korea',
+        'south korea',
+        'republic of korea',
+        '대한민국',
+        '한국',
+    ]);
+    if (koCandidates.has(s))
+        return 'ko';
+    // 그 외는 기본적으로 영어로 (외국인 사용자 경험 개선)
+    return 'en';
+}
+function detectUserLang(params) {
+    var _a, _b, _c, _d, _e;
+    const { userData, settingsData } = params;
+    const fromSettings = (_b = (_a = normalizeSupportedLang(settingsData === null || settingsData === void 0 ? void 0 : settingsData.locale)) !== null && _a !== void 0 ? _a : normalizeSupportedLang(settingsData === null || settingsData === void 0 ? void 0 : settingsData.language)) !== null && _b !== void 0 ? _b : normalizeSupportedLang(settingsData === null || settingsData === void 0 ? void 0 : settingsData.preferredLanguage);
+    if (fromSettings)
+        return fromSettings;
+    const fromUser = (_d = (_c = normalizeSupportedLang(userData === null || userData === void 0 ? void 0 : userData.preferredLanguage)) !== null && _c !== void 0 ? _c : normalizeSupportedLang(userData === null || userData === void 0 ? void 0 : userData.locale)) !== null && _d !== void 0 ? _d : normalizeSupportedLang(userData === null || userData === void 0 ? void 0 : userData.language);
+    if (fromUser)
+        return fromUser;
+    const fromNationality = inferLangFromNationality((_e = userData === null || userData === void 0 ? void 0 : userData.nationality) !== null && _e !== void 0 ? _e : userData === null || userData === void 0 ? void 0 : userData.country);
+    if (fromNationality)
+        return fromNationality;
+    return 'ko';
+}
+function safeStringLoose(v, fallback = '') {
+    const s = (v !== null && v !== void 0 ? v : '').toString();
+    const t = s.trim();
+    return t.length > 0 ? t : fallback;
+}
+function toBool(v) {
+    if (v === true)
+        return true;
+    if (v === false)
+        return false;
+    const s = (v !== null && v !== void 0 ? v : '').toString().trim().toLowerCase();
+    return s === 'true' || s === '1' || s === 'yes';
+}
+function buildLocalizedNotificationText(params) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
+    const { lang, type, titleFallback, bodyFallback, actorName, data } = params;
+    const name = safeStringLoose((_b = (_a = actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.actorName) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.fromName) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.senderName, lang === 'ko' ? '익명' : 'User');
+    const meetupTitle = safeStringLoose((_c = data === null || data === void 0 ? void 0 : data.meetupTitle) !== null && _c !== void 0 ? _c : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '모임' : 'Meetup');
+    const postTitle = safeStringLoose((_d = data === null || data === void 0 ? void 0 : data.postTitle) !== null && _d !== void 0 ? _d : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '게시글' : 'Post');
+    const reviewTitle = safeStringLoose((_f = (_e = data === null || data === void 0 ? void 0 : data.reviewTitle) !== null && _e !== void 0 ? _e : data === null || data === void 0 ? void 0 : data.meetupTitle) !== null && _f !== void 0 ? _f : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '후기' : 'Review');
+    switch (type) {
+        case 'meetup_full': {
+            const max = Number((_g = data === null || data === void 0 ? void 0 : data.maxParticipants) !== null && _g !== void 0 ? _g : 0) || 0;
+            if (lang === 'ko') {
+                return {
+                    title: '모임 정원이 다 찼습니다',
+                    body: `"${meetupTitle}" 모임의 정원(${max}명)이 모두 채워졌어요.`,
+                };
+            }
+            return {
+                title: 'Meetup is full',
+                body: `"${meetupTitle}" has reached its capacity${max > 0 ? ` (${max})` : ''}.`,
+            };
+        }
+        case 'meetup_cancelled': {
+            if (lang === 'ko') {
+                return { title: '모임이 취소되었습니다', body: `"${meetupTitle}" 모임이 취소되었어요.` };
+            }
+            return { title: 'Meetup cancelled', body: `"${meetupTitle}" has been cancelled.` };
+        }
+        case 'meetup_participant_joined': {
+            const participantName = safeStringLoose(data === null || data === void 0 ? void 0 : data.participantName, name);
+            if (lang === 'ko') {
+                return { title: '모임에 새 참여자가 있어요', body: `${participantName}님이 "${meetupTitle}"에 참여했어요.` };
+            }
+            return { title: 'New participant', body: `${participantName} joined "${meetupTitle}".` };
+        }
+        case 'meetup_participant_left': {
+            const participantName = safeStringLoose(data === null || data === void 0 ? void 0 : data.participantName, name);
+            if (lang === 'ko') {
+                return { title: '참여자가 모임을 나갔어요', body: `${participantName}님이 "${meetupTitle}"에서 나갔어요.` };
+            }
+            return { title: 'Participant left', body: `${participantName} left "${meetupTitle}".` };
+        }
+        case 'friend_request': {
+            const fromName = safeStringLoose((_h = data === null || data === void 0 ? void 0 : data.fromName) !== null && _h !== void 0 ? _h : data === null || data === void 0 ? void 0 : data.fromUserName, name);
+            if (lang === 'ko') {
+                return { title: '친구 요청', body: `${fromName}님이 친구 요청을 보냈어요.` };
+            }
+            return { title: 'Friend request', body: `${fromName} sent you a friend request.` };
+        }
+        case 'post_private': {
+            const author = safeStringLoose((_k = (_j = data === null || data === void 0 ? void 0 : data.authorName) !== null && _j !== void 0 ? _j : data === null || data === void 0 ? void 0 : data.fromName) !== null && _k !== void 0 ? _k : actorName, name);
+            const preview = safeStringLoose((_m = (_l = data === null || data === void 0 ? void 0 : data.preview) !== null && _l !== void 0 ? _l : data === null || data === void 0 ? void 0 : data.contentPreview) !== null && _m !== void 0 ? _m : bodyFallback, '');
+            if (lang === 'ko') {
+                return {
+                    title: '친구공개 게시글',
+                    body: preview || `${author}님이 "${postTitle}" 게시글을 올렸어요.`,
+                };
+            }
+            return {
+                title: 'Friends-only post',
+                body: preview || `${author} posted "${postTitle}".`,
+            };
+        }
+        case 'new_comment': {
+            const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
+            if (postIsAnonymous) {
+                return lang === 'ko'
+                    ? { title: '새 댓글이 달렸습니다', body: '회원님의 게시글에 새 댓글이 달렸어요.' }
+                    : { title: 'New comment', body: 'A new comment was added to your post.' };
+            }
+            const commenter = safeStringLoose((_o = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _o !== void 0 ? _o : actorName, name);
+            return lang === 'ko'
+                ? { title: '새 댓글이 달렸습니다', body: `${commenter}님이 회원님의 게시글에 댓글을 남겼어요.` }
+                : { title: 'New comment', body: `${commenter} commented on your post.` };
+        }
+        case 'new_like': {
+            const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
+            if (postIsAnonymous) {
+                return lang === 'ko'
+                    ? { title: '게시글에 좋아요가 추가되었습니다', body: '회원님의 게시글에 새 좋아요가 추가되었어요.' }
+                    : { title: 'New like', body: 'A new like was added to your post.' };
+            }
+            const liker = safeStringLoose((_p = data === null || data === void 0 ? void 0 : data.likerName) !== null && _p !== void 0 ? _p : actorName, name);
+            return lang === 'ko'
+                ? { title: '게시글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 게시글을 좋아해요.` }
+                : { title: 'New like', body: `${liker} liked your post.` };
+        }
+        case 'comment_like': {
+            const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
+            if (postIsAnonymous) {
+                return lang === 'ko'
+                    ? { title: '댓글에 좋아요가 추가되었습니다', body: '회원님의 댓글에 새 좋아요가 추가되었어요.' }
+                    : { title: 'New like', body: 'A new like was added to your comment.' };
+            }
+            const liker = safeStringLoose((_q = data === null || data === void 0 ? void 0 : data.likerName) !== null && _q !== void 0 ? _q : actorName, name);
+            return lang === 'ko'
+                ? { title: '댓글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 댓글을 좋아해요.` }
+                : { title: 'New like', body: `${liker} liked your comment.` };
+        }
+        case 'review_approval_request': {
+            const author = safeStringLoose(actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.authorName, name);
+            if (lang === 'ko') {
+                return { title: '후기 수락 요청', body: `${author}님이 "${meetupTitle}" 후기 수락을 요청했어요.` };
+            }
+            return { title: 'Review approval requested', body: `${author} requested approval for "${meetupTitle}".` };
+        }
+        case 'review_comment': {
+            const commenter = safeStringLoose((_r = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _r !== void 0 ? _r : actorName, name);
+            if (lang === 'ko') {
+                return { title: '새 댓글이 달렸습니다', body: `${commenter}님이 "${reviewTitle}"에 댓글을 남겼어요.` };
+            }
+            return { title: 'New comment', body: `${commenter} commented on "${reviewTitle}".` };
+        }
+        case 'review_like': {
+            const liker = safeStringLoose((_s = data === null || data === void 0 ? void 0 : data.likerName) !== null && _s !== void 0 ? _s : actorName, name);
+            if (lang === 'ko') {
+                return { title: '좋아요가 추가되었습니다', body: `${liker}님이 "${reviewTitle}"을 좋아해요.` };
+            }
+            return { title: 'New like', body: `${liker} liked "${reviewTitle}".` };
+        }
+        default: {
+            const t = safeStringLoose(titleFallback, lang === 'ko' ? '새 알림' : 'New notification');
+            const b = safeStringLoose(bodyFallback, lang === 'ko' ? '새 알림이 있어요.' : 'You have a new notification.');
+            return { title: t, body: b };
+        }
+    }
+}
 exports.onNotificationCreated = functions.firestore
     .document('notifications/{notificationId}')
     .onCreate(async (snapshot, context) => {
@@ -2641,6 +2827,19 @@ exports.onNotificationCreated = functions.firestore
             return null;
         }
         const userData = userDoc.data();
+        const settingsDoc = await db.collection('user_settings').doc(String(userId)).get();
+        const settingsData = settingsDoc.exists ? settingsDoc.data() : undefined;
+        const lang = detectUserLang({ userData: userData, settingsData });
+        const localized = buildLocalizedNotificationText({
+            lang,
+            type: String(type || ''),
+            titleFallback: typeof title === 'string' ? title : '',
+            bodyFallback: typeof message === 'string' ? message : '',
+            actorName: typeof notificationData.actorName === 'string' ? notificationData.actorName : '',
+            data: (notificationData.data && typeof notificationData.data === 'object')
+                ? notificationData.data
+                : undefined,
+        });
         // 멀티 디바이스 지원:
         // - 레거시 fcmToken(단일) + 신규 fcmTokens(배열) 모두 수집 후 중복 제거
         const tokenSet = new Set();
@@ -2734,8 +2933,8 @@ exports.onNotificationCreated = functions.firestore
         const pushMessage = {
             tokens,
             notification: {
-                title,
-                body: message,
+                title: localized.title,
+                body: localized.body,
             },
             data: Object.assign({ type,
                 notificationId, postId: notificationData.postId || '', meetupId: notificationData.meetupId || '', actorId: notificationData.actorId || '', actorName: notificationData.actorName || '' }, (hasBadge && { badge: String(finalBadge) })),
@@ -3033,7 +3232,8 @@ exports.onMeetupCreated = functions.firestore
         }
         console.log(`알림 대상: ${targetUserIds.length}명`);
         // 대상 사용자들의 FCM 토큰 가져오기 (최대 10명씩 배치 처리)
-        const fcmTokenSet = new Set();
+        const tokenSetKo = new Set();
+        const tokenSetEn = new Set();
         const batchSize = 10;
         for (let i = 0; i < targetUserIds.length; i += batchSize) {
             const batch = targetUserIds.slice(i, i + batchSize);
@@ -3043,23 +3243,26 @@ exports.onMeetupCreated = functions.firestore
                 .get();
             usersSnapshot.forEach((doc) => {
                 const userData = doc.data();
+                const lang = detectUserLang({ userData: userData, settingsData: undefined });
+                const targetSet = lang === 'en' ? tokenSetEn : tokenSetKo;
                 const legacy = userData === null || userData === void 0 ? void 0 : userData.fcmToken;
                 if (typeof legacy === 'string' && legacy.length > 0) {
-                    fcmTokenSet.add(legacy);
+                    targetSet.add(legacy);
                 }
                 const arr = userData === null || userData === void 0 ? void 0 : userData.fcmTokens;
                 if (Array.isArray(arr)) {
                     arr.forEach((t) => {
                         if (typeof t === 'string' && t.length > 0) {
-                            fcmTokenSet.add(t);
+                            targetSet.add(t);
                         }
                     });
                 }
             });
         }
-        const fcmTokens = Array.from(fcmTokenSet);
-        console.log(`FCM 토큰: ${fcmTokens.length}개`);
-        if (fcmTokens.length === 0) {
+        const fcmTokensKo = Array.from(tokenSetKo);
+        const fcmTokensEn = Array.from(tokenSetEn);
+        console.log(`FCM 토큰(ko): ${fcmTokensKo.length}개, (en): ${fcmTokensEn.length}개`);
+        if (fcmTokensKo.length === 0 && fcmTokensEn.length === 0) {
             console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
             return null;
         }
@@ -3068,54 +3271,63 @@ exports.onMeetupCreated = functions.firestore
             category === '식사' ? '🍽️' :
                 category === '취미' ? '🎨' :
                     category === '문화' ? '🎭' : '🎉';
-        const title = `${categoryEmoji} 새 ${category} 모임이 생성되었습니다!`;
-        const body = `${hostName}님이 "${meetupData.title}" 모임을 만들었습니다.`;
-        // 멀티캐스트 메시지 전송
-        const message = {
-            tokens: fcmTokens,
-            notification: {
-                title,
-                body,
-            },
-            data: {
-                type: 'NEW_MEETUP',
-                meetupId,
-                hostId,
-                hostName,
-                meetupTitle: meetupData.title || '',
-                meetupCategory: category,
-                meetupDate: ((_c = (_b = (_a = meetupData.date) === null || _a === void 0 ? void 0 : _a.toDate) === null || _b === void 0 ? void 0 : _b.call(_a)) === null || _c === void 0 ? void 0 : _c.toISOString()) || '',
-                meetupLocation: meetupData.location || '',
-                visibility,
-            },
+        const meetupTitle = meetupData.title || '';
+        const categoryEn = category === '스터디' ? 'Study' :
+            category === '식사' ? 'Meal' :
+                category === '취미' ? 'Hobby' :
+                    category === '문화' ? 'Culture' : 'Meetup';
+        const titleKo = `${categoryEmoji} 새 ${category} 모임이 생성되었습니다!`;
+        const bodyKo = `${hostName}님이 "${meetupTitle}" 모임을 만들었습니다.`;
+        const titleEn = `${categoryEmoji} New ${categoryEn} meetup`;
+        const bodyEn = `${hostName} created "${meetupTitle}".`;
+        const baseData = {
+            type: 'NEW_MEETUP',
+            meetupId,
+            hostId,
+            hostName,
+            meetupTitle,
+            meetupCategory: category,
+            meetupDate: ((_c = (_b = (_a = meetupData.date) === null || _a === void 0 ? void 0 : _a.toDate) === null || _b === void 0 ? void 0 : _b.call(_a)) === null || _c === void 0 ? void 0 : _c.toISOString()) || '',
+            meetupLocation: meetupData.location || '',
+            visibility,
+        };
+        const buildMessage = (tokens, title, body) => ({
+            tokens,
+            notification: { title, body },
+            data: baseData,
             apns: {
                 headers: {
                     'apns-push-type': 'alert',
                     'apns-priority': '10',
                 },
                 payload: {
-                    aps: {
-                        sound: 'default',
-                    },
+                    aps: { sound: 'default' },
                 },
             },
             android: {
                 priority: 'high',
-                notification: {
-                    sound: 'default',
-                    channelId: 'meetup_notifications',
-                },
+                notification: { sound: 'default', channelId: 'meetup_notifications' },
             },
-        };
-        const response = await admin.messaging().sendEachForMulticast(message);
-        console.log(`✅ 알림 전송 성공: ${response.successCount}/${fcmTokens.length}`);
-        if (response.failureCount > 0) {
-            console.error(`❌ 알림 전송 실패: ${response.failureCount}개`);
-            response.responses.forEach((resp, idx) => {
-                if (!resp.success) {
-                    console.error(`실패한 토큰 ${idx}: ${resp.error}`);
-                }
-            });
+        });
+        const responses = [];
+        if (fcmTokensKo.length > 0) {
+            const resKo = await admin.messaging().sendEachForMulticast(buildMessage(fcmTokensKo, titleKo, bodyKo));
+            responses.push({ lang: 'ko', res: resKo, total: fcmTokensKo.length });
+        }
+        if (fcmTokensEn.length > 0) {
+            const resEn = await admin.messaging().sendEachForMulticast(buildMessage(fcmTokensEn, titleEn, bodyEn));
+            responses.push({ lang: 'en', res: resEn, total: fcmTokensEn.length });
+        }
+        for (const r of responses) {
+            console.log(`✅ 알림 전송(${r.lang}) 성공: ${r.res.successCount}/${r.total}`);
+            if (r.res.failureCount > 0) {
+                console.error(`❌ 알림 전송(${r.lang}) 실패: ${r.res.failureCount}개`);
+                r.res.responses.forEach((resp, idx) => {
+                    if (!resp.success) {
+                        console.error(`실패한 토큰 ${idx}: ${resp.error}`);
+                    }
+                });
+            }
         }
         return null;
     }

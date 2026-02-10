@@ -13,6 +13,7 @@ import '../constants/app_constants.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'view_history_service.dart';
+import 'dart:async';
 import 'dart:io';
 import '../utils/logger.dart';
 import 'participation_cache_service.dart';
@@ -26,6 +27,50 @@ class MeetupService {
   
   // Firestore 인스턴스 getter 추가
   FirebaseFirestore get firestore => _firestore;
+  
+  static const String _kickedUserIdsField = 'kickedUserIds';
+  static const String _participantEventCollection = 'meetup_participant_events';
+
+  Future<bool> isUserKickedFromMeetup({
+    required String meetupId,
+    required String userId,
+  }) async {
+    try {
+      final doc = await _firestore.collection('meetups').doc(meetupId).get();
+      if (!doc.exists) return false;
+      final data = doc.data();
+      final kicked = List<String>.from(data?[_kickedUserIdsField] ?? const []);
+      return kicked.contains(userId);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> _logParticipantEvent({
+    required String meetupId,
+    required String meetupTitle,
+    required String type, // join | leave | kick
+    required String actorId,
+    required String actorName,
+    required String targetUserId,
+    required String targetUserName,
+  }) async {
+    try {
+      await _firestore.collection(_participantEventCollection).add({
+        'meetupId': meetupId,
+        'meetupTitle': meetupTitle,
+        'type': type,
+        'actorId': actorId,
+        'actorName': actorName,
+        'targetUserId': targetUserId,
+        'targetUserName': targetUserName,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      // 로그 실패는 UX 치명적이지 않으므로 무시
+      Logger.error('❌ 참여자 이벤트 로그 기록 실패: $e');
+    }
+  }
 
   // 지정된 주차의 월요일부터 일요일까지 날짜 계산
   List<DateTime> getWeekDates({DateTime? weekAnchor}) {
@@ -50,6 +95,66 @@ class MeetupService {
     final List<String> weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final int weekdayIndex = date.weekday - 1; // 0: 월요일, 6: 일요일
     return '${date.month}월 ${date.day}일 (${weekdayNames[weekdayIndex]})';
+  }
+
+  int _minutesFromMeetupTime(String raw) {
+    // "14:00 ~ 16:00" / "14:00~16:00" / "미정" 등 방어적으로 파싱
+    final t = raw.trim();
+    if (t.isEmpty || t == '미정' || !t.contains(':')) return 24 * 60 + 1;
+    final start = t.split('~').first.trim();
+    final parts = start.split(':');
+    if (parts.length < 2) return 24 * 60 + 1;
+    final h = int.tryParse(parts[0].trim()) ?? 23;
+    final m = int.tryParse(parts[1].trim()) ?? 59;
+    return (h.clamp(0, 23) * 60) + m.clamp(0, 59);
+  }
+
+  String _pad2(int v) => v.toString().padLeft(2, '0');
+
+  /// 날짜를 타임존과 무관한 "캘린더 날짜 키"로 정규화합니다.
+  /// - 예: 2026-02-11
+  String _dateKey(DateTime d) {
+    final local = d.toLocal();
+    return '${local.year}-${_pad2(local.month)}-${_pad2(local.day)}';
+  }
+
+  List<String> _legacyDateStringCandidates(DateTime d) {
+    final local = d.toLocal();
+    final y = local.year.toString();
+    final m = _pad2(local.month);
+    final day = _pad2(local.day);
+    return <String>[
+      '$y-$m-$day',
+      '$y.$m.$day',
+      '$y/$m/$day',
+    ];
+  }
+
+  DateTime _parseMeetupDateFromFirestore(Map<String, dynamic> data) {
+    final raw = data['date'];
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+
+    // 일부 구버전 데이터에서 date가 문자열로 저장된 케이스 방어
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isNotEmpty) {
+        final normalized = s.replaceAll('.', '-').replaceAll('/', '-');
+        // yyyy-MM-dd 또는 yyyy-MM-dd HH:mm:ss 형태 대응
+        final datePart = normalized.split(' ').first;
+        final parts = datePart.split('-');
+        if (parts.length >= 3) {
+          final y = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          final d = int.tryParse(parts[2]);
+          if (y != null && m != null && d != null) {
+            return DateTime(y, m, d);
+          }
+        }
+      }
+    }
+
+    return DateTime.now();
   }
 
   // 모임 생성
@@ -124,6 +229,8 @@ class MeetupService {
         'currentParticipants': 1, // 주최자 포함
         'participants': [user.uid], // 주최자 ID
         'date': date,
+        // 캘린더 날짜 기반 조회를 위한 키(타임존 영향 최소화)
+        'dateKey': _dateKey(date),
         'createdAt': now,
         'updatedAt': now,
         'category': category, // 카테고리 필드 추가
@@ -133,6 +240,7 @@ class MeetupService {
         if (remoteUrls.isNotEmpty) 'imageUrls': remoteUrls,
         'visibility': visibility, // 공개 범위 추가
         'visibleToCategoryIds': visibleToCategoryIds, // 특정 카테고리 공개 추가
+        _kickedUserIdsField: <String>[], // 강퇴(퇴장)된 사용자 목록
       };
 
       // Firestore에 저장
@@ -172,6 +280,54 @@ class MeetupService {
     }
   }
 
+  Stream<List<Meetup>> _combineMeetupStreams(
+    Stream<List<Meetup>> a,
+    Stream<List<Meetup>> b,
+  ) {
+    late final StreamController<List<Meetup>> controller;
+    StreamSubscription<List<Meetup>>? subA;
+    StreamSubscription<List<Meetup>>? subB;
+
+    List<Meetup> latestA = const [];
+    List<Meetup> latestB = const [];
+
+    void emit() {
+      final byId = <String, Meetup>{};
+      for (final m in latestA) {
+        byId[m.id] = m;
+      }
+      for (final m in latestB) {
+        byId[m.id] = m;
+      }
+      final merged = byId.values.toList();
+      merged.sort((x, y) {
+        final d = x.date.compareTo(y.date);
+        if (d != 0) return d;
+        return _minutesFromMeetupTime(x.time).compareTo(_minutesFromMeetupTime(y.time));
+      });
+      controller.add(merged);
+    }
+
+    controller = StreamController<List<Meetup>>.broadcast(
+      onListen: () {
+        subA = a.listen((v) {
+          latestA = v;
+          emit();
+        }, onError: controller.addError);
+        subB = b.listen((v) {
+          latestB = v;
+          emit();
+        }, onError: controller.addError);
+      },
+      onCancel: () async {
+        await subA?.cancel();
+        await subB?.cancel();
+      },
+    );
+
+    return controller.stream;
+  }
+
   // 요일별 모임 가져오기 - 모든 모임 표시
   Stream<List<Meetup>> getMeetupsByDay(int dayIndex, {DateTime? weekAnchor}) {
     // 해당 요일의 날짜 계산 (지정된 주차 기준 또는 현재 날짜 기준)
@@ -188,65 +344,87 @@ class MeetupService {
         .add(const Duration(days: 1))
         .subtract(const Duration(microseconds: 1));
 
-    return _firestore
+    final dateKey = _dateKey(startOfDay);
+    final legacyCandidates = _legacyDateStringCandidates(startOfDay);
+
+    final byDateKey = _firestore
+        .collection('meetups')
+        .where('dateKey', isEqualTo: dateKey)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+
+    final byTimestampRange = _firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: startOfDay)
         .where('date', isLessThanOrEqualTo: endOfDay)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map((doc) {
-            final data = doc.data();
-
-            // Timestamp에서 DateTime으로 변환
-            DateTime meetupDate;
-            if (data['date'] is Timestamp) {
-              meetupDate = (data['date'] as Timestamp).toDate();
-            } else {
-              // 기본값으로 현재 날짜 사용
-              meetupDate = startOfDay;
-            }
-
-            return Meetup(
-              id: doc.id, // ID를 문자열로 직접 사용
-              title: data['title'] ?? '',
-              description: data['description'] ?? '',
-              location: data['location'] ?? '',
-              time: data['time'] ?? '',
-              maxParticipants: data['maxParticipants'] ?? 0,
-              currentParticipants: data['currentParticipants'] ?? 1,
-              host: data['hostNickname'] ?? '익명',
-              hostNationality:
-                  data['hostNickname'] == 'dev99'
-                      ? '한국'
-                      : (data['hostNationality'] ??
-                          ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
-              hostPhotoURL: data['hostPhotoURL'] ?? '', // 주최자 프로필 사진 추가
-              imageUrl: data['thumbnailImageUrl'] ?? '',
-              thumbnailContent: data['thumbnailContent'] ?? '',
-              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-              imageUrls: (data['imageUrls'] is List)
-                  ? List<String>.from(data['imageUrls'] as List)
-                      .map((e) => e.toString())
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty)
-                      .toList()
-                  : ((data['thumbnailImageUrl'] ?? '').toString().trim().isNotEmpty
-                      ? [data['thumbnailImageUrl'].toString().trim()]
-                      : const []),
-              date: meetupDate,
-              category: data['category'] ?? '기타', // 카테고리 필드 추가
-              userId: data['userId'], // 모임 주최자 ID 추가
-              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-              visibility: data['visibility'] ?? 'public', // 공개 범위 추가
-              visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []), // 특정 카테고리 공개 추가
-              isCompleted: data['isCompleted'] ?? false,
-              hasReview: data['hasReview'] ?? false,
-              reviewId: data['reviewId'],
-              viewCount: data['viewCount'] ?? 0,
-              commentCount: data['commentCount'] ?? 0,
-            );
-          }).toList();
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
         });
+
+    final byLegacyString1 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[0])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+    final byLegacyString2 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[1])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+    final byLegacyString3 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[2])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+
+    final byLegacyStrings =
+        _combineMeetupStreams(byLegacyString1, _combineMeetupStreams(byLegacyString2, byLegacyString3));
+
+    return _combineMeetupStreams(byDateKey, _combineMeetupStreams(byTimestampRange, byLegacyStrings));
+  }
+
+  /// 오늘 "생성된" 모임 가져오기 (약속 날짜와 무관)
+  /// - Today 탭에서 "오늘 올라온 모임"을 함께 보여주기 위함
+  Stream<List<Meetup>> getMeetupsCreatedToday({DateTime? now}) {
+    final base = (now ?? DateTime.now()).toLocal();
+    final startOfDay = DateTime(base.year, base.month, base.day);
+    final endOfDay = startOfDay
+        .add(const Duration(days: 1))
+        .subtract(const Duration(microseconds: 1));
+
+    return _firestore
+        .collection('meetups')
+        .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
+        .where('createdAt', isLessThanOrEqualTo: endOfDay)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+  }
+
+  /// Today 탭용 모임 스트림
+  /// - 약속 날짜가 오늘인 모임 + 오늘 생성된 모임을 함께 보여줌(중복 제거)
+  Stream<List<Meetup>> getTodayTabMeetups({DateTime? now}) {
+    return _combineMeetupStreams(
+      getTodayMeetups(),
+      getMeetupsCreatedToday(now: now),
+    );
   }
 
   // 카테고리별 모임 가져오기 (새로운 메서드)
@@ -283,13 +461,25 @@ class MeetupService {
 
   // 오늘의 모임 가져오기
   Stream<List<Meetup>> getTodayMeetups() {
-    final now = DateTime.now();
+    final now = DateTime.now().toLocal();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay
         .add(const Duration(days: 1))
         .subtract(const Duration(microseconds: 1));
 
-    return _firestore
+    final dateKey = _dateKey(startOfDay);
+    final legacyCandidates = _legacyDateStringCandidates(startOfDay);
+
+    final byDateKey = _firestore
+        .collection('meetups')
+        .where('dateKey', isEqualTo: dateKey)
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+
+    final byTimestampRange = _firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: startOfDay)
         .where('date', isLessThanOrEqualTo: endOfDay)
@@ -298,6 +488,36 @@ class MeetupService {
           final meetups = _convertToMeetups(snapshot);
           return await ContentFilterService.filterMeetups(meetups);
         });
+
+    final byLegacyString1 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[0])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+    final byLegacyString2 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[1])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+    final byLegacyString3 = _firestore
+        .collection('meetups')
+        .where('date', isEqualTo: legacyCandidates[2])
+        .snapshots()
+        .asyncMap((snapshot) async {
+          final meetups = _convertToMeetups(snapshot);
+          return await ContentFilterService.filterMeetups(meetups);
+        });
+
+    final byLegacyStrings =
+        _combineMeetupStreams(byLegacyString1, _combineMeetupStreams(byLegacyString2, byLegacyString3));
+
+    return _combineMeetupStreams(byDateKey, _combineMeetupStreams(byTimestampRange, byLegacyStrings));
   }
 
   // Firestore 문서를 Meetup 객체 리스트로 변환하는 헬퍼 메서드
@@ -305,13 +525,7 @@ class MeetupService {
     return snapshot.docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
 
-      // Timestamp에서 DateTime으로 변환
-      DateTime meetupDate;
-      if (data['date'] is Timestamp) {
-        meetupDate = (data['date'] as Timestamp).toDate();
-      } else {
-        meetupDate = DateTime.now();
-      }
+      final meetupDate = _parseMeetupDateFromFirestore(data);
 
       return Meetup(
         id: doc.id,
@@ -326,6 +540,7 @@ class MeetupService {
             data['hostNickname'] == 'dev99'
                 ? '한국'
                 : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+        hostPhotoURL: data['hostPhotoURL'] ?? '',
         imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
@@ -342,6 +557,9 @@ class MeetupService {
         category: data['category'] ?? '기타',
         userId: data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+        visibility: data['visibility'] ?? 'public',
+        visibleToCategoryIds:
+            (data['visibleToCategoryIds'] is List) ? List<String>.from(data['visibleToCategoryIds'] as List) : const [],
         isCompleted: data['isCompleted'] ?? false,
         hasReview: data['hasReview'] ?? false,
         reviewId: data['reviewId'],
@@ -362,14 +580,7 @@ class MeetupService {
 
       final data = doc.data()!;
 
-      // Timestamp에서 DateTime으로 변환
-      DateTime meetupDate;
-      if (data['date'] is Timestamp) {
-        meetupDate = (data['date'] as Timestamp).toDate();
-      } else {
-        // 기본값으로 현재 날짜 사용
-        meetupDate = DateTime.now();
-      }
+      final meetupDate = _parseMeetupDateFromFirestore(data);
 
       return Meetup(
         id: doc.id,
@@ -384,6 +595,7 @@ class MeetupService {
             data['hostNickname'] == 'dev99'
                 ? '한국'
                 : (data['hostNationality'] ?? ''), // 테스트 목적으로 dev99인 경우 한국으로 설정
+        hostPhotoURL: data['hostPhotoURL'] ?? '',
         imageUrl: data['thumbnailImageUrl'] ?? '',
         thumbnailContent: data['thumbnailContent'] ?? '',
         thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
@@ -400,6 +612,11 @@ class MeetupService {
         category: data['category'] ?? '기타', // 카테고리 필드 추가
         userId: data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+        visibility: data['visibility'] ?? 'public',
+        visibleToCategoryIds:
+            (data['visibleToCategoryIds'] is List)
+                ? List<String>.from(data['visibleToCategoryIds'] as List)
+                : const [],
         isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
         hasReview: data['hasReview'] ?? false, // 후기 작성 여부
         reviewId: data['reviewId'], // 후기 ID
@@ -409,6 +626,82 @@ class MeetupService {
     } catch (e) {
       Logger.error('모임 정보 불러오기 오류: $e');
       return null;
+    }
+  }
+
+  /// 현재 사용자 기준으로 모임 공개 범위를 필터링합니다.
+  /// - Home 화면의 "기본 모임 리스트"와 동일한 기준(친구/카테고리 공개 포함)
+  Future<List<Meetup>> filterMeetupsForCurrentUser(
+    List<Meetup> meetups, {
+    List<String>? categoryIds,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return [];
+
+      // 친구 관계
+      final friendsSnapshot = await _firestore
+          .collection('relationships')
+          .where('userId', isEqualTo: user.uid)
+          .where('status', isEqualTo: 'accepted')
+          .get();
+      final friendIds =
+          friendsSnapshot.docs.map((doc) => doc.data()['friendId'] as String).toSet();
+
+      // 내가 속한 카테고리(상대방의 friend_categories에서 나를 포함하는 문서)
+      final userCategoriesSnapshot = await _firestore
+          .collection('friend_categories')
+          .where('friendIds', arrayContains: user.uid)
+          .get();
+      final userCategoryIds =
+          userCategoriesSnapshot.docs.map((doc) => doc.id).toSet();
+
+      final filtered = <Meetup>[];
+      for (final meetup in meetups) {
+        // 내 모임은 항상 표시
+        if (meetup.userId == user.uid) {
+          filtered.add(meetup);
+          continue;
+        }
+
+        switch (meetup.visibility) {
+          case 'public':
+            filtered.add(meetup);
+            break;
+          case 'friends':
+            if (friendIds.contains(meetup.userId)) {
+              filtered.add(meetup);
+            }
+            break;
+          case 'category':
+            bool shouldShow = false;
+            if (categoryIds == null) {
+              // 기본 보기: 내가 해당 카테고리에 속해있는지
+              for (final categoryId in meetup.visibleToCategoryIds) {
+                if (userCategoryIds.contains(categoryId)) {
+                  shouldShow = true;
+                  break;
+                }
+              }
+            } else {
+              // 특정 카테고리 필터: 모임이 해당 카테고리에 공개되는지
+              shouldShow = meetup.visibleToCategoryIds
+                  .any((visibleCategoryId) => categoryIds.contains(visibleCategoryId));
+            }
+            if (shouldShow) {
+              filtered.add(meetup);
+            }
+            break;
+          default:
+            // 알 수 없는 값은 안전하게 숨김
+            break;
+        }
+      }
+
+      return filtered;
+    } catch (e) {
+      Logger.error('❌ 모임 공개 범위 필터링 오류: $e');
+      return [];
     }
   }
 
@@ -649,6 +942,14 @@ class MeetupService {
       final meetupTitle = meetupData['title'] ?? '';
       final maxParticipants = meetupData['maxParticipants'] ?? 1;
       final currentParticipants = meetupData['currentParticipants'] ?? 1;
+      
+      // ✅ 강퇴(퇴장)된 사용자는 참여 불가
+      final kickedUserIds =
+          List<String>.from(meetupData[_kickedUserIdsField] ?? const []);
+      if (kickedUserIds.contains(user.uid)) {
+        Logger.log('⛔️ 강퇴된 사용자 참여 차단: $meetupId / ${user.uid}');
+        return false;
+      }
 
       // 정원 초과 확인
       if (currentParticipants >= maxParticipants) {
@@ -665,13 +966,15 @@ class MeetupService {
 
       final userData = userDoc.data()!;
       final participantId = '${meetupId}_${user.uid}';
+      final participantName =
+          (userData['nickname'] ?? userData['displayName'] ?? user.displayName ?? '익명').toString();
 
       // meetup_participants에 즉시 승인 상태로 참여 정보 생성
       final participant = MeetupParticipant(
         id: participantId,
         meetupId: meetupId,
         userId: user.uid,
-        userName: userData['nickname'] ?? userData['displayName'] ?? user.displayName ?? '익명',
+        userName: participantName,
         userEmail: user.email ?? '',
         userProfileImage: userData['photoURL'],
         joinedAt: DateTime.now(),
@@ -695,6 +998,26 @@ class MeetupService {
       await _validateParticipantCount(meetupId);
 
       Logger.log('✅ 모임 참여 성공: $meetupId');
+
+      // ✅ 참여 이벤트 로그 + 호스트 알림
+      if (hostId != null && hostId.toString().isNotEmpty) {
+        unawaited(_logParticipantEvent(
+          meetupId: meetupId,
+          meetupTitle: meetupTitle.toString(),
+          type: 'join',
+          actorId: user.uid,
+          actorName: participantName,
+          targetUserId: user.uid,
+          targetUserName: participantName,
+        ));
+        unawaited(_notificationService.sendMeetupParticipantJoinedNotification(
+          hostId: hostId.toString(),
+          meetupId: meetupId,
+          meetupTitle: meetupTitle.toString(),
+          participantId: user.uid,
+          participantName: participantName,
+        ));
+      }
 
       // 🔧 캐시 무효화 (참여 상태 변경됨)
       _cacheService.invalidateCache(meetupId, user.uid);
@@ -729,47 +1052,88 @@ class MeetupService {
 
   // 모임 참여 취소 (meetup_participants 삭제)
   Future<bool> leaveMeetup(String meetupId) async {
+    // cancelMeetupParticipation 쪽에 로그/알림까지 통합되어 있음
+    return cancelMeetupParticipation(meetupId);
+  }
+
+  /// 호스트가 참여자를 모임에서 퇴장(강퇴)시키기
+  /// - meetup_participants/{meetupId}_{targetUserId} 삭제
+  /// - meetups/{meetupId}.currentParticipants 감소 (최소 1 보장: 호스트)
+  Future<bool> kickParticipant({
+    required String meetupId,
+    required String targetUserId,
+  }) async {
     try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        Logger.log('❌ 로그인 필요');
-        return false;
-      }
+      final me = _auth.currentUser;
+      if (me == null) return false;
+      if (targetUserId == me.uid) return false; // 자기 자신 퇴장 방지
 
-      // 참여 정보 삭제
-      final participantId = '${meetupId}_${user.uid}';
-      final participantDoc = await _firestore
-          .collection('meetup_participants')
-          .doc(participantId)
-          .get();
+      final meetupRef = _firestore.collection('meetups').doc(meetupId);
+      final participantId = '${meetupId}_$targetUserId';
+      final participantRef =
+          _firestore.collection('meetup_participants').doc(participantId);
 
-      if (!participantDoc.exists) {
-        Logger.log('⚠️ 참여 기록이 없습니다: $meetupId');
-        return false;
-      }
+      // 호스트 권한 확인 (클라이언트 방어; 서버 규칙이 있다면 그쪽이 최종 권한)
+      final meetupDoc = await meetupRef.get();
+      if (!meetupDoc.exists) return false;
+      final hostId = meetupDoc.data()?['userId']?.toString();
+      final meetupTitle = meetupDoc.data()?['title']?.toString() ?? '';
+      if (hostId == null || hostId != me.uid) return false;
 
-      // meetup_participants 문서 삭제
-      await _firestore
-          .collection('meetup_participants')
-          .doc(participantId)
-          .delete();
+      await _firestore.runTransaction((tx) async {
+        final pDoc = await tx.get(participantRef);
+        if (!pDoc.exists) return;
 
-      // meetups 문서의 currentParticipants 감소
-      await _firestore.collection('meetups').doc(meetupId).update({
-        'currentParticipants': FieldValue.increment(-1),
-        'updatedAt': FieldValue.serverTimestamp(),
+        tx.delete(participantRef);
+
+        final mDoc = await tx.get(meetupRef);
+        if (mDoc.exists) {
+          final data = mDoc.data() as Map<String, dynamic>? ?? const {};
+          final cur = (data['currentParticipants'] is int)
+              ? (data['currentParticipants'] as int)
+              : 1;
+          final next = cur > 1 ? cur - 1 : 1;
+          tx.update(meetupRef, {
+            'currentParticipants': next,
+            'updatedAt': FieldValue.serverTimestamp(),
+            _kickedUserIdsField: FieldValue.arrayUnion([targetUserId]),
+          });
+        }
       });
 
       // 동기화 검증 (선택적)
       await _validateParticipantCount(meetupId);
 
-      // 🔧 캐시 무효화 (참여 상태 변경됨)
-      _cacheService.invalidateCache(meetupId, user.uid);
+      // 캐시 무효화 (강퇴된 유저의 참여 상태)
+      _cacheService.invalidateCache(meetupId, targetUserId);
 
-      Logger.log('✅ 모임 참여 취소 성공: $meetupId');
+      // ✅ 강퇴 로그 (닉네임은 participants 컬렉션이 삭제되면 못 가져오므로 user 문서에서 best-effort)
+      String targetName = 'User';
+      try {
+        final uDoc = await _firestore.collection('users').doc(targetUserId).get();
+        final data = uDoc.data();
+        targetName = (data?['nickname'] ?? data?['displayName'] ?? 'User').toString();
+      } catch (_) {}
+      String hostName = 'Host';
+      try {
+        final hDoc = await _firestore.collection('users').doc(me.uid).get();
+        final data = hDoc.data();
+        hostName = (data?['nickname'] ?? data?['displayName'] ?? 'Host').toString();
+      } catch (_) {}
+      unawaited(_logParticipantEvent(
+        meetupId: meetupId,
+        meetupTitle: meetupTitle,
+        type: 'kick',
+        actorId: me.uid,
+        actorName: hostName,
+        targetUserId: targetUserId,
+        targetUserName: targetName,
+      ));
+
+      Logger.log('✅ 참여자 퇴장 처리 성공: $meetupId -> $targetUserId');
       return true;
     } catch (e) {
-      Logger.error('❌ 모임 참여 취소 오류: $e');
+      Logger.error('❌ 참여자 퇴장 처리 실패: $e');
       return false;
     }
   }
@@ -1138,6 +1502,21 @@ class MeetupService {
     }
   }
 
+  /// 참여자 수를 실시간으로 스트리밍합니다 (호스트 포함).
+  /// - `meetup_participants`에서 `approved` 문서 수 + 1(호스트)
+  Stream<int> participantCountStream(String meetupId, {int fallback = 1}) {
+    return _firestore
+        .collection('meetup_participants')
+        .where('meetupId', isEqualTo: meetupId)
+        .where('status', isEqualTo: 'approved')
+        .snapshots()
+        .map((snapshot) => snapshot.size + 1)
+        .handleError((e) {
+          Logger.error('❌ 참여자 수 스트림 오류: $e');
+        })
+        .map((v) => v <= 0 ? fallback : v);
+  }
+
   /// 참여자 수 동기화 검증 및 수정
   Future<void> _validateParticipantCount(String meetupId) async {
     try {
@@ -1184,6 +1563,21 @@ class MeetupService {
         return false;
       }
 
+      // 호스트/모임 타이틀 확보 (알림/로그용)
+      final meetupDoc = await _firestore.collection('meetups').doc(meetupId).get();
+      final meetupData = meetupDoc.data() ?? const <String, dynamic>{};
+      final hostId = meetupData['userId']?.toString() ?? '';
+      final meetupTitle = meetupData['title']?.toString() ?? '';
+
+      // 참여자 이름 확보 (문서에 있으면 그걸 사용)
+      final pData = participantDoc.data() as Map<String, dynamic>? ?? const {};
+      final participantName = (pData['userName'] ??
+              pData['userNickname'] ??
+              pData['nickname'] ??
+              user.displayName ??
+              '익명')
+          .toString();
+
       // 문서 삭제
       await _firestore
           .collection('meetup_participants')
@@ -1206,6 +1600,27 @@ class MeetupService {
       _cacheService.invalidateCache(meetupId, user.uid);
 
       Logger.log('✅ 모임 참여 취소 성공: $meetupId');
+
+      // ✅ 나가기 이벤트 로그 + 호스트 알림
+      if (hostId.isNotEmpty) {
+        unawaited(_logParticipantEvent(
+          meetupId: meetupId,
+          meetupTitle: meetupTitle,
+          type: 'leave',
+          actorId: user.uid,
+          actorName: participantName,
+          targetUserId: user.uid,
+          targetUserName: participantName,
+        ));
+        unawaited(_notificationService.sendMeetupParticipantLeftNotification(
+          hostId: hostId,
+          meetupId: meetupId,
+          meetupTitle: meetupTitle,
+          participantId: user.uid,
+          participantName: participantName,
+        ));
+      }
+
       return true;
     } catch (e) {
       Logger.error('❌ 모임 참여 취소 실패: $e');

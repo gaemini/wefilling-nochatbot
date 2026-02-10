@@ -234,6 +234,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         'time': timeToSave,
         'maxParticipants': _selectedMaxParticipants,
         'date': Timestamp.fromDate(_selectedDate),
+        // 캘린더 날짜 기반 조회(타임존 영향 최소화)
+        'dateKey': '${_selectedDate.toLocal().year}-${_selectedDate.toLocal().month.toString().padLeft(2, '0')}-${_selectedDate.toLocal().day.toString().padLeft(2, '0')}',
         'category': _selectedCategory,
         'updatedAt': FieldValue.serverTimestamp(),
       };

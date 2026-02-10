@@ -276,11 +276,50 @@ class MeetupApp extends StatefulWidget {
 class _MeetupAppState extends State<MeetupApp> {
   Locale _locale = const Locale('ko'); // 기본 언어: 한국어
   final LanguageService _languageService = LanguageService();
+  StreamSubscription<User?>? _authSub;
+  String? _lastSyncedLanguageCode;
 
   @override
   void initState() {
     super.initState();
     _loadLanguage();
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user == null) return;
+      // 로그인 시점에 서버에도 언어 동기화 (푸시 i18n용)
+      unawaited(_syncLanguageToFirestore(_locale.languageCode));
+    });
+  }
+
+  Future<void> _syncLanguageToFirestore(String languageCode) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // 동일 세션에서 중복 쓰기 최소화
+    if (_lastSyncedLanguageCode == languageCode) return;
+    _lastSyncedLanguageCode = languageCode;
+
+    try {
+      final uid = user.uid;
+      final firestore = FirebaseFirestore.instance;
+
+      await firestore.collection('users').doc(uid).set({
+        'preferredLanguage': languageCode,
+        'preferredLanguageUpdatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await firestore.collection('user_settings').doc(uid).set({
+        'locale': languageCode,
+        'updated_at': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (kDebugMode) {
+        debugPrint('✅ 언어 Firestore 동기화 완료: $languageCode (uid=$uid)');
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 언어 Firestore 동기화 실패(무시): $e');
+      }
+    }
   }
 
   /// 저장된 언어 불러오기
@@ -291,6 +330,8 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
     }
+    // 푸시 i18n을 위해 서버에도 동기화
+    unawaited(_syncLanguageToFirestore(languageCode));
     if (kDebugMode) {
       debugPrint('🌐 언어 로드 완료: $languageCode');
     }
@@ -303,10 +344,19 @@ class _MeetupAppState extends State<MeetupApp> {
         _locale = Locale(languageCode);
       });
       _languageService.saveLanguage(languageCode);
+      // 푸시 i18n을 위해 서버에도 동기화
+      unawaited(_syncLanguageToFirestore(languageCode));
       if (kDebugMode) {
         debugPrint('🌐 언어 변경: $languageCode');
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    _authSub = null;
+    super.dispose();
   }
 
   @override

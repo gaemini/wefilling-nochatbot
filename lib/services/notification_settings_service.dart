@@ -12,6 +12,8 @@ class NotificationSettingKeys {
   static const String dmReceived = 'dm_received'; // 💬 DM 수신 알림 추가
   static const String meetupFull = 'meetup_full';
   static const String meetupCancelled = 'meetup_cancelled';
+  static const String meetupParticipantJoined = 'meetup_participant_joined';
+  static const String meetupParticipantLeft = 'meetup_participant_left';
   static const String newComment = 'new_comment';
   static const String newLike = 'new_like';
   static const String postPrivate = 'post_private';
@@ -29,6 +31,8 @@ class NotificationSettingsService {
     NotificationSettingKeys.dmReceived: true, // 💬 DM 알림 기본값 활성화
     NotificationSettingKeys.meetupFull: true,
     NotificationSettingKeys.meetupCancelled: true,
+    NotificationSettingKeys.meetupParticipantJoined: true,
+    NotificationSettingKeys.meetupParticipantLeft: true,
     NotificationSettingKeys.newComment: true,
     NotificationSettingKeys.newLike: true,
     NotificationSettingKeys.postPrivate: true,

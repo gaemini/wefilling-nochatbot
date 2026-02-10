@@ -26,6 +26,7 @@ import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'unified_search_screen.dart';
+import 'my_meetup_calendar_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -321,6 +322,20 @@ class _MainScreenState extends State<MainScreen> {
                   MyPageSettingsSheet.show(context);
                 },
                 semanticLabel: AppLocalizations.of(context)!.settings,
+                visualDensity: VisualDensity.compact,
+              ),
+              const SizedBox(width: 4),
+              AppIconButton(
+                icon: Icons.calendar_month_outlined,
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const MyMeetupCalendarScreen(),
+                    ),
+                  );
+                },
+                semanticLabel: '내 모임 달력',
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 4),

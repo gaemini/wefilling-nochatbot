@@ -1398,75 +1398,24 @@ class DMService {
       return Stream.value(0);
     }
 
-    // 기본 스트림 생성
-    Stream<QuerySnapshot> baseStream = _firestore
-        .collection('conversations')
-        .where('participants', arrayContains: currentUser.uid)
-        .snapshots(includeMetadataChanges: true);
-
-    return baseStream.asyncMap((snapshot) async {
-      try {
-        int totalUnread = 0;
-        
-        for (var doc in snapshot.docs) {
-          try {
-            final data = doc.data() as Map<String, dynamic>;
-            final archivedBy = List<String>.from(data['archivedBy'] ?? []);
-            final participants =
-                (data['participants'] as List?)?.map((e) => e.toString()).toList() ??
-                    const <String>[];
-            
-            // 보관된 대화방은 제외
-            if (archivedBy.contains(currentUser.uid)) {
-              continue;
-            }
-            
-            // 내가 나간 대화방만 필터링 (unreadCount는 상대방 나간 여부와 무관)
-            final userLeftAt = (data['userLeftAt'] as Map?) ?? const {};
-            final lastMessageTime = data['lastMessageTime'];
-            
-            // 내가 나간 대화방 + 새 메시지 없음인 경우만 건너뜀
-            if (userLeftAt != null && lastMessageTime != null) {
-              if (userLeftAt[currentUser.uid] != null) {
-                final userLeftTime = (userLeftAt[currentUser.uid] as Timestamp).toDate();
-                final lastMsgTime = (lastMessageTime as Timestamp).toDate();
-                
-                // 나간 이후 새 메시지가 없으면 카운트하지 않음
-                // (DM 목록 표시 로직과 일치: lastMsgTime > userLeftTime 인 경우만 유지)
-                if (lastMsgTime.compareTo(userLeftTime) <= 0) {
-                  continue;
-                }
-              }
-            }
-
-            // ✅ 익명 대화방에서 "모든 상대방이 나간 경우"는 목록에서 숨기므로,
-            // 네비게이션 배지(totalUnread)에서도 동일하게 제외해 UX 불일치를 제거한다.
-            if (doc.id.startsWith('anon_') && participants.isNotEmpty) {
-              final otherParticipants = participants.where((id) => id != currentUser.uid).toSet();
-              if (otherParticipants.isNotEmpty) {
-                final allOthersLeft = otherParticipants.every((otherId) => userLeftAt[otherId] != null);
-                if (allOthersLeft) {
-                  continue;
-                }
-              }
-            }
-            
-            final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
-            final myUnread = unreadCount[currentUser.uid] ?? 0;
-            
-            totalUnread += myUnread;
-          } catch (e) {
-            Logger.error('대화방 처리 중 오류', e);
-            continue;
-          }
-        }
-        
-        return totalUnread;
-      } catch (e) {
-        Logger.error('getTotalUnreadCount 오류', e);
-        return 0;
-      }
-    }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지
+    // ✅ 단일 소스: users/{uid}.dmUnreadTotal
+    //
+    // 왜?
+    // - 하단 네비 배지는 "총합"만 정확하면 된다.
+    // - conversations 전체를 스캔/합산하는 방식은 비용이 크고,
+    //   unreadCount 드리프트 시 목록(실제 메시지 기반)과 불일치가 발생할 수 있다.
+    // - 앱 아이콘 배지(BadgeService) 정책과 일치시키면 시스템이 단순해지고 일관성이 올라간다.
+    return _firestore
+        .collection('users')
+        .doc(currentUser.uid)
+        .snapshots(includeMetadataChanges: true)
+        .map((doc) {
+          final data = doc.data();
+          final v = data?['dmUnreadTotal'];
+          final n = (v is int) ? v : (v is num ? v.toInt() : 0);
+          return n < 0 ? 0 : n;
+        })
+        .distinct();
   }
 
   /// 캐시 클리어

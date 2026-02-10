@@ -95,6 +95,56 @@ class NotificationService {
     }
   }
 
+  Future<bool> sendMeetupParticipantJoinedNotification({
+    required String hostId,
+    required String meetupId,
+    required String meetupTitle,
+    required String participantId,
+    required String participantName,
+  }) async {
+    // 호스트 본인 참여(비정상 케이스) 방어
+    if (hostId == participantId) return true;
+    return createNotification(
+      userId: hostId,
+      title: '모임에 새 참여자가 있어요',
+      message: '$participantName님이 "$meetupTitle"에 참여했어요.',
+      type: NotificationSettingKeys.meetupParticipantJoined,
+      meetupId: meetupId,
+      actorId: participantId,
+      actorName: participantName,
+      data: {
+        'meetupId': meetupId,
+        'meetupTitle': meetupTitle,
+        'participantName': participantName,
+      },
+    );
+  }
+
+  Future<bool> sendMeetupParticipantLeftNotification({
+    required String hostId,
+    required String meetupId,
+    required String meetupTitle,
+    required String participantId,
+    required String participantName,
+  }) async {
+    // 호스트 본인(비정상) 방어
+    if (hostId == participantId) return true;
+    return createNotification(
+      userId: hostId,
+      title: '참여자가 모임을 나갔어요',
+      message: '$participantName님이 "$meetupTitle"에서 나갔어요.',
+      type: NotificationSettingKeys.meetupParticipantLeft,
+      meetupId: meetupId,
+      actorId: participantId,
+      actorName: participantName,
+      data: {
+        'meetupId': meetupId,
+        'meetupTitle': meetupTitle,
+        'participantName': participantName,
+      },
+    );
+  }
+
   // 모임이 취소되었을 때 참가자들에게 알림 보내기
   Future<bool> sendMeetupCancelledNotification(
     Meetup meetup,

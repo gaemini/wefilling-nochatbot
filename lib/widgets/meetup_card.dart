@@ -3,10 +3,13 @@
 // 모임 정보 표시 및 참여 버튼 제공
 
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
 import '../screens/meetup_detail_screen.dart';
 import '../ui/widgets/glassmorphism_container.dart';
+import '../services/meetup_service.dart';
+import '../ui/snackbar/app_snackbar.dart';
 
 class MeetupCard extends StatelessWidget {
   final Meetup meetup;
@@ -101,6 +104,7 @@ class MeetupCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = _getStatusButton();
     final isFull = meetup.currentParticipants >= meetup.maxParticipants;
+    final meetupService = MeetupService();
 
     // 글래스모피즘 스타일 적용 여부에 따라 다른 위젯 반환
     if (useGlassmorphism) {
@@ -110,8 +114,23 @@ class MeetupCard extends StatelessWidget {
           margin: EdgeInsets.zero,
           padding: const EdgeInsets.all(20),
           style: _getGlassmorphismStyle(meetup.category),
-          onTap: () {
+          onTap: () async {
             // 모임 상세 화면 표시
+            final user = FirebaseAuth.instance.currentUser;
+            if (user != null) {
+              final kicked = await meetupService.isUserKickedFromMeetup(
+                meetupId: meetupId,
+                userId: user.uid,
+              );
+              if (kicked) {
+                AppSnackBar.show(
+                  context,
+                  message: '죄송합니다. 모임에 참여할 수 없습니다',
+                  type: AppSnackBarType.error,
+                );
+                return;
+              }
+            }
             showDialog(
               context: context,
               builder: (context) => MeetupDetailScreen(
@@ -121,15 +140,30 @@ class MeetupCard extends StatelessWidget {
               ),
             );
           },
-          child: _buildMeetupContent(status, isFull),
+          child: _buildMeetupContent(context, meetupService, status, isFull),
         ),
       );
     }
 
     // 기존 스타일 (호환성 보장)
     return InkWell(
-      onTap: () {
+      onTap: () async {
         // 모임 상세 화면 표시
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final kicked = await meetupService.isUserKickedFromMeetup(
+            meetupId: meetupId,
+            userId: user.uid,
+          );
+          if (kicked) {
+            AppSnackBar.show(
+              context,
+              message: '죄송합니다. 모임에 참여할 수 없습니다',
+              type: AppSnackBarType.error,
+            );
+            return;
+          }
+        }
         showDialog(
           context: context,
           builder:
@@ -166,14 +200,19 @@ class MeetupCard extends StatelessWidget {
               width: 1,
             ),
           ),
-          child: _buildMeetupContent(status, isFull),
+          child: _buildMeetupContent(context, meetupService, status, isFull),
         ),
       ),
     );
   }
 
   /// 모임 컨텐츠 빌드 (글래스모피즘과 기존 스타일 공통)
-  Widget _buildMeetupContent(String status, bool isFull) {
+  Widget _buildMeetupContent(
+    BuildContext context,
+    MeetupService meetupService,
+    String status,
+    bool isFull,
+  ) {
     return Row(
             children: [
               // 시간 컬럼 - 원형 시간 표시로 개선
@@ -309,9 +348,24 @@ class MeetupCard extends StatelessWidget {
                   onPressed:
                       isFull
                           ? null
-                          : () {
-                            onJoinMeetup(meetup);
-                          },
+                          : () async {
+                              final user = FirebaseAuth.instance.currentUser;
+                              if (user != null) {
+                                final kicked = await meetupService.isUserKickedFromMeetup(
+                                  meetupId: meetupId,
+                                  userId: user.uid,
+                                );
+                                if (kicked) {
+                                  AppSnackBar.show(
+                                    context,
+                                    message: '죄송합니다. 모임에 참여할 수 없습니다',
+                                    type: AppSnackBarType.error,
+                                  );
+                                  return;
+                                }
+                              }
+                              onJoinMeetup(meetup);
+                            },
                   style: ElevatedButton.styleFrom(
                     backgroundColor:
                         isFull ? Colors.grey[300] : Colors.blue.shade600,

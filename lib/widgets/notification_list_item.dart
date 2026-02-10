@@ -350,6 +350,8 @@ _BadgeSpec _badgeSpecForType(String type) {
       return const _BadgeSpec(icon: Icons.group, color: Color(0xFFF59E0B));
     case 'meetup_participant_joined':
       return const _BadgeSpec(icon: Icons.person_add, color: AppColors.pointColor);
+    case 'meetup_participant_left':
+      return const _BadgeSpec(icon: Icons.logout_rounded, color: Color(0xFFEF4444));
     case 'review_approval_request':
       return const _BadgeSpec(icon: Icons.rate_review, color: AppColors.pointColor);
     case 'ad_updates':

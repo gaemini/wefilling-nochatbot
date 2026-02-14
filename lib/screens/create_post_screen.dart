@@ -338,8 +338,10 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        // 사용자가 많이 선택할 수 있게 넉넉하게
-        maxAssets: 30,
+        // ✅ 최대 10장 제한
+        maxAssets: 10,
+        // ✅ 드래그로 다중 선택 비활성화 (탭으로만 선택)
+        dragToSelect: false,
       ),
     );
 
@@ -349,7 +351,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets);
+        ..addAll(pickedAssets.take(10));
     });
 
     // 업로드/용량 체크용 파일 리스트 동기화
@@ -394,6 +396,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     if (_selectedImages.length != _selectedAssets.length) {
       await _syncSelectedImagesFromAssets();
     }
+    if (!mounted) return;
     if (_selectedImages.isEmpty) return;
     await showFullscreenFileImageViewer(
       context,
@@ -404,23 +407,100 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     );
   }
 
-  Future<bool> _confirmSelectedImagesBeforeUpload() async {
+  Future<bool> _confirmSubmitPost() async {
     if (!mounted) return false;
-    if (_selectedAssets.isEmpty) return true;
-    // 업로드 확인은 File 기반 뷰어를 사용하므로, 필요 시 변환 동기화
-    if (_selectedImages.length != _selectedAssets.length) {
-      await _syncSelectedImagesFromAssets();
-    }
-    if (_selectedImages.isEmpty) return true;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return showFullscreenFileImageViewer(
-      context,
-      imageFiles: List<File>.unmodifiable(_selectedImages),
-      initialIndex: 0,
-      heroTag: 'create_post_selected_images_confirm',
-      showConfirmButton: true,
-      confirmLabel: isKo ? '이 사진으로 업로드' : 'Upload with these photos',
+
+    // 다른 주요 확인 다이얼로그(DM 나가기 등)와 톤 통일
+    HapticFeedback.mediumImpact();
+    final bodyText = isKo ? '포스트를 등록할까요?' : 'Do you want to post this?';
+
+    final cancelLabel = AppLocalizations.of(context)!.cancel;
+    final confirmLabel = AppLocalizations.of(context)!.registration;
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: Colors.white,
+          elevation: 8,
+          contentPadding: const EdgeInsets.fromLTRB(24, 26, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+          content: Text(
+            bodyText,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+              height: 1.35,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          actions: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextButton(
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.of(dialogContext).pop(false);
+                    },
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                      ),
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF6B7280),
+                    ),
+                    child: Text(
+                      cancelLabel,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () {
+                      HapticFeedback.heavyImpact();
+                      Navigator.of(dialogContext).pop(true);
+                    },
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      backgroundColor: AppColors.pointColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      disabledBackgroundColor: const Color(0xFFE5E7EB),
+                    ),
+                    child: Text(
+                      confirmLabel,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
     );
+    return result ?? false;
   }
 
   Future<void> _goToStep(int index) async {
@@ -456,6 +536,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           curve: Curves.easeOut,
         );
       }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context)!.categorySelectAtLeastOne),
@@ -467,7 +548,6 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     }
     
     if (_formKey.currentState!.validate()) {
-      // ✅ 업로드 전에 선택 사진을 다시 확인(게시글 이미지 뷰어 UX 적용)
       if (_isResolvingSelectedImages) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -481,12 +561,16 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         );
         return;
       }
-      if (_selectedAssets.isNotEmpty) {
-        // 업로드 직전에는 파일 리스트가 반드시 필요하므로 최종 동기화
+      // ✅ 이미지 미리보기 확인 대신, "정말 게시글을 등록할지" 확인 다이얼로그를 노출한다.
+      final confirmed = await _confirmSubmitPost();
+      if (!mounted) return;
+      if (!confirmed) return;
+
+      // 업로드 직전에는 파일 리스트가 반드시 필요하므로 최종 동기화
+      if (_selectedAssets.isNotEmpty && _selectedImages.length != _selectedAssets.length) {
         await _syncSelectedImagesFromAssets();
-        final confirmed = await _confirmSelectedImagesBeforeUpload();
-        if (!confirmed) return;
       }
+      if (!mounted) return;
 
       setState(() {
         _isSubmitting = true;
@@ -494,10 +578,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
 
       try {
         // Firebase에 게시글 저장
-        final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final user = authProvider.user;
-        final userData = authProvider.userData;
-        final nickname = userData?['nickname'] ?? '익명';
+        // AuthProvider는 작성자/권한 등 내부 로직에 사용될 수 있어 유지하되,
+        // 이 화면에서는 userData를 직접 사용하지 않는다.
+        Provider.of<AuthProvider>(context, listen: false);
 
         // 이미지가 있는 경우 프로그레스 다이얼로그 표시
         if (_selectedAssets.isNotEmpty) {
@@ -505,7 +588,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(AppLocalizations.of(context)!.postImageUploading),
-                duration: Duration(seconds: 5),
+                duration: const Duration(seconds: 5),
               ),
             );
           }
@@ -530,15 +613,15 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           // 화면 닫기
           if (mounted) {
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postCreated ?? "")));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(AppLocalizations.of(context)!.postCreated)),
+            );
           }
         } else {
-          throw Exception("게시글 등록 실패");
+          throw Exception("포스트 등록 실패");
         }
       } catch (e) {
-        Logger.error('게시글 작성 오류: $e');
+        Logger.error('포스트 작성 오류: $e');
         if (mounted) {
           setState(() {
             _isSubmitting = false;
@@ -887,8 +970,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                                         const SizedBox(height: 2),
                                                         Text(
                                                           _selectedAssets.isNotEmpty
-                                                              ? '${_selectedAssets.length}장 선택됨'
-                                                              : '여러 장을 한 번에 선택할 수 있어요',
+                                                              ? '${_selectedAssets.length}/10장 선택됨'
+                                                              : '최대 10장까지 선택할 수 있어요',
                                                           style: const TextStyle(
                                                             fontFamily: 'Pretendard',
                                                             fontSize: 12,
@@ -923,7 +1006,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                         ),
                                       ),
                                       child: Text(
-                                        '${_selectedAssets.length}',
+                                        '${_selectedAssets.length}/10',
                                         style: const TextStyle(
                                           fontFamily: 'Pretendard',
                                           fontSize: 12,

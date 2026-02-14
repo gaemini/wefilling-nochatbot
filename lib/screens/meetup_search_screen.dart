@@ -156,7 +156,7 @@ class _MeetupSearchScreenState extends State<MeetupSearchScreen> {
                             hintText:
                                 Localizations.localeOf(context).languageCode ==
                                         'ko'
-                                    ? '게시글을 검색하세요...'
+                                    ? '포스트를 검색하세요...'
                                     : 'Search posts...',
                             hintStyle: TextStyle(color: Colors.grey[500]),
                             border: InputBorder.none,

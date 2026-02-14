@@ -30,6 +30,7 @@ class Meetup {
   final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
   final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
   final bool hasReview; // 후기가 작성되었는지
+  final bool groupChatEnabled; // 모임 단체 톡방 활성화 여부 (호스트가 켜기)
   final String? reviewId; // 작성된 후기 ID
   final int viewCount; // 조회수
   final int commentCount; // 댓글수
@@ -57,6 +58,7 @@ class Meetup {
     this.visibleToCategoryIds = const [],
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
+    this.groupChatEnabled = false, // 기본값: 비활성
     this.reviewId,
     this.viewCount = 0, // 기본값: 조회수 0
     this.commentCount = 0, // 기본값: 댓글수 0
@@ -85,6 +87,7 @@ class Meetup {
     List<String>? visibleToCategoryIds,
     bool? isCompleted,
     bool? hasReview,
+    bool? groupChatEnabled,
     String? reviewId,
     int? viewCount,
     int? commentCount,
@@ -112,6 +115,7 @@ class Meetup {
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
+      groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
       reviewId: reviewId ?? this.reviewId,
       viewCount: viewCount ?? this.viewCount,
       commentCount: commentCount ?? this.commentCount,
@@ -260,14 +264,21 @@ class Meetup {
 
   // 카테고리별 아이콘 가져오기
   IconData getCategoryIcon() {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return Icons.school_outlined;
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return Icons.restaurant_outlined;
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return Icons.palette_outlined;
       case '문화':
+      case 'culture':
         return Icons.theater_comedy_outlined;
       default:
         return Icons.groups_outlined;
@@ -276,14 +287,21 @@ class Meetup {
 
   // 카테고리별 색상 가져오기
   Color getCategoryColor() {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return const Color(0xFF4A90E2); // 파란색
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return const Color(0xFFFF9500); // 주황색
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return const Color(0xFF34C759); // 초록색
       case '문화':
+      case 'culture':
         return const Color(0xFFAF52DE); // 보라색
       default:
         return const Color(0xFF8E8E93); // 회색
@@ -292,14 +310,21 @@ class Meetup {
 
   // 카테고리별 배경 색상 가져오기
   Color getCategoryBackgroundColor() {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return const Color(0xFFF0F7FF); // 연한 파란색
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return const Color(0xFFFFF8F0); // 연한 주황색
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return const Color(0xFFF0FFF4); // 연한 초록색
       case '문화':
+      case 'culture':
         return const Color(0xFFF8F0FF); // 연한 보라색
       default:
         return const Color(0xFFF8F8F8); // 연한 회색
@@ -361,6 +386,7 @@ class Meetup {
           : [],
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
+      groupChatEnabled: json['groupChatEnabled'] ?? false,
       reviewId: json['reviewId'],
       viewCount: json['viewCount'] ?? 0,
       commentCount: json['commentCount'] ?? 0,
@@ -404,6 +430,7 @@ class Meetup {
       'visibleToCategoryIds': visibleToCategoryIds,
       'isCompleted': isCompleted,
       'hasReview': hasReview,
+      'groupChatEnabled': groupChatEnabled,
       'reviewId': reviewId,
       'viewCount': viewCount,
       'commentCount': commentCount,

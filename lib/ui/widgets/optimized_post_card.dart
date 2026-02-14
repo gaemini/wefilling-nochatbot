@@ -3,14 +3,18 @@
 // const 생성자, 메모이제이션, 이미지 최적화
 
 import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
 import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
+import '../../utils/category_label_utils.dart';
 import '../../services/dm_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../widgets/country_flag_circle.dart';
@@ -20,6 +24,7 @@ import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
 import 'poll_post_widget.dart';
+import 'user_avatar.dart';
 
 /// 2024-2025 트렌드 기반 최적화된 게시글 카드
 class OptimizedPostCard extends StatefulWidget {
@@ -42,7 +47,8 @@ class OptimizedPostCard extends StatefulWidget {
     this.preloadImage = false,
     this.useGlassmorphism = false,
     this.margin = const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    this.contentPadding = const EdgeInsets.all(12),
+    // 상/좌/우는 유지하고, 하단만 살짝 줄여 카드 하단이 과하게 두꺼워 보이지 않도록
+    this.contentPadding = const EdgeInsets.fromLTRB(12, 12, 12, 8),
   });
 
   factory OptimizedPostCard.glassmorphism({
@@ -71,7 +77,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   final DMService _dmService = DMService();
   bool _isSaved = false;
   bool _isLoading = false;
+  bool _isLikeInFlight = false;
+  bool _isLikedOverride = false;
+  int _likesOverride = 0;
   bool _didPrecache = false;
+  Timer? _likeHoldTimer;
+  bool _likeSheetOpenedByHold = false;
 
   // 카드/이미지 라운드 (스크린샷 기준으로 조금 더 둥글게)
   static const double _cardRadius = 6;
@@ -82,11 +93,402 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   void initState() {
     super.initState();
     _checkSavedStatus();
+    _syncLocalLikeStateFromWidget();
     // precacheImage는 MediaQuery 등 ImageConfiguration을 사용하므로 첫 프레임 이후 실행
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _maybePrecacheCriticalImages();
     });
+  }
+
+  @override
+  void dispose() {
+    _likeHoldTimer?.cancel();
+    _likeHoldTimer = null;
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant OptimizedPostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 카드가 다른 포스트로 교체되었거나, 외부 갱신이 들어온 경우 로컬 상태를 동기화
+    if (oldWidget.post.id != widget.post.id) {
+      _isLikeInFlight = false;
+      _syncLocalLikeStateFromWidget();
+      return;
+    }
+    // 좋아요 토글 진행 중이 아니면 서버/스트림으로 들어온 최신 값을 따라간다
+    if (!_isLikeInFlight) {
+      _syncLocalLikeStateFromWidget();
+    }
+  }
+
+  void _syncLocalLikeStateFromWidget() {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    final liked = me != null && widget.post.isLikedByUser(me);
+    _isLikedOverride = liked;
+    _likesOverride = widget.post.likes;
+  }
+
+  Future<void> _toggleLikeFromHeartButton() async {
+    if (_isLikeInFlight) return;
+    final l10n = AppLocalizations.of(context)!;
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.loginRequired)),
+      );
+      return;
+    }
+
+    // 낙관적 업데이트
+    final nextLiked = !_isLikedOverride;
+    final nextLikes = (_likesOverride + (nextLiked ? 1 : -1)).clamp(0, 1 << 30);
+    setState(() {
+      _isLikeInFlight = true;
+      _isLikedOverride = nextLiked;
+      _likesOverride = nextLikes;
+    });
+
+    final ok = await _postService.toggleLike(widget.post.id);
+    if (!mounted) return;
+
+    if (!ok) {
+      // 실패 시 롤백
+      setState(() {
+        _isLikedOverride = !nextLiked;
+        _likesOverride =
+            (_likesOverride + (nextLiked ? -1 : 1)).clamp(0, 1 << 30);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.error)),
+      );
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLikeInFlight = false;
+      });
+    }
+  }
+
+  void _showAnonymousLikesHiddenSnackBar() {
+    if (!mounted) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isKo
+              ? '익명 게시글에서는 하트를 누른 사람을 확인할 수 없어요.'
+              : 'Likes are hidden for anonymous posts.',
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _showLikesSheetForPost() async {
+    // 익명 게시글은 좋아요 누른 사용자 목록을 확인할 수 없음 (상세페이지와 동일 정책)
+    if (widget.post.isAnonymous) {
+      _showAnonymousLikesHiddenSnackBar();
+      return;
+    }
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    // 최신 likedBy/likes를 서버에서 1회 확인 후 시트를 띄움 (초기/캐시 플리커 방지)
+    List<String> likedBy = widget.post.likedBy;
+    var likeCount = _likesOverride;
+    try {
+      final refreshed = await _postService.getPostById(widget.post.id);
+      if (refreshed != null) {
+        likedBy = refreshed.likedBy;
+        likeCount = refreshed.likes;
+      }
+    } catch (_) {
+      // best-effort: 실패해도 현재 카드 데이터로 노출
+    }
+
+    await _showPostLikesSheet(
+      likedBy: likedBy,
+      likeCount: likeCount,
+      currentUserId: currentUser.uid,
+    );
+  }
+
+  Future<void> _showPostLikesSheet({
+    required List<String> likedBy,
+    required int likeCount,
+    required String currentUserId,
+  }) async {
+    // 익명 게시글은 좋아요 누른 사용자 목록을 확인할 수 없음
+    if (widget.post.isAnonymous) {
+      _showAnonymousLikesHiddenSnackBar();
+      return;
+    }
+
+    final orderedUnique = LinkedHashSet<String>.from(
+      likedBy.where((e) => e.trim().isNotEmpty && e != 'deleted'),
+    ).toList();
+
+    // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
+    const maxShown = 50;
+    final shownIds =
+        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
+    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withAlpha(160),
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        final l10n = AppLocalizations.of(context)!;
+        final isKo = Localizations.localeOf(context).languageCode == 'ko';
+        const sheetBg = Colors.white;
+        const dividerColor = Color(0xFFE5E7EB);
+        const handleColor = Color(0xFFD1D5DB);
+        const secondaryText = Color(0xFF6B7280);
+
+        return SafeArea(
+          child: ClipRRect(
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(DesignTokens.r16),
+            ),
+            child: Material(
+              color: sheetBg,
+              child: DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.55,
+                minChildSize: 0.35,
+                maxChildSize: 0.9,
+                builder: (context, scrollController) {
+                  return Column(
+                    children: [
+                      const SizedBox(height: 10),
+                      Container(
+                        width: 36,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: handleColor,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
+                        child: Row(
+                          children: [
+                            Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: l10n.likes,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF111827),
+                                    ),
+                                  ),
+                                  const TextSpan(text: '  '),
+                                  TextSpan(
+                                    text: '$likeCount',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: secondaryText,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (hiddenCount > 0)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            DesignTokens.s16,
+                            6,
+                            DesignTokens.s16,
+                            0,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              isKo
+                                  ? '최대 $maxShown명만 표시됩니다. (외 $hiddenCount명)'
+                                  : 'Showing up to $maxShown users. (+$hiddenCount more)',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: secondaryText,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: dividerColor),
+                      Expanded(
+                        child: FutureBuilder<List<_PostLikeUser>>(
+                          future: _fetchLikeUsers(shownIds),
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState != ConnectionState.done &&
+                                !snapshot.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(color: BrandColors.primary),
+                              );
+                            }
+                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            if (users.isEmpty) {
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  child: Text(
+                                    isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: secondaryText,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }
+
+                            return ListView.separated(
+                              controller: scrollController,
+                              itemCount: users.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1, color: dividerColor),
+                              itemBuilder: (context, index) {
+                                final u = users[index];
+                                return ListTile(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: DesignTokens.s16,
+                                  ),
+                                  tileColor: sheetBg,
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _openProfileOrMyPage(
+                                      userId: u.uid,
+                                      nickname: u.nickname,
+                                      photoURL: u.photoURL,
+                                    );
+                                  },
+                                  leading: UserAvatar(
+                                    uid: u.uid,
+                                    photoUrl: u.photoURL,
+                                    photoVersion: u.photoVersion,
+                                    isAnonymous: false,
+                                    size: 40,
+                                  ),
+                                  title: Row(
+                                    children: [
+                                      Flexible(
+                                        child: Text(
+                                          u.nickname,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF111827),
+                                          ),
+                                        ),
+                                      ),
+                                      if (u.nationality != null) ...[
+                                        const SizedBox(width: 6),
+                                        CountryFlagCircle(
+                                          nationality: u.nationality!,
+                                          size: 16,
+                                        ),
+                                      ],
+                                      if (u.uid == currentUserId) ...[
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          isKo ? '(나)' : '(You)',
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: secondaryText,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<_PostLikeUser>> _fetchLikeUsers(List<String> userIds) async {
+    if (userIds.isEmpty) return const <_PostLikeUser>[];
+
+    final resultById = <String, _PostLikeUser>{};
+    const chunkSize = 10;
+    for (var i = 0; i < userIds.length; i += chunkSize) {
+      final chunk = userIds.sublist(
+        i,
+        (i + chunkSize) > userIds.length ? userIds.length : (i + chunkSize),
+      );
+      final snap = await FirebaseFirestore.instance
+          .collection('users')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final nickname = (data['nickname'] ?? data['displayName'] ?? 'User').toString();
+        final photoURL = (data['photoURL'] ?? '').toString();
+        final nationalityRaw = (data['nationality'] ?? '').toString().trim();
+        final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;
+        final photoVersion = (data['photoVersion'] is int)
+            ? (data['photoVersion'] as int)
+            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
+        resultById[doc.id] = _PostLikeUser(
+          uid: doc.id,
+          nickname: nickname,
+          photoURL: photoURL,
+          photoVersion: photoVersion,
+          nationality: nationality,
+        );
+      }
+    }
+
+    final ordered = <_PostLikeUser>[];
+    for (final uid in userIds) {
+      final u = resultById[uid];
+      if (u != null) ordered.add(u);
+    }
+    return ordered;
   }
 
   void _maybePrecacheCriticalImages() {
@@ -150,8 +552,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(newSavedStatus 
-                ? (AppLocalizations.of(context)!.postSaved ?? '게시글이 저장되었습니다')
-                : (AppLocalizations.of(context)!.postUnsaved ?? '게시글 저장이 취소되었습니다')),
+                ? (AppLocalizations.of(context)!.postSaved ?? '포스트가 저장되었습니다')
+                : (AppLocalizations.of(context)!.postUnsaved ?? '포스트 저장이 취소되었습니다')),
             duration: Duration(seconds: 1),
             backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
           ),
@@ -236,38 +638,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         ),
       );
     }
-    
-    // 익명 (전체 공개 + 익명) (통일된 크기)
-    if (post.visibility == 'public' && post.isAnonymous) {
-    return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-          color: const Color(0xFFE8EAF6), // 익명 배경색
-          borderRadius: BorderRadius.circular(16),
-      ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.person_outline,
-              size: DesignTokens.iconSmall,
-              color: const Color(0xFF5C6BC0), // 익명 강조색
-            ),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context)!.anonymous,
-        style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12, // 통일된 크기
-                fontWeight: FontWeight.w700, // 통일된 굵기
-                color: const Color(0xFF5C6BC0), // 익명 강조색
-        ),
-      ),
-          ],
-        ),
-      );
-    }
-    
+
     // 전체 공개 (일반): 표시 안 함
     return const SizedBox.shrink();
   }
@@ -352,7 +723,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   PollPostWidget(postId: post.id),
                 ],
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 8),
 
                 // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
                 _buildPostMeta(
@@ -747,18 +1118,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   /// 게시글 메타 정보 빌드
   Widget _buildPostMeta(Post post, ThemeData theme, ColorScheme colorScheme) {
-    final currentUser = FirebaseAuth.instance.currentUser;
-    final isLikedByMe = currentUser != null && post.isLikedByUser(currentUser.uid);
+    final isLikedByMe = _isLikedOverride;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         // 화면 폭에 따라 자연스럽게 좁아지는 고정 폭/간격
         final w = constraints.maxWidth;
-        // 기존 값이 넓게 보여서 더 촘촘하게 조정
-        final itemWidth = w < 330 ? 32.0 : 36.0; // 좋아요/댓글
-        final eyeWidth = w < 330 ? 36.0 : 40.0; // 조회수(숫자 자리 여유 조금)
-        final gap = w < 330 ? 4.0 : 6.0;
-        const iconSize = 15.0;
+        // 아이콘을 18로 키운 만큼, 아이템 폭도 살짝 여유를 준다(오버플로우 방지)
+        final itemWidth = w < 330 ? 42.0 : 46.0; // 좋아요/댓글
+        final eyeWidth = w < 330 ? 46.0 : 50.0; // 조회수(숫자 자리 여유 조금)
+        final gap = w < 330 ? 6.0 : 8.0;
+        const iconSize = 18.0;
 
         Widget metaItem({
           required IconData icon,
@@ -767,18 +1137,43 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           required Color activeColor,
           required Color inactiveColor,
           required double width,
+          VoidCallback? onTap,
         }) {
           return SizedBox(
             width: width,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  icon,
-                  size: iconSize,
-                  color: active ? activeColor : inactiveColor,
-                ),
-                const SizedBox(width: 3),
+                if (onTap == null)
+                  Icon(
+                    icon,
+                    size: iconSize,
+                    color: active ? activeColor : inactiveColor,
+                  )
+                else
+                  // 카드 탭(onTap)과 분리된 좋아요 버튼.
+                  // 기본 IconButton은 최소 탭 타겟이 커서(32px) 고정폭 안에서 overflow가 나기 쉬워,
+                  // 레이아웃은 컴팩트하게(24px) 유지하면서도 충분한 터치감을 주도록 구성한다.
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkResponse(
+                        onTap: onTap,
+                        radius: 18,
+                        containedInkWell: true,
+                        child: Center(
+                          child: Icon(
+                            icon,
+                            size: iconSize,
+                            color: active ? activeColor : inactiveColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
                 if (count > 0)
                   Flexible(
                     child: FittedBox(
@@ -804,13 +1199,36 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return Row(
           children: [
             // 좋아요 (아이콘 위치 고정, 숫자는 0이면 숨김, 빨간색은 '내가 눌렀을 때만')
-            metaItem(
-              icon: isLikedByMe ? Icons.favorite : Icons.favorite_border,
-              active: isLikedByMe,
-              count: post.likes,
-              activeColor: BrandColors.error,
-              inactiveColor: BrandColors.neutral500,
-              width: itemWidth,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) {
+                if (_isLikeInFlight) return;
+                _likeHoldTimer?.cancel();
+                _likeSheetOpenedByHold = false;
+                _likeHoldTimer = Timer(const Duration(milliseconds: 500), () async {
+                  if (!mounted) return;
+                  _likeSheetOpenedByHold = true;
+                  await _showLikesSheetForPost();
+                });
+              },
+              onTapCancel: () {
+                _likeHoldTimer?.cancel();
+              },
+              onTapUp: (_) async {
+                _likeHoldTimer?.cancel();
+                // 홀드로 시트를 띄운 경우에는 좋아요 토글을 막음 (상세페이지와 동일 UX)
+                if (_likeSheetOpenedByHold) return;
+                await _toggleLikeFromHeartButton();
+              },
+              child: metaItem(
+                icon: isLikedByMe ? Icons.favorite : Icons.favorite_border,
+                active: isLikedByMe,
+                count: _likesOverride,
+                activeColor: BrandColors.error,
+                inactiveColor: BrandColors.neutral500,
+                width: itemWidth,
+                onTap: null, // 탭/홀드는 외부 GestureDetector에서 처리
+              ),
             ),
             SizedBox(width: gap),
 
@@ -846,7 +1264,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  post.category,
+                  localizedCategoryLabel(context, post.category),
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.onPrimaryContainer,
                     fontWeight: FontWeight.w500,
@@ -1019,7 +1437,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = post.content.trim();
         final rawTitle = post.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '게시글');
+        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
         final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
@@ -1061,4 +1479,20 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   @override
   int get hashCode => Object.hash(widget.post.id, widget.index);
+}
+
+class _PostLikeUser {
+  final String uid;
+  final String nickname;
+  final String photoURL;
+  final int photoVersion;
+  final String? nationality;
+
+  const _PostLikeUser({
+    required this.uid,
+    required this.nickname,
+    required this.photoURL,
+    required this.photoVersion,
+    required this.nationality,
+  });
 }

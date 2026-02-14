@@ -192,13 +192,13 @@ class NotificationService {
     }
 
     try {
-      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '게시글';
+      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '포스트';
       final notificationType = isReview ? 'review_comment' : NotificationSettingKeys.newComment;
       
       return await createNotification(
         userId: postAuthorId,
         title: '새 댓글이 달렸습니다',
-        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '게시글'} "$safePostTitle"에 댓글을 남겼습니다.',
+        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '포스트'} "$safePostTitle"에 댓글을 남겼습니다.',
         type: notificationType,
         postId: isReview ? null : postId,
         actorId: commenterId,
@@ -243,11 +243,11 @@ class NotificationService {
     try {
       // 익명 게시글이면 알림에서 '누가 눌렀는지'를 절대 노출하지 않음
       final safeLikerName = postIsAnonymous ? '익명' : likerName;
-      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '게시글';
+      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '포스트';
       return await createNotification(
         userId: postAuthorId,
-        title: '게시글에 좋아요가 추가되었습니다',
-        message: '$safeLikerName님이 회원님의 게시글 "$safePostTitle"을 좋아합니다.',
+        title: '포스트에 좋아요가 추가되었습니다',
+        message: '$safeLikerName님이 회원님의 포스트 "$safePostTitle"을 좋아합니다.',
         type: NotificationSettingKeys.newLike,
         postId: postId,
         actorId: likerId,

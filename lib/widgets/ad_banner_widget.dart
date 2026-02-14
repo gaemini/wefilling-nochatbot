@@ -266,7 +266,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.pointColor,
+                            color: Colors.white,
+                            border: Border.all(color: Colors.black, width: 1),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: const Text(
@@ -275,7 +276,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                               fontFamily: 'Pretendard',
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
-                              color: Colors.white,
+                              color: Colors.black,
                               letterSpacing: 0.5,
                             ),
                           ),

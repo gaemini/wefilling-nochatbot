@@ -116,6 +116,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         await _navigateToMeetup(notification);
         break;
       case 'new_comment':
+      case 'comment_reply':
       case 'new_like':
       case 'post_private':
       case 'comment_like':
@@ -518,15 +519,23 @@ class _NotificationScreenState extends State<NotificationScreen> {
           // 익명 게시글이면 댓글 작성자 정보 노출 안 함
           if (postIsAnonymous) {
             return lang == 'ko'
-                ? '게시글에 새 댓글이 달렸습니다.'
+                ? '포스트에 새 댓글이 달렸습니다.'
                 : 'A new comment was added to your post.';
           }
           
           // 일반 게시글 - 실시간 닉네임 가져오기
           final commenterName = _getActorName(notification);
           return lang == 'ko'
-              ? '$commenterName님이 회원님의 게시글에 댓글을 남겼습니다.'
+              ? '$commenterName님이 회원님의 포스트에 댓글을 남겼습니다.'
               : '$commenterName commented on your post.';
+        case 'comment_reply': {
+          final bool postIsAnonymous = data['postIsAnonymous'] == true;
+          if (postIsAnonymous) {
+            return l10n!.newReplyToCommentAnonymousMessage;
+          }
+          final replierName = _getActorName(notification);
+          return l10n!.newReplyToCommentMessage(replierName);
+        }
         case 'new_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
           final lang = Localizations.localeOf(context).languageCode;
@@ -534,14 +543,14 @@ class _NotificationScreenState extends State<NotificationScreen> {
           // 익명 게시글이면 좋아요 누른 사람 정보 노출 안 함
           if (postIsAnonymous) {
             return lang == 'ko'
-                ? '게시글에 새 좋아요가 추가되었습니다.'
+                ? '포스트에 새 좋아요가 추가되었습니다.'
                 : 'A new like was added to your post.';
           }
           
           // 일반 게시글 - 실시간 닉네임 가져오기
           final likerName = _getActorName(notification);
           return lang == 'ko'
-              ? '$likerName님이 회원님의 게시글을 좋아합니다.'
+              ? '$likerName님이 회원님의 포스트를 좋아합니다.'
               : '$likerName liked your post.';
         case 'comment_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
@@ -582,13 +591,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
           if (postTitle.isEmpty) {
             final lang = Localizations.localeOf(context).languageCode;
             return lang == 'ko'
-                ? '$name님이 $badge 게시글을 올렸습니다.'
+                ? '$name님이 $badge 포스트를 올렸습니다.'
                 : '$name posted a $badge post.';
           }
 
           final lang = Localizations.localeOf(context).languageCode;
           return lang == 'ko'
-              ? '$name님이 $badge 게시글을 올렸습니다: $postTitle'
+              ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
               : '$name posted a $badge post: $postTitle';
         }
         default:
@@ -650,6 +659,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final postId = notification.data?['postId'] ?? notification.postId;
       final canHavePreview = notification.type == 'new_like' ||
           notification.type == 'new_comment' ||
+          notification.type == 'comment_reply' ||
           notification.type == 'comment_like' ||
           notification.type == 'post_private';
       if (canHavePreview && postId is String && postId.isNotEmpty) {
@@ -715,6 +725,19 @@ class _NotificationScreenState extends State<NotificationScreen> {
           icon: Icon(Icons.arrow_back, color: onSurface),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          if (_isLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 14),
+              child: Center(
+                child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+        ],
         title: Text(
           AppLocalizations.of(context)!.notification,
           style: const TextStyle(

@@ -72,10 +72,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sendResetEmailConfirm => '비밀번호 재설정 이메일을 보내시겠습니까?';
 
   @override
-  String get board => '게시글';
+  String get board => '포스트';
 
   @override
-  String get meetup => '모임';
+  String get meetup => '밋업';
 
   @override
   String get myPage => '내 정보';
@@ -183,6 +183,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get searchByName => '친구 이름으로 검색';
 
   @override
+  String get todayMeetupsSectionTitle => '오늘의 밋업';
+
+  @override
+  String get todayPostsSectionTitle => '오늘의 포스트';
+
+  @override
+  String get todayNoMeetups => '오늘 올라온 밋업이 없어요.';
+
+  @override
+  String get todayNoPosts => '오늘 올라온 포스트가 없어요.';
+
+  @override
   String get loading => '로딩 중...';
 
   @override
@@ -243,43 +255,49 @@ class AppLocalizationsKo extends AppLocalizations {
   String get author => '글쓴이';
 
   @override
-  String get post => '게시글';
+  String get post => '포스트';
 
   @override
-  String get posts => '게시글';
+  String get posts => '포스트';
 
   @override
-  String get createPost => '게시글 작성';
+  String get createPost => '포스트 작성';
 
   @override
-  String get newPost => '새 게시글 작성';
+  String get newPost => '새 포스트 작성';
 
   @override
-  String get newPostCreation => '새 게시글 작성';
+  String get newPostCreation => '새 포스트 작성';
 
   @override
-  String get editPost => '게시글 수정';
+  String get editPost => '포스트 수정';
 
   @override
-  String get deletePost => '게시글 삭제';
+  String get deletePost => '포스트 삭제';
 
   @override
-  String get postDetail => '게시글 상세';
+  String get postDetail => '포스트 상세';
 
   @override
   String get writePost => '글 작성하기';
 
   @override
-  String get postCreated => '게시글이 등록되었습니다.';
+  String get postCreated => '포스트가 등록되었습니다.';
 
   @override
-  String get postCreateFailed => '게시글 등록에 실패했습니다. 다시 시도해주세요.';
+  String get postCreateFailed => '포스트 등록에 실패했습니다. 다시 시도해주세요.';
 
   @override
-  String get postDeleted => '게시글이 삭제되었습니다.';
+  String get postUpdated => '포스트가 수정되었습니다.';
 
   @override
-  String get postDeleteFailed => '게시글 삭제에 실패했습니다.';
+  String get postUpdateFailed => '포스트 수정에 실패했습니다. 다시 시도해주세요.';
+
+  @override
+  String get postDeleted => '포스트가 삭제되었습니다.';
+
+  @override
+  String get postDeleteFailed => '포스트 삭제에 실패했습니다.';
 
   @override
   String get title => '제목';
@@ -333,7 +351,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get troubleshoot => '문제 해결하기';
 
   @override
-  String get noPostsYet => '등록된 게시글이 없습니다';
+  String get noPostsYet => '등록된 포스트가 없습니다';
 
   @override
   String get like => '좋아요';
@@ -516,7 +534,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get study => '스터디';
 
   @override
-  String get meal => '식사';
+  String get meal => '밥';
 
   @override
   String get hobby => '카페';
@@ -564,7 +582,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get profileImage => '프로필 이미지';
 
   @override
-  String get myPosts => '내 게시글';
+  String get myPosts => '내 포스트';
 
   @override
   String get myMeetups => '내 모임';
@@ -670,7 +688,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get selectedGroupOnly => '선택한 그룹의 친구들만 이 모임을 볼 수 있습니다';
 
   @override
-  String get selectedGroupOnlyPost => '선택한 그룹의 친구들만 이 게시글을 볼 수 있습니다';
+  String get selectedGroupOnlyPost => '선택한 그룹의 친구들만 이 포스트를 볼 수 있습니다';
 
   @override
   String get selectedFriendGroupOnly => '선택한 친구 그룹만';
@@ -706,7 +724,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get newHighlight => '새 하이라이트';
 
   @override
-  String get updateAllPosts => '모든 게시글 업데이트';
+  String get updateAllPosts => '모든 포스트 업데이트';
 
   @override
   String get update => '수정하기';
@@ -959,19 +977,19 @@ class AppLocalizationsKo extends AppLocalizations {
   String get tapToChangeImage => '탭하여 이미지 변경';
 
   @override
-  String get applyProfileToAllPosts => '모든 게시글에 프로필 반영';
+  String get applyProfileToAllPosts => '모든 포스트에 프로필 반영';
 
   @override
   String get updating => '업데이트 중...';
 
   @override
-  String get postSaved => '게시글이 저장되었습니다';
+  String get postSaved => '포스트가 저장되었습니다';
 
   @override
-  String get postUnsaved => '게시글 저장이 취소되었습니다';
+  String get postUnsaved => '포스트 저장이 취소되었습니다';
 
   @override
-  String get deletePostConfirm => '정말 이 게시글을 삭제하시겠습니까?';
+  String get deletePostConfirm => '정말 이 포스트를 삭제하시겠습니까?';
 
   @override
   String get commentSubmitFailed => '댓글 등록에 실패했습니다.';
@@ -983,7 +1001,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get unsave => '저장 취소';
 
   @override
-  String get savePost => '게시글 저장';
+  String get savePost => '포스트 저장';
 
   @override
   String get deleteComment => '댓글 삭제';
@@ -1408,15 +1426,23 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String newCommentMessage(String commenterName, String postTitle) {
-    return '$commenterName님이 회원님의 게시글 \"$postTitle\"에 댓글을 남겼습니다.';
+    return '$commenterName님이 회원님의 포스트 \"$postTitle\"에 댓글을 남겼습니다.';
   }
 
   @override
-  String get newLikeAdded => '게시글에 좋아요가 추가되었습니다';
+  String newReplyToCommentMessage(String replierName) {
+    return '$replierName님이 회원님의 댓글에 답글을 남겼습니다.';
+  }
+
+  @override
+  String get newReplyToCommentAnonymousMessage => '회원님의 댓글에 새 답글이 달렸습니다.';
+
+  @override
+  String get newLikeAdded => '포스트에 좋아요가 추가되었습니다';
 
   @override
   String newLikeMessage(String likerName, String postTitle) {
-    return '$likerName님이 회원님의 게시글 \"$postTitle\"을 좋아합니다.';
+    return '$likerName님이 회원님의 포스트 \"$postTitle\"을 좋아합니다.';
   }
 
   @override
@@ -1581,7 +1607,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meetupNotifications => '모임 알림';
 
   @override
-  String get postNotifications => '게시글 알림';
+  String get postNotifications => '포스트 알림';
 
   @override
   String get generalSettings => '전체 설정';
@@ -1590,10 +1616,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get friendNotifications => '친구 알림';
 
   @override
-  String get privatePostAlertTitle => '비공개 게시글 알림';
+  String get privatePostAlertTitle => '비공개 포스트 알림';
 
   @override
-  String get privatePostAlertSubtitle => '허용된 사용자에게만 공개된 게시글 알림';
+  String get privatePostAlertSubtitle => '허용된 사용자에게만 공개된 포스트 알림';
 
   @override
   String get meetupFullAlertTitle => '모임 정원 마감 알림';
@@ -1617,13 +1643,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get commentAlertTitle => '댓글 알림';
 
   @override
-  String get commentAlertSubtitle => '내 게시글에 댓글이 작성되면 알림';
+  String get commentAlertSubtitle => '내 포스트에 댓글이 작성되면 알림';
 
   @override
   String get likeAlertTitle => '좋아요 알림';
 
   @override
-  String get likeAlertSubtitle => '내 게시글에 좋아요가 추가되면 알림';
+  String get likeAlertSubtitle => '내 포스트에 좋아요가 추가되면 알림';
 
   @override
   String get allNotifications => '모든 알림';
@@ -1664,11 +1690,11 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String totalPostsCount(int count) {
-    return '총 $count개의 게시글';
+    return '총 $count개의 포스트';
   }
 
   @override
-  String get noWrittenPosts => '작성한 게시글이 없습니다';
+  String get noWrittenPosts => '작성한 포스트가 없습니다';
 
   @override
   String get notificationDataMissing => '알림 정보가 누락되었습니다';
@@ -1677,7 +1703,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meetupNotFound => '해당 모임을 찾을 수 없습니다';
 
   @override
-  String get postNotFound => '해당 게시글을 찾을 수 없습니다';
+  String get postNotFound => '해당 포스트를 찾을 수 없습니다';
 
   @override
   String get commentLikeFailed => '좋아요 업데이트에 실패했습니다';
@@ -2102,7 +2128,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get deleteDataNotice => '삭제될 데이터 안내';
 
   @override
-  String get postDeleteTip => '💡 게시글을 삭제하고 싶다면? 탈퇴하기 전에 \"내 게시글 관리\"에서 삭제하세요!';
+  String get postDeleteTip => '💡 포스트를 삭제하고 싶다면? 탈퇴하기 전에 \"내 포스트 관리\"에서 삭제하세요!';
 
   @override
   String get finalWarning => '최종 경고';
@@ -2123,13 +2149,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get reRegistrationRequired => '❌ 재가입 필요';
 
   @override
-  String get postsAnonymized => '✅ 게시글 익명 처리';
+  String get postsAnonymized => '✅ 포스트 익명 처리';
 
   @override
   String get deleteReasonLabel => '탈퇴 사유';
 
   @override
-  String get postsAnonymizedAutomatic => '게시글: 익명 처리 (자동)';
+  String get postsAnonymizedAutomatic => '포스트: 익명 처리 (자동)';
 
   @override
   String get deletionFailed => '삭제 실패';
@@ -2164,7 +2190,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get deleteConfirmationMessage =>
-      '이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 게시글은 \"탈퇴한 사용자\"로 표시됩니다.';
+      '이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 포스트는 \"탈퇴한 사용자\"로 표시됩니다.';
 
   @override
   String get accountDeleted => '계정이 삭제되었습니다';
@@ -2179,10 +2205,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meetups => '모임 (주최한 모임 삭제, 참여 중인 모임에서 자동 탈퇴)';
 
   @override
-  String get uploadedFiles => '업로드한 파일 (프로필 사진, 게시글 이미지, 모든 업로드 파일)';
+  String get uploadedFiles => '업로드한 파일 (프로필 사진, 포스트 이미지, 모든 업로드 파일)';
 
   @override
-  String get postsAndComments => '게시글 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)';
+  String get postsAndComments => '포스트 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)';
 
   @override
   String get imageDisplayIssueDetected => '이미지 표시 문제 감지';
@@ -2625,7 +2651,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get meetupCreateFailed => '모임 생성에 실패했습니다. 다시 시도해주세요.';
 
   @override
-  String get postTypeSectionTitle => '게시글 유형';
+  String get postTypeSectionTitle => '포스트 유형';
 
   @override
   String get postTypeTextLabel => '일반';
@@ -2691,6 +2717,6 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String totalImageSizeWarning(String sizeMB) {
-    return '경고: 총 이미지 크기가 ${sizeMB}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.';
+    return '경고: 총 이미지 크기가 ${sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.';
   }
 }

@@ -25,7 +25,6 @@ import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/nickname_setup_screen.dart';
-import 'screens/hanyang_email_verification_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';

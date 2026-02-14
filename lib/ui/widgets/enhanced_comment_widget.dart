@@ -575,7 +575,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       fontFamily: 'Pretendard',
       fontSize: 13,
       fontWeight: FontWeight.w700,
-      color: Color(0xFF6366F1),
+      // ✅ 대댓글 @멘션은 본문보다 살짝 옅게(회색 톤) 표시
+      color: Color(0xFF9CA3AF),
       height: 1.5,
     );
 

@@ -346,7 +346,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       case 0:
         return isKo ? '이름' : 'Name';
       case 1:
-        return isKo ? '게시글' : 'Posts';
+        return isKo ? '포스트' : 'Posts';
       case 2:
         return isKo ? '모임' : 'Meetups';
       default:
@@ -600,8 +600,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: isKo ? '게시글을 검색해보세요' : 'Search posts',
-        subtitle: isKo ? '제목/내용/작성자 기준으로\n게시글을 찾아볼 수 있어요' : 'Search by title/content/author',
+        title: isKo ? '포스트를 검색해보세요' : 'Search posts',
+        subtitle: isKo
+            ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요'
+            : 'Search by title/content',
       );
     }
 

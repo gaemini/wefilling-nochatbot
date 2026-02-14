@@ -18,11 +18,13 @@ import '../constants/app_constants.dart';
 import 'edit_meetup_screen.dart';
 import 'create_meetup_review_screen.dart';
 import 'review_approval_screen.dart';
-import 'package:flutter_linkify/flutter_linkify.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:linkify/linkify.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../utils/category_label_utils.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
+// NOTE: 단체 톡방(확성기) 기능 제거됨
 
 class MeetupDetailScreen extends StatefulWidget {
   final Meetup meetup;
@@ -45,7 +47,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
   bool _isLoading = false;
   bool _isHost = false;
   bool _isParticipant = false; // 현재 사용자가 승인된 참여자인지
-  bool _showAllParticipants = false; // 참여자 목록 펼치기/접기 (관리 페이지 제거)
+  // 참여자 목록은 항상 전체 노출 (접기/펼치기 제거)
   late Meetup _currentMeetup;
   List<MeetupParticipant> _participants = [];
   bool _isLoadingParticipants = true;
@@ -112,6 +114,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
+  // NOTE: 단체 톡방(확성기) 기능 제거됨 (2026-02)
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -505,6 +509,14 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                       letterSpacing: -0.5,
                     ),
                   ),
+
+                  // ✅ 이미지가 있으면 제목 바로 아래에 표시
+                  if (_currentMeetup.imageUrls.isNotEmpty ||
+                      _currentMeetup.imageUrl.isNotEmpty ||
+                      _currentMeetup.thumbnailImageUrl.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _buildMeetupImage(),
+                  ],
                   
                   const SizedBox(height: 28),
                   
@@ -573,26 +585,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   ),
                   
                   // 모임 설명 내용
-                        Linkify(
-                          onOpen: (link) async {
-                            final uri = Uri.parse(link.url);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(
-                                uri,
-                                mode: LaunchMode.externalApplication,
-                              );
-                            } else {
-                              if (mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
-                                  ),
-                                );
-                              }
-                            }
-                          },
-                          text: _currentMeetup.description,
-                    style: const TextStyle(
+                        _buildPrettyLinkText(
+                          _currentMeetup.description,
+                          style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       height: 1.6,
@@ -621,14 +616,6 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
                   // 참여자 목록
                   _buildParticipantsSection(),
-                  
-                  // 모임 이미지 (실제 첨부 이미지가 있는 경우에만 표시)
-                  if (_currentMeetup.imageUrls.isNotEmpty ||
-                      _currentMeetup.imageUrl.isNotEmpty ||
-                      _currentMeetup.thumbnailImageUrl.isNotEmpty) ...[
-                    const SizedBox(height: 32),
-                    _buildMeetupImage(),
-                  ],
                   
                   // 하단 여백
                   const SizedBox(height: 24),
@@ -661,6 +648,107 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     );
   }
 
+  String _displayUrlLabel(String rawUrl) {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return url;
+
+    Uri? uri;
+    try {
+      uri = Uri.parse(url);
+    } catch (_) {
+      return url;
+    }
+
+    final host = (uri.host.isNotEmpty ? uri.host : '').replaceFirst(RegExp(r'^www\.'), '');
+    final segments = uri.pathSegments.where((s) => s.trim().isNotEmpty).toList(growable: false);
+
+    if (host.isEmpty) {
+      // host가 없는(스킴 없는) 케이스는 안전하게 일부만 표시
+      return url.length <= 42 ? url : '${url.substring(0, 39)}...';
+    }
+
+    if (segments.isEmpty) return host;
+
+    final last = segments.last;
+    final label = '$host/$last';
+    return label.length <= 42 ? label : '${label.substring(0, 39)}...';
+  }
+
+  Future<void> _openExternalLink(String rawUrl) async {
+    final url = rawUrl.trim();
+    if (url.isEmpty) return;
+
+    Uri uri;
+    try {
+      uri = Uri.parse(url);
+      // 스킴이 없으면 https로 보정 (일부 URL 감지 케이스 대응)
+      if (uri.scheme.isEmpty) {
+        uri = Uri.parse('https://$url');
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${AppLocalizations.of(context)!.error}: URL 형식이 올바르지 않습니다'),
+        ),
+      );
+      return;
+    }
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      return;
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
+      ),
+    );
+  }
+
+  /// URL은 그대로 열고, 화면에는 짧은 라벨로 표시하는 링크 텍스트
+  Widget _buildPrettyLinkText(
+    String text, {
+    required TextStyle style,
+    required TextStyle linkStyle,
+    int? maxLines,
+    TextOverflow overflow = TextOverflow.clip,
+  }) {
+    final elements = linkify(
+      text,
+      options: const LinkifyOptions(humanize: false),
+      linkifiers: const [UrlLinkifier(), EmailLinkifier()],
+    );
+
+    return RichText(
+      maxLines: maxLines,
+      overflow: overflow,
+      text: TextSpan(
+        style: style,
+        children: [
+          for (final e in elements)
+            if (e is LinkableElement)
+              WidgetSpan(
+                alignment: PlaceholderAlignment.baseline,
+                baseline: TextBaseline.alphabetic,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _openExternalLink(e.url),
+                  child: Text(
+                    e is UrlElement ? _displayUrlLabel(e.url) : e.text,
+                    style: linkStyle,
+                  ),
+                ),
+              )
+            else
+              TextSpan(text: e.text),
+        ],
+      ),
+    );
+  }
+
   // 새로운 심플한 정보 행 위젯
   Widget _buildSimpleInfoRow(IconData icon, String content) {
     return Row(
@@ -673,23 +761,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Linkify(
-            onOpen: (link) async {
-              final uri = Uri.parse(link.url);
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              } else {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('링크를 열 수 없습니다: ${link.url}'),
-                      backgroundColor: Colors.red[600],
-                    ),
-                  );
-                }
-              }
-            },
-            text: content,
+          child: _buildPrettyLinkText(
+            content,
             style: const TextStyle(
               fontFamily: 'Pretendard',
               fontSize: 18,
@@ -701,7 +774,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               color: AppColors.pointColor,
               decoration: TextDecoration.underline,
             ),
-            options: const LinkifyOptions(humanize: false),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -750,25 +824,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                 const SizedBox(height: 4),
                 if (hasUrl)
                   // URL이 있으면 Linkify 사용
-                  Linkify(
-                    onOpen: (link) async {
-                      final uri = Uri.parse(link.url);
-                      if (await canLaunchUrl(uri)) {
-                        await launchUrl(
-                          uri,
-                          mode: LaunchMode.externalApplication,
-                        );
-                      } else {
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('${AppLocalizations.of(context)!.error}: URL을 열 수 없습니다'),
-                            ),
-                          );
-                        }
-                      }
-                    },
-                    text: content,
+                  _buildPrettyLinkText(
+                    content,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 15,
@@ -822,14 +879,21 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   // 카테고리별 색상 반환 메서드
   Color _getCategoryColor(String category) {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return Colors.blue;
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return Colors.orange;
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return Colors.green;
       case '문화':
+      case 'culture':
         return Colors.purple;
       default:
         return Colors.grey;
@@ -1070,7 +1134,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             ),
             const SizedBox(height: 12),
             Text(
-              _currentMeetup.category,
+              localizedCategoryLabel(context, _currentMeetup.category),
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
@@ -1106,25 +1170,26 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     final isCompleted = _currentMeetup.isCompleted;
     final hasReview = _currentMeetup.hasReview;
       final canEdit = !isCompleted && !hasReview;
-      
-      if (canEdit) {
-        return IconButton(
-          onPressed: () => _showEditMeetup(),
-          icon: const Icon(
-            Icons.edit_outlined,
-            size: DesignTokens.icon,
-            color: Colors.black,
-          ),
-          padding: EdgeInsets.zero,
-          constraints: const BoxConstraints(),
-        );
-      } else {
-        // 수정할 수 없는 상태에서는 아무것도 표시하지 않음
-        return const SizedBox.shrink();
-      }
+
+      final editBtn = canEdit
+          ? IconButton(
+              onPressed: () => _showEditMeetup(),
+              icon: const Icon(
+                Icons.edit_outlined,
+                size: DesignTokens.icon,
+                color: Colors.black,
+              ),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            )
+          : const SizedBox.shrink();
+
+      // 둘 중 하나라도 있으면 Row로 묶어서 액션 영역에 배치
+      if (canEdit) return editBtn;
+      return const SizedBox.shrink();
     } else if (currentUser != null) {
       // 다른 사용자 모임인 경우: 항상 신고/차단 케밥 메뉴 표시
-      return PopupMenuButton<String>(
+      final kebab = PopupMenuButton<String>(
         icon: const Icon(
           Icons.more_vert,
           size: DesignTokens.icon,
@@ -1205,6 +1270,8 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         ],
         onSelected: (value) => _handleUserMenuAction(value),
       );
+
+      return kebab;
     }
     
     return const SizedBox.shrink();
@@ -3036,38 +3103,13 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   )
                 : Column(
                     children: [
-                      // 참여자 목록 (관리 페이지 제거: 상세에서 펼치기/접기로 모두 확인)
-                      ...(((_showAllParticipants || displayParticipants.length <= 3)
-                              ? displayParticipants
-                              : displayParticipants.take(3))
-                          .map((participant) {
+                      // 참여자 목록: 항상 전체 노출
+                      ...displayParticipants.map((participant) {
                         return Padding(
                           padding: const EdgeInsets.only(bottom: 16),
                           child: _buildSimpleParticipantItem(participant),
                         );
-                      }).toList()),
-                      
-                      // 펼치기/접기 (새 페이지 이동 제거)
-                      if (displayParticipants.length > 3)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: TextButton(
-                            onPressed: () {
-                              setState(() {
-                                _showAllParticipants = !_showAllParticipants;
-                              });
-                            },
-                            child: Text(
-                              _showAllParticipants ? '접기' : '모두 보기',
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.pointColor,
-                              ),
-                            ),
-                          ),
-                        ),
+                      }),
             ],
           ),
       ],

@@ -105,20 +105,45 @@ class BlockedUser {
 
 // 신고 사유 상수
 class ReportReasons {
-  static const String spam = '스팸/광고';
-  static const String inappropriate = '부적절한 콘텐츠';
-  static const String harassment = '괴롭힘/욕설';
-  static const String falseInfo = '허위 정보';
-  static const String copyright = '저작권 침해';
-  static const String other = '기타';
+  // 한국어(기존 호환)
+  static const String spamKo = '스팸/광고';
+  static const String inappropriateKo = '부적절한 콘텐츠';
+  static const String harassmentKo = '괴롭힘/욕설';
+  static const String falseInfoKo = '허위 정보';
+  static const String copyrightKo = '저작권 침해';
+  static const String otherKo = '기타';
 
-  static const List<String> allReasons = [
-    spam,
-    inappropriate,
-    harassment,
-    falseInfo,
-    copyright,
-    other,
+  // 영어
+  static const String spamEn = 'Spam/Ads';
+  static const String inappropriateEn = 'Inappropriate content';
+  static const String harassmentEn = 'Harassment/Abuse';
+  static const String falseInfoEn = 'False information';
+  static const String copyrightEn = 'Copyright infringement';
+  static const String otherEn = 'Other';
+
+  static const List<String> allReasonsKo = [
+    spamKo,
+    inappropriateKo,
+    harassmentKo,
+    falseInfoKo,
+    copyrightKo,
+    otherKo,
   ];
+
+  static const List<String> allReasonsEn = [
+    spamEn,
+    inappropriateEn,
+    harassmentEn,
+    falseInfoEn,
+    copyrightEn,
+    otherEn,
+  ];
+
+  /// 기존 코드 호환을 위해 유지 (기본: 한국어)
+  static const List<String> allReasons = allReasonsKo;
+
+  static List<String> allReasonsForLanguageCode(String languageCode) {
+    return languageCode.toLowerCase() == 'ko' ? allReasonsKo : allReasonsEn;
+  }
 }
 

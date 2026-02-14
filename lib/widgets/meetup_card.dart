@@ -10,6 +10,7 @@ import '../screens/meetup_detail_screen.dart';
 import '../ui/widgets/glassmorphism_container.dart';
 import '../services/meetup_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../utils/category_label_utils.dart';
 
 class MeetupCard extends StatelessWidget {
   final Meetup meetup;
@@ -19,6 +20,8 @@ class MeetupCard extends StatelessWidget {
   
   /// 2024-2025 트렌드: Glassmorphism 스타일 사용 여부
   final bool useGlassmorphism;
+
+  static const Color _categoryTextDarkBlue = Color(0xFF0B1F5B);
 
   const MeetupCard({
     Key? key,
@@ -54,14 +57,21 @@ class MeetupCard extends StatelessWidget {
 
   // 2024-2025 트렌드: Modern vibrant category colors
   Color _getCategoryColor(String category) {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return AppTheme.primary; // Modern indigo
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return AppTheme.accentAmber; // Vibrant amber
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return AppTheme.accentEmerald; // Vibrant emerald
       case '문화':
+      case 'culture':
         return AppTheme.secondary; // Modern pink
       default:
         return AppTheme.primary;
@@ -70,14 +80,21 @@ class MeetupCard extends StatelessWidget {
 
   // 2024-2025 트렌드: Category gradient
   LinearGradient _getCategoryGradient(String category) {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return AppTheme.primaryGradient;
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return AppTheme.amberGradient;
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return AppTheme.emeraldGradient;
       case '문화':
+      case 'culture':
         return AppTheme.secondaryGradient;
       default:
         return AppTheme.primaryGradient;
@@ -86,14 +103,21 @@ class MeetupCard extends StatelessWidget {
 
   // 글래스모피즘 스타일 선택
   String _getGlassmorphismStyle(String category) {
-    switch (category) {
+    switch (category.trim().toLowerCase()) {
       case '스터디':
+      case 'study':
         return 'primary';
       case '식사':
+      case 'meal':
+      case 'food':
+      case '밥':
         return 'default'; // Amber는 아직 glassmorphism variant 없음
       case '카페':
+      case 'cafe':
+      case 'hobby':
         return 'emerald';
       case '문화':
+      case 'culture':
         return 'secondary';
       default:
         return 'primary';
@@ -330,10 +354,11 @@ class MeetupCard extends StatelessWidget {
                         ),
                       ),
                       child: Text(
-                        meetup.category,
+                        localizedCategoryLabel(context, meetup.category),
                         style: TextStyle(
                           fontSize: 12,
-                          color: _getCategoryColor(meetup.category),
+                          // 카테고리 배지 텍스트는 "아주 진한 파란색"으로 고정
+                          color: _categoryTextDarkBlue,
                           fontWeight: FontWeight.w500,
                         ),
                       ),

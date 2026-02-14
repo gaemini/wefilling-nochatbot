@@ -75,7 +75,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sendResetEmailConfirm => 'Send password reset email?';
 
   @override
-  String get board => 'Board';
+  String get board => 'Posts';
 
   @override
   String get meetup => 'Meetup';
@@ -187,6 +187,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchByName => 'Search by friend name';
 
   @override
+  String get todayMeetupsSectionTitle => 'Today\'s Meetups';
+
+  @override
+  String get todayPostsSectionTitle => 'Today\'s Posts';
+
+  @override
+  String get todayNoMeetups => 'No meetups posted today.';
+
+  @override
+  String get todayNoPosts => 'No posts yet today.';
+
+  @override
   String get loading => 'Loading...';
 
   @override
@@ -278,6 +290,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get postCreateFailed => 'Failed to create post. Please try again.';
+
+  @override
+  String get postUpdated => 'Post has been updated.';
+
+  @override
+  String get postUpdateFailed => 'Failed to update post. Please try again.';
 
   @override
   String get postDeleted => 'Post deleted.';
@@ -827,11 +845,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get timeSelection => 'Time Selection';
 
   @override
-  String get undecided => 'Undecided';
+  String get undecided => 'TBD';
 
   @override
   String get todayTimePassed =>
-      'Today\'s time has passed. Create a meetup as \'Undecided\' or select another date.';
+      'Today\'s time has passed. Create a meetup as \'TBD\' or select another date.';
 
   @override
   String get people => ' people';
@@ -1437,6 +1455,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String newCommentMessage(String commenterName, String postTitle) {
     return '$commenterName commented on your post \"$postTitle\".';
   }
+
+  @override
+  String newReplyToCommentMessage(String replierName) {
+    return '$replierName replied to your comment.';
+  }
+
+  @override
+  String get newReplyToCommentAnonymousMessage =>
+      'A new reply was added to your comment.';
 
   @override
   String get newLikeAdded => 'New Like';

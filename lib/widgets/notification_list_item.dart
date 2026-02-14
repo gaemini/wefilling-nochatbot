@@ -215,7 +215,7 @@ class NotificationListItem extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(10),
           child: Image.asset(
-            'assets/icons/app_logo.png',
+            'assets/icons/app_logo_transparent.png',
             fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => Icon(
               Icons.notifications,
@@ -336,6 +336,7 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'review_like':
       return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFFEF4444));
     case 'new_comment':
+    case 'comment_reply':
       // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조
       return const _BadgeSpec(icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'review_comment':

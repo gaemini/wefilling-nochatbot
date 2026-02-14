@@ -119,7 +119,7 @@ class CommentService {
 
       // 게시글 정보 가져오기 (게시글 또는 리뷰 모두 지원)
       String? targetAuthorId;
-      String notificationTitle = '게시글';
+      String notificationTitle = '포스트';
       String? thumbnailUrl;
       String _previewText(String raw, {int max = 40}) {
         final t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -136,7 +136,7 @@ class CommentService {
               ? rawTitle.trim()
               : (_previewText(rawContent).isNotEmpty
                   ? _previewText(rawContent)
-                  : '게시글');
+                  : '포스트');
           targetAuthorId = postData['userId'];
           final raw = postData['imageUrls'];
           if (raw is List && raw.isNotEmpty) {

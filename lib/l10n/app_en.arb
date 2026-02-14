@@ -21,7 +21,7 @@
   "verificationEmailSent": "Verification email sent. Please check your inbox.",
   "resetEmailSent": "Password reset email has been sent.",
   "sendResetEmailConfirm": "Send password reset email?",
-  "board": "Board",
+  "board": "Posts",
   "meetup": "Meetup",
   "myPage": "My Page",
   "home": "Home",
@@ -58,6 +58,10 @@
   "searchMeetups": "Search Meetups",
   "searching": "Search",
   "searchByName": "Search by friend name",
+  "todayMeetupsSectionTitle": "Today's Meetups",
+  "todayPostsSectionTitle": "Today's Posts",
+  "todayNoMeetups": "No meetups posted today.",
+  "todayNoPosts": "No posts yet today.",
   "loading": "Loading...",
   "error": "An error occurred",
   "success": "Success",
@@ -89,6 +93,8 @@
   "writePost": "Write Post",
   "postCreated": "Post has been created.",
   "postCreateFailed": "Failed to create post. Please try again.",
+  "postUpdated": "Post has been updated.",
+  "postUpdateFailed": "Failed to update post. Please try again.",
   "postDeleted": "Post has been deleted.",
   "postDeleteFailed": "Failed to delete post.",
   "title": "Title",
@@ -271,8 +277,8 @@
   "enterMeetupLocation": "Enter meetup location",
   "pleaseEnterLocation": "Please enter location",
   "timeSelection": "Time Selection",
-  "undecided": "Undecided",
-  "todayTimePassed": "Today's time has passed. Create a meetup as 'Undecided' or select another date.",
+  "undecided": "TBD",
+  "todayTimePassed": "Today's time has passed. Create a meetup as 'TBD' or select another date.",
   "maxParticipants": "Max Participants",
   "people": " people",
   "selectFriendGroupsForMeetup": "Select friend groups who can see this meetup",
@@ -591,6 +597,15 @@
       }
     }
   },
+  "newReplyToCommentMessage": "{replierName} replied to your comment.",
+  "@newReplyToCommentMessage": {
+    "placeholders": {
+      "replierName": {
+        "type": "String"
+      }
+    }
+  },
+  "newReplyToCommentAnonymousMessage": "A new reply was added to your comment.",
   "newLikeAdded": "New Like",
   "newLikeMessage": "{likerName} liked your post \"{postTitle}\".",
   "newParticipantJoined": "New Participant",
@@ -975,7 +990,7 @@
   "comments": "Comments",
   "beFirstToComment": "Be the first to comment!",
   "enterComment": "Enter comment...",
-  "board": "Board",
+  "board": "Posts",
   "notification": "Notification",
   "messageFrom": "Message from {user}",
   "daysAgo": "{count, plural, =1{{count}d ago} other{{count}d ago}}",
@@ -1036,7 +1051,7 @@
   "time": "Time",
   "location": "Location",
   "editMeetupButton": "Edit Meetup",
-  "undecided": "Undecided",
+  "undecided": "TBD",
   "pleaseEnterTime": "Please enter time",
   "pleaseEnterLocation": "Please enter location",
   "anonymousDescription": "Connect with anonymous authors from the board.",

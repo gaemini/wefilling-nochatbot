@@ -214,7 +214,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         });
       }
     } catch (e) {
-      Logger.error('게시글 본문 미리 로드 실패: $e');
+      Logger.error('포스트 본문 미리 로드 실패: $e');
     }
   }
 
@@ -1916,7 +1916,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
                       const SizedBox(width: 6),
                       Expanded(
                         child: Text(
-                          isKo ? '게시글에서 보낸 메시지' : 'Sent from a post',
+                          isKo ? '포스트에서 보낸 메시지' : 'Sent from a post',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -2771,7 +2771,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           Expanded(
             child: Text(
               Localizations.localeOf(context).languageCode == 'ko'
-                  ? '이 대화는 게시글에서 시작되었습니다'
+                  ? '이 대화는 포스트에서 시작되었습니다'
                   : 'This conversation started from a post',
               style: TextStyle(
                 color: Colors.blue.shade700,
@@ -2790,7 +2790,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             ),
             child: Text(
               Localizations.localeOf(context).languageCode == 'ko'
-                  ? '게시글 보기'
+                  ? '포스트 보기'
                   : 'View Post',
               style: const TextStyle(
                 fontSize: 14,
@@ -2821,7 +2821,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
             SnackBar(
               content: Text(
                 Localizations.localeOf(context).languageCode == 'ko'
-                    ? '게시글을 찾을 수 없습니다'
+                    ? '포스트를 찾을 수 없습니다'
                     : 'Post not found'
               )
             ),
@@ -2829,13 +2829,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
         }
       }
     } catch (e) {
-      Logger.error('게시글 로드 오류: $e');
+      Logger.error('포스트 로드 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               Localizations.localeOf(context).languageCode == 'ko'
-                  ? '게시글을 불러오는 중 오류가 발생했습니다'
+                  ? '포스트를 불러오는 중 오류가 발생했습니다'
                   : 'An error occurred while loading the post'
             )
           ),

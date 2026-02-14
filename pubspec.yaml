@@ -2,7 +2,7 @@ name: wefilling
 description: "함께하면 즐거운 대학 생활 - 위필링"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.4+16
+version: 1.0.5+17
 
 environment:
   sdk: ^3.6.0

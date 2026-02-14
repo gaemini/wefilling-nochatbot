@@ -337,6 +337,23 @@ service cloud.firestore {
           && resource.data.userId != 'deleted'
           && request.auth.uid == resource.data.userId;
       }
+
+      // NOTE: 단체 톡방(확성기) 기능 제거됨 (2026-02)
+      // - 기존 경로 접근 전면 차단
+      match /group_chat_messages/{messageId} {
+        allow read, write: if false;
+      }
+      match /group_chat_members/{memberId} {
+        allow read, write: if false;
+      }
+    }
+
+    // NOTE: "meetup_chats" 기반 단체 톡방 기능 제거됨 (2026-02)
+    match /meetup_chats/{meetupId} {
+      allow read, write: if false;
+      match /messages/{messageId} {
+        allow read, write: if false;
+      }
     }
     
     // ===== 모임 후기 컬렉션 =====

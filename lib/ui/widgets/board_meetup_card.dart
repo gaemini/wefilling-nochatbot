@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../constants/app_constants.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/meetup.dart';
 
 /// 게시글(Today)에서만 사용하는 **간단한 모임 카드**.
@@ -18,29 +19,15 @@ class BoardMeetupCard extends StatelessWidget {
     this.currentParticipants,
   });
 
-  String _startTimeLabel(String raw) {
+  String _startTimeLabel(BuildContext context, String raw) {
+    final l10n = AppLocalizations.of(context);
+    final undecided = l10n?.undecided ?? '미정';
     final t = raw.trim();
-    if (t.isEmpty) return '미정';
-    if (t == '미정') return '미정';
+    if (t.isEmpty) return undecided;
+    // 레거시/로컬라이즈 값 모두 "미정"으로 통일 표기
+    if (t == '미정' || t == 'Undecided' || t == 'TBD') return undecided;
     if (!t.contains(':')) return t; // 예: "오후 2시" 같은 포맷도 그대로
     return t.split('~').first.trim();
-  }
-
-  Color _categoryColor(String category) {
-    switch (category) {
-      case '스터디':
-        return const Color(0xFF4F46E5); // indigo
-      case '식사':
-        return const Color(0xFFEA580C); // orange
-      case '카페':
-        return const Color(0xFF0EA5E9); // sky
-      case '술':
-        return const Color(0xFFEF4444); // red
-      case '문화':
-        return const Color(0xFFEC4899); // pink
-      default:
-        return AppColors.pointColor;
-    }
   }
 
   String _dateLabel(BuildContext context, DateTime date) {
@@ -70,9 +57,9 @@ class BoardMeetupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final participants = currentParticipants ?? meetup.currentParticipants;
-    final timeLabel = _startTimeLabel(meetup.time);
-    final isTimeUndecided = timeLabel == '미정' || timeLabel.trim().isEmpty;
-    final categoryColor = _categoryColor(meetup.category);
+    final timeLabel = _startTimeLabel(context, meetup.time);
+    final undecidedLabel = AppLocalizations.of(context)?.undecided ?? '미정';
+    final isTimeUndecided = timeLabel == undecidedLabel;
     final isToday = _isToday(meetup.date);
     final dateLabel =
         isToday ? 'Today' : _compactDateForCard(context, meetup.date);
@@ -124,11 +111,13 @@ class BoardMeetupCard extends StatelessWidget {
                             fit: BoxFit.scaleDown,
                             child: Text(
                               dateLabel,
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                color: Color(0xFF111827),
+                                color: isToday
+                                    ? AppColors.pointColor
+                                    : const Color(0xFF111827),
                                 height: 1.1,
                               ),
                               textAlign: TextAlign.center,
@@ -143,7 +132,9 @@ class BoardMeetupCard extends StatelessWidget {
                           timeLabel,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: isTimeUndecided ? 12 : 13,
+                            // 요구사항: 글자 크기를 줄이지 않고(고정),
+                            // 표기 자체를 짧게(TBD) 만들어 잘림을 방지한다.
+                            fontSize: 13,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF6B7280),
                             height: 1.15,
@@ -264,26 +255,6 @@ class BoardMeetupCard extends StatelessWidget {
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: categoryColor.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(
-                        color: categoryColor.withOpacity(0.32),
-                        width: 1,
-                      ),
-                    ),
-                    child: Text(
-                      meetup.category,
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                        color: categoryColor,
-                      ),
                     ),
                   ),
                 ],

@@ -69,7 +69,7 @@ class StoryCategories extends StatefulWidget {
       ),
       CategoryItem(
         id: 'food',
-        title: '식사',
+        title: '밥',
         icon: Icons.restaurant_rounded,
         gradient: AppTheme.emeraldGradient,
       ),
@@ -457,6 +457,7 @@ class CompactStoryCategories extends StatelessWidget {
       case '스터디':
         return Icons.school_rounded;
       case '식사':
+      case '밥':
         return Icons.restaurant_rounded;
       case '카페':
         return Icons.palette_rounded;

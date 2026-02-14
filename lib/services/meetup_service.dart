@@ -572,6 +572,7 @@ class MeetupService {
   // 특정 ID의 모임 가져오기
   Future<Meetup?> getMeetupById(String meetupId) async {
     try {
+      final user = _auth.currentUser;
       final doc = await _firestore.collection('meetups').doc(meetupId).get();
 
       if (!doc.exists || doc.data() == null) {
@@ -582,7 +583,7 @@ class MeetupService {
 
       final meetupDate = _parseMeetupDateFromFirestore(data);
 
-      return Meetup(
+      final meetup = Meetup(
         id: doc.id,
         title: data['title'] ?? '',
         description: data['description'] ?? '',
@@ -623,6 +624,22 @@ class MeetupService {
         viewCount: data['viewCount'] ?? 0,
         commentCount: data['commentCount'] ?? 0,
       );
+      
+      // 🔒 단건 조회에서도 공개범위/차단 필터 적용 (검색/홈과 동일 기준)
+      if (user == null) {
+        // 비로그인: 전체 공개만 허용
+        if (meetup.visibility != 'public') return null;
+        return meetup;
+      }
+
+      final visibilityFiltered = await filterMeetupsForCurrentUser([meetup]);
+      if (visibilityFiltered.isEmpty) return null;
+
+      final blockedFiltered =
+          await ContentFilterService.filterMeetups(visibilityFiltered);
+      if (blockedFiltered.isEmpty) return null;
+
+      return blockedFiltered.first;
     } catch (e) {
       Logger.error('모임 정보 불러오기 오류: $e');
       return null;
@@ -759,7 +776,7 @@ class MeetupService {
         .where('date', isGreaterThanOrEqualTo: today)
         .orderBy('date', descending: false)
         .snapshots()
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
           Logger.log('📡 [SERVICE] Firestore 스냅샷 수신: ${snapshot.docs.length}개 문서');
           
           final matchedMeetups = <Meetup>[];
@@ -804,10 +821,21 @@ class MeetupService {
                   imageUrl: data['thumbnailImageUrl'] ?? '',
                   thumbnailContent: data['thumbnailContent'] ?? '',
                   thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+                  imageUrls: (data['imageUrls'] is List)
+                      ? List<String>.from(data['imageUrls'] as List)
+                          .map((e) => e.toString())
+                          .map((s) => s.trim())
+                          .where((s) => s.isNotEmpty)
+                          .toList()
+                      : const [],
                   date: meetupDate,
                   category: data['category'] ?? '기타',
                   userId: data['userId'],
                   hostNickname: data['hostNickname'],
+                  visibility: (data['visibility'] ?? 'public').toString(),
+                  visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
+                      ? List<String>.from(data['visibleToCategoryIds'] as List)
+                      : const [],
                   isCompleted: data['isCompleted'] ?? false,
                   hasReview: data['hasReview'] ?? false,
                   reviewId: data['reviewId'],
@@ -822,8 +850,16 @@ class MeetupService {
             }
           }
           
-          Logger.log('📋 [SERVICE] 최종 검색 결과: ${matchedMeetups.length}개');
-          return matchedMeetups;
+          // 🔒 검색에서도 Home과 동일한 공개 범위 필터 적용
+          final visibilityFiltered =
+              await filterMeetupsForCurrentUser(matchedMeetups);
+
+          // 차단/차단당함 콘텐츠 제거
+          final blockedFiltered =
+              await ContentFilterService.filterMeetups(visibilityFiltered);
+
+          Logger.log('📋 [SERVICE] 최종 검색 결과: ${blockedFiltered.length}개');
+          return blockedFiltered;
         })
         .handleError((error) {
           Logger.error('❌ [SERVICE] 검색 스트림 오류: $error');
@@ -848,60 +884,84 @@ class MeetupService {
           .orderBy('date', descending: false)
           .get();
 
-      return snapshot.docs
-          .map((doc) {
-            try {
-              final data = doc.data();
+      final matched = <Meetup>[];
 
-              // 검색어와 일치하는지 확인 (제목, 설명, 위치, 호스트 닉네임)
-              final title = (data['title'] as String? ?? '').toLowerCase();
-              final description = (data['description'] as String? ?? '').toLowerCase();
-              final location = (data['location'] as String? ?? '').toLowerCase();
-              final hostNickname = (data['hostNickname'] as String? ?? '').toLowerCase();
+      for (final doc in snapshot.docs) {
+        try {
+          final data = doc.data();
 
-              if (title.contains(lowercaseQuery) ||
-                  description.contains(lowercaseQuery) ||
-                  location.contains(lowercaseQuery) ||
-                  hostNickname.contains(lowercaseQuery)) {
-                
-                // Timestamp에서 DateTime으로 변환
-                DateTime meetupDate;
-                if (data['date'] is Timestamp) {
-                  meetupDate = (data['date'] as Timestamp).toDate();
-                } else {
-                  meetupDate = DateTime.now();
-                }
+          // 검색어와 일치하는지 확인 (제목, 설명, 위치, 호스트 닉네임)
+          final title = (data['title'] as String? ?? '').toLowerCase();
+          final description =
+              (data['description'] as String? ?? '').toLowerCase();
+          final location = (data['location'] as String? ?? '').toLowerCase();
+          final hostNickname =
+              (data['hostNickname'] as String? ?? '').toLowerCase();
 
-                return Meetup(
-                  id: doc.id,
-                  title: data['title'] ?? '',
-                  description: data['description'] ?? '',
-                  location: data['location'] ?? '',
-                  time: data['time'] ?? '',
-                  maxParticipants: data['maxParticipants'] ?? 0,
-                  currentParticipants: data['currentParticipants'] ?? 1,
-                  host: data['hostNickname'] ?? '익명',
-                  hostNationality: data['hostNationality'] ?? '',
-                  imageUrl: data['thumbnailImageUrl'] ?? '',
-                  thumbnailContent: data['thumbnailContent'] ?? '',
-                  thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-                  date: meetupDate,
-                  category: data['category'] ?? '기타',
-                  userId: data['userId'], // 모임 주최자 ID 추가
-                  hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-                  viewCount: data['viewCount'] ?? 0,
-                  commentCount: data['commentCount'] ?? 0,
-                );
-              }
-              return null;
-            } catch (e) {
-              Logger.error('모임 검색 파싱 오류: $e');
-              return null;
-            }
-          })
-          .where((meetup) => meetup != null)
-          .cast<Meetup>()
-          .toList();
+          final isMatch = title.contains(lowercaseQuery) ||
+              description.contains(lowercaseQuery) ||
+              location.contains(lowercaseQuery) ||
+              hostNickname.contains(lowercaseQuery);
+
+          if (!isMatch) continue;
+
+          // Timestamp에서 DateTime으로 변환
+          DateTime meetupDate;
+          if (data['date'] is Timestamp) {
+            meetupDate = (data['date'] as Timestamp).toDate();
+          } else {
+            meetupDate = DateTime.now();
+          }
+
+          matched.add(
+            Meetup(
+              id: doc.id,
+              title: data['title'] ?? '',
+              description: data['description'] ?? '',
+              location: data['location'] ?? '',
+              time: data['time'] ?? '',
+              maxParticipants: data['maxParticipants'] ?? 0,
+              currentParticipants: data['currentParticipants'] ?? 1,
+              host: data['hostNickname'] ?? '익명',
+              hostNationality: data['hostNationality'] ?? '',
+              imageUrl: data['thumbnailImageUrl'] ?? '',
+              thumbnailContent: data['thumbnailContent'] ?? '',
+              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
+              imageUrls: (data['imageUrls'] is List)
+                  ? List<String>.from(data['imageUrls'] as List)
+                      .map((e) => e.toString())
+                      .map((s) => s.trim())
+                      .where((s) => s.isNotEmpty)
+                      .toList()
+                  : const [],
+              date: meetupDate,
+              category: data['category'] ?? '기타',
+              userId: data['userId'], // 모임 주최자 ID 추가
+              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
+              visibility: (data['visibility'] ?? 'public').toString(),
+              visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
+                  ? List<String>.from(data['visibleToCategoryIds'] as List)
+                  : const [],
+              viewCount: data['viewCount'] ?? 0,
+              commentCount: data['commentCount'] ?? 0,
+              isCompleted: data['isCompleted'] ?? false,
+              hasReview: data['hasReview'] ?? false,
+              reviewId: data['reviewId'],
+            ),
+          );
+        } catch (e) {
+          Logger.error('모임 검색 파싱 오류: $e');
+        }
+      }
+
+      // 🔒 검색에서도 Home과 동일한 공개 범위 필터 적용
+      final visibilityFiltered = await filterMeetupsForCurrentUser(matched);
+
+      // 차단/차단당함 콘텐츠 제거
+      final blockedFiltered =
+          await ContentFilterService.filterMeetups(visibilityFiltered);
+
+      return blockedFiltered;
     } catch (e) {
       Logger.error('모임 검색 오류: $e');
       return [];

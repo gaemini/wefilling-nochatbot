@@ -664,7 +664,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
       if (!mounted) return;
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
       _showSnackBar(
-        isKo ? '게시글을 열 수 없습니다.' : 'Failed to open the post.',
+        isKo ? '포스트를 열 수 없습니다.' : 'Failed to open the post.',
         backgroundColor: Theme.of(context).colorScheme.error,
       );
     } finally {
@@ -941,7 +941,7 @@ class _ProfileGridScreenState extends State<ProfileGridScreen>
 
       if (fullPost == null) {
         _showSnackBar(
-          isKo ? '게시글을 불러올 수 없습니다.' : 'Unable to load the post.',
+          isKo ? '포스트를 불러올 수 없습니다.' : 'Unable to load the post.',
           backgroundColor: Theme.of(context).colorScheme.error,
         );
         return;

@@ -1153,6 +1153,7 @@ export const onCommentCreated = functions.firestore
       const postId = comment.postId;
       const commenterId = comment.userId;
       const commenterName = comment.authorNickname || 'User';
+      const parentCommentId = (comment as any)?.parentCommentId as string | undefined;
       if (!postId) return null;
 
       // ✅ 댓글 수 업데이트 (posts / meetups)
@@ -1178,42 +1179,118 @@ export const onCommentCreated = functions.firestore
       const contentPreview = normalizedContent
         ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
         : '';
-      const postTitle = rawTitle.trim() || contentPreview || '게시글';
+      const postTitle = rawTitle.trim() || contentPreview || '포스트';
       const postImages: any[] = Array.isArray((post as any).imageUrls) ? (post as any).imageUrls : [];
       const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
-      if (!postAuthorId || postAuthorId === commenterId) return null;
 
-      const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
-      const noti = settingsDoc.exists ? (settingsDoc.data()?.notifications || {}) : {};
-      const allOn = noti.all_notifications !== false;
-      const commentOn = noti.new_comment !== false;
-      if (!allOn || !commentOn) return null;
+      // 대댓글(답글)인 경우: 부모 댓글 작성자를 확인
+      let parentAuthorId: string | undefined;
+      const isReply = !!(parentCommentId && parentCommentId.trim().length > 0);
+      if (isReply) {
+        try {
+          const parentDoc = await db.collection('comments').doc(parentCommentId!).get();
+          if (parentDoc.exists) {
+            const parent = parentDoc.data() as any;
+            parentAuthorId = parent?.userId as string | undefined;
+          }
+        } catch (_) {
+          // 부모 댓글 조회 실패는 reply 알림을 건너뛰되, 전체 흐름은 유지
+        }
+      }
 
-      // 익명 게시글이면 작성자 정보를 노출하지 않음
-      const notificationTitle = postIsAnonymous ? 'New comment on your post' : '새 댓글이 달렸습니다';
-      const notificationMessage = postIsAnonymous
-        ? 'A new comment was added to your post.'
-        : `${commenterName}님이 회원님의 게시글에 댓글을 남겼습니다.`;
+      // ✅ (A) 게시글 새 댓글 알림: 게시글 작성자에게
+      // - 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
+      // - 답글(parentCommentId)이고, 부모 댓글 작성자=게시글 작성자라면 중복 알림을 피하기 위해 new_comment는 생략
+      const skipPostAuthorNewComment = isReply && parentAuthorId && parentAuthorId === postAuthorId;
+      if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
+        const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
+        const noti = settingsDoc.exists ? (settingsDoc.data()?.notifications || {}) : {};
+        const allOn = noti.all_notifications !== false;
+        const commentOn = noti.new_comment !== false;
 
-      await db.collection('notifications').add({
-        userId: postAuthorId,
-        title: notificationTitle,
-        message: notificationMessage,
-        type: 'new_comment',
-        postId,
-        actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
-        actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
-        data: {
-          postId: postId,
-          postTitle: postTitle,
-          commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
-          thumbnailUrl,
-          postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
-        },
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        isRead: false,
-      });
-      console.log('onCommentCreated: 댓글 알림 생성 완료');
+        if (allOn && commentOn) {
+          // 익명 게시글이면 작성자 정보를 노출하지 않음
+          const notificationTitle = postIsAnonymous ? 'New comment on your post' : '새 댓글이 달렸습니다';
+          const notificationMessage = postIsAnonymous
+            ? 'A new comment was added to your post.'
+            : `${commenterName}님이 회원님의 포스트에 댓글을 남겼습니다.`;
+
+          await db.collection('notifications').add({
+            userId: postAuthorId,
+            title: notificationTitle,
+            message: notificationMessage,
+            type: 'new_comment',
+            postId,
+            actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
+            actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
+            data: {
+              postId: postId,
+              postTitle: postTitle,
+              commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
+              thumbnailUrl,
+              postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
+            },
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            isRead: false,
+          });
+          console.log('onCommentCreated: 댓글 알림 생성 완료');
+        }
+      }
+
+      // ✅ (B) 댓글 대댓글 알림: "내 댓글에 답글"이 달리면 원댓글 작성자에게
+      // - parentCommentId가 있는 경우만(=대댓글)
+      if (parentCommentId && parentCommentId.trim().length > 0) {
+        try {
+          // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
+          if (parentAuthorId && parentAuthorId !== commenterId) {
+            const settingsDoc = await db.collection('user_settings').doc(parentAuthorId).get();
+            const noti = settingsDoc.exists ? (settingsDoc.data()?.notifications || {}) : {};
+            const allOn = noti.all_notifications !== false;
+            // 별도 설정 키가 없을 수 있으므로(new_comment와 묶어서) 기본 허용
+            const replyOn = noti.new_comment !== false;
+            if (allOn && replyOn) {
+              // 중복 알림 방지: 최근 5분 내 동일 알림이 있으면 스킵
+              const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+              const recent = await db.collection('notifications')
+                .where('userId', '==', parentAuthorId)
+                .where('type', '==', 'comment_reply')
+                .where('parentCommentId', '==', parentCommentId)
+                .where('createdAt', '>', fiveMinutesAgo)
+                .limit(1)
+                .get();
+              if (!recent.empty) {
+                console.log('onCommentCreated: 대댓글 알림 중복 방지 - 최근 알림 존재');
+              } else {
+                await db.collection('notifications').add({
+                  userId: parentAuthorId,
+                  title: 'comment_reply',
+                  message: '',
+                  type: 'comment_reply',
+                  postId,
+                  actorId: postIsAnonymous ? null : commenterId,
+                  actorName: postIsAnonymous ? null : commenterName,
+                  parentCommentId,
+                  data: {
+                    postId: postId,
+                    postTitle: postTitle,
+                    thumbnailUrl,
+                    postIsAnonymous: postIsAnonymous,
+                    parentCommentId,
+                    commentId: context.params.commentId,
+                    replierName: postIsAnonymous ? null : commenterName,
+                  },
+                  createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                  isRead: false,
+                });
+                console.log('onCommentCreated: 대댓글 알림 생성 완료');
+              }
+            }
+          }
+        } catch (e) {
+          console.error('onCommentCreated: 대댓글 알림 처리 오류(무시):', e);
+        }
+      }
+
       return null;
     } catch (error) {
       console.error('onCommentCreated 오류:', error);
@@ -1332,7 +1409,7 @@ export const onCommentLiked = functions.firestore
           const contentPreview = normalizedContent
             ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
             : '';
-          postTitle = rawTitle.trim() || contentPreview || '게시글';
+          postTitle = rawTitle.trim() || contentPreview || '포스트';
           const images: any[] = Array.isArray(postData?.imageUrls) ? postData.imageUrls : [];
           thumbnailUrl = images.length > 0 ? String(images[0]) : '';
         }
@@ -1424,16 +1501,16 @@ export const onPostLiked = functions.firestore
       const contentPreview = normalizedContent
         ? (normalizedContent.length > 40 ? `${normalizedContent.slice(0, 40)}...` : normalizedContent)
         : '';
-      const postTitle = rawTitle.trim() || contentPreview || '게시글';
+      const postTitle = rawTitle.trim() || contentPreview || '포스트';
       const postIsAnonymous = after.isAnonymous === true;
       const postImages: any[] = Array.isArray((after as any).imageUrls) ? (after as any).imageUrls : [];
       const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
 
       // 익명 게시글이면 작성자 정보를 노출하지 않음
-      const notificationTitle = postIsAnonymous ? 'New like on your post' : '게시글에 좋아요가 추가되었습니다';
+      const notificationTitle = postIsAnonymous ? 'New like on your post' : '포스트에 좋아요가 추가되었습니다';
       const notificationMessage = postIsAnonymous
         ? 'A new like was added to your post.'
-        : `${likerName}님이 회원님의 게시글을 좋아합니다.`;
+        : `${likerName}님이 회원님의 포스트를 좋아합니다.`;
 
       await db.collection('notifications').add({
         userId: postAuthorId,
@@ -3160,6 +3237,14 @@ function normalizeSupportedLang(raw: unknown): SupportedLang | null {
   return null;
 }
 
+function normalizePlatform(raw: unknown): 'ios' | 'android' | null {
+  const s = (raw ?? '').toString().trim().toLowerCase();
+  if (!s) return null;
+  if (s === 'ios') return 'ios';
+  if (s === 'android') return 'android';
+  return null;
+}
+
 function inferLangFromNationality(nationalityRaw: unknown): SupportedLang | null {
   const s = (nationalityRaw ?? '').toString().trim().toLowerCase();
   if (!s) return null;
@@ -3227,7 +3312,7 @@ function buildLocalizedNotificationText(params: {
   const name = safeStringLoose(actorName ?? data?.actorName ?? data?.fromName ?? data?.senderName, lang === 'ko' ? '익명' : 'User');
 
   const meetupTitle = safeStringLoose(data?.meetupTitle ?? data?.title, lang === 'ko' ? '모임' : 'Meetup');
-  const postTitle = safeStringLoose(data?.postTitle ?? data?.title, lang === 'ko' ? '게시글' : 'Post');
+  const postTitle = safeStringLoose(data?.postTitle ?? data?.title, lang === 'ko' ? '포스트' : 'Post');
   const reviewTitle = safeStringLoose(data?.reviewTitle ?? data?.meetupTitle ?? data?.title, lang === 'ko' ? '후기' : 'Review');
 
   switch (type) {
@@ -3276,8 +3361,8 @@ function buildLocalizedNotificationText(params: {
       const preview = safeStringLoose(data?.preview ?? data?.contentPreview ?? bodyFallback, '');
       if (lang === 'ko') {
         return {
-          title: '친구공개 게시글',
-          body: preview || `${author}님이 "${postTitle}" 게시글을 올렸어요.`,
+          title: '친구공개 포스트',
+          body: preview || `${author}님이 "${postTitle}" 포스트를 올렸어요.`,
         };
       }
       return {
@@ -3289,24 +3374,36 @@ function buildLocalizedNotificationText(params: {
       const postIsAnonymous = toBool(data?.postIsAnonymous);
       if (postIsAnonymous) {
         return lang === 'ko'
-          ? { title: '새 댓글이 달렸습니다', body: '회원님의 게시글에 새 댓글이 달렸어요.' }
+          ? { title: '새 댓글이 달렸습니다', body: '회원님의 포스트에 새 댓글이 달렸어요.' }
           : { title: 'New comment', body: 'A new comment was added to your post.' };
       }
       const commenter = safeStringLoose(data?.commenterName ?? actorName, name);
       return lang === 'ko'
-        ? { title: '새 댓글이 달렸습니다', body: `${commenter}님이 회원님의 게시글에 댓글을 남겼어요.` }
+        ? { title: '새 댓글이 달렸습니다', body: `${commenter}님이 회원님의 포스트에 댓글을 남겼어요.` }
         : { title: 'New comment', body: `${commenter} commented on your post.` };
+    }
+    case 'comment_reply': {
+      const postIsAnonymous = toBool(data?.postIsAnonymous);
+      if (postIsAnonymous) {
+        return lang === 'ko'
+          ? { title: '새 답글이 달렸습니다', body: '회원님의 댓글에 새 답글이 달렸어요.' }
+          : { title: 'New reply', body: 'A new reply was added to your comment.' };
+      }
+      const replier = safeStringLoose(data?.replierName ?? actorName, name);
+      return lang === 'ko'
+        ? { title: '새 답글이 달렸습니다', body: `${replier}님이 회원님의 댓글에 답글을 남겼어요.` }
+        : { title: 'New reply', body: `${replier} replied to your comment.` };
     }
     case 'new_like': {
       const postIsAnonymous = toBool(data?.postIsAnonymous);
       if (postIsAnonymous) {
         return lang === 'ko'
-          ? { title: '게시글에 좋아요가 추가되었습니다', body: '회원님의 게시글에 새 좋아요가 추가되었어요.' }
+          ? { title: '포스트에 좋아요가 추가되었습니다', body: '회원님의 포스트에 새 좋아요가 추가되었어요.' }
           : { title: 'New like', body: 'A new like was added to your post.' };
       }
       const liker = safeStringLoose(data?.likerName ?? actorName, name);
       return lang === 'ko'
-        ? { title: '게시글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 게시글을 좋아해요.` }
+        ? { title: '포스트에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 포스트를 좋아해요.` }
         : { title: 'New like', body: `${liker} liked your post.` };
     }
     case 'comment_like': {
@@ -3350,6 +3447,116 @@ function buildLocalizedNotificationText(params: {
   }
 }
 
+/**
+ * FCM 토큰 등록/이관 (중복 토큰 정리 포함)
+ *
+ * 목적:
+ * - 동일 디바이스 토큰이 여러 사용자 문서에 남아있어
+ *   (특히 "전체 사용자 대상" 푸시에서) 한국어/영어가 연속으로 오는 중복 알림 발생 방지
+ * - 토큰을 "토큰 단위(locale 포함)"로 저장하여 디바이스 언어별 로컬라이징 지원
+ *
+ * 저장:
+ * - fcm_tokens/{token}: { userId, lang, locale, platform, updatedAt }
+ * - users/{uid}: fcmToken, fcmTokens(레거시 호환), fcmTokenUpdatedAt
+ */
+export const registerFcmToken = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const uid = context.auth.uid;
+  const token = (data?.token ?? '').toString().trim();
+  if (!token) {
+    throw new functions.https.HttpsError('invalid-argument', 'token is required.');
+  }
+
+  const localeRaw = data?.locale ?? data?.language ?? data?.lang;
+  const lang: SupportedLang = normalizeSupportedLang(localeRaw) ?? 'ko';
+  const locale = (localeRaw ?? '').toString().trim();
+  const platform = normalizePlatform(data?.platform);
+
+  // 1) 다른 사용자 문서에 붙어있는 동일 토큰 제거 (중복 알림의 가장 흔한 원인)
+  const cleanMap = new Map<string, { deleteSingle: boolean }>();
+
+  const arrSnap = await db.collection('users').where('fcmTokens', 'array-contains', token).limit(50).get();
+  arrSnap.docs.forEach((d) => {
+    if (d.id === uid) return;
+    const data = d.data() as Record<string, any>;
+    const deleteSingle = (data?.fcmToken ?? '') === token;
+    cleanMap.set(d.id, { deleteSingle });
+  });
+
+  const singleSnap = await db.collection('users').where('fcmToken', '==', token).limit(50).get();
+  singleSnap.docs.forEach((d) => {
+    if (d.id === uid) return;
+    // fcmToken이 token과 동일한 케이스이므로 무조건 삭제 대상
+    cleanMap.set(d.id, { deleteSingle: true });
+  });
+
+  if (cleanMap.size > 0) {
+    console.log(`🧹 registerFcmToken: 다른 계정에서 토큰 제거 (${cleanMap.size}명)`);
+    const batch = db.batch();
+    for (const [otherUid, opt] of cleanMap.entries()) {
+      const ref = db.collection('users').doc(otherUid);
+      const updates: Record<string, any> = {
+        fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (opt.deleteSingle) {
+        updates.fcmToken = admin.firestore.FieldValue.delete();
+      }
+      batch.set(ref, updates, { merge: true });
+    }
+    await batch.commit();
+  }
+
+  // 2) 현재 사용자 문서 업데이트 (레거시 호환 유지)
+  await db.collection('users').doc(uid).set({
+    fcmToken: token,
+    fcmTokens: admin.firestore.FieldValue.arrayUnion(token),
+    fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  // 3) 토큰 레지스트리 업데이트 (토큰 단위 로케일)
+  await db.collection('fcm_tokens').doc(token).set({
+    userId: uid,
+    lang,
+    locale,
+    ...(platform ? { platform } : {}),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return { ok: true, uid, lang };
+});
+
+/**
+ * FCM 토큰 등록 해제
+ * - fcm_tokens/{token}이 현재 사용자 소유일 때만 삭제
+ */
+export const unregisterFcmToken = functions.https.onCall(async (data, context) => {
+  if (!context.auth?.uid) {
+    throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
+  }
+
+  const uid = context.auth.uid;
+  const token = (data?.token ?? '').toString().trim();
+  if (!token) {
+    throw new functions.https.HttpsError('invalid-argument', 'token is required.');
+  }
+
+  const ref = db.collection('fcm_tokens').doc(token);
+  const snap = await ref.get();
+  if (!snap.exists) return { ok: true, deleted: false };
+
+  const d = snap.data() as Record<string, any>;
+  if ((d?.userId ?? '') !== uid) {
+    return { ok: true, deleted: false };
+  }
+
+  await ref.delete();
+  return { ok: true, deleted: true };
+});
+
 export const onNotificationCreated = functions.firestore
   .document('notifications/{notificationId}')
   .onCreate(async (snapshot, context) => {
@@ -3373,37 +3580,84 @@ export const onNotificationCreated = functions.firestore
       const userData = userDoc.data();
       const settingsDoc = await db.collection('user_settings').doc(String(userId)).get();
       const settingsData = settingsDoc.exists ? (settingsDoc.data() as Record<string, any>) : undefined;
-      const lang = detectUserLang({ userData: userData as any, settingsData });
+      const fallbackUserLang = detectUserLang({ userData: userData as any, settingsData });
 
-      const localized = buildLocalizedNotificationText({
-        lang,
-        type: String(type || ''),
-        titleFallback: typeof title === 'string' ? title : '',
-        bodyFallback: typeof message === 'string' ? message : '',
-        actorName: typeof notificationData.actorName === 'string' ? notificationData.actorName : '',
-        data: (notificationData.data && typeof notificationData.data === 'object')
-          ? (notificationData.data as Record<string, any>)
-          : undefined,
-      });
+      const actorNameSafe = typeof notificationData.actorName === 'string' ? notificationData.actorName : '';
+      const dataSafe = (notificationData.data && typeof notificationData.data === 'object')
+        ? (notificationData.data as Record<string, any>)
+        : undefined;
 
-      // 멀티 디바이스 지원:
-      // - 레거시 fcmToken(단일) + 신규 fcmTokens(배열) 모두 수집 후 중복 제거
-      const tokenSet = new Set<string>();
-      const legacyToken = userData?.fcmToken;
-      if (typeof legacyToken === 'string' && legacyToken.length > 0) {
-        tokenSet.add(legacyToken);
-      }
-      const tokenArray = userData?.fcmTokens;
-      if (Array.isArray(tokenArray)) {
-        tokenArray.forEach((t) => {
-          if (typeof t === 'string' && t.length > 0) {
-            tokenSet.add(t);
-          }
+      // 토큰 단위 로케일(멀티 디바이스/멀티 로케일) 지원:
+      // - fcm_tokens 레지스트리 우선 사용 (token -> lang)
+      // - 레지스트리가 비어있으면 레거시 users/{uid}.fcmToken(s)로 fallback
+      const tokenGroups: Record<SupportedLang, string[]> = { ko: [], en: [] };
+      const tokenSeen = new Set<string>();
+
+      try {
+        const tokenDocsSnap = await db
+          .collection('fcm_tokens')
+          .where('userId', '==', String(userId))
+          .limit(500)
+          .get();
+
+        tokenDocsSnap.forEach((doc) => {
+          const t = doc.id;
+          if (!t || tokenSeen.has(t)) return;
+          const d = doc.data() as Record<string, any>;
+          const lang = normalizeSupportedLang(d?.lang ?? d?.locale) ?? fallbackUserLang;
+          tokenGroups[lang].push(t);
+          tokenSeen.add(t);
         });
+      } catch (e) {
+        console.warn('⚠️ fcm_tokens 조회 실패: 레거시 토큰으로 fallback', e);
       }
 
-      const tokens = Array.from(tokenSet);
-      if (tokens.length === 0) {
+      if (tokenSeen.size === 0) {
+        const legacyToken = userData?.fcmToken;
+        if (typeof legacyToken === 'string' && legacyToken.length > 0) {
+          tokenGroups[fallbackUserLang].push(legacyToken);
+          tokenSeen.add(legacyToken);
+        }
+        const tokenArray = userData?.fcmTokens;
+        if (Array.isArray(tokenArray)) {
+          tokenArray.forEach((t) => {
+            if (typeof t === 'string' && t.length > 0 && !tokenSeen.has(t)) {
+              tokenGroups[fallbackUserLang].push(t);
+              tokenSeen.add(t);
+            }
+          });
+        }
+      }
+
+      // 안전장치:
+      // - 레거시 토큰(또는 잘못된 상태)에서 "다른 사용자 소유"로 등록된 토큰은 제외
+      //   (잘못된 계정으로 푸시 발송/이중 발송 방지)
+      const allCandidateTokens = [...tokenGroups.ko, ...tokenGroups.en];
+      if (allCandidateTokens.length > 0) {
+        try {
+          const refs = allCandidateTokens.map((t) => db.collection('fcm_tokens').doc(t));
+          const snaps = await db.getAll(...refs);
+          const banned = new Set<string>();
+          snaps.forEach((s) => {
+            if (!s.exists) return;
+            const d = s.data() as Record<string, any>;
+            const owner = (d?.userId ?? '').toString();
+            if (owner && owner !== String(userId)) {
+              banned.add(s.id);
+            }
+          });
+          if (banned.size > 0) {
+            tokenGroups.ko = tokenGroups.ko.filter((t) => !banned.has(t));
+            tokenGroups.en = tokenGroups.en.filter((t) => !banned.has(t));
+            console.log(`🧹 다른 사용자 소유 토큰 제외: ${banned.size}개 (userId=${userId})`);
+          }
+        } catch (e) {
+          console.warn('⚠️ 토큰 소유자 검증 실패(무시)', e);
+        }
+      }
+
+      const totalTokens = tokenGroups.ko.length + tokenGroups.en.length;
+      if (totalTokens === 0) {
         console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
         return null;
       }
@@ -3487,86 +3741,112 @@ export const onNotificationCreated = functions.firestore
       const finalBadge = hasBadge ? Math.max(0, badgeCount!) : 0;
       console.log(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
 
-      // 푸시 알림 메시지 구성 (멀티캐스트)
-      const pushMessage: admin.messaging.MulticastMessage = {
-        tokens,
-        notification: {
-          title: localized.title,
-          body: localized.body,
-        },
-        data: {
-          type,
-          notificationId,
-          postId: notificationData.postId || '',
-          meetupId: notificationData.meetupId || '',
-          actorId: notificationData.actorId || '',
-          actorName: notificationData.actorName || '',
-          ...(hasBadge && { badge: String(finalBadge) }),
-        },
-        apns: {
-          headers: {
-            'apns-push-type': 'alert',
-            'apns-priority': '10',
-          },
-          payload: {
-            aps: {
-              sound: 'default',
-              ...(hasBadge && { badge: finalBadge }),
-            },
-          },
-        },
-        android: {
-          priority: 'high',
-          notification: {
-            sound: 'default',
-            channelId: 'high_importance_channel',
-          },
-        },
+      const commonData: Record<string, string> = {
+        type: String(type || ''),
+        notificationId: String(notificationId || ''),
+        postId: String(notificationData.postId || ''),
+        meetupId: String(notificationData.meetupId || ''),
+        actorId: String(notificationData.actorId || ''),
+        actorName: String(notificationData.actorName || ''),
+        ...(hasBadge ? { badge: String(finalBadge) } : {}),
       };
 
-      // 푸시 알림 전송
-      const response = await admin.messaging().sendEachForMulticast(pushMessage);
-      console.log(`✅ 알림 전송 결과: ${response.successCount}/${tokens.length} (userId=${userId})`);
-
-      // 실패 토큰 자동 정리 (iOS/Android 공통)
-      if (response.failureCount > 0) {
-        const invalidTokens: string[] = [];
-
-        response.responses.forEach((resp, idx) => {
-          if (resp.success) return;
-          const code = (resp.error as any)?.code as string | undefined;
-          // 흔한 "토큰 폐기" 케이스만 우선 정리
-          if (code === 'messaging/registration-token-not-registered' ||
-              code === 'messaging/invalid-registration-token') {
-            invalidTokens.push(tokens[idx]);
-          }
+      const sendForLang = async (lang: SupportedLang, tokens: string[]) => {
+        const localized = buildLocalizedNotificationText({
+          lang,
+          type: String(type || ''),
+          titleFallback: typeof title === 'string' ? title : '',
+          bodyFallback: typeof message === 'string' ? message : '',
+          actorName: actorNameSafe,
+          data: dataSafe,
         });
 
-        if (invalidTokens.length > 0) {
-          const userRef = db.collection('users').doc(userId);
+        const pushMessage: admin.messaging.MulticastMessage = {
+          tokens,
+          notification: {
+            title: localized.title,
+            body: localized.body,
+          },
+          data: commonData,
+          apns: {
+            headers: {
+              'apns-push-type': 'alert',
+              'apns-priority': '10',
+            },
+            payload: {
+              aps: {
+                sound: 'default',
+                ...(hasBadge && { badge: finalBadge }),
+              },
+            },
+          },
+          android: {
+            priority: 'high',
+            notification: {
+              sound: 'default',
+              channelId: 'high_importance_channel',
+            },
+          },
+        };
 
-          // fcmTokens 배열에서 제거 (chunk로 안전하게 처리)
-          const chunkSize = 10;
-          for (let i = 0; i < invalidTokens.length; i += chunkSize) {
-            const chunk = invalidTokens.slice(i, i + chunkSize);
-            await userRef.set({
-              fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
-            }, { merge: true });
+        const res = await admin.messaging().sendEachForMulticast(pushMessage);
+        console.log(`✅ 알림 전송(${lang}) 결과: ${res.successCount}/${tokens.length} (userId=${userId})`);
+        return res;
+      };
+
+      const responses: Array<{ lang: SupportedLang; tokens: string[]; res: admin.messaging.BatchResponse }> = [];
+      if (tokenGroups.ko.length > 0) {
+        responses.push({ lang: 'ko', tokens: tokenGroups.ko, res: await sendForLang('ko', tokenGroups.ko) });
+      }
+      if (tokenGroups.en.length > 0) {
+        responses.push({ lang: 'en', tokens: tokenGroups.en, res: await sendForLang('en', tokenGroups.en) });
+      }
+
+      // 실패 토큰 자동 정리 (iOS/Android 공통)
+      const invalidTokens: string[] = [];
+      for (const r of responses) {
+        if (r.res.failureCount <= 0) continue;
+        r.res.responses.forEach((resp, idx) => {
+          if (resp.success) return;
+          const code = (resp.error as any)?.code as string | undefined;
+          if (code === 'messaging/registration-token-not-registered' ||
+              code === 'messaging/invalid-registration-token') {
+            invalidTokens.push(r.tokens[idx]);
           }
+        });
+      }
 
-          // 레거시 단일 토큰이 무효면 대체/삭제
-          if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
-              invalidTokens.includes(legacyToken)) {
-            const remaining = tokens.filter((t) => !invalidTokens.includes(t));
-            await userRef.set({
-              fcmToken: remaining.length > 0
-                ? remaining[0]
-                : admin.firestore.FieldValue.delete(),
-            }, { merge: true });
-          }
+      if (invalidTokens.length > 0) {
+        const userRef = db.collection('users').doc(userId);
+        const allTokens = [...tokenGroups.ko, ...tokenGroups.en];
+        const remaining = allTokens.filter((t) => !invalidTokens.includes(t));
 
-          console.log(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
+        // fcm_tokens 레지스트리에서도 제거
+        const delBatch = db.batch();
+        invalidTokens.forEach((t) => delBatch.delete(db.collection('fcm_tokens').doc(t)));
+        await delBatch.commit().catch((e) => console.warn('⚠️ fcm_tokens 정리 실패(무시):', e));
+
+        // users.fcmTokens 배열에서 제거 (chunk로 안전하게 처리)
+        const chunkSize = 10;
+        for (let i = 0; i < invalidTokens.length; i += chunkSize) {
+          const chunk = invalidTokens.slice(i, i + chunkSize);
+          await userRef.set({
+            fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
+          }, { merge: true });
         }
+
+        // 레거시 단일 토큰이 무효면 대체/삭제
+        const legacyToken = userData?.fcmToken;
+        if (typeof legacyToken === 'string' && legacyToken.length > 0 &&
+            invalidTokens.includes(legacyToken)) {
+          await userRef.set({
+            fcmToken: remaining.length > 0
+              ? remaining[0]
+              : admin.firestore.FieldValue.delete(),
+          }, { merge: true });
+        }
+
+        console.log(`🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개 (userId=${userId})`);
       }
 
       return null;
@@ -3829,10 +4109,45 @@ export const onMeetupCreated = functions.firestore
       // 대상 사용자들의 FCM 토큰 가져오기 (최대 10명씩 배치 처리)
       const tokenSetKo = new Set<string>();
       const tokenSetEn = new Set<string>();
+      const tokenLangByToken = new Map<string, SupportedLang>();
+
+      const addTokenOnce = (rawToken: unknown, lang: SupportedLang) => {
+        const t = (rawToken ?? '').toString().trim();
+        if (!t) return;
+        const prev = tokenLangByToken.get(t);
+        if (prev) {
+          if (prev !== lang) {
+            console.warn(`⚠️ 동일 토큰이 서로 다른 언어로 분류됨: keep=${prev}, ignore=${lang}`);
+          }
+          return;
+        }
+        tokenLangByToken.set(t, lang);
+        (lang === 'en' ? tokenSetEn : tokenSetKo).add(t);
+      };
+
       const batchSize = 10;
       
       for (let i = 0; i < targetUserIds.length; i += batchSize) {
         const batch = targetUserIds.slice(i, i + batchSize);
+
+        // ✅ 신규: fcm_tokens 레지스트리 기반 (토큰 단위 로케일)
+        // - 동일 디바이스 토큰이 여러 사용자 문서에 남아있어도 docId(token) 기준으로 1회만 포함됨
+        try {
+          const tokenDocsSnap = await db
+            .collection('fcm_tokens')
+            .where('userId', 'in', batch)
+            .limit(500)
+            .get();
+
+          tokenDocsSnap.forEach((doc) => {
+            const d = doc.data() as Record<string, any>;
+            const lang = normalizeSupportedLang(d?.lang ?? d?.locale) ?? 'ko';
+            addTokenOnce(doc.id, lang);
+          });
+        } catch (e) {
+          console.warn('⚠️ fcm_tokens 조회 실패(무시): 레거시 users.fcmToken(s)만 사용', e);
+        }
+
         const usersSnapshot = await db
           .collection('users')
           .where(admin.firestore.FieldPath.documentId(), 'in', batch)
@@ -3841,16 +4156,15 @@ export const onMeetupCreated = functions.firestore
         usersSnapshot.forEach((doc) => {
           const userData = doc.data();
           const lang = detectUserLang({ userData: userData as any, settingsData: undefined });
-          const targetSet = lang === 'en' ? tokenSetEn : tokenSetKo;
           const legacy = userData?.fcmToken;
           if (typeof legacy === 'string' && legacy.length > 0) {
-            targetSet.add(legacy);
+            addTokenOnce(legacy, lang);
           }
           const arr = userData?.fcmTokens;
           if (Array.isArray(arr)) {
             arr.forEach((t) => {
               if (typeof t === 'string' && t.length > 0) {
-                targetSet.add(t);
+                addTokenOnce(t, lang);
               }
             });
           }
@@ -3867,21 +4181,29 @@ export const onMeetupCreated = functions.firestore
       }
 
       // 알림 메시지 구성
-      const categoryEmoji = 
-        category === '스터디' ? '📚' :
-        category === '식사' ? '🍽️' :
-        category === '취미' ? '🎨' :
-        category === '문화' ? '🎭' : '🎉';
+      const categoryEmoji =
+        category === '스터디' || category === 'study' ? '📚' :
+        category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '🍽️' :
+        category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? '🎨' :
+        category === '문화' || category === 'culture' ? '🎭' : '🎉';
 
       const meetupTitle = meetupData.title || '';
 
       const categoryEn =
-        category === '스터디' ? 'Study' :
-        category === '식사' ? 'Meal' :
-        category === '취미' ? 'Hobby' :
-        category === '문화' ? 'Culture' : 'Meetup';
+        category === '스터디' || category === 'study' ? 'Study' :
+        category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? 'Meal' :
+        category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? 'Hobby' :
+        category === '문화' || category === 'culture' ? 'Culture' : 'Meetup';
 
-      const titleKo = `${categoryEmoji} 새 ${category} 모임이 생성되었습니다!`;
+      const categoryKo =
+        category === '스터디' || category === 'study' ? '스터디' :
+        category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '밥' :
+        category === '카페' || category === 'cafe' || category === 'hobby' ? '카페' :
+        category === '술' || category === 'drink' ? '술' :
+        category === '문화' || category === 'culture' ? '문화' :
+        category;
+
+      const titleKo = `${categoryEmoji} 새 ${categoryKo} 모임이 생성되었습니다!`;
       const bodyKo = `${hostName}님이 "${meetupTitle}" 모임을 만들었습니다.`;
 
       const titleEn = `${categoryEmoji} New ${categoryEn} meetup`;
@@ -4222,6 +4544,93 @@ export const onMeetupReviewDeleted = functions.firestore
       return null;
     } catch (error) {
       console.error('onMeetupReviewDeleted 오류:', error);
+      return null;
+    }
+  });
+
+/**
+ * 호스트가 모임 후기를 작성하면(= meetup_reviews 생성) 모임 단체 톡방을 자동 종료(삭제)
+ * - 요구사항: 모임이 확정(완료)되고 호스트가 후기를 작성하면 대화방은 자동으로 없어짐
+ * - 구현: meetup_reviews/{reviewId} onCreate 트리거에서 meetup_chats/{meetupId} 및 messages 서브컬렉션 삭제
+ */
+export const onMeetupReviewCreatedDeleteMeetupChat = functions.firestore
+  .document('meetup_reviews/{reviewId}')
+  .onCreate(async (snapshot, context) => {
+    try {
+      const review = snapshot.data() as any;
+      const meetupId = (review?.meetupId || '').toString().trim();
+      const authorId = (review?.authorId || '').toString().trim();
+      if (!meetupId || !authorId) {
+        console.log('⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetupId/authorId 없음');
+        return null;
+      }
+
+      // 모임 문서로 "호스트 & 완료 여부"를 확인 (방어적)
+      const meetupRef = db.collection('meetups').doc(meetupId);
+      const meetupDoc = await meetupRef.get();
+      if (!meetupDoc.exists) {
+        console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: meetups/${meetupId} 없음`);
+        return null;
+      }
+      const meetupData = meetupDoc.data() as any;
+      const hostId = (meetupData?.userId || '').toString().trim();
+      const isCompleted = meetupData?.isCompleted === true;
+      if (hostId !== authorId) {
+        console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 작성자!=호스트 (authorId=${authorId}, hostId=${hostId})`);
+        return null;
+      }
+      if (!isCompleted) {
+        console.log(`⏭️ onMeetupReviewCreatedDeleteMeetupChat: 모임 미완료 (meetupId=${meetupId})`);
+        return null;
+      }
+
+      // ✅ 새 구조: meetups/{meetupId}/group_chat_messages 삭제 + groupChatEnabled=false
+      const pageSize = 400;
+      while (true) {
+        const snap = await meetupRef.collection('group_chat_messages').limit(pageSize).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        for (const d of snap.docs) {
+          batch.delete(d.ref);
+        }
+        await batch.commit();
+      }
+
+      // 톡방 비활성(입장 버튼 숨김/종료)
+      try {
+        await meetupRef.update({
+          groupChatEnabled: false,
+          groupChatClosedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        // 업데이트 실패는 무시 (삭제가 핵심)
+      }
+
+      // ⬇️ 구 구조(meetup_chats)도 남아있을 수 있어 하위 호환으로 함께 정리
+      const chatRef = db.collection('meetup_chats').doc(meetupId);
+      const chatDoc = await chatRef.get();
+      if (!chatDoc.exists) {
+        console.log(`✅ onMeetupReviewCreatedDeleteMeetupChat: group_chat_messages 삭제 완료 (meetupId=${meetupId})`);
+        return null;
+      }
+
+      // messages 서브컬렉션 전체 삭제 (페이지네이션)
+      while (true) {
+        const snap = await chatRef.collection('messages').limit(pageSize).get();
+        if (snap.empty) break;
+        const batch = db.batch();
+        for (const d of snap.docs) {
+          batch.delete(d.ref);
+        }
+        await batch.commit();
+      }
+
+      await chatRef.delete();
+      console.log(`✅ onMeetupReviewCreatedDeleteMeetupChat: 단체 톡방 정리 완료 (meetupId=${meetupId})`);
+      return null;
+    } catch (error) {
+      console.error('onMeetupReviewCreatedDeleteMeetupChat 오류:', error);
       return null;
     }
   });

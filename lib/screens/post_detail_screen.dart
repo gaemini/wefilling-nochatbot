@@ -19,6 +19,7 @@ import '../services/comment_service.dart';
 import '../services/dm_service.dart';
 import 'dm_chat_screen.dart';
 import '../providers/auth_provider.dart' as app_auth;
+import 'edit_post_screen.dart';
 import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../ui/widgets/poll_post_widget.dart';
@@ -31,6 +32,7 @@ import 'friend_profile_screen.dart';
 import 'main_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
+import '../ui/dialogs/report_dialog.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -204,6 +206,40 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final headline = parts.first.trim();
     final body = parts.length <= 1 ? '' : parts.sublist(1).join('\n').trim();
     return (headline: headline, body: body);
+  }
+
+  Future<void> _openReportPostDialog() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    final reportedUserId = _currentPost.userId.trim();
+    if (reportedUserId.isEmpty || reportedUserId == 'deleted' || reportedUserId == currentUser.uid) {
+      return;
+    }
+
+    final unified = _getUnifiedBodyText(_currentPost);
+    final headline = _splitHeadlineAndBody(unified).headline;
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => ReportDialog(
+        reportedUserId: reportedUserId,
+        targetType: 'post',
+        targetId: _currentPost.id,
+        targetTitle: headline.isNotEmpty ? headline : null,
+      ),
+    );
   }
   
   @override
@@ -855,7 +891,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       // UI 업데이트는 실제 Firestore에서 업데이트된 후에 하도록 개선
       // (실제로는 Firestore의 실시간 업데이트를 통해 자동으로 반영됨)
     } catch (e) {
-      Logger.error('게시글 조회수 증가 실패', e);
+      Logger.error('포스트 조회수 증가 실패', e);
     }
   }
 
@@ -971,7 +1007,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = _currentPost.content.trim();
         final rawTitle = _currentPost.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '게시글');
+        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
         final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
@@ -1121,6 +1157,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _currentPost.userId != 'deleted' &&
             _currentPost.userId != currentUser.uid &&
             uidPattern.hasMatch(_currentPost.userId);
+        final canReport = currentUser != null &&
+            _currentPost.userId.isNotEmpty &&
+            _currentPost.userId != 'deleted' &&
+            _currentPost.userId != currentUser.uid;
 
         return SafeArea(
           child: Padding(
@@ -1128,6 +1168,26 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 수정하기 (작성자만)
+                if (_isAuthor)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.edit_outlined,
+                      color: Color(0xFF111827),
+                    ),
+                    title: Text(
+                      AppLocalizations.of(context)!.edit,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _openEditPost();
+                    },
+                  ),
                 // DM 보내기 (기존 기능을 케밥 메뉴로 이동)
                 if (!_isAuthor && canSendDM)
                   ListTile(
@@ -1150,6 +1210,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onTap: () async {
                       Navigator.pop(context);
                       await _openDMFromDetail();
+                    },
+                  ),
+
+                // 신고하기 (작성자가 아닌 경우)
+                if (!_isAuthor && canReport)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.report_gmailerrorred_outlined,
+                      color: Color(0xFFEF4444),
+                    ),
+                    title: Text(
+                      AppLocalizations.of(context)!.reportTitle,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _openReportPostDialog();
                     },
                   ),
                 if (_isAuthor)
@@ -1181,6 +1262,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  Future<void> _openEditPost() async {
+    if (!_isAuthor) return;
+    final updated = await Navigator.of(context).push<Post?>(
+      MaterialPageRoute(
+        builder: (_) => EditPostScreen(post: _currentPost),
+      ),
+    );
+    if (!mounted) return;
+    if (updated == null) return;
+
+    setState(() {
+      _currentPost = updated;
+    });
+
+    // 서버 기준으로 한 번 더 갱신(서버 timestamp/업로드 반영)
+    await _refreshPost();
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(AppLocalizations.of(context)!.postUpdated),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   // 게시글 새로고침
   Future<void> _refreshPost() async {
     try {
@@ -1191,7 +1299,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         });
       }
     } catch (e) {
-      Logger.error('게시글 새로고침 오류: $e');
+      Logger.error('포스트 새로고침 오류: $e');
     }
   }
 
@@ -1857,6 +1965,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         centerTitle: true,
         actions: [
           if (_isAuthor)
+            IconButton(
+              icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
+              tooltip: AppLocalizations.of(context)!.moreOptions,
+              onPressed: _openPostActionsSheet,
+            ),
+          // 작성자가 아닌 경우에도 케밥 메뉴는 유지 (DM/신고 등)
+          if (!_isAuthor)
             IconButton(
               icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
               tooltip: AppLocalizations.of(context)!.moreOptions,

@@ -42,6 +42,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   final List<String> _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   final MeetupService _meetupService = MeetupService();
   final FriendCategoryService _friendCategoryService = FriendCategoryService();
+  int _meetupsRefreshTick = 0; // 슬라이드/탭 재선택 시 강제 리프레시용
   
   // 친구 카테고리 스트림 구독
   StreamSubscription<List<FriendCategory>>? _friendCategoriesSubscription;
@@ -416,7 +417,17 @@ class _MeetupHomePageState extends State<MeetupHomePage>
 
             // 모임 목록
             Expanded(
-              child: _buildMeetupList(selectedDate),
+              // 요구사항: "모임이 올라온 부분"을 좌우 슬라이드하면 요일 이동
+              child: TabBarView(
+                controller: _tabController,
+                children: List.generate(
+                  7,
+                  (dayIndex) => _buildMeetupListForDay(
+                    selectedDate: weekDates[dayIndex],
+                    dayIndex: dayIndex,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -555,6 +566,11 @@ class _MeetupHomePageState extends State<MeetupHomePage>
           return Expanded(
             child: GestureDetector(
               onTap: () {
+                // 같은 요일을 다시 누르면 최신 내용 강제 업데이트
+                if (index == _tabController.index) {
+                  _refreshCurrentDay();
+                  return;
+                }
                 _tabController.animateTo(index);
               },
               child: Container(
@@ -638,8 +654,28 @@ class _MeetupHomePageState extends State<MeetupHomePage>
     );
   }
 
-  // 모임 목록
-  Widget _buildMeetupList(DateTime selectedDate) {
+  Future<void> _refreshCurrentDay() async {
+    if (!mounted) return;
+    setState(() {
+      _isRefreshing = true;
+      _participationStatusCache.clear();
+      _participationCacheTime.clear();
+      _participationSubscriptions.clear();
+      _meetupsRefreshTick++;
+    });
+    // 최소한의 시각적 피드백
+    await Future.delayed(const Duration(milliseconds: 450));
+    if (!mounted) return;
+    setState(() {
+      _isRefreshing = false;
+    });
+  }
+
+  // 모임 목록 (요일별)
+  Widget _buildMeetupListForDay({
+    required DateTime selectedDate,
+    required int dayIndex,
+  }) {
     return Column(
       children: [
         // 상단 로딩 인디케이터
@@ -676,6 +712,7 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                             _participationStatusCache.clear();
                             _participationCacheTime.clear();
                             _participationSubscriptions.clear();
+                            _meetupsRefreshTick++;
                           });
                         }
 
@@ -689,12 +726,15 @@ class _MeetupHomePageState extends State<MeetupHomePage>
                         }
                       },
                       child: StreamBuilder<List<Meetup>>(
+                        key: ValueKey(
+                          'meetups_${dayIndex}_${_currentWeekAnchor.toIso8601String()}_$_meetupsRefreshTick',
+                        ),
                         // Today(선택한 날짜가 "오늘")에서는
                         // - 약속 날짜가 오늘인 모임 + 오늘 생성된 모임을 함께 보여준다.
                         stream: _isToday(selectedDate)
                             ? _meetupService.getTodayTabMeetups()
                             : _meetupService.getMeetupsByDay(
-                                _tabController.index,
+                                dayIndex,
                                 weekAnchor: _currentWeekAnchor,
                               ),
                         builder: (context, snapshot) {

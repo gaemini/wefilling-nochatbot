@@ -227,13 +227,13 @@ abstract class AppLocalizations {
   /// No description provided for @board.
   ///
   /// In ko, this message translates to:
-  /// **'게시글'**
+  /// **'포스트'**
   String get board;
 
   /// No description provided for @meetup.
   ///
   /// In ko, this message translates to:
-  /// **'모임'**
+  /// **'밋업'**
   String get meetup;
 
   /// No description provided for @myPage.
@@ -446,6 +446,30 @@ abstract class AppLocalizations {
   /// **'친구 이름으로 검색'**
   String get searchByName;
 
+  /// No description provided for @todayMeetupsSectionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘의 밋업'**
+  String get todayMeetupsSectionTitle;
+
+  /// No description provided for @todayPostsSectionTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘의 포스트'**
+  String get todayPostsSectionTitle;
+
+  /// No description provided for @todayNoMeetups.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘 올라온 밋업이 없어요.'**
+  String get todayNoMeetups;
+
+  /// No description provided for @todayNoPosts.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘 올라온 포스트가 없어요.'**
+  String get todayNoPosts;
+
   /// No description provided for @loading.
   ///
   /// In ko, this message translates to:
@@ -569,49 +593,49 @@ abstract class AppLocalizations {
   /// No description provided for @post.
   ///
   /// In ko, this message translates to:
-  /// **'게시글'**
+  /// **'포스트'**
   String get post;
 
   /// No description provided for @posts.
   ///
   /// In ko, this message translates to:
-  /// **'게시글'**
+  /// **'포스트'**
   String get posts;
 
   /// No description provided for @createPost.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 작성'**
+  /// **'포스트 작성'**
   String get createPost;
 
   /// No description provided for @newPost.
   ///
   /// In ko, this message translates to:
-  /// **'새 게시글 작성'**
+  /// **'새 포스트 작성'**
   String get newPost;
 
   /// No description provided for @newPostCreation.
   ///
   /// In ko, this message translates to:
-  /// **'새 게시글 작성'**
+  /// **'새 포스트 작성'**
   String get newPostCreation;
 
   /// No description provided for @editPost.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 수정'**
+  /// **'포스트 수정'**
   String get editPost;
 
   /// No description provided for @deletePost.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 삭제'**
+  /// **'포스트 삭제'**
   String get deletePost;
 
   /// No description provided for @postDetail.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 상세'**
+  /// **'포스트 상세'**
   String get postDetail;
 
   /// No description provided for @writePost.
@@ -623,25 +647,37 @@ abstract class AppLocalizations {
   /// No description provided for @postCreated.
   ///
   /// In ko, this message translates to:
-  /// **'게시글이 등록되었습니다.'**
+  /// **'포스트가 등록되었습니다.'**
   String get postCreated;
 
   /// No description provided for @postCreateFailed.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 등록에 실패했습니다. 다시 시도해주세요.'**
+  /// **'포스트 등록에 실패했습니다. 다시 시도해주세요.'**
   String get postCreateFailed;
+
+  /// No description provided for @postUpdated.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트가 수정되었습니다.'**
+  String get postUpdated;
+
+  /// No description provided for @postUpdateFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'포스트 수정에 실패했습니다. 다시 시도해주세요.'**
+  String get postUpdateFailed;
 
   /// No description provided for @postDeleted.
   ///
   /// In ko, this message translates to:
-  /// **'게시글이 삭제되었습니다.'**
+  /// **'포스트가 삭제되었습니다.'**
   String get postDeleted;
 
   /// No description provided for @postDeleteFailed.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 삭제에 실패했습니다.'**
+  /// **'포스트 삭제에 실패했습니다.'**
   String get postDeleteFailed;
 
   /// No description provided for @title.
@@ -749,7 +785,7 @@ abstract class AppLocalizations {
   /// No description provided for @noPostsYet.
   ///
   /// In ko, this message translates to:
-  /// **'등록된 게시글이 없습니다'**
+  /// **'등록된 포스트가 없습니다'**
   String get noPostsYet;
 
   /// No description provided for @like.
@@ -1115,7 +1151,7 @@ abstract class AppLocalizations {
   /// No description provided for @meal.
   ///
   /// In ko, this message translates to:
-  /// **'식사'**
+  /// **'밥'**
   String get meal;
 
   /// No description provided for @hobby.
@@ -1211,7 +1247,7 @@ abstract class AppLocalizations {
   /// No description provided for @myPosts.
   ///
   /// In ko, this message translates to:
-  /// **'내 게시글'**
+  /// **'내 포스트'**
   String get myPosts;
 
   /// No description provided for @myMeetups.
@@ -1421,7 +1457,7 @@ abstract class AppLocalizations {
   /// No description provided for @selectedGroupOnlyPost.
   ///
   /// In ko, this message translates to:
-  /// **'선택한 그룹의 친구들만 이 게시글을 볼 수 있습니다'**
+  /// **'선택한 그룹의 친구들만 이 포스트를 볼 수 있습니다'**
   String get selectedGroupOnlyPost;
 
   /// No description provided for @selectedFriendGroupOnly.
@@ -1493,7 +1529,7 @@ abstract class AppLocalizations {
   /// No description provided for @updateAllPosts.
   ///
   /// In ko, this message translates to:
-  /// **'모든 게시글 업데이트'**
+  /// **'모든 포스트 업데이트'**
   String get updateAllPosts;
 
   /// No description provided for @update.
@@ -1943,7 +1979,7 @@ abstract class AppLocalizations {
   /// No description provided for @applyProfileToAllPosts.
   ///
   /// In ko, this message translates to:
-  /// **'모든 게시글에 프로필 반영'**
+  /// **'모든 포스트에 프로필 반영'**
   String get applyProfileToAllPosts;
 
   /// No description provided for @updating.
@@ -1955,19 +1991,19 @@ abstract class AppLocalizations {
   /// No description provided for @postSaved.
   ///
   /// In ko, this message translates to:
-  /// **'게시글이 저장되었습니다'**
+  /// **'포스트가 저장되었습니다'**
   String get postSaved;
 
   /// No description provided for @postUnsaved.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 저장이 취소되었습니다'**
+  /// **'포스트 저장이 취소되었습니다'**
   String get postUnsaved;
 
   /// No description provided for @deletePostConfirm.
   ///
   /// In ko, this message translates to:
-  /// **'정말 이 게시글을 삭제하시겠습니까?'**
+  /// **'정말 이 포스트를 삭제하시겠습니까?'**
   String get deletePostConfirm;
 
   /// No description provided for @commentSubmitFailed.
@@ -1991,7 +2027,7 @@ abstract class AppLocalizations {
   /// No description provided for @savePost.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 저장'**
+  /// **'포스트 저장'**
   String get savePost;
 
   /// No description provided for @deleteComment.
@@ -2777,19 +2813,31 @@ abstract class AppLocalizations {
   /// No description provided for @newCommentMessage.
   ///
   /// In ko, this message translates to:
-  /// **'{commenterName}님이 회원님의 게시글 \"{postTitle}\"에 댓글을 남겼습니다.'**
+  /// **'{commenterName}님이 회원님의 포스트 \"{postTitle}\"에 댓글을 남겼습니다.'**
   String newCommentMessage(String commenterName, String postTitle);
+
+  /// No description provided for @newReplyToCommentMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'{replierName}님이 회원님의 댓글에 답글을 남겼습니다.'**
+  String newReplyToCommentMessage(String replierName);
+
+  /// No description provided for @newReplyToCommentAnonymousMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'회원님의 댓글에 새 답글이 달렸습니다.'**
+  String get newReplyToCommentAnonymousMessage;
 
   /// No description provided for @newLikeAdded.
   ///
   /// In ko, this message translates to:
-  /// **'게시글에 좋아요가 추가되었습니다'**
+  /// **'포스트에 좋아요가 추가되었습니다'**
   String get newLikeAdded;
 
   /// No description provided for @newLikeMessage.
   ///
   /// In ko, this message translates to:
-  /// **'{likerName}님이 회원님의 게시글 \"{postTitle}\"을 좋아합니다.'**
+  /// **'{likerName}님이 회원님의 포스트 \"{postTitle}\"을 좋아합니다.'**
   String newLikeMessage(String likerName, String postTitle);
 
   /// No description provided for @newParticipantJoined.
@@ -3095,7 +3143,7 @@ abstract class AppLocalizations {
   /// No description provided for @postNotifications.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 알림'**
+  /// **'포스트 알림'**
   String get postNotifications;
 
   /// No description provided for @generalSettings.
@@ -3113,13 +3161,13 @@ abstract class AppLocalizations {
   /// No description provided for @privatePostAlertTitle.
   ///
   /// In ko, this message translates to:
-  /// **'비공개 게시글 알림'**
+  /// **'비공개 포스트 알림'**
   String get privatePostAlertTitle;
 
   /// No description provided for @privatePostAlertSubtitle.
   ///
   /// In ko, this message translates to:
-  /// **'허용된 사용자에게만 공개된 게시글 알림'**
+  /// **'허용된 사용자에게만 공개된 포스트 알림'**
   String get privatePostAlertSubtitle;
 
   /// No description provided for @meetupFullAlertTitle.
@@ -3167,7 +3215,7 @@ abstract class AppLocalizations {
   /// No description provided for @commentAlertSubtitle.
   ///
   /// In ko, this message translates to:
-  /// **'내 게시글에 댓글이 작성되면 알림'**
+  /// **'내 포스트에 댓글이 작성되면 알림'**
   String get commentAlertSubtitle;
 
   /// No description provided for @likeAlertTitle.
@@ -3179,7 +3227,7 @@ abstract class AppLocalizations {
   /// No description provided for @likeAlertSubtitle.
   ///
   /// In ko, this message translates to:
-  /// **'내 게시글에 좋아요가 추가되면 알림'**
+  /// **'내 포스트에 좋아요가 추가되면 알림'**
   String get likeAlertSubtitle;
 
   /// No description provided for @allNotifications.
@@ -3251,13 +3299,13 @@ abstract class AppLocalizations {
   /// No description provided for @totalPostsCount.
   ///
   /// In ko, this message translates to:
-  /// **'총 {count}개의 게시글'**
+  /// **'총 {count}개의 포스트'**
   String totalPostsCount(int count);
 
   /// No description provided for @noWrittenPosts.
   ///
   /// In ko, this message translates to:
-  /// **'작성한 게시글이 없습니다'**
+  /// **'작성한 포스트가 없습니다'**
   String get noWrittenPosts;
 
   /// No description provided for @notificationDataMissing.
@@ -3275,7 +3323,7 @@ abstract class AppLocalizations {
   /// No description provided for @postNotFound.
   ///
   /// In ko, this message translates to:
-  /// **'해당 게시글을 찾을 수 없습니다'**
+  /// **'해당 포스트를 찾을 수 없습니다'**
   String get postNotFound;
 
   /// No description provided for @commentLikeFailed.
@@ -4055,7 +4103,7 @@ abstract class AppLocalizations {
   /// No description provided for @postDeleteTip.
   ///
   /// In ko, this message translates to:
-  /// **'💡 게시글을 삭제하고 싶다면? 탈퇴하기 전에 \"내 게시글 관리\"에서 삭제하세요!'**
+  /// **'💡 포스트를 삭제하고 싶다면? 탈퇴하기 전에 \"내 포스트 관리\"에서 삭제하세요!'**
   String get postDeleteTip;
 
   /// No description provided for @finalWarning.
@@ -4097,7 +4145,7 @@ abstract class AppLocalizations {
   /// No description provided for @postsAnonymized.
   ///
   /// In ko, this message translates to:
-  /// **'✅ 게시글 익명 처리'**
+  /// **'✅ 포스트 익명 처리'**
   String get postsAnonymized;
 
   /// No description provided for @deleteReasonLabel.
@@ -4109,7 +4157,7 @@ abstract class AppLocalizations {
   /// No description provided for @postsAnonymizedAutomatic.
   ///
   /// In ko, this message translates to:
-  /// **'게시글: 익명 처리 (자동)'**
+  /// **'포스트: 익명 처리 (자동)'**
   String get postsAnonymizedAutomatic;
 
   /// No description provided for @deletionFailed.
@@ -4175,7 +4223,7 @@ abstract class AppLocalizations {
   /// No description provided for @deleteConfirmationMessage.
   ///
   /// In ko, this message translates to:
-  /// **'이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 게시글은 \"탈퇴한 사용자\"로 표시됩니다.'**
+  /// **'이 작업은 되돌릴 수 없으며, 모든 데이터가 영구적으로 삭제됩니다. 포스트는 \"탈퇴한 사용자\"로 표시됩니다.'**
   String get deleteConfirmationMessage;
 
   /// No description provided for @accountDeleted.
@@ -4205,13 +4253,13 @@ abstract class AppLocalizations {
   /// No description provided for @uploadedFiles.
   ///
   /// In ko, this message translates to:
-  /// **'업로드한 파일 (프로필 사진, 게시글 이미지, 모든 업로드 파일)'**
+  /// **'업로드한 파일 (프로필 사진, 포스트 이미지, 모든 업로드 파일)'**
   String get uploadedFiles;
 
   /// No description provided for @postsAndComments.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)'**
+  /// **'포스트 & 댓글 (탈퇴한 사용자로 표시, 대화 맥락 유지)'**
   String get postsAndComments;
 
   /// No description provided for @imageDisplayIssueDetected.
@@ -5051,7 +5099,7 @@ abstract class AppLocalizations {
   /// No description provided for @postTypeSectionTitle.
   ///
   /// In ko, this message translates to:
-  /// **'게시글 유형'**
+  /// **'포스트 유형'**
   String get postTypeSectionTitle;
 
   /// No description provided for @postTypeTextLabel.
@@ -5165,7 +5213,7 @@ abstract class AppLocalizations {
   /// No description provided for @totalImageSizeWarning.
   ///
   /// In ko, this message translates to:
-  /// **'경고: 총 이미지 크기가 {sizeMB}MB입니다. 게시글 등록에 시간이 걸릴 수 있습니다.'**
+  /// **'경고: 총 이미지 크기가 {sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.'**
   String totalImageSizeWarning(String sizeMB);
 }
 

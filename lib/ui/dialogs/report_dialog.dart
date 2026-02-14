@@ -29,6 +29,30 @@ class _ReportDialogState extends State<ReportDialog> {
   final TextEditingController descriptionController = TextEditingController();
   bool isSubmitting = false;
 
+  bool get _isOtherReasonSelected {
+    return selectedReason == ReportReasons.otherKo ||
+        selectedReason == ReportReasons.otherEn;
+  }
+
+  bool get _requiresDescription => _isOtherReasonSelected;
+
+  bool get _isDescriptionValid {
+    if (!_requiresDescription) return true;
+    return descriptionController.text.trim().isNotEmpty;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // "기타/Other" 선택 시 텍스트 입력 여부에 따라 버튼 활성화가 즉시 반영되도록
+    descriptionController.addListener(() {
+      if (!mounted) return;
+      if (_requiresDescription) {
+        setState(() {});
+      }
+    });
+  }
+
   @override
   void dispose() {
     descriptionController.dispose();
@@ -134,7 +158,9 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(height: 12),
             
             // 신고 사유 선택
-            ...ReportReasons.allReasons.map((reason) => 
+            ...ReportReasons.allReasonsForLanguageCode(
+              Localizations.localeOf(context).languageCode,
+            ).map((reason) => 
               RadioListTile<String>(
                 title: Text(
                   reason,
@@ -247,7 +273,7 @@ class _ReportDialogState extends State<ReportDialog> {
             const SizedBox(width: 12),
             Expanded(
               child: ElevatedButton(
-                onPressed: selectedReason == null || isSubmitting 
+                onPressed: selectedReason == null || isSubmitting || !_isDescriptionValid
                     ? null 
                     : _submitReport,
                 style: ElevatedButton.styleFrom(
@@ -287,6 +313,19 @@ class _ReportDialogState extends State<ReportDialog> {
 
   Future<void> _submitReport() async {
     if (selectedReason == null) return;
+
+    // ✅ "기타/Other" 선택 시 상세 설명 필수
+    if (_requiresDescription && !_isDescriptionValid) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.required),
+          backgroundColor: Colors.orange,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
     
     setState(() {
       isSubmitting = true;

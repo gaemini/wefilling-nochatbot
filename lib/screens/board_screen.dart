@@ -361,12 +361,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
   Widget _buildScrollToTopOverlay() {
     // 하단 탭바/안전영역 고려
-    final bottom = MediaQuery.of(context).padding.bottom + 14;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    const fabDiameter = 56.0; // 기본 FAB 크기
+    const fabGap = 12.0; // FAB 위 간격
 
     return Positioned(
-      left: 0,
-      right: 0,
-      bottom: bottom,
+      right: 16,
+      bottom: safeBottom + 14 + fabDiameter + fabGap,
       child: IgnorePointer(
         ignoring: !_showScrollToTop,
         child: AnimatedSlide(
@@ -377,30 +378,28 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             opacity: _showScrollToTop ? 1 : 0,
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
-            child: Center(
-              child: Semantics(
-                button: true,
-                label: '맨 위로 이동',
-                child: Material(
-                  color: const Color(0xFFF3F4F6),
-                  elevation: 2,
-                  shadowColor: const Color(0x14000000),
+            child: Semantics(
+              button: true,
+              label: '맨 위로 이동',
+              child: Material(
+                color: const Color(0xFFF3F4F6),
+                elevation: 2,
+                shadowColor: const Color(0x14000000),
+                borderRadius: BorderRadius.circular(999),
+                child: InkWell(
+                  onTap: _scrollToTop,
                   borderRadius: BorderRadius.circular(999),
-                  child: InkWell(
-                    onTap: _scrollToTop,
-                    borderRadius: BorderRadius.circular(999),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-                      ),
-                      child: const Icon(
-                        Icons.keyboard_arrow_up_rounded,
-                        size: 22,
-                        color: Color(0xFF374151),
-                      ),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                    ),
+                    child: const Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      size: 22,
+                      color: Color(0xFF374151),
                     ),
                   ),
                 ),
@@ -434,23 +433,57 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
                     ),
                   ],
                 ),
-                child: TabBar(
-                  controller: _tabController,
-                  labelColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
-                  unselectedLabelColor: Colors.grey[600],
-                  indicatorColor: AppColors.pointColor, // 위필링 시그니처 파란색으로 통일
-                  labelStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                  tabs: const [
-                    Tab(text: 'Today'),
-                    Tab(text: 'All'),
-                  ],
+                child: AnimatedBuilder(
+                  animation: _tabController,
+                  builder: (context, _) {
+                    final isTodaySelected = _tabController.index == 0;
+
+                    const selectedBase = TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    );
+                    const unselectedBase = TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    );
+
+                    return TabBar(
+                      controller: _tabController,
+                      // 요구사항: Today만 로고(위필링) 색으로
+                      indicatorColor: isTodaySelected
+                          ? AppColors.pointColor
+                          : const Color(0xFF111827),
+                      indicatorWeight: 2.5,
+                      overlayColor:
+                          WidgetStateProperty.all(Colors.black.withOpacity(0.04)),
+                      tabs: [
+                        Tab(
+                          child: Text(
+                            'Today',
+                            style: (isTodaySelected ? selectedBase : unselectedBase)
+                                .copyWith(
+                              color: isTodaySelected
+                                  ? AppColors.pointColor
+                                  : (Colors.grey[600] ?? const Color(0xFF6B7280)),
+                            ),
+                          ),
+                        ),
+                        Tab(
+                          child: Text(
+                            'All',
+                            style: (!isTodaySelected ? selectedBase : unselectedBase)
+                                .copyWith(
+                              color: !isTodaySelected
+                                  ? const Color(0xFF111827)
+                                  : (Colors.grey[600] ?? const Color(0xFF6B7280)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
               // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
@@ -607,6 +640,23 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     return StreamBuilder<List<Meetup>>(
       stream: _todayMeetupsStream,
       builder: (context, meetupSnapshot) {
+        final todayMeetupsTitle = _safeL10n(
+          (l) => l.todayMeetupsSectionTitle,
+          '오늘의 밋업',
+        );
+        final todayPostsTitle = _safeL10n(
+          (l) => l.todayPostsSectionTitle,
+          '오늘의 게시글',
+        );
+        final noTodayMeetupsText = _safeL10n(
+          (l) => l.todayNoMeetups,
+          '오늘 올라온 밋업이 없어요.',
+        );
+        final noTodayPostsText = _safeL10n(
+          (l) => l.todayNoPosts,
+          '오늘 올라온 게시글이 없어요.',
+        );
+
         final bool isMeetupsLoading =
             meetupSnapshot.connectionState == ConnectionState.waiting &&
             !meetupSnapshot.hasData &&
@@ -670,9 +720,9 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
                 children: [
                   const Icon(Icons.event_available_rounded, size: 18, color: Color(0xFF111827)),
                   const SizedBox(width: 8),
-                  const Text(
-                    '오늘의 모임',
-                    style: TextStyle(
+                  Text(
+                    todayMeetupsTitle,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -714,11 +764,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
               );
             }
             if (todayMeetups.isEmpty) {
-              return const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                 child: Text(
-                  '오늘 올라온 모임이 없어요.',
-                  style: TextStyle(
+                  noTodayMeetupsText,
+                  style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -752,15 +802,15 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
           // 3) Posts header
           if (i == 0) {
-            return const Padding(
-              padding: EdgeInsets.fromLTRB(16, 10, 16, 8),
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
               child: Row(
                 children: [
-                  Icon(Icons.article_rounded, size: 18, color: Color(0xFF111827)),
-                  SizedBox(width: 8),
+                  const Icon(Icons.article_rounded, size: 18, color: Color(0xFF111827)),
+                  const SizedBox(width: 8),
                   Text(
-                    '오늘의 게시글',
-                    style: TextStyle(
+                    todayPostsTitle,
+                    style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -775,11 +825,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
           // 4) Posts list or empty
           if (todayPosts.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.fromLTRB(16, 0, 16, 24),
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
               child: Text(
-                '오늘 올라온 게시글이 없어요.',
-                style: TextStyle(
+                noTodayPostsText,
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 14,
                   fontWeight: FontWeight.w600,

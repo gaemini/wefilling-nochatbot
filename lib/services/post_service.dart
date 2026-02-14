@@ -25,6 +25,43 @@ class PostService {
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
 
+  /// 레거시/누락 데이터 보강용:
+  /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
+  /// - visibleToCategoryIds(친구 카테고리 문서 ID들) 기반으로 현재 유저 포함 여부를 계산
+  ///
+  /// 주의: Firestore whereIn은 최대 10개 제한이 있으므로 청크 처리.
+  Future<bool> _isUserIncludedByVisibleCategories({
+    required String userId,
+    required List<String> visibleToCategoryIds,
+  }) async {
+    final ids = visibleToCategoryIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    if (ids.isEmpty) return false;
+
+    const chunkSize = 10;
+    for (var i = 0; i < ids.length; i += chunkSize) {
+      final chunk = ids.sublist(i, (i + chunkSize).clamp(0, ids.length));
+      try {
+        final snap = await _firestore
+            .collection('friend_categories')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+
+        for (final d in snap.docs) {
+          final data = d.data();
+          final friendIds = List<String>.from(data['friendIds'] ?? const []);
+          if (friendIds.contains(userId)) {
+            return true;
+          }
+        }
+      } catch (e) {
+        // 인덱스/권한/네트워크 이슈가 있어도 보안적으로는 "숨김"이 안전
+        Logger.error('카테고리 포함 여부 확인 오류: $e');
+        return false;
+      }
+    }
+    return false;
+  }
+
   bool _canUserReadPost(Post post, User? user) {
     // 로그인하지 않은 경우 전체 공개만 허용
     if (user == null) {
@@ -248,8 +285,86 @@ class PostService {
 
       return true;
     } catch (e) {
-      Logger.error('게시글 작성 오류: $e');
+      Logger.error('포스트 작성 오류: $e');
       return false;
+    }
+  }
+
+  /// 게시글 수정 (작성자만 가능)
+  /// - content 및 imageUrls만 수정 (공개범위/익명 등은 유지)
+  /// - 기존 이미지 제거/신규 이미지 업로드를 지원
+  Future<Post?> updatePost({
+    required Post post,
+    required String content,
+    required List<String> keptImageUrls,
+    List<File>? newImageFiles,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+
+      final postRef = _firestore.collection('posts').doc(post.id);
+      final postDoc = await postRef.get();
+      if (!postDoc.exists) return null;
+
+      final data = postDoc.data() as Map<String, dynamic>;
+      if ((data['userId'] ?? '').toString() != user.uid) {
+        Logger.error('포스트 수정 실패: 작성자만 수정할 수 있습니다.');
+        return null;
+      }
+
+      // 투표 게시글은 투표가 진행된 이후에는 수정 불가 (공정성)
+      final type = (data['type'] ?? 'text').toString();
+      final pollTotalVotes = (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+      if (type == 'poll' && pollTotalVotes > 0) {
+        Logger.error('포스트 수정 실패: 투표가 진행된 포스트는 수정할 수 없습니다.');
+        return null;
+      }
+
+      final originalUrls = List<String>.from(data['imageUrls'] ?? const []);
+      final keptSet = keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+      final removedUrls = originalUrls.where((u) => !keptSet.contains(u)).toList(growable: false);
+
+      // 신규 이미지 업로드 (병렬)
+      final uploadedUrls = <String>[];
+      if (newImageFiles != null && newImageFiles.isNotEmpty) {
+        final futures = newImageFiles.map((f) => _storageService.uploadImage(f));
+        final results = await Future.wait(futures, eagerError: false);
+        uploadedUrls.addAll(results.whereType<String>().where((u) => u.trim().isNotEmpty));
+      }
+
+      // 최대 10장 제한 (안전)
+      final merged = <String>[
+        ...keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty),
+        ...uploadedUrls,
+      ];
+      final finalImageUrls = merged.length > 10 ? merged.take(10).toList() : merged;
+
+      await postRef.update({
+        'content': content,
+        'imageUrls': finalImageUrls,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // 제거된 기존 이미지는 best-effort로 삭제
+      for (final url in removedUrls) {
+        try {
+          await _storageService.deleteImage(url);
+        } catch (_) {}
+      }
+
+      // 캐시 무효화
+      if (CacheFeatureFlags.isPostCacheEnabled) {
+        _cache.invalidate(key: post.id);
+        _cache.invalidate();
+      }
+
+      // 최신 데이터 반환
+      final refreshed = await getPostById(post.id);
+      return refreshed ?? post.copyWith(content: content, imageUrls: finalImageUrls);
+    } catch (e) {
+      Logger.error('포스트 수정 오류: $e');
+      return null;
     }
   }
 
@@ -267,7 +382,7 @@ class PostService {
       await _firestore.runTransaction((tx) async {
         final postSnap = await tx.get(postRef);
         if (!postSnap.exists) {
-          throw Exception('게시글이 존재하지 않습니다');
+          throw Exception('포스트가 존재하지 않습니다');
         }
 
         final data = postSnap.data() as Map<String, dynamic>;
@@ -407,7 +522,7 @@ class PostService {
 
       return post;
     } catch (e) {
-      Logger.error('게시글 조회 오류: $e');
+      Logger.error('포스트 조회 오류: $e');
       return null;
     }
   }
@@ -591,7 +706,7 @@ class PostService {
 
       return true;
     } catch (e) {
-      Logger.error('게시글 삭제 오류: $e');
+      Logger.error('포스트 삭제 오류: $e');
       return false;
     }
   }
@@ -628,7 +743,7 @@ class PostService {
           final post = _buildPostFromFirestore(doc.id, data);
           return post;
         } catch (e) {
-          Logger.error('게시글 파싱 오류: $e');
+          Logger.error('포스트 파싱 오류: $e');
           // 오류 발생 시 기본 Post 객체 반환
           return Post(
             id: doc.id,
@@ -762,22 +877,40 @@ class PostService {
           final post = _buildPostFromFirestore(doc.id, data);
 
           // 🔒 검색에서도 동일한 공개범위/허용 사용자 필터 적용
-          if (!_canUserReadPost(post, user)) {
-            continue;
+          // - 기본: allowedUserIds 기반
+          // - 보강: 레거시 데이터(allowedUserIds 누락/비어있음)는 visibleToCategoryIds 기반으로 계산
+          bool canRead = _canUserReadPost(post, user);
+          if (!canRead && post.visibility == 'category') {
+            // 작성자 본인은 항상 허용 (안전장치)
+            if (post.userId == user.uid) {
+              canRead = true;
+            } else if (post.allowedUserIds.isEmpty && post.visibleToCategoryIds.isNotEmpty) {
+              canRead = await _isUserIncludedByVisibleCategories(
+                userId: user.uid,
+                visibleToCategoryIds: post.visibleToCategoryIds,
+              );
+            }
           }
+          if (!canRead) continue;
 
           // 검색어와 일치하는지 확인
           final title = (data['title'] as String? ?? '').toLowerCase();
           final content = (data['content'] as String? ?? '').toLowerCase();
           final author = (data['authorNickname'] as String? ?? '').toLowerCase();
+          final isAnonymous = data['isAnonymous'] == true;
 
-          if (title.contains(lowercaseQuery) ||
-              content.contains(lowercaseQuery) ||
-              author.contains(lowercaseQuery)) {
+          // ✅ 익명 글은 "작성자(아이디/닉네임)"로 어떤 경우에도 검색에 걸리면 안됨
+          // - 제목/내용 검색은 포함
+          // - 작성자 기준 검색은 비익명 글에만 허용
+          final matchesTitleOrContent =
+              title.contains(lowercaseQuery) || content.contains(lowercaseQuery);
+          final matchesAuthor = !isAnonymous && author.contains(lowercaseQuery);
+
+          if (matchesTitleOrContent || matchesAuthor) {
             matched.add(post);
           }
         } catch (e) {
-          Logger.error('게시글 검색 파싱 오류: $e');
+          Logger.error('포스트 검색 파싱 오류: $e');
         }
       }
 
@@ -785,7 +918,7 @@ class PostService {
       final filtered = await ContentFilterService.filterPosts(matched);
       return filtered;
     } catch (e) {
-      Logger.error('게시글 검색 오류: $e');
+      Logger.error('포스트 검색 오류: $e');
       return [];
     }
   }
@@ -805,7 +938,7 @@ class PostService {
 
       return savedDoc.exists;
     } catch (e) {
-      Logger.error('게시글 저장 상태 확인 오류: $e');
+      Logger.error('포스트 저장 상태 확인 오류: $e');
       return false;
     }
   }
@@ -837,7 +970,7 @@ class PostService {
         return true;
       }
     } catch (e) {
-      Logger.error('게시글 저장 토글 오류: $e');
+      Logger.error('포스트 저장 토글 오류: $e');
       return false;
     }
   }

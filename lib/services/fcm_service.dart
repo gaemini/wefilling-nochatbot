@@ -5,9 +5,11 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
+import 'dart:ui' as ui;
 import 'badge_service.dart';
 import 'navigation_service.dart';
 import '../utils/logger.dart';
@@ -31,6 +33,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final FlutterLocalNotificationsPlugin _localNotifications = 
       FlutterLocalNotificationsPlugin();
 
@@ -266,14 +269,46 @@ class FCMService {
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {
     try {
-      // 단일 토큰(fcmToken)은 "최근 토큰" 용도로 유지(레거시 호환)
-      // 멀티 디바이스 지원을 위해 fcmTokens 배열에도 누적 저장
+      // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
+      //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.
+      //    (한국어/영어 알림이 연속으로 2번 오는 문제의 핵심 원인 방지)
+      final locale = ui.PlatformDispatcher.instance.locale;
+      final String localeTag = (() {
+        try {
+          return locale.toLanguageTag();
+        } catch (_) {
+          final cc = locale.countryCode;
+          return cc == null || cc.isEmpty ? locale.languageCode : '${locale.languageCode}-$cc';
+        }
+      })();
+
+      final String? platform = (() {
+        if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
+        if (defaultTargetPlatform == TargetPlatform.android) return 'android';
+        return null;
+      })();
+
+      try {
+        final callable = _functions.httpsCallable('registerFcmToken');
+        await callable.call(<String, dynamic>{
+          'token': token,
+          'locale': localeTag,
+          if (platform != null) 'platform': platform,
+        });
+        Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
+        return;
+      } catch (e) {
+        // 네트워크/함수 오류 시 레거시 방식으로 fallback (토큰은 최소한 저장되도록)
+        Logger.error('⚠️ registerFcmToken 실패 - 레거시 저장으로 fallback: $e');
+      }
+
+      // fallback: 단일 토큰(fcmToken) + 멀티 토큰(fcmTokens)
       await _firestore.collection('users').doc(userId).set({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      Logger.log('✅ FCM 토큰 저장 완료 (fcmTokens arrayUnion 포함)');
+      Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
     } catch (e) {
       Logger.error('❌ FCM 토큰 저장 실패: $e');
     }
@@ -293,6 +328,13 @@ class FCMService {
         _messaging.deleteToken().then((_) {
           Logger.log('✅ FCM 토큰 삭제 완료');
         }),
+        // 서버 레지스트리에서도 제거 (가능한 경우에만)
+        if (token != null && token.isNotEmpty)
+          _functions.httpsCallable('unregisterFcmToken').call(<String, dynamic>{
+            'token': token,
+          }).catchError((e) {
+            Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
+          }),
         // Firestore에서도 "해당 토큰"만 제거 (다른 기기 토큰은 보존)
         if (token != null && token.isNotEmpty)
           _firestore.runTransaction((tx) async {

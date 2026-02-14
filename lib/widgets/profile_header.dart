@@ -163,7 +163,7 @@ class ProfileHeader extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     final statItems = [
-      {'label': '게시글', 'value': stats['posts'] ?? 0},
+      {'label': '포스트', 'value': stats['posts'] ?? 0},
       {'label': '참여', 'value': stats['participationCount'] ?? 0},
       {'label': '작성글', 'value': stats['writtenPosts'] ?? 0},
     ];

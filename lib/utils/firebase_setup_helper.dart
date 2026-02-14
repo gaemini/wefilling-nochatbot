@@ -33,7 +33,7 @@ class FirebaseSetupHelper {
       });
       Logger.log('스터디 카테고리 설정 완료');
 
-      // 식사 카테고리
+      // 밥 카테고리
       await _firestore.collection('recommended_places').doc('meal').set({
         'places': [
           {
@@ -53,7 +53,7 @@ class FirebaseSetupHelper {
           },
         ],
       });
-      Logger.log('식사 카테고리 설정 완료');
+      Logger.log('밥 카테고리 설정 완료');
 
       // 카페 카테고리 (hobby)
       await _firestore.collection('recommended_places').doc('hobby').set({

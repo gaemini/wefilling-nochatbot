@@ -58,8 +58,12 @@ class UserInfoCacheService {
     // 1단계: 캐시 확인
     if (!forceRefresh && _cache.containsKey(userId)) {
       final timestamp = _cacheTimestamps[userId];
+      final cached = _cache[userId];
       if (timestamp != null && 
-          DateTime.now().difference(timestamp) < cacheValidity) {
+          DateTime.now().difference(timestamp) < cacheValidity &&
+          // ⚠️ Firestore 캐시 스냅샷(fromCache=true)로 들어온 값은
+          // "최신"으로 간주하지 않는다. (앱 초기 진입 시 오래된 닉네임/사진 플리커 방지)
+          (cached == null || cached.isFromCache == false)) {
         Logger.log('✅ 캐시에서 사용자 정보 반환: $userId');
         return _cache[userId];
       }
@@ -138,7 +142,11 @@ class UserInfoCacheService {
 
         // write-through 캐시 갱신
         _cache[userId] = userInfo;
-        _cacheTimestamps[userId] = DateTime.now();
+        // ⚠️ fromCache 스냅샷은 '신선한 캐시'로 취급하지 않도록 타임스탬프 갱신을 피한다.
+        // (초기 진입 시 오래된 값이 cacheValidity 동안 유지되는 문제 방지)
+        if (!fromCache) {
+          _cacheTimestamps[userId] = DateTime.now();
+        }
         return userInfo;
       }).distinct((prev, next) {
         // 객체 identity가 아니라 값 기준으로 중복 제거

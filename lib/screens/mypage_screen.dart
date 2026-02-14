@@ -624,7 +624,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             SizedBox(height: 8),
             Text(
               isKo
-                  ? '게시글을 보려면 로그인해주세요'
+                  ? '포스트를 보려면 로그인해주세요'
                   : 'Please login to view posts',
               style: TextStyle(
                 fontFamily: 'Pretendard',

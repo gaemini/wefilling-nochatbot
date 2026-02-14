@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -31,13 +34,21 @@ class _DMListScreenState extends State<DMListScreen> {
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   Set<String> _hiddenConversationIds = {};
-  final Map<String, Stream<DMUserInfo?>> _userInfoStreams = {};
+  // 첫 진입 UX:
+  // - 캐시(empty) → 서버 전환 과정에서 "대화 없음"이 잠깐 보였다가 리스트가 나타나는 플래시를 방지한다.
+  bool _serverSnapshotSeen = false;
+  bool _allowEmptyState = false;
+  List<Conversation> _lastNonEmptyConversations = const [];
+  static const Duration _emptyStateGrace = Duration(milliseconds: 1500);
+  Timer? _emptyStateGraceTimer;
   // DM 목록 UX 개선:
   // - Firestore 캐시 스냅샷(fromCache) → 서버 스냅샷 전환 시
   //   "옛 사진/닉네임이 잠깐 보였다가 바뀌는" 플리커가 발생할 수 있어,
   //   서버에서 확인된 최신 사용자 정보를 별도로 보관/재사용한다.
   final Map<String, DMUserInfo> _serverUserInfoById = {};
   final Set<String> _serverUserInfoFetchInFlight = <String>{};
+  final Set<String> _pendingServerUserInfoIds = <String>{};
+  bool _serverUserInfoPrefetchScheduled = false;
   static const String _anonTitlePrefsPrefix = 'dm_anon_title__'; // conversationId -> post content
   final Map<String, String> _anonTitleCache = {}; // conversationId -> post content
   final Set<String> _anonPrefetchInFlightPostIds = {};
@@ -163,6 +174,117 @@ class _DMListScreenState extends State<DMListScreen> {
     super.initState();
     _loadHiddenConversations();
     _loadCachedAnonTitles();
+
+    // 서버 스냅샷을 받기 전까지는 empty state를 잠깐 유예하고 스켈레톤을 보여준다.
+    _emptyStateGraceTimer = Timer(_emptyStateGrace, () {
+      if (!mounted) return;
+      setState(() {
+        _allowEmptyState = true;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _emptyStateGraceTimer?.cancel();
+    _emptyStateGraceTimer = null;
+    super.dispose();
+  }
+
+  void _requestServerUserInfo(String userId) {
+    final id = userId.trim();
+    if (id.isEmpty) return;
+    if (_serverUserInfoById.containsKey(id)) return;
+    if (_serverUserInfoFetchInFlight.contains(id)) return;
+    _pendingServerUserInfoIds.add(id);
+    _scheduleServerUserInfoPrefetch();
+  }
+
+  void _scheduleServerUserInfoPrefetch() {
+    if (_serverUserInfoPrefetchScheduled) return;
+    _serverUserInfoPrefetchScheduled = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      _serverUserInfoPrefetchScheduled = false;
+      if (!mounted) return;
+      if (_pendingServerUserInfoIds.isEmpty) return;
+
+      final ids = _pendingServerUserInfoIds.toList(growable: false);
+      _pendingServerUserInfoIds.clear();
+
+      await _prefetchServerUserInfos(ids);
+    });
+  }
+
+  Future<void> _prefetchServerUserInfos(List<String> userIds) async {
+    final targets = userIds
+        .map((e) => e.trim())
+        .where((id) =>
+            id.isNotEmpty &&
+            !_serverUserInfoById.containsKey(id) &&
+            !_serverUserInfoFetchInFlight.contains(id))
+        .toList(growable: false);
+    if (targets.isEmpty) return;
+
+    for (final id in targets) {
+      _serverUserInfoFetchInFlight.add(id);
+    }
+
+    try {
+      final Map<String, DMUserInfo> updates = {};
+      final List<String> fetchIds = [];
+
+      // 0) 이미 서버 기준으로 캐시된 값이 있으면(= fromCache=false) 네트워크 없이 즉시 사용
+      for (final id in targets) {
+        final cached = _userInfoCacheService.getCachedUserInfo(id);
+        if (cached != null && cached.isFromCache == false) {
+          updates[id] = DMUserInfo(
+            uid: cached.uid,
+            nickname: cached.nickname,
+            photoURL: cached.photoURL,
+            photoVersion: cached.photoVersion,
+            isFromCache: false,
+          );
+        } else {
+          fetchIds.add(id);
+        }
+      }
+
+      const int concurrency = 6;
+
+      for (var i = 0; i < fetchIds.length; i += concurrency) {
+        final chunk = fetchIds.sublist(i, min(i + concurrency, fetchIds.length));
+        final infos = await Future.wait(
+          chunk.map((id) => _userInfoCacheService.getUserInfo(id, forceRefresh: true)),
+        );
+
+        for (var j = 0; j < chunk.length; j++) {
+          final id = chunk[j];
+          final info = infos[j];
+          if (info == null) continue;
+          // getUserInfo(forceRefresh: true)는 서버 기준(최신)으로 간주
+          updates[id] = DMUserInfo(
+            uid: info.uid,
+            nickname: info.nickname,
+            photoURL: info.photoURL,
+            photoVersion: info.photoVersion,
+            isFromCache: false,
+          );
+        }
+      }
+
+      if (!mounted) return;
+      if (updates.isEmpty) return;
+      setState(() {
+        _serverUserInfoById.addAll(updates);
+      });
+    } catch (e) {
+      Logger.error('서버 사용자 정보 프리패치 실패(무시): $e');
+    } finally {
+      for (final id in targets) {
+        _serverUserInfoFetchInFlight.remove(id);
+      }
+    }
   }
 
   Future<void> _loadHiddenConversations() async {
@@ -222,11 +344,12 @@ class _DMListScreenState extends State<DMListScreen> {
       children: [
         _buildFilterBanners(),
         Expanded(
-          child: StreamBuilder<List<Conversation>>(
-      stream: _dmService.getMyConversations(),
+          child: StreamBuilder<
+              ({List<Conversation> conversations, bool isFromCache, bool hasPendingWrites})>(
+      stream: _dmService.getMyConversationsWithMeta(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return _buildLoadingState();
+          return _buildListSkeleton();
         }
 
         if (snapshot.hasError) {
@@ -245,9 +368,40 @@ class _DMListScreenState extends State<DMListScreen> {
           return _buildErrorState(snapshot.error.toString());
         }
 
-        final conversations = snapshot.data ?? [];
+        final payload = snapshot.data;
+        final conversations = payload?.conversations ?? <Conversation>[];
+        final isFromCache = payload?.isFromCache ?? false;
 
-        if (conversations.isEmpty) {
+        // 서버 스냅샷이 한 번이라도 오면(= fromCache=false) empty state 유예를 해제한다.
+        if (!_serverSnapshotSeen && payload != null && !isFromCache) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            if (_serverSnapshotSeen) return;
+            setState(() {
+              _serverSnapshotSeen = true;
+              _allowEmptyState = true;
+            });
+          });
+        }
+
+        // 캐시(empty) 이벤트가 순간적으로 들어오면, 직전 목록을 유지해 깜빡임을 줄인다.
+        if (conversations.isNotEmpty) {
+          _lastNonEmptyConversations = conversations;
+        } else if (isFromCache && _lastNonEmptyConversations.isNotEmpty) {
+          // UI에는 직전 값을 사용하고, 실제 empty 여부는 서버 스냅샷에서 확정한다.
+          // (필터/숨김 처리 등은 아래 로직에서 동일하게 적용됨)
+        }
+
+        final effectiveConversations =
+            (conversations.isEmpty && isFromCache && _lastNonEmptyConversations.isNotEmpty)
+                ? _lastNonEmptyConversations
+                : conversations;
+
+        if (effectiveConversations.isEmpty) {
+          // 서버 스냅샷이 오기 전(또는 짧은 유예 시간)에는 empty state 대신 스켈레톤을 보여준다.
+          if (!_allowEmptyState) {
+            return _buildListSkeleton();
+          }
           return _buildEmptyState(
             icon: Icons.send_outlined,
             title: AppLocalizations.of(context)!.noConversations ?? '대화가 없습니다',
@@ -258,11 +412,11 @@ class _DMListScreenState extends State<DMListScreen> {
         // 익명 게시글 DM 타이틀은 탭과 무관하게 백그라운드로 미리 준비 (체감 속도 개선)
         // - 목록에서 "하나씩 채워지는" 느낌을 줄이기 위해 로컬 캐시 중심으로 갱신
         if (_anonCacheLoaded) {
-          _scheduleAnonTitlePrefetch(conversations);
+          _scheduleAnonTitlePrefetch(effectiveConversations);
         }
 
         // 필터 적용: 친구 / 익명
-        final filtered = conversations.where((c) {
+        final filtered = effectiveConversations.where((c) {
           // 본인이 본인에게 보낸 DM 체크 (participants가 모두 본인)
           final isSelfDM = c.participants.length == 2 && 
                            c.participants[0] == _currentUser!.uid && 
@@ -291,6 +445,9 @@ class _DMListScreenState extends State<DMListScreen> {
         }).toList();
 
         if (filtered.isEmpty) {
+          if (!_allowEmptyState && !_serverSnapshotSeen) {
+            return _buildListSkeleton();
+          }
           return _buildEmptyState(
             icon: Icons.send_outlined,
             title: _filter == DMFilter.friends
@@ -302,6 +459,17 @@ class _DMListScreenState extends State<DMListScreen> {
           );
         }
 
+        // ✅ 초기(서버) 스냅샷에서 보이는 대화방들의 상대 프로필을 배치로 최신화
+        // - 카드별 setState 폭발/플리커를 줄이고, 프로필 정보가 섞여 보이는 현상을 방지한다.
+        if (!isFromCache) {
+          for (final c in filtered.take(30)) {
+            final otherId = c.getOtherUserId(_currentUser!.uid).trim();
+            if (otherId.isEmpty) continue;
+            if (c.isOtherUserAnonymous(_currentUser!.uid)) continue;
+            _requestServerUserInfo(otherId);
+          }
+        }
+
         return ListView.builder(
           padding: EdgeInsets.zero,
           // ✅ 목록 아이템 높이는 항상 76으로 고정(카드 컨테이너)되어 있어
@@ -311,11 +479,15 @@ class _DMListScreenState extends State<DMListScreen> {
           itemCount: filtered.length,
           itemBuilder: (context, index) {
             final conversation = filtered[index];
+            final preferLatestSkeleton = isFromCache && !_serverSnapshotSeen;
             // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
             // 각 Row의 Stream/Future 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
             return KeyedSubtree(
               key: ValueKey<String>('dm_conv_${conversation.id}'),
-              child: _buildConversationCard(conversation),
+              child: _buildConversationCard(
+                conversation,
+                preferLatestSkeleton: preferLatestSkeleton,
+              ),
             );
           },
         );
@@ -323,6 +495,91 @@ class _DMListScreenState extends State<DMListScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// DM 목록 스켈레톤 (첫 진입/캐시→서버 전환 플리커 방지)
+  Widget _buildListSkeleton() {
+    // 상단 필터 배너 아래에 자연스럽게 보이도록 리스트 형태로 렌더링
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      itemExtent: 76,
+      itemCount: 8,
+      itemBuilder: (context, index) {
+        final base = Colors.grey.shade200;
+        final base2 = Colors.grey.shade100;
+        return Container(
+          height: 76,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: base,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 120 + (index % 3) * 30,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: base,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      width: 180 + (index % 4) * 20,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: base2,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 34,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: base2,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: base2,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -419,7 +676,10 @@ class _DMListScreenState extends State<DMListScreen> {
   }
 
   /// 대화방 카드 빌드 (실시간 조회)
-  Widget _buildConversationCard(Conversation conversation) {
+  Widget _buildConversationCard(
+    Conversation conversation, {
+    required bool preferLatestSkeleton,
+  }) {
     final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
@@ -427,6 +687,7 @@ class _DMListScreenState extends State<DMListScreen> {
       conversation.lastMessageTime,
     );
     final dmContent = conversation.dmContent;
+    final myUnread = conversation.getMyUnreadCount(_currentUser!.uid);
 
     // 🔍 디버그: 익명 대화방 데이터 확인
     if (isAnonymous && kDebugMode) {
@@ -443,42 +704,31 @@ class _DMListScreenState extends State<DMListScreen> {
     );
 
     if (isPostBasedAnonymous) {
-      // ✅ 목록 배지(대화방별 안읽음)는 실제 메시지(isRead=false) 기반으로 계산한다.
-      // - 서버 unreadCount가 아직 반영되지 않은 환경에서도 배지가 정확히 보이도록 하기 위함
-      // - (성능 이슈가 있으면 서버 unreadCount 기반으로 다시 전환 가능)
-      return StreamBuilder<int>(
-        stream: _dmService
-            .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
-            .distinct(),
-        // ✅ initialData로 unreadCount(메타데이터)를 보여주면
-        // 캐시/드리프트 값이 잠깐 노출되며 "안 읽음이 떴다 사라지는" 플리커가 발생할 수 있다.
-        // 실제 메시지 기반 스트림이 곧바로 값을 내므로 0으로 고정해 UX를 안정화한다.
-        initialData: 0,
-        builder: (context, badgeSnapshot) {
-          final unreadCount = badgeSnapshot.data ?? 0;
+      // ✅ 사용자 친화 UX:
+      // - 대화방별 unreadCount를 위해 messages 서브컬렉션을 "방마다" 구독하면
+      //   목록 진입이 느려지고 스크롤이 버벅일 수 있다.
+      // - 서버(Cloud Functions)가 conversations.unreadCount를 단일 소스로 관리하므로 이를 사용한다.
+      final existing = (dmContent ?? '').trim();
+      final cached = (_anonTitleCache[conversation.id] ?? '').trim();
+      final titleText = existing.isNotEmpty
+          ? _truncate(existing)
+          : (cached.isNotEmpty
+              ? _truncate(cached)
+              : (Localizations.localeOf(context).languageCode == 'ko'
+                  ? '익명 게시글'
+                  : 'Anonymous post'));
 
-          final existing = (dmContent ?? '').trim();
-          final cached = (_anonTitleCache[conversation.id] ?? '').trim();
-          final titleText = existing.isNotEmpty
-              ? _truncate(existing)
-              : (cached.isNotEmpty
-                  ? _truncate(cached)
-                  : (Localizations.localeOf(context).languageCode == 'ko'
-                      ? '익명 게시글'
-                      : 'Anonymous post'));
-
-          return _buildConversationCardContent(
-            conversation: conversation,
-            displayName: titleText,
-            otherUserId: otherUserId,
-            otherUserPhoto: '', // 익명이므로 사진 없음
-            otherUserPhotoVersion: 0,
-            isAnonymous: isAnonymous,
-            timeString: timeString,
-            unreadCount: unreadCount,
-            hideProfile: true,
-          );
-        },
+      return _buildConversationCardContent(
+        conversation: conversation,
+        displayName: titleText,
+        otherUserId: otherUserId,
+        otherUserPhoto: '', // 익명이므로 사진 없음
+        otherUserPhotoVersion: 0,
+        isAnonymous: isAnonymous,
+        timeString: timeString,
+        unreadCount: myUnread,
+        hideProfile: true,
+        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
@@ -498,87 +748,50 @@ class _DMListScreenState extends State<DMListScreen> {
     // ✅ 사용자 문서 스트림 기반: 최신 프로필/닉네임이 자연스럽게 반영됨
     if (isCachedDeleted) {
       // 탈퇴로 확정이면 굳이 user 문서를 구독하지 않음
-      return StreamBuilder<int>(
-        stream: _dmService
-            .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
-            .distinct(),
-        initialData: 0,
-        builder: (context, badgeSnapshot) {
-          final unreadCount = badgeSnapshot.data ?? 0;
-          return _buildConversationCardContent(
-            conversation: conversation,
-            displayName: deletedLabel,
-            otherUserId: otherUserId,
-            otherUserPhoto: '',
-            otherUserPhotoVersion: 0,
-            isAnonymous: false,
-            timeString: timeString,
-            unreadCount: unreadCount,
-            hideProfile: false,
-          );
-        },
+      return _buildConversationCardContent(
+        conversation: conversation,
+        displayName: deletedLabel,
+        otherUserId: otherUserId,
+        otherUserPhoto: '',
+        otherUserPhotoVersion: 0,
+        isAnonymous: false,
+        timeString: timeString,
+        unreadCount: myUnread,
+        hideProfile: false,
+        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
-    // 서버 기준 최신 사용자 정보를 백그라운드로 확보 (캐시 → 최신 전환 플리커 제거)
+    // 서버 기준 최신 사용자 정보를 "배치"로 확보 (카드별 setState 플리커 감소)
     if (!isAnonymous) {
-      _ensureServerUserInfo(otherUserId);
+      _requestServerUserInfo(otherUserId);
     }
 
-    final userInfoStream = _userInfoStreams.putIfAbsent(
-      otherUserId,
-      () => _userInfoCacheService.watchUserInfo(otherUserId),
-    );
+    // ✅ 포스트 카드 로딩처럼: "대화방 문서에 들어있는 denormalized 값"으로 즉시 렌더링하고,
+    //    서버에서 최신 사용자 정보를 받아오면(_serverUserInfoById) 자연스럽게 교체한다.
+    final fresh = _serverUserInfoById[otherUserId];
+    final fallbackName = conversation.getOtherUserName(_currentUser!.uid);
+    final resolvedName = (fresh?.nickname ?? '').trim().isNotEmpty
+        ? fresh!.nickname
+        : fallbackName;
+    final displayName = resolvedName == 'DELETED_ACCOUNT' ? deletedLabel : resolvedName;
 
-    return StreamBuilder<DMUserInfo?>(
-      stream: isAnonymous ? null : userInfoStream,
-      // 캐시 기반 초기값(옛 닉네임/사진) 노출을 방지하기 위해 null로 시작한다.
-      // 서버에서 확인된 최신 값은 _serverUserInfoById를 통해 빠르게 반영된다.
-      initialData: null,
-      builder: (context, userSnapshot) {
-        final info = userSnapshot.data;
-        // 캐시 스냅샷은 UX 플리커의 원인이므로 UI에는 반영하지 않는다.
-        final DMUserInfo? freshFromStream =
-            (info != null && info.isFromCache == false) ? info : null;
-        final DMUserInfo? freshFromServerMap = _serverUserInfoById[otherUserId];
-        final DMUserInfo? resolved = freshFromServerMap ?? freshFromStream;
-        final bool isUserInfoReady = resolved != null;
-        final otherUserName = resolved?.nickname ?? '';
+    final fallbackPhoto = conversation.getOtherUserPhoto(_currentUser!.uid);
+    final otherUserPhoto = fresh?.photoURL ?? fallbackPhoto;
+    final otherUserPhotoVersion = fresh?.photoVersion ?? 0;
 
-        // 스트림에서 서버 스냅샷을 받으면, 목록 전체에서 재사용할 수 있게 저장
-        if (freshFromStream != null) {
-          _updateServerUserInfoIfNeeded(otherUserId, freshFromStream);
-        }
-
-        // photoURL이 있으면 표시하되, "캐시값"은 노출하지 않는다.
-        final otherUserPhoto = resolved?.photoURL ?? '';
-        final otherUserPhotoVersion = resolved?.photoVersion ?? 0;
-        
-        final displayName =
-            isAnonymous ? AppLocalizations.of(context)!.anonymous : otherUserName;
-
-        return StreamBuilder<int>(
-          stream: _dmService
-              .getActualUnreadCountStream(conversation.id, _currentUser!.uid)
-              .distinct(),
-          initialData: 0,
-          builder: (context, badgeSnapshot) {
-            final unreadCount = badgeSnapshot.data ?? 0;
-            return _buildConversationCardContent(
-              conversation: conversation,
-              displayName: displayName,
-              otherUserId: otherUserId,
-              otherUserPhoto: isAnonymous ? '' : otherUserPhoto,
-              otherUserPhotoVersion: isAnonymous ? 0 : otherUserPhotoVersion,
-              isAnonymous: isAnonymous,
-              timeString: timeString,
-              unreadCount: unreadCount,
-              hideProfile: isAnonymous, // 익명이면 프로필 숨김
-              isTitleLoading: !isAnonymous && !isUserInfoReady,
-            );
-          },
-        );
-      },
+    return _buildConversationCardContent(
+      conversation: conversation,
+      displayName: isAnonymous ? AppLocalizations.of(context)!.anonymous : displayName,
+      otherUserId: otherUserId,
+      otherUserPhoto: isAnonymous ? '' : otherUserPhoto,
+      otherUserPhotoVersion: isAnonymous ? 0 : otherUserPhotoVersion,
+      isAnonymous: isAnonymous,
+      timeString: timeString,
+      unreadCount: myUnread,
+      hideProfile: isAnonymous,
+      isTitleLoading: false,
+      isLatestPreviewLoading: preferLatestSkeleton,
     );
   }
 
@@ -650,6 +863,7 @@ class _DMListScreenState extends State<DMListScreen> {
     required int unreadCount,
     bool hideProfile = false,  // 프로필 숨김 여부
     bool isTitleLoading = false, // 최신 사용자 정보 로딩 중(플리커 방지)
+    bool isLatestPreviewLoading = false, // 마지막 메시지/시간 등 최신 정보 로딩 중
   }) {
     return Material(
       color: Colors.white,
@@ -720,18 +934,41 @@ class _DMListScreenState extends State<DMListScreen> {
                     
                     const SizedBox(height: 4),
                     
-                    // 마지막 메시지
-                    Text(
-                      conversation.lastMessage.isEmpty 
-                          ? (AppLocalizations.of(context)!.noMessages ?? "") : conversation.lastMessage,
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        color: const Color(0xFF6B7280),
-                        fontWeight: unreadCount > 0 ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    // 마지막 메시지 (캐시→서버 전환/최신 정보 로딩 중에는 스켈레톤으로 부드럽게)
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      switchInCurve: Curves.easeOut,
+                      switchOutCurve: Curves.easeOut,
+                      transitionBuilder: (child, anim) =>
+                          FadeTransition(opacity: anim, child: child),
+                      child: isLatestPreviewLoading
+                          ? Container(
+                              key: const ValueKey<String>('dm_last_skeleton'),
+                              width: 180,
+                              height: 12,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF3F4F6),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                            )
+                          : Text(
+                              conversation.lastMessage.isEmpty
+                                  ? (AppLocalizations.of(context)!.noMessages ?? "")
+                                  : conversation.lastMessage,
+                              key: ValueKey<String>(
+                                'dm_last_${conversation.id}_${conversation.lastMessage}',
+                              ),
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                color: const Color(0xFF6B7280),
+                                fontWeight: unreadCount > 0
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                     ),
                   ],
                 ),
@@ -743,14 +980,34 @@ class _DMListScreenState extends State<DMListScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // 날짜 (상단)
-                  Text(
-                    timeString,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      color: Color(0xFF9CA3AF),
-                    ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOut,
+                    switchOutCurve: Curves.easeOut,
+                    transitionBuilder: (child, anim) =>
+                        FadeTransition(opacity: anim, child: child),
+                    child: isLatestPreviewLoading
+                        ? Container(
+                            key: const ValueKey<String>('dm_time_skeleton'),
+                            width: 34,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          )
+                        : Text(
+                            timeString,
+                            key: ValueKey<String>(
+                              'dm_time_${conversation.id}_$timeString',
+                            ),
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                          ),
                   ),
                   
                   const SizedBox(height: 4),

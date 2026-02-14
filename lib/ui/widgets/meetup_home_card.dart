@@ -312,9 +312,13 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            // ✅ BoardMeetupCard(게시글 Today 카드)와 제목 폰트 통일
+                            // - size: 16
+                            // - weight: w800
+                            // - height: 1.25
+                            fontWeight: FontWeight.w800,
                             color: Color(0xFF111827),
-                            height: 1.4,
+                            height: 1.25,
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,

@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/meetup.dart';
+import '../utils/category_label_utils.dart';
 import '../models/review_request.dart';
 import '../services/review_consensus_service.dart';
 import '../services/feature_flag_service.dart';
@@ -280,7 +281,7 @@ class _ReviewRequestScreenState extends State<ReviewRequestScreen> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  widget.meetup.category,
+                  localizedCategoryLabel(context, widget.meetup.category),
                   style: const TextStyle(
                     color: Color(0xFF4A90E2),
                     fontSize: 12,

@@ -9,7 +9,6 @@ import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import 'content_filter_service.dart';
 import 'dm_message_cache_service.dart';
-import 'badge_service.dart';
 import '../utils/dm_feature_flags.dart';
 import '../utils/logger.dart';
 
@@ -470,7 +469,7 @@ class DMService {
             dmContent = postData['content'] as String?;
           }
         } catch (e) {
-          Logger.error('게시글 본문 로드 실패: $e');
+          Logger.error('포스트 본문 로드 실패: $e');
         }
       }
       
@@ -667,9 +666,23 @@ class DMService {
 
   /// 내 대화방 목록 스트림 (최근 50개, 인스타그램 방식)
   Stream<List<Conversation>> getMyConversations() {
+    return getMyConversationsWithMeta().map((v) => v.conversations);
+  }
+
+  /// 내 대화방 목록 스트림 + 메타데이터
+  ///
+  /// 목적:
+  /// - 캐시 스냅샷(특히 empty) → 서버 스냅샷 전환 시 UI가 "대화 없음"으로 잠깐 깜빡이는 문제를 줄이기 위해
+  ///   화면에서 `isFromCache`를 보고 empty state를 지연/스켈레톤 처리할 수 있게 한다.
+  Stream<({List<Conversation> conversations, bool isFromCache, bool hasPendingWrites})>
+      getMyConversationsWithMeta() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
-      return Stream.value([]);
+      return Stream.value((
+        conversations: <Conversation>[],
+        isFromCache: false,
+        hasPendingWrites: false,
+      ));
     }
 
     return _firestore
@@ -679,18 +692,21 @@ class DMService {
         .limit(50)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-      // 캐시 전용 스냅샷은 건너뛰어 초기 깜빡임을 줄이되,
-      // ✅ 로컬에서 새로 생성/업데이트된 문서(pending write)는 반드시 목록에 보여야 한다.
-      final isCacheOnly = snapshot.metadata.isFromCache &&
-          snapshot.docs.isNotEmpty &&
-          snapshot.docs.every((d) => d.metadata.isFromCache);
       final hasPendingWrites = snapshot.metadata.hasPendingWrites ||
           snapshot.docs.any((d) => d.metadata.hasPendingWrites);
-      if (isCacheOnly && !hasPendingWrites) {
-        if (_conversationCache.isNotEmpty) {
-          return _conversationCache.values.toList();
-        }
-        return <Conversation>[];
+      final isFromCache = snapshot.metadata.isFromCache;
+
+      // 캐시 스냅샷이지만 in-memory cache가 있으면 "빈 리스트로 덮어쓰기"를 방지한다.
+      // (탭 전환/리빌드 등에서 깜빡임 감소)
+      if (isFromCache &&
+          snapshot.docs.isEmpty &&
+          !hasPendingWrites &&
+          _conversationCache.isNotEmpty) {
+        return (
+          conversations: _conversationCache.values.toList(),
+          isFromCache: true,
+          hasPendingWrites: false,
+        );
       }
 
       
@@ -746,7 +762,11 @@ class DMService {
         _conversationCache[conv.id] = conv;
       }
 
-      return conversations;
+      return (
+        conversations: conversations,
+        isFromCache: isFromCache,
+        hasPendingWrites: hasPendingWrites,
+      );
     });
   }
 
@@ -1081,7 +1101,7 @@ class DMService {
               dmContent = postData['content'] as String?;
             }
           } catch (e) {
-            Logger.error('게시글 본문 로드 실패: $e');
+            Logger.error('포스트 본문 로드 실패: $e');
           }
         }
 

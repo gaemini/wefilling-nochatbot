@@ -48,7 +48,7 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
         return posts;
       }
     } catch (e) {
-      Logger.error('게시글 캐시 읽기 실패', e);
+      Logger.error('포스트 캐시 읽기 실패', e);
     }
     
     return [];
@@ -68,7 +68,7 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
         cachedAt: DateTime.now(),
       ));
     } catch (e) {
-      Logger.error('게시글 캐시 저장 실패', e);
+      Logger.error('포스트 캐시 저장 실패', e);
     }
   }
   
@@ -82,7 +82,7 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
         return cached.toPost();
       }
     } catch (e) {
-      Logger.error('게시글 상세 캐시 읽기 실패', e);
+      Logger.error('포스트 상세 캐시 읽기 실패', e);
     }
     
     return null;
@@ -95,7 +95,7 @@ class PostCacheManager extends BaseCacheManager<CachedPost> {
     try {
       await put(post.id, CachedPost.fromPost(post));
     } catch (e) {
-      Logger.error('게시글 상세 캐시 저장 실패', e);
+      Logger.error('포스트 상세 캐시 저장 실패', e);
     }
   }
 }

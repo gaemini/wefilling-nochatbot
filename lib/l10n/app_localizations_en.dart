@@ -1857,7 +1857,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get meetupCompleteMessage =>
-      'This meetup is full. Do you want to mark it as completed?\n\nAfter completion, you can write a review.';
+      'Do you want to mark this meetup as completed?\n\nAfter completion, you can write a review.';
 
   @override
   String get markAsCompleted => 'Mark as Completed';

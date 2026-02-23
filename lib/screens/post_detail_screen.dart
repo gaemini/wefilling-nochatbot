@@ -857,7 +857,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .get();
       for (final doc in snap.docs) {
         final data = doc.data();
-        final nickname = (data['nickname'] ?? data['displayName'] ?? 'User').toString();
+        final nickname = (data['nickname'] ?? '').toString().trim().isNotEmpty
+            ? data['nickname'].toString().trim()
+            : 'User';
         final photoURL = (data['photoURL'] ?? '').toString();
         final nationalityRaw = (data['nationality'] ?? '').toString().trim();
         final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;

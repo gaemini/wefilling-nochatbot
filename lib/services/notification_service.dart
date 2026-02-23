@@ -282,11 +282,15 @@ class NotificationService {
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
           Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
-          return snapshot.docs
+          final list = snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               // DM 알림은 알림(Notifications) 탭에서 표시하지 않음
               .where((n) => n.type != 'dm_received')
               .toList();
+
+          // 서버/클라이언트/트리거 재시도 등으로 동일 알림이 2개 생성되는 경우가 있어
+          // UI에선 중복을 숨긴다 (특히 meetup 참여/나가기 알림)
+          return _dedupeForUi(list);
         });
   }
 
@@ -303,12 +307,12 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
         .map((snapshot) {
-          // DM 알림은 전역 알림 뱃지/카운트에서 제외
-          final nonDmCount = snapshot.docs.where((d) {
-            final data = d.data() as Map<String, dynamic>?;
-            return (data?['type']?.toString() ?? '') != 'dm_received';
-          }).length;
-          return nonDmCount;
+          final list = snapshot.docs
+              .map((doc) => AppNotification.fromFirestore(doc))
+              // DM 알림은 전역 알림 뱃지/카운트에서 제외
+              .where((n) => n.type != 'dm_received')
+              .toList();
+          return _dedupeForUi(list).length;
         })
         .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
@@ -366,5 +370,65 @@ class NotificationService {
       Logger.error('알림 삭제 오류: $e');
       return false;
     }
+  }
+
+  // ---- UI-level dedupe (server can be at-least-once) ----
+  //
+  // Firestore 트리거는 at-least-once라 드물게 같은 알림이 2번 생성될 수 있고,
+  // 기존 코드(클라이언트/서버가 동시에 문서를 만드는 케이스)에서도 중복이 생길 수 있다.
+  // DB는 그대로 두더라도, UI/뱃지 카운트는 중복을 숨겨 UX를 보호한다.
+  static const Duration _dedupeWindow = Duration(seconds: 90);
+
+  List<AppNotification> _dedupeForUi(List<AppNotification> list) {
+    if (list.isEmpty) return list;
+
+    // createdAt desc로 들어오는 것이 일반적이므로, 앞에서부터 "같은 키"가 가까운 시간에 반복되면 제거
+    final lastSeenAt = <String, DateTime>{};
+    final out = <AppNotification>[];
+
+    for (final n in list) {
+      if (!_shouldDedupeType(n.type)) {
+        out.add(n);
+        continue;
+      }
+
+      final key = _dedupeKey(n);
+      final t = n.createdAt;
+      final prev = lastSeenAt[key];
+      if (prev != null) {
+        final diff = prev.difference(t).abs();
+        if (diff <= _dedupeWindow) {
+          // 중복으로 판단 → 스킵
+          continue;
+        }
+      }
+      lastSeenAt[key] = t;
+      out.add(n);
+    }
+
+    return out;
+  }
+
+  bool _shouldDedupeType(String type) {
+    switch (type) {
+      case 'meetup_participant_joined':
+      case 'meetup_participant_left':
+      case 'meetup_full':
+      case 'meetup_cancelled':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  String _dedupeKey(AppNotification n) {
+    final data = n.data ?? const <String, dynamic>{};
+    final meetupId = (data['meetupId'] ?? n.meetupId ?? '').toString();
+    final postId = (data['postId'] ?? n.postId ?? '').toString();
+    final actorId = (n.actorId ?? data['participantId'] ?? '').toString();
+    final actorName = (n.actorName ?? data['participantName'] ?? '').toString();
+
+    // meetup 알림은 meetupId + actorId 조합이 핵심
+    return '${n.type}|$meetupId|$postId|$actorId|$actorName';
   }
 }

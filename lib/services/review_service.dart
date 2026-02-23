@@ -4,6 +4,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../utils/profile_photo_policy.dart';
 import '../models/review_post.dart';
 import '../utils/logger.dart';
 
@@ -74,8 +75,12 @@ class ReviewService {
           final userDoc = await _firestore.collection('users').doc(user.uid).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
-            authorName = userData['nickname'] ?? userData['displayName'] ?? '익명';
-            authorProfileImage = userData['photoURL'] ?? '';
+            authorName = (userData['nickname'] ?? '').toString().trim().isNotEmpty
+                ? userData['nickname'].toString().trim()
+                : '익명';
+            final raw = (userData['photoURL'] ?? '').toString();
+            authorProfileImage =
+                ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
           }
         } catch (e) {
           Logger.error('⚠️ 사용자 정보 조회 실패: $e');
@@ -466,8 +471,12 @@ class ReviewService {
           final userDoc = await _firestore.collection('users').doc(userId).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
-            authorName = userData['nickname'] ?? userData['displayName'] ?? '익명';
-            authorProfileImage = userData['photoURL'] ?? '';
+            authorName = (userData['nickname'] ?? '').toString().trim().isNotEmpty
+                ? userData['nickname'].toString().trim()
+                : '익명';
+            final raw = (userData['photoURL'] ?? '').toString();
+            authorProfileImage =
+                ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
           }
         } catch (e) {
           Logger.error('⚠️ 사용자 정보 조회 실패: $e');

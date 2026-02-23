@@ -9,6 +9,13 @@ class DMMessage {
   final String senderId;
   final String text;
   final String? imageUrl;
+  /// 답장(Reply) 컨텍스트 (선택)
+  /// - 원본 메시지를 재조회하지 않아도 UI에서 인용 표시를 할 수 있게,
+  ///   전송 시점에 스냅샷(텍스트/이미지 여부)을 함께 저장한다.
+  final String? replyToMessageId;
+  final String? replyToSenderId;
+  final String? replyToText;
+  final String? replyToImageUrl;
   /// 메시지 타입 (기본: text)
   /// - text: 일반 메시지
   /// - post_context: 게시글에서 시작된/참조하는 메시지 (게시글 카드 렌더링용)
@@ -26,6 +33,10 @@ class DMMessage {
     required this.senderId,
     required this.text,
     this.imageUrl,
+    this.replyToMessageId,
+    this.replyToSenderId,
+    this.replyToText,
+    this.replyToImageUrl,
     this.type = 'text',
     this.postId,
     this.postImageUrl,
@@ -44,6 +55,13 @@ class DMMessage {
       senderId: data['senderId'] ?? '',
       text: data['text'] ?? '',
       imageUrl: (data['imageUrl'] is String) ? data['imageUrl'] as String : null,
+      replyToMessageId:
+          (data['replyToMessageId'] is String) ? data['replyToMessageId'] as String : null,
+      replyToSenderId:
+          (data['replyToSenderId'] is String) ? data['replyToSenderId'] as String : null,
+      replyToText: (data['replyToText'] is String) ? data['replyToText'] as String : null,
+      replyToImageUrl:
+          (data['replyToImageUrl'] is String) ? data['replyToImageUrl'] as String : null,
       type: (data['type'] is String && (data['type'] as String).isNotEmpty)
           ? (data['type'] as String)
           : 'text',
@@ -64,6 +82,13 @@ class DMMessage {
       'senderId': senderId,
       'text': text,
       if (imageUrl != null && imageUrl!.isNotEmpty) 'imageUrl': imageUrl,
+      if (replyToMessageId != null && replyToMessageId!.isNotEmpty)
+        'replyToMessageId': replyToMessageId,
+      if (replyToSenderId != null && replyToSenderId!.isNotEmpty)
+        'replyToSenderId': replyToSenderId,
+      if (replyToText != null && replyToText!.isNotEmpty) 'replyToText': replyToText,
+      if (replyToImageUrl != null && replyToImageUrl!.isNotEmpty)
+        'replyToImageUrl': replyToImageUrl,
       if (type.isNotEmpty && type != 'text') 'type': type,
       if (postId != null && postId!.isNotEmpty) 'postId': postId,
       if (postImageUrl != null && postImageUrl!.isNotEmpty) 'postImageUrl': postImageUrl,
@@ -85,6 +110,10 @@ class DMMessage {
     String? senderId,
     String? text,
     String? imageUrl,
+    String? replyToMessageId,
+    String? replyToSenderId,
+    String? replyToText,
+    String? replyToImageUrl,
     String? type,
     String? postId,
     String? postImageUrl,
@@ -98,6 +127,10 @@ class DMMessage {
       senderId: senderId ?? this.senderId,
       text: text ?? this.text,
       imageUrl: imageUrl ?? this.imageUrl,
+      replyToMessageId: replyToMessageId ?? this.replyToMessageId,
+      replyToSenderId: replyToSenderId ?? this.replyToSenderId,
+      replyToText: replyToText ?? this.replyToText,
+      replyToImageUrl: replyToImageUrl ?? this.replyToImageUrl,
       type: type ?? this.type,
       postId: postId ?? this.postId,
       postImageUrl: postImageUrl ?? this.postImageUrl,

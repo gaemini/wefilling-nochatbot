@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'notification_badge.dart';
+import '../ui/widgets/shape_icon.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
@@ -149,14 +150,19 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     required double fontSize,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
-    final selectedColor = colorScheme.primary;
+    // 선택 상태 색상: 검정(#000000)으로 고정
+    const selectedColor = Color(0xFF000000);
     final unselectedColor = colorScheme.onSurface.withOpacity(0.6);
+    final isGroupsTriangle =
+        item.icon == Icons.change_history_outlined || item.selectedIcon == Icons.change_history;
+    // 그룹(세모)도 다른 탭과 동일하게: 선택=검정, 비선택=회색
+    final iconColor = isSelected ? selectedColor : unselectedColor;
 
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
-      splashColor: selectedColor.withOpacity(0.1),
-      highlightColor: selectedColor.withOpacity(0.05),
+      splashColor: colorScheme.primary.withOpacity(0.1),
+      highlightColor: colorScheme.primary.withOpacity(0.05),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
         child: Column(
@@ -181,21 +187,29 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                               : item.iconImagePath!,
                           width: iconSize,
                           height: iconSize,
-                          color: isSelected ? selectedColor : unselectedColor,
+                          color: iconColor,
                           errorBuilder: (context, error, stackTrace) {
                             return Icon(
                               Icons.person,
                               size: iconSize,
-                              color: isSelected ? selectedColor : unselectedColor,
+                              color: iconColor,
                             );
                           },
                         )
-                      : Icon(
-                    isSelected ? item.selectedIcon : item.icon,
-                    size: iconSize,
-                    color: isSelected ? selectedColor : unselectedColor,
-                    weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
-                  ),
+                      : (isGroupsTriangle && isSelected)
+                          ? ShapeIcon(
+                              // Material 기본 아이콘(change_history)은 채움 버전이 없어,
+                              // 선택 상태에서는 커스텀 정삼각형(채움)으로 렌더링한다.
+                              iconName: 'shape_triangle',
+                              color: iconColor,
+                              size: iconSize,
+                            )
+                          : Icon(
+                              isSelected ? item.selectedIcon : item.icon,
+                              size: iconSize,
+                              color: iconColor,
+                              weight: 300, // 아이콘 두께 더 얇게 (인스타그램 스타일)
+                            ),
                 ),
               ),
             ),

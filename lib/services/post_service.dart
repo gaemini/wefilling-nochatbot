@@ -15,6 +15,7 @@ import 'content_filter_service.dart';
 import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
+import '../utils/profile_photo_policy.dart';
 import '../utils/logger.dart';
 
 class PostService {
@@ -160,8 +161,11 @@ class PostService {
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
       final nationality = userData?['nationality'] ?? ''; // 국적 정보 가져오기
-      final photoURL =
-          userData?['photoURL'] ?? user.photoURL ?? ''; // 프로필 사진 URL 가져오기
+      // ✅ 정책: 프로필 사진은 지정 Storage 버킷(profile_images/) URL만 사용
+      final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
+      final photoURL = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
+          ? rawPhotoUrl
+          : '';
 
       // 게시글 작성 시간
       final now = FieldValue.serverTimestamp();

@@ -108,10 +108,11 @@ class BadgeService {
         final actualDmUnreadCount = await _recountAndRepairDmUnread(userId: userId);
 
         // users 문서의 카운터를 실제 값으로 업데이트
-        await _firestore.collection('users').doc(userId).set({
+        // ⚠️ merge set은 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
+        await _firestore.collection('users').doc(userId).update({
           'notificationUnreadTotal': actualNotificationCount,
           'dmUnreadTotal': actualDmUnreadCount,
-        }, SetOptions(merge: true));
+        });
 
         Logger.log('✅ 서버 카운터 동기화 완료: 알림=$actualNotificationCount, DM=$actualDmUnreadCount');
         return; // 성공하면 즉시 리턴
@@ -126,10 +127,11 @@ class BadgeService {
         
         // 모든 재시도 실패 시 카운터를 0으로 설정
         try {
-          await _firestore.collection('users').doc(userId).set({
+          // 문서가 없는 경우는 생성하지 않는다(가입 흐름/스키마 일관성 유지)
+          await _firestore.collection('users').doc(userId).update({
             'notificationUnreadTotal': 0,
             'dmUnreadTotal': 0,
-          }, SetOptions(merge: true));
+          });
           Logger.log('⚠️ 서버 카운터 동기화 실패 - 0으로 초기화');
         } catch (_) {
           Logger.error('❌ 서버 카운터 초기화도 실패', _);

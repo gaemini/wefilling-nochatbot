@@ -534,19 +534,6 @@ class _RequestsPageState extends State<RequestsPage>
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (user.nickname != null &&
-                      user.nickname != user.displayName &&
-                      user.nickname!.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      user.displayName,
-                      style: TypographyStyles.bodySmall.copyWith(
-                        color: BrandColors.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
                   const SizedBox(height: 4),
                   Text(
                     _getTimeAgo(request.createdAt),

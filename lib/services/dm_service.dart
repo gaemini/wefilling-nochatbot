@@ -1367,7 +1367,26 @@ class DMService {
       }).toList();
 
       // 실제 메시지가 없으면 skip (정확한 확인)
+      //
+      // ⚠️ 중요한 보정:
+      // - DM 목록 배지는 conversations.unreadCount를 단일 소스로 사용한다.
+      // - 그런데 unreadCount가 드리프트(늦은 반영/중복 증가/클라-서버 불일치 등)한 상태에서
+      //   실제 messages에는 isRead=false가 0개가 될 수 있다.
+      // - 이 경우 조기 return을 해버리면 목록 배지가 "영원히" 남는다.
+      // - 따라서 "실제 unread=0"이라도, 기존 unreadCount가 0이 아니면 0으로 강제 정합화한다.
       if (unreadIncomingDocs.isEmpty) {
+        if (prevMyUnread > 0) {
+          final now = DateTime.now();
+          unreadCount[currentUser.uid] = 0;
+          await convDoc.reference.update({
+            'unreadCount': unreadCount,
+            'updatedAt': Timestamp.fromDate(now),
+          });
+
+          // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
+          _conversationCache.remove(conversationId);
+          _messageCache.remove(conversationId);
+        }
         return;
       }
       final actualReadCount = unreadIncomingDocs.length;

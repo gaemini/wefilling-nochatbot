@@ -13,6 +13,7 @@ import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'meetup_service.dart';
 import '../utils/logger.dart';
+import '../utils/profile_photo_policy.dart';
 
 class CommentService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -87,7 +88,11 @@ class CommentService {
           .timeout(const Duration(seconds: 6));
       final userData = userDoc.data();
       final nickname = userData?['nickname'] ?? '익명';
-      final photoUrl = userData?['photoURL'] ?? user.photoURL ?? '';
+      // ✅ 정책: 프로필 사진은 지정 Storage 버킷(profile_images/) URL만 사용
+      final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
+      final photoUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
+          ? rawPhotoUrl
+          : '';
 
       // 댓글 데이터 생성
       final commentData = {

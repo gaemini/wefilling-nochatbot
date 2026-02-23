@@ -83,7 +83,9 @@ class UserInfoCacheService {
       final data = doc.data()!;
       final userInfo = DMUserInfo(
         uid: userId,
-        nickname: data['nickname'] ?? data['displayName'] ?? 'User',
+        nickname: (data['nickname'] ?? '').toString().trim().isNotEmpty
+            ? (data['nickname'] ?? '').toString().trim()
+            : 'User',
         photoURL: data['photoURL'] ?? '',
         photoVersion: (data['photoVersion'] is int)
             ? (data['photoVersion'] as int)
@@ -132,7 +134,9 @@ class UserInfoCacheService {
 
         final userInfo = DMUserInfo(
           uid: userId,
-          nickname: (data['nickname'] ?? data['displayName'] ?? 'User').toString(),
+          nickname: (data['nickname'] ?? '').toString().trim().isNotEmpty
+              ? (data['nickname'] ?? '').toString().trim()
+              : 'User',
           photoURL: (data['photoURL'] ?? '').toString(),
           photoVersion: (data['photoVersion'] is int)
               ? (data['photoVersion'] as int)

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/avatar_cache_service.dart';
+import '../../utils/profile_photo_policy.dart';
 import '../../utils/logger.dart';
 
 /// DM/채팅 등에서 공통으로 사용하는 사용자 아바타 위젯.
@@ -37,7 +38,8 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isAnonymous || photoUrl.isEmpty) {
+    // ✅ 보안/정책: 우리 Storage 버킷에 없는 URL은 절대 표시하지 않는다.
+    if (isAnonymous || photoUrl.isEmpty || !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(photoUrl)) {
       return _placeholder();
     }
 

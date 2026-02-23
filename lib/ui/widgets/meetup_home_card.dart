@@ -7,6 +7,7 @@ import '../../models/meetup.dart';
 import '../../services/meetup_service.dart';
 import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/ui_utils.dart';
+import 'friends_only_badge.dart';
 
 /// 모임 페이지(Home)에서 쓰는 카드와 **동일한 UI**를 공용 위젯으로 제공합니다.
 ///
@@ -101,32 +102,10 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
 
   Widget _buildVisibilityBadge(BuildContext context) {
     if (widget.meetup.visibility == 'category') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF3E0),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.group_outlined,
-              size: 15,
-              color: Color(0xFFFF8A65),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context)!.friendsOnlyBadge,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFFF8A65),
-              ),
-            ),
-          ],
-        ),
+      return FriendsOnlyBadge(
+        label: AppLocalizations.of(context)!.friendsOnlyBadge,
+        // 기존 크기 유지
+        iconSize: 15,
       );
     }
     return const SizedBox.shrink();

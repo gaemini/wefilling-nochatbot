@@ -7,8 +7,20 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import '../utils/logger.dart';
 
+/// 프로필 이미지 업로드 결과
+/// - downloadUrl: 액세스 토큰 포함 URL
+/// - path: Storage object path (profile_images/{uid}/{file}.jpg)
+typedef ProfileUploadResult = ({String downloadUrl, String path});
+
 class StorageService {
+  // 일반 이미지(posts/dm)는 기본 Storage 설정을 사용
   final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  // ✅ 프로필 사진은 지정 버킷에만 저장/사용
+  // - Firebase 옵션(storageBucket)과 동일한 "버킷 이름"을 사용한다. (gs:// prefix 불필요)
+  // - iOS에서 gs:// prefix 사용 시 resumable 업로드가 불안정한 케이스가 있어 통일한다.
+  static const String _profileBucket = 'flutterproject3-af322.firebasestorage.app';
+  final FirebaseStorage _profileStorage = FirebaseStorage.instanceFor(bucket: _profileBucket);
   final Uuid _uuid = const Uuid();
 
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
@@ -95,15 +107,20 @@ class StorageService {
     }
   }
 
-  /// 프로필 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
-  /// - 경로: profile_images/{userId}/{uuid}.jpg
-  /// - 업로드마다 파일명이 달라 URL이 바뀌므로, 별도 cache-bust가 필요 없음
-  Future<String?> uploadProfileImage(
+  /// 프로필 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL(+경로)을 반환
+  /// - 경로: profile_images/{userId}/{uuid}.jpg (변경 이력 보존)
+  /// - 파일은 항상 지정 버킷에만 존재하도록 강제
+  /// - 매 업로드마다 download token을 새로 발급(=downloadUrl 토큰이 바뀜)
+  Future<ProfileUploadResult?> uploadProfileImage(
     File imageFile, {
     required String userId,
   }) async {
+    File? compressedFile;
+    Reference? ref;
+    String? fullPath;
+
     try {
-      final compressedFile = await _compressImage(imageFile);
+      compressedFile = await _compressImage(imageFile);
       if (compressedFile == null) {
         Logger.error('프로필 이미지 압축 실패');
         return null;
@@ -111,12 +128,12 @@ class StorageService {
 
       final String fileName = '${_uuid.v4()}.jpg';
       final String folderPath = 'profile_images/$userId';
-      final String fullPath = '$folderPath/$fileName';
+      fullPath = '$folderPath/$fileName';
 
       Logger.log('프로필 이미지 업로드 시작: $fullPath');
-      Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
+      Logger.log('Firebase Storage 버킷(프로필): ${_profileStorage.bucket}');
 
-      final Reference ref = _storage.ref().child(folderPath).child(fileName);
+      ref = _profileStorage.ref().child(folderPath).child(fileName);
 
       final UploadTask uploadTask = ref.putFile(
         compressedFile,
@@ -129,41 +146,61 @@ class StorageService {
         ),
       );
 
-      TaskSnapshot taskSnapshot;
-      try {
-        taskSnapshot = await uploadTask.timeout(
-          const Duration(seconds: 180),
-          onTimeout: () {
-            uploadTask.cancel();
-            throw TimeoutException('프로필 이미지 업로드 타임아웃', const Duration(seconds: 180));
-          },
-        );
-        Logger.log('프로필 이미지 업로드 완료: $fullPath');
-      } on TimeoutException catch (e) {
-        Logger.error('프로필 이미지 업로드 타임아웃', e);
-        return null;
-      }
+      final TaskSnapshot taskSnapshot = await uploadTask.timeout(
+        const Duration(seconds: 180),
+        onTimeout: () {
+          uploadTask.cancel();
+          throw TimeoutException('프로필 이미지 업로드 타임아웃', const Duration(seconds: 180));
+        },
+      );
+
+      Logger.log('프로필 이미지 업로드 완료: $fullPath');
 
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
       Logger.log('프로필 이미지 다운로드 URL 획득: $downloadUrl');
+      return (downloadUrl: downloadUrl, path: fullPath);
+    } on TimeoutException catch (e) {
+      Logger.error('프로필 이미지 업로드 타임아웃', e);
+      return null;
+    } catch (e) {
+      Logger.error('프로필 이미지 업로드 오류: $e');
+      String errorDetails = '';
+      String message = '';
+      if (e is FirebaseException) {
+        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
+        message = (e.message ?? '');
+      }
+      Logger.error('Firebase 오류 상세: $errorDetails');
 
-      if (compressedFile.path != imageFile.path) {
+      // ✅ iOS 간헐 이슈 방어:
+      // - 업로드가 서버에서 이미 finalize 된 후, SDK 내부 cancelFetcher가 뒤늦게 실행되며
+      //   HTTP 400이 발생할 수 있음. (finalized 문구가 SDK 에러 메시지에 포함되지 않는 경우도 있음)
+      // - 이 경우 객체는 실제로 업로드되어 있을 가능성이 있으므로 download URL 복구를 재시도한다.
+      final isHttp400 = message.contains('HTTPStatus error 400') || message.contains('Code=400');
+      if (isHttp400 && ref != null && fullPath != null) {
+        for (var attempt = 0; attempt < 3; attempt++) {
+          try {
+            // 짧은 지연 후 재시도 (resumable finalize/메타데이터 반영 경합 완화)
+            await Future.delayed(Duration(milliseconds: 220 * (attempt + 1)));
+            final recovered = await ref.getDownloadURL();
+            Logger.log('✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
+            return (downloadUrl: recovered, path: fullPath);
+          } catch (recoveryError) {
+            Logger.error('⚠️ HTTP 400 복구 재시도 실패(attempt=${attempt + 1}): $recoveryError');
+          }
+        }
+      }
+
+      return null;
+    } finally {
+      // 임시 파일 삭제 (best-effort)
+      if (compressedFile != null && compressedFile.path != imageFile.path) {
         try {
           await compressedFile.delete();
         } catch (e) {
           Logger.error('프로필 임시 파일 삭제 실패: $e');
         }
       }
-
-      return downloadUrl;
-    } catch (e) {
-      Logger.error('프로필 이미지 업로드 오류: $e');
-      String errorDetails = '';
-      if (e is FirebaseException) {
-        errorDetails = '코드: ${e.code}, 메시지: ${e.message}';
-      }
-      Logger.error('Firebase 오류 상세: $errorDetails');
-      return null;
     }
   }
 

@@ -14,6 +14,7 @@ import '../constants/app_constants.dart';
 import '../utils/country_flag_helper.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/profile_photo_policy.dart';
 
 class ProfileEditScreen extends StatefulWidget {
   const ProfileEditScreen({Key? key}) : super(key: key);
@@ -204,7 +205,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             throw Exception(AppLocalizations.of(context)!.loginRequired ?? '로그인이 필요합니다.');
           }
 
-          final profileImageUrl = await _storageService.uploadProfileImage(
+          final upload = await _storageService.uploadProfileImage(
             _selectedImage!,
             userId: userId,
           );
@@ -213,7 +214,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             _isUploadingImage = false;
           });
           
-          if (profileImageUrl == null) {
+          if (upload == null) {
             throw Exception(AppLocalizations.of(context)!.imageUploadFailed ?? '이미지 업로드에 실패했습니다.');
           }
           
@@ -221,7 +222,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           success = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
             nationality: _selectedNationality,
-            photoURL: profileImageUrl, // 새로 업로드된 이미지 URL 전달
+            photoURL: upload.downloadUrl, // ✅ 새 토큰 포함 URL
+            photoPath: upload.path, // ✅ 유저 폴더 내 실제 저장 경로
             bio: _bio,
           );
         }
@@ -486,10 +488,11 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                                         )
                                       : Consumer<AuthProvider>(
                                           builder: (context, authProvider, child) {
-                                            final user = authProvider.user;
-                                            return user?.photoURL != null
+                                            final raw = (authProvider.userData?['photoURL'] ?? '').toString();
+                                            final url = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
+                                            return url.isNotEmpty
                                                 ? Image.network(
-                                                    user!.photoURL!,
+                                                    url,
                                                     fit: BoxFit.cover,
                                                     errorBuilder: (context, error, stackTrace) {
                                                       return Container(

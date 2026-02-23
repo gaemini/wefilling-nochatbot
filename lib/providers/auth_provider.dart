@@ -19,8 +19,21 @@ import '../services/user_info_cache_service.dart';
 import '../services/avatar_cache_service.dart';
 import '../config/app_config.dart';
 import '../utils/logger.dart';
+import '../utils/profile_photo_policy.dart';
 
 class AuthProvider with ChangeNotifier {
+  static const String _profilePhotoPathPrefix = 'profile_images/';
+
+  String _profilePhotoPathForUid(String uid) => '$_profilePhotoPathPrefix$uid/profile.jpg';
+
+  String _extractStorageDownloadToken(String url) {
+    try {
+      final uri = Uri.parse(url);
+      return uri.queryParameters['token'] ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -128,13 +141,21 @@ class AuthProvider with ChangeNotifier {
 
     while (retryCount < maxRetries) {
       try {
-        final doc = await _firestore
-            .collection('users')
-            .doc(_user!.uid)
-            .get(const GetOptions(source: Source.serverAndCache));
+        final docRef = _firestore.collection('users').doc(_user!.uid);
+        final doc = await docRef.get(
+          const GetOptions(source: Source.serverAndCache),
+        );
             
         if (doc.exists) {
           _userData = doc.data();
+
+          // ✅ 가입 경로(구글/애플/이메일)와 무관하게 users/{uid} 스키마가 동일하도록 보정
+          // - 서버 함수/레거시 코드로 "부분 필드만 있는 문서"가 남아있는 경우를 수습
+          try {
+            await _ensureUserDocSchema(docRef: docRef, existingData: _userData);
+          } catch (e) {
+            Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
+          }
           break; // 성공시 루프 종료
         } else {
           // 문서가 없으면 null로 설정 (회원가입 필요)
@@ -254,7 +275,7 @@ class AuthProvider with ChangeNotifier {
           return false; // 로그인 거부
         }
 
-        // 기존 사용자 정보 업데이트 (lastLogin, displayName 동기화)
+        // 기존 사용자 정보 업데이트 (lastLogin)
         final docExists = await _updateExistingUserDocument();
         
         // 🔥 문서가 없으면 탈퇴한 계정으로 간주
@@ -344,7 +365,7 @@ class AuthProvider with ChangeNotifier {
       Logger.log('🍎 Apple Sign In 성공!');
       Logger.log('   User ID: ${userCredential.user?.uid}');
       Logger.log('   Email: ${userCredential.user?.email ?? "비공개"}');
-      Logger.log('   Display Name: ${userCredential.user?.displayName ?? "없음"}');
+      Logger.log('   Nickname(users 문서 기준): 로그인 후 Firestore users 문서에서 확인');
 
       // 사용자 정보 업데이트
       _user = userCredential.user;
@@ -403,7 +424,7 @@ class AuthProvider with ChangeNotifier {
           return false; // 로그인 거부
         }
 
-        // 기존 사용자 정보 업데이트 (lastLogin, displayName 동기화)
+        // 기존 사용자 정보 업데이트 (lastLogin)
         await _updateExistingUserDocument();
         await _loadUserData();
         
@@ -523,18 +544,16 @@ class AuthProvider with ChangeNotifier {
 
       // Firestore에 사용자 문서 생성 (한양메일 정보 포함)
       // - finalizeHanyangEmailVerification가 먼저 users/{uid}를 merge로 만들 수 있으므로 merge로 저장
-      await _firestore.collection('users').doc(_user!.uid).set({
-        'uid': _user!.uid,
-        'email': email,
-        'hanyangEmail': hanyangEmail, // 인증받은 한양메일 저장
-        'emailVerified': true, // 한양메일 인증 완료
-        'displayName': '',
-        'photoURL': '',
-        'nickname': '',
-        'createdAt': FieldValue.serverTimestamp(),
-        'lastLogin': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await _upsertUserDocWithFullSchema(
+        user: _user!,
+        hanyangEmail: hanyangEmail,
+        emailVerified: true,
+        // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
+        nickname: '',
+        nationality: '',
+        // ✅ 정책: 외부(Auth 제공) 사진은 저장/표시하지 않는다. (버킷 업로드만 허용)
+        photoURL: '',
+      );
 
       Logger.log('✅ Firestore 사용자 문서 생성 완료');
 
@@ -630,7 +649,7 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  // 기존 사용자 문서 업데이트 (lastLogin, displayName 동기화)
+  // 기존 사용자 문서 업데이트 (lastLogin 동기화)
   Future<bool> _updateExistingUserDocument() async {
     if (_user == null) return false;
 
@@ -639,22 +658,35 @@ class AuthProvider with ChangeNotifier {
       final doc = await docRef.get();
 
       if (doc.exists) {
-        // 기존 사용자: displayName을 nickname과 자동 동기화
-        final data = doc.data();
-        final nickname = data?['nickname'];
-        final displayName = data?['displayName'];
-        
-        // nickname이 있고 displayName과 다르면 동기화
-        if (nickname != null && nickname != displayName) {
-          Logger.log('🔄 로그인 시 displayName 자동 동기화: "$displayName" → "$nickname"');
-          await docRef.update({
-            'displayName': nickname,
-            'lastLogin': FieldValue.serverTimestamp(),
-          });
-        } else {
-          // 마지막 로그인 시간만 업데이트
-          await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+        final data = doc.data() ?? <String, dynamic>{};
+
+        // 1) users 문서 스키마 보정 (누락 필드 채우기)
+        await _ensureUserDocSchema(docRef: docRef, existingData: data);
+
+        // 2) lastLogin만 업데이트 (표시 이름은 nickname 단일 소스)
+        await docRef.update({'lastLogin': FieldValue.serverTimestamp()});
+
+        // 3) Firebase Auth 프로필도 (가능한 범위에서) 동일하게 맞춤
+        try {
+          // photoURL은 Firestore 값을 우선(없으면 Auth 값)
+          final firestorePhoto = (data['photoURL'] is String)
+              ? (data['photoURL'] as String)
+              : (data['photoURL']?.toString() ?? '');
+          // ✅ 정책: Storage 버킷(profile_images/)에 있는 URL만 유효.
+          final allowedFirestorePhoto = (firestorePhoto.isNotEmpty &&
+                  ProfilePhotoPolicy.isAllowedProfilePhotoUrl(firestorePhoto))
+              ? firestorePhoto
+              : '';
+          final targetPhoto = allowedFirestorePhoto;
+          if (targetPhoto.isNotEmpty && (_user!.photoURL ?? '') != targetPhoto) {
+            await _user!.updatePhotoURL(targetPhoto);
+          }
+          await _user!.reload();
+          _user = _auth.currentUser;
+        } catch (e) {
+          Logger.error('⚠️ Firebase Auth 프로필 동기화 실패(무시): $e');
         }
+
         return true; // 문서 존재함
       } else {
         // 🔥 문서가 없음 - 탈퇴한 계정
@@ -677,7 +709,6 @@ class AuthProvider with ChangeNotifier {
 
       await _firestore.collection('users').doc(_user!.uid).update({
         'nickname': nickname,
-        'displayName': nickname, // displayName을 nickname과 동기화
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -685,9 +716,10 @@ class AuthProvider with ChangeNotifier {
       return true;
     } catch (e) {
       Logger.error('닉네임 업데이트 오류: $e');
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      return false;
     }
   }
 
@@ -696,6 +728,7 @@ class AuthProvider with ChangeNotifier {
     required String nickname,
     required String nationality,
     String? photoURL,
+    String? photoPath,
     String? bio, // 한 줄 소개 추가
   }) async {
     if (_user == null) return false;
@@ -731,14 +764,23 @@ class AuthProvider with ChangeNotifier {
                   ? (docData?['photoVersion'] as int)
                   : int.tryParse('${docData?['photoVersion'] ?? _userData?['photoVersion'] ?? 0}') ?? 0;
           final oldPhotoUrlStr = (oldPhotoURL ?? '').toString();
-          final newPhotoUrlStr = (photoURL ?? oldPhotoUrlStr).toString();
-          final bool photoChanged = photoURL != null && newPhotoUrlStr != oldPhotoUrlStr;
+          String newPhotoUrlStr = (photoURL ?? oldPhotoUrlStr).toString();
+
+          // ✅ 정책: 우리 Storage 버킷(profile_images/)에 없는 URL은 사용하지 않는다.
+          if (newPhotoUrlStr.isNotEmpty &&
+              !ProfilePhotoPolicy.isAllowedProfilePhotoUrl(newPhotoUrlStr)) {
+            Logger.log('🚫 허용되지 않은 photoURL 차단 → 기본 이미지로 처리');
+            newPhotoUrlStr = '';
+          }
+
+          // ✅ Storage 경로를 고정하면 URL이 같아도 실제 파일이 바뀔 수 있다.
+          // 따라서 "제공 여부" 자체를 변경 의도로 본다.
+          final bool photoChanged = photoURL != null;
           final int nextPhotoVersion = photoChanged ? (currentPhotoVersion + 1) : currentPhotoVersion;
           
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
             'nickname': nickname,
-            'displayName': nickname, // displayName을 nickname과 동기화
             'nationality': nationality,
             'updatedAt': FieldValue.serverTimestamp(),
           };
@@ -749,7 +791,10 @@ class AuthProvider with ChangeNotifier {
           
           // photoURL이 제공된 경우 추가
           if (photoURL != null) {
-            updateData['photoURL'] = photoURL;
+            updateData['photoURL'] = newPhotoUrlStr;
+            // ✅ 액세스 토큰/경로도 함께 저장 (정책 강제)
+            updateData['photoPath'] = (photoPath ?? '').toString();
+            updateData['photoAccessToken'] = _extractStorageDownloadToken(newPhotoUrlStr);
           }
           if (photoChanged) {
             updateData['photoVersion'] = nextPhotoVersion;
@@ -761,35 +806,37 @@ class AuthProvider with ChangeNotifier {
           // 🔥 문서가 없으면 생성, 있으면 업데이트
           if (!docSnapshot.exists) {
             Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
-            // 문서 생성 (회원가입 시와 동일한 구조)
-            await docRef.set({
-              'uid': _user!.uid,
-              'email': _user!.email ?? '',
-              'displayName': nickname,
-              'photoURL': photoURL ?? _user!.photoURL ?? '',
-              'photoVersion': photoChanged ? nextPhotoVersion : (currentPhotoVersion),
-              'nickname': nickname,
-              'nationality': nationality,
-              'emailVerified': true, // 로그인 성공했으므로 true
-              'hanyangEmail': _user!.email ?? '', // 기본값 설정
-              'createdAt': FieldValue.serverTimestamp(),
-              'lastLogin': FieldValue.serverTimestamp(),
-              'updatedAt': FieldValue.serverTimestamp(),
-              if (photoChanged) 'photoUpdatedAt': FieldValue.serverTimestamp(),
-              if (bio != null) 'bio': bio,
-            });
+            // 문서 생성 (✅ 모든 가입 경로에서 동일한 스키마)
+            final full = _buildFullUserDoc(
+              user: _user!,
+              hanyangEmail: (_user!.email ?? ''),
+              emailVerified: true,
+              nickname: nickname,
+              nationality: nationality,
+              photoURL: newPhotoUrlStr,
+              bio: bio ?? '',
+            );
+            full['photoPath'] = (photoPath ?? '').toString();
+            full['photoAccessToken'] = _extractStorageDownloadToken(newPhotoUrlStr);
+            full['photoVersion'] = photoChanged ? nextPhotoVersion : currentPhotoVersion;
+            if (photoChanged) {
+              full['photoUpdatedAt'] = FieldValue.serverTimestamp();
+            } else {
+              full['photoUpdatedAt'] = null;
+            }
+            await docRef.set(full);
             Logger.log("✅ 사용자 문서 생성 완료");
           } else {
             // 기존 문서 업데이트
             await docRef.update(updateData);
-            Logger.log("✅ Firestore 업데이트 완료 (displayName과 nickname 동기화)");
+            Logger.log("✅ Firestore 업데이트 완료 (nickname)");
           }
           
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
           if (photoURL != null) {
             try {
               // 빈 문자열이면 null로 변환 (기본 이미지로 변경)
-              final authPhotoURL = photoURL.isEmpty ? null : photoURL;
+              final authPhotoURL = newPhotoUrlStr.isEmpty ? null : newPhotoUrlStr;
               await _user!.updatePhotoURL(authPhotoURL);
               await _user!.reload();
               _user = _auth.currentUser;
@@ -804,7 +851,7 @@ class AuthProvider with ChangeNotifier {
           // - 과거 게시글/댓글/DM 메타(작성자 닉네임/사진 등) 전파는 클라이언트에서 동기 처리하지 않는다.
           // - `users/{uid}` 변경을 감지하는 Cloud Function이 백그라운드에서 배치 갱신한다.
           // - 따라서 여기서는 users 문서 업데이트를 "즉시 성공"으로 처리하여 UX를 빠르게 만든다.
-          final finalPhotoURL = photoURL ?? oldPhotoURL ?? '';
+          final finalPhotoURL = (photoURL ?? oldPhotoURL ?? '').toString();
 
           // ✅ DM 자연스러운 전환을 위해 "내" 아바타는 로컬에도 프리페치/정리
           if (photoChanged) {
@@ -832,7 +879,7 @@ class AuthProvider with ChangeNotifier {
           // - 이미지 캐시는 URL 기준이므로 이전 URL을 직접 evict
           try {
             final oldUrl = (oldPhotoURL ?? '').toString();
-            final newUrl = finalPhotoURL.toString();
+            final newUrl = finalPhotoURL;
             if (oldUrl.isNotEmpty && oldUrl != newUrl) {
               await CachedNetworkImage.evictFromCache(oldUrl);
               Logger.log('🧹 프로필 이미지 캐시 제거 완료');
@@ -866,9 +913,10 @@ class AuthProvider with ChangeNotifier {
       return false;
     } catch (e) {
       Logger.error('프로필 업데이트 최종 실패: $e');
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      return false;
     }
   }
 
@@ -915,38 +963,30 @@ class AuthProvider with ChangeNotifier {
       final oldPhotoURL = _userData?['photoURL'];
       Logger.log("기존 photoURL: ${oldPhotoURL ?? '없음'}");
 
-      // 1. Firebase Storage에서 기존 프로필 이미지 삭제
-      if (oldPhotoURL != null && oldPhotoURL.isNotEmpty) {
-        try {
-          // Firebase Storage URL에서 파일 경로 추출
-          if (oldPhotoURL.contains('firebasestorage.googleapis.com')) {
-            // URL에서 파일 경로 추출 (예: profile_photos/userId.jpg)
-            final uri = Uri.parse(oldPhotoURL);
-            final path = uri.pathSegments.last;
-            
-            // URL 디코딩하여 실제 경로 얻기
-            final decodedPath = Uri.decodeComponent(path);
-            
-            Logger.log("🗑️ Storage에서 이미지 삭제 시도: $decodedPath");
-            
-            try {
-              final ref = FirebaseStorage.instance.ref().child(decodedPath);
-              await ref.delete();
-              Logger.log("✅ Storage 이미지 삭제 완료");
-            } catch (storageError) {
-              Logger.error("⚠️ Storage 이미지 삭제 실패 (파일이 이미 없을 수 있음): $storageError");
-              // 파일이 없어도 계속 진행
-            }
-          }
-        } catch (e) {
-          Logger.error("⚠️ Storage 이미지 삭제 중 오류: $e");
-          // 오류가 발생해도 계속 진행
+      // 1. Firebase Storage에서 기존 프로필 이미지 삭제 (버킷/폴더 강제)
+      // - 레거시(uuid 파일)도 정리하기 위해 profile_images/{uid}/ 아래를 전부 삭제(best-effort)
+      try {
+        final uid = _user!.uid;
+        final storage = FirebaseStorage.instanceFor(
+          bucket: 'gs://${ProfilePhotoPolicy.bucket}',
+        );
+        final dirRef = storage.ref().child('profile_images/$uid');
+        final list = await dirRef.listAll();
+        for (final item in list.items) {
+          try {
+            await item.delete();
+          } catch (_) {}
         }
+        Logger.log("✅ Storage 프로필 이미지 정리 완료 (profile_images/$uid/*)");
+      } catch (e) {
+        Logger.error("⚠️ Storage 프로필 이미지 정리 실패(무시): $e");
       }
 
       // 2. Firestore users 컬렉션 업데이트 (photoURL을 빈 문자열로)
       await _firestore.collection('users').doc(_user!.uid).update({
         'photoURL': '',
+        'photoPath': '',
+        'photoAccessToken': '',
         'updatedAt': FieldValue.serverTimestamp(),
       });
       Logger.log("✅ Firestore photoURL을 빈 문자열로 업데이트 완료");
@@ -1264,49 +1304,61 @@ class AuthProvider with ChangeNotifier {
         return;
       }
       
+      // ✅ 배치 커밋은 500 제한/재사용 불가이므로, 청크로 나누어 처리한다.
+      const int chunkSize = 450; // 여유 있게
       int updated = 0;
-      final batch = _firestore.batch();
-      
-      for (var doc in conversations.docs) {
-        try {
-          final data = doc.data();
-          final participants = List<String>.from(data['participants'] ?? []);
-          final otherUserId = participants.firstWhere(
-            (id) => id != _user!.uid,
-            orElse: () => '',
-          );
-          
-          if (otherUserId.isEmpty) continue;
-          
-          // 상대방 이름 가져오기 (displayTitle 업데이트용)
-          final otherUserName = data['participantNames']?[otherUserId] ?? 'User';
-          
-          // participantNames 업데이트
-          batch.update(doc.reference, {
-            'participantNames.${_user!.uid}': nickname,
-            'participantPhotos.${_user!.uid}': photoURL ?? '',
-            'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
-            'displayTitle': '$nickname ↔ $otherUserName',
-          });
-          
-          updated++;
-          
-          // Firestore 배치 제한 (500개)
-          if (updated % 500 == 0) {
-            await batch.commit();
-            Logger.log('  - 중간 커밋: $updated개');
+
+      final docs = conversations.docs;
+      for (var i = 0; i < docs.length; i += chunkSize) {
+        final end = (i + chunkSize > docs.length) ? docs.length : i + chunkSize;
+        final chunk = docs.sublist(i, end);
+
+        final batch = _firestore.batch();
+        int ops = 0;
+
+        for (final doc in chunk) {
+          try {
+            final data = doc.data();
+            final participants = List<String>.from(data['participants'] ?? const []);
+
+            // displayTitle은 1:1 대화방에서만 갱신 (그 외는 유지)
+            String? newDisplayTitle;
+            if (participants.length == 2) {
+              final otherUserId = participants.firstWhere(
+                (id) => id != _user!.uid,
+                orElse: () => '',
+              );
+              if (otherUserId.isNotEmpty) {
+                final otherUserName = data['participantNames']?[otherUserId] ?? 'User';
+                newDisplayTitle = '$nickname ↔ $otherUserName';
+              }
+            }
+
+            final updateData = <String, dynamic>{
+              'participantNames.${_user!.uid}': nickname,
+              'participantPhotos.${_user!.uid}': (photoURL ?? '').toString(),
+              'participantNamesUpdatedAt': FieldValue.serverTimestamp(),
+              // 버전은 없을 수도 있어 안전하게 증가 (없으면 1부터)
+              'participantNamesVersion': FieldValue.increment(1),
+            };
+            if (newDisplayTitle != null) {
+              updateData['displayTitle'] = newDisplayTitle;
+            }
+
+            batch.update(doc.reference, updateData);
+            ops++;
+            updated++;
+          } catch (e) {
+            Logger.error('  - 대화방 업데이트 실패 (건너뜀): ${doc.id} - $e');
           }
-        } catch (e) {
-          Logger.error('  - 대화방 업데이트 실패 (건너뜀): ${doc.id} - $e');
-          continue;
+        }
+
+        if (ops > 0) {
+          await batch.commit();
+          Logger.log('  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
         }
       }
-      
-      // 최종 커밋
-      if (updated % 500 != 0) {
-        await batch.commit();
-      }
-      
+
       Logger.log('✅ 대화방 업데이트 완료: $updated개');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       
@@ -1572,5 +1624,181 @@ class AuthProvider with ChangeNotifier {
     }
     
     Logger.log('🔄 로그아웃 작업 완료');
+  }
+
+  // ---------------------------------------------------------------------------
+  // users/{uid} 스키마 일관성 보장 (가입 경로 무관)
+  // ---------------------------------------------------------------------------
+
+  /// 신규 생성 시 항상 동일한 users 문서 스키마를 만든다.
+  /// (이미 문서가 있으면 누락 필드만 채우고, 핵심 필드는 최신 값으로 정합성 유지)
+  Future<void> _upsertUserDocWithFullSchema({
+    required User user,
+    required String hanyangEmail,
+    required bool emailVerified,
+    required String nickname,
+    required String nationality,
+    required String photoURL,
+    String bio = '',
+  }) async {
+    final docRef = _firestore.collection('users').doc(user.uid);
+    await _firestore.runTransaction((tx) async {
+      final snap = await tx.get(docRef);
+      if (!snap.exists) {
+        tx.set(docRef, _buildFullUserDoc(
+          user: user,
+          hanyangEmail: hanyangEmail,
+          emailVerified: emailVerified,
+          nickname: nickname,
+          nationality: nationality,
+          photoURL: photoURL,
+          bio: bio,
+        ));
+        return;
+      }
+
+      final data = (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final updates = _computeMissingUserSchemaFields(
+        existingData: data,
+        user: user,
+      );
+
+      // 가입 확정에서 반드시 맞춰야 하는 핵심 필드들
+      updates['uid'] = user.uid;
+      updates['email'] = user.email ?? '';
+      updates['hanyangEmail'] = hanyangEmail;
+      updates['emailVerified'] = emailVerified;
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+      updates['lastLogin'] = FieldValue.serverTimestamp();
+
+      // nickname 단일 소스
+      if (nickname.isNotEmpty) {
+        updates['nickname'] = nickname;
+      }
+      if (nationality.isNotEmpty) {
+        updates['nationality'] = nationality;
+      }
+      if (photoURL.isNotEmpty) {
+        updates['photoURL'] = photoURL;
+      } else if (!data.containsKey('photoURL') || (data['photoURL']?.toString() ?? '').isEmpty) {
+        updates['photoURL'] = '';
+      }
+      if (bio.isNotEmpty) {
+        updates['bio'] = bio;
+      } else if (!data.containsKey('bio')) {
+        updates['bio'] = '';
+      }
+
+      tx.set(docRef, updates, SetOptions(merge: true));
+    });
+  }
+
+  /// users 문서가 존재할 때, 누락된 기본 필드를 채워서 "모든 사용자 문서의 필드 구성이 동일"하게 만든다.
+  Future<void> _ensureUserDocSchema({
+    required DocumentReference<Map<String, dynamic>> docRef,
+    required Map<String, dynamic>? existingData,
+  }) async {
+    final user = _user;
+    if (user == null) return;
+    final data = existingData ?? <String, dynamic>{};
+
+    final updates = _computeMissingUserSchemaFields(existingData: data, user: user);
+    if (updates.isEmpty) return;
+
+    await docRef.set(updates, SetOptions(merge: true));
+  }
+
+  /// 누락 필드 계산: "키 자체가 없거나 null"이면 기본값을 넣는다.
+  Map<String, dynamic> _computeMissingUserSchemaFields({
+    required Map<String, dynamic> existingData,
+    required User user,
+  }) {
+    bool missing(String key) => !existingData.containsKey(key) || existingData[key] == null;
+
+    final String authEmail = user.email ?? '';
+    final updates = <String, dynamic>{};
+
+    // 식별/기본
+    if (missing('uid')) updates['uid'] = user.uid;
+    if (missing('email')) updates['email'] = authEmail;
+    if (missing('hanyangEmail')) updates['hanyangEmail'] = authEmail;
+    if (missing('emailVerified')) updates['emailVerified'] = false;
+
+    // 표시 이름: nickname 단일 소스
+    if (missing('nickname')) updates['nickname'] = '';
+    // displayName 필드는 더 이상 사용하지 않음 (점진 삭제)
+    if (existingData.containsKey('displayName')) updates['displayName'] = FieldValue.delete();
+
+    // 프로필
+    // ✅ 정책: 외부(Auth 제공) 프로필 사진은 절대 사용하지 않는다. (버킷에 저장된 것만 허용)
+    if (missing('photoURL')) updates['photoURL'] = '';
+    if (missing('photoPath')) updates['photoPath'] = '';
+    if (missing('photoAccessToken')) updates['photoAccessToken'] = '';
+    if (missing('photoVersion')) updates['photoVersion'] = 0;
+    if (missing('photoUpdatedAt')) updates['photoUpdatedAt'] = null;
+    if (missing('bio')) updates['bio'] = '';
+    if (missing('nationality')) updates['nationality'] = '';
+
+    // 카운터들
+    if (missing('friendsCount')) updates['friendsCount'] = 0;
+    if (missing('incomingCount')) updates['incomingCount'] = 0;
+    if (missing('outgoingCount')) updates['outgoingCount'] = 0;
+    if (missing('dmUnreadTotal')) updates['dmUnreadTotal'] = 0;
+    if (missing('notificationUnreadTotal')) updates['notificationUnreadTotal'] = 0;
+
+    // FCM
+    if (missing('fcmToken')) updates['fcmToken'] = '';
+    if (missing('fcmTokens')) updates['fcmTokens'] = <String>[];
+    if (missing('fcmTokenUpdatedAt')) updates['fcmTokenUpdatedAt'] = null;
+
+    // 언어
+    if (missing('preferredLanguage')) updates['preferredLanguage'] = 'ko';
+    if (missing('preferredLanguageUpdatedAt')) updates['preferredLanguageUpdatedAt'] = null;
+
+    // 타임스탬프
+    if (missing('createdAt')) updates['createdAt'] = FieldValue.serverTimestamp();
+    if (missing('updatedAt')) updates['updatedAt'] = FieldValue.serverTimestamp();
+    if (missing('lastLogin')) updates['lastLogin'] = FieldValue.serverTimestamp();
+
+    return updates;
+  }
+
+  /// 신규 문서 생성용: 항상 동일한 키 셋을 가진 전체 문서 생성.
+  Map<String, dynamic> _buildFullUserDoc({
+    required User user,
+    required String hanyangEmail,
+    required bool emailVerified,
+    required String nickname,
+    required String nationality,
+    required String photoURL,
+    required String bio,
+  }) {
+    return <String, dynamic>{
+      'uid': user.uid,
+      'email': user.email ?? '',
+      'hanyangEmail': hanyangEmail,
+      'emailVerified': emailVerified,
+      'nickname': nickname,
+      'nationality': nationality,
+      'photoURL': photoURL,
+      'photoPath': photoURL.isNotEmpty ? _profilePhotoPathForUid(user.uid) : '',
+      'photoAccessToken': photoURL.isNotEmpty ? _extractStorageDownloadToken(photoURL) : '',
+      'photoVersion': 0,
+      'photoUpdatedAt': null,
+      'bio': bio,
+      'friendsCount': 0,
+      'incomingCount': 0,
+      'outgoingCount': 0,
+      'dmUnreadTotal': 0,
+      'notificationUnreadTotal': 0,
+      'fcmToken': '',
+      'fcmTokens': <String>[],
+      'fcmTokenUpdatedAt': null,
+      'preferredLanguage': 'ko',
+      'preferredLanguageUpdatedAt': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastLogin': FieldValue.serverTimestamp(),
+    };
   }
 }

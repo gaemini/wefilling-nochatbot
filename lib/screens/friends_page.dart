@@ -123,12 +123,10 @@ class _FriendsPageState extends State<FriendsPage> {
     final filtered =
         allFriends.where((friend) {
           final name = friend.displayNameOrNickname.toLowerCase();
-          final displayName = friend.displayName.toLowerCase();
           final nickname = friend.nickname?.toLowerCase() ?? '';
           final searchQuery = query.toLowerCase();
 
           return name.contains(searchQuery) ||
-              displayName.contains(searchQuery) ||
               nickname.contains(searchQuery);
         }).toList();
 
@@ -426,26 +424,13 @@ class _FriendsPageState extends State<FriendsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      friend.displayName,
+                      friend.displayNameOrNickname,
                       style: TypographyStyles.headlineMedium.copyWith(
                         color: BrandColors.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (friend.nickname != null &&
-                        friend.nickname!.isNotEmpty &&
-                        friend.nickname != friend.displayName) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        friend.nickname!,
-                        style: TypographyStyles.bodyLarge.copyWith(
-                          color: BrandColors.textSecondary,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                     const SizedBox(height: 16),
                     _ActionTile(
                       icon: Icons.person_outline,
@@ -1083,19 +1068,6 @@ class _FriendsPageState extends State<FriendsPage> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        if (friend.nickname != null &&
-                            friend.nickname != friend.displayName &&
-                            friend.nickname!.isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            friend.displayName,
-                            style: TypographyStyles.bodySmall.copyWith(
-                              color: BrandColors.textSecondary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
                         if (friend.nationality != null && friend.nationality!.isNotEmpty) ...[
                           const SizedBox(height: 2),
                           Row(

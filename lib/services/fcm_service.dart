@@ -303,11 +303,12 @@ class FCMService {
       }
 
       // fallback: 단일 토큰(fcmToken) + 멀티 토큰(fcmTokens)
-      await _firestore.collection('users').doc(userId).set({
+      // ⚠️ merge set은 users 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
+      await _firestore.collection('users').doc(userId).update({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
       Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
     } catch (e) {
       Logger.error('❌ FCM 토큰 저장 실패: $e');

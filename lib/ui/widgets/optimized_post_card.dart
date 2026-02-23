@@ -23,6 +23,7 @@ import '../../screens/dm_chat_screen.dart';
 import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../utils/logger.dart';
+import 'friends_only_badge.dart';
 import 'poll_post_widget.dart';
 import 'user_avatar.dart';
 
@@ -466,7 +467,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           .get();
       for (final doc in snap.docs) {
         final data = doc.data();
-        final nickname = (data['nickname'] ?? data['displayName'] ?? 'User').toString();
+        final nickname = (data['nickname'] ?? '').toString().trim().isNotEmpty
+            ? data['nickname'].toString().trim()
+            : 'User';
         final photoURL = (data['photoURL'] ?? '').toString();
         final nationalityRaw = (data['nationality'] ?? '').toString().trim();
         final nationality = nationalityRaw.isEmpty ? null : nationalityRaw;
@@ -610,32 +613,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget _buildVisibilityIndicator(Post post) {
     // 친구 공개 전용 (통일된 크기)
     if (post.visibility == 'category') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF3E0), // 주황색 배경
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.group_outlined,
-              size: DesignTokens.iconSmall,
-              color: const Color(0xFFFF8A65), // 주황색
-            ),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context)!.friendsOnly,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12, // 통일된 크기
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFFFF8A65), // 주황색
-              ),
-            ),
-          ],
-        ),
+      return FriendsOnlyBadge(
+        label: AppLocalizations.of(context)!.friendsOnly,
+        // 기존 크기 유지 (패딩 동일), 아이콘만 정삼각형으로 교체
+        iconSize: DesignTokens.iconSmall,
       );
     }
 

@@ -744,7 +744,7 @@
   "deleteReview": "Delete Review",
   "completeOrCancelMeetup": "Complete / Cancel Meetup",
   "meetupCompleteTitle": "Complete Meetup",
-  "meetupCompleteMessage": "This meetup is full. Do you want to mark it as completed?\n\nAfter completion, you can write a review.",
+  "meetupCompleteMessage": "Do you want to mark this meetup as completed?\n\nAfter completion, you can write a review.",
   "markAsCompleted": "Mark as Completed",
   "meetupMarkedCompleted": "Meetup marked as completed",
   "meetupMarkCompleteFailed": "Failed to mark meetup as completed",

@@ -60,7 +60,6 @@ void main() {
         const testUserId = 'test-user-123';
         final expectedProfile = UserProfile(
           uid: testUserId,
-          displayName: 'Test User',
           photoURL: 'https://example.com/photo.jpg',
           nickname: 'testuser',
           nationality: 'KR',
@@ -78,7 +77,7 @@ void main() {
         // Then
         expect(result, isNotNull);
         expect(result!.uid, equals(testUserId));
-        expect(result.displayName, equals('Test User'));
+        expect(result.displayNameOrNickname, equals('testuser'));
         expect(result.nickname, equals('testuser'));
         verify(mockUsersRepository.getUserProfile(testUserId)).called(1);
       });

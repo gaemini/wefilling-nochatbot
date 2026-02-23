@@ -3533,7 +3533,7 @@ abstract class AppLocalizations {
   /// No description provided for @meetupCompleteMessage.
   ///
   /// In ko, this message translates to:
-  /// **'모임이 마감되었습니다. 모임을 완료 처리하시겠습니까?\n\n완료 처리하면 후기를 작성할 수 있습니다.'**
+  /// **'모임을 완료 처리하시겠습니까?\n\n완료 처리하면 후기를 작성할 수 있습니다.'**
   String get meetupCompleteMessage;
 
   /// No description provided for @markAsCompleted.

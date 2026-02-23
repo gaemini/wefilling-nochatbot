@@ -26,6 +26,7 @@ import '../utils/ui_utils.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/meetup_home_card.dart';
+import '../ui/widgets/friends_only_badge.dart';
 
 class MeetupHomePage extends StatefulWidget {
   final String? initialMeetupId; // 알림에서 전달받은 모임 ID
@@ -937,32 +938,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
   // 공개 범위 배지
   Widget _buildVisibilityBadge(Meetup meetup) {
     if (meetup.visibility == 'category') {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF3E0), // 주황색 배경
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.group_outlined,
-              size: 15, // 통일된 크기
-              color: Color(0xFFFF8A65), // 주황색
-            ),
-            const SizedBox(width: 6),
-            Text(
-              AppLocalizations.of(context)!.friendsOnlyBadge,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12, // 통일된 크기
-                fontWeight: FontWeight.w700,
-                color: Color(0xFFFF8A65), // 주황색
-              ),
-            ),
-          ],
-        ),
+      return FriendsOnlyBadge(
+        label: AppLocalizations.of(context)!.friendsOnlyBadge,
+        iconSize: 15,
       );
     }
     return const SizedBox.shrink();
@@ -1248,7 +1226,9 @@ class _MeetupHomePageState extends State<MeetupHomePage>
       if (reqQuery.docs.isEmpty) {
         // 없으면 생성 (알림 누락 대비)
         final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        final recipientName = userDoc.data()?['nickname'] ?? userDoc.data()?['displayName'] ?? 'User';
+        final recipientName = (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
+            ? userDoc.data()!['nickname'].toString().trim()
+            : 'User';
         final requesterId = meetup.userId ?? '';
         final requesterName = reviewData['authorName'] ?? meetup.hostNickname ?? meetup.host;
 

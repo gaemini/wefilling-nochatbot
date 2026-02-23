@@ -142,7 +142,7 @@ class UsersRepository {
     Logger.log('🗑️ 프로필 캐시 무효화: $userId');
   }
 
-  /// 사용자 검색 (닉네임 또는 displayName으로)
+  /// 사용자 검색 (닉네임으로만)
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
     try {
       if (query.trim().isEmpty) return [];
@@ -168,15 +168,12 @@ class UsersRepository {
         try {
           final profile = UserProfile.fromFirestore(doc);
           
-          // 닉네임과 displayName을 소문자로 변환하여 검색
+          // 닉네임을 소문자로 변환하여 검색
           final nickname = (profile.nickname ?? '').toLowerCase();
-          final displayName = (profile.displayName ?? '').toLowerCase();
           
           // 부분 문자열 매칭 (한국어 포함)
-          if (nickname.contains(normalizedQuery) || 
-              displayName.contains(normalizedQuery) ||
-              _isKoreanMatch(nickname, normalizedQuery) ||
-              _isKoreanMatch(displayName, normalizedQuery)) {
+          if (nickname.contains(normalizedQuery) ||
+              _isKoreanMatch(nickname, normalizedQuery)) {
             matchedProfiles.add(profile);
           }
         } catch (e) {
@@ -245,27 +242,26 @@ class UsersRepository {
   /// 검색 관련도 점수 계산
   int _getRelevanceScore(UserProfile profile, String query) {
     final nickname = (profile.nickname ?? '').toLowerCase();
-    final displayName = (profile.displayName ?? '').toLowerCase();
     
     int score = 0;
     
     // 정확한 매칭에 높은 점수
-    if (nickname == query || displayName == query) {
+    if (nickname == query) {
       score += 100;
     }
     
     // 시작 부분 매칭에 중간 점수
-    if (nickname.startsWith(query) || displayName.startsWith(query)) {
+    if (nickname.startsWith(query)) {
       score += 50;
     }
     
     // 부분 매칭에 낮은 점수
-    if (nickname.contains(query) || displayName.contains(query)) {
+    if (nickname.contains(query)) {
       score += 25;
     }
     
     // 한국어 초성 매칭
-    if (_isKoreanMatch(nickname, query) || _isKoreanMatch(displayName, query)) {
+    if (_isKoreanMatch(nickname, query)) {
       score += 10;
     }
     

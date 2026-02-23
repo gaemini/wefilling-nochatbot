@@ -23,6 +23,9 @@ class Meetup {
   final String thumbnailImageUrl;
   final List<String> imageUrls; // 첨부 이미지 URL들(최대 3장)
   final DateTime date;
+
+  /// 모임 생성 시각(Firestore `createdAt`). 정렬/피드에서 사용.
+  final DateTime createdAt;
   final String category;
   final String? userId; // 모임 주최자 ID
   final String? hostNickname; // 주최자 닉네임
@@ -35,7 +38,7 @@ class Meetup {
   final int viewCount; // 조회수
   final int commentCount; // 댓글수
 
-  const Meetup({
+  Meetup({
     required this.id,
     required this.title,
     required this.description,
@@ -51,6 +54,7 @@ class Meetup {
     this.thumbnailImageUrl = '',
     this.imageUrls = const [],
     required this.date,
+    DateTime? createdAt,
     this.category = '기타',
     this.userId,
     this.hostNickname,
@@ -62,7 +66,7 @@ class Meetup {
     this.reviewId,
     this.viewCount = 0, // 기본값: 조회수 0
     this.commentCount = 0, // 기본값: 댓글수 0
-  });
+  }) : createdAt = createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
 
   Meetup copyWith({
     String? id,
@@ -80,6 +84,7 @@ class Meetup {
     String? thumbnailImageUrl,
     List<String>? imageUrls,
     DateTime? date,
+    DateTime? createdAt,
     String? category,
     String? userId,
     String? hostNickname,
@@ -108,6 +113,7 @@ class Meetup {
       thumbnailImageUrl: thumbnailImageUrl ?? this.thumbnailImageUrl,
       imageUrls: imageUrls ?? this.imageUrls,
       date: date ?? this.date,
+      createdAt: createdAt ?? this.createdAt,
       category: category ?? this.category,
       userId: userId ?? this.userId,
       hostNickname: hostNickname ?? this.hostNickname,
@@ -122,6 +128,34 @@ class Meetup {
     );
   }
 
+  static DateTime _parseFirestoreDate(dynamic raw, {DateTime? fallback}) {
+    final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
+    if (raw == null) return fb;
+    if (raw is DateTime) return raw;
+    // Firestore Timestamp 호환: dynamic 호출(toDate)
+    try {
+      final d = raw.toDate();
+      if (d is DateTime) return d;
+    } catch (_) {}
+    if (raw is String) {
+      final s = raw.trim();
+      if (s.isNotEmpty) {
+        final normalized = s.replaceAll('.', '-').replaceAll('/', '-');
+        final datePart = normalized.split(' ').first;
+        final parts = datePart.split('-');
+        if (parts.length >= 3) {
+          final y = int.tryParse(parts[0]);
+          final m = int.tryParse(parts[1]);
+          final d = int.tryParse(parts[2]);
+          if (y != null && m != null && d != null) {
+            return DateTime(y, m, d);
+          }
+        }
+      }
+    }
+    return fb;
+  }
+
   // 날짜 포맷 문자열 반환 함수 (다국어 지원)
   String getFormattedDate(BuildContext context) {
     final now = DateTime.now();
@@ -134,18 +168,18 @@ class Meetup {
 
     if (difference == 0) {
       // 오늘 예정 / Today Scheduled
-      return locale.languageCode == 'ko' 
-          ? '오늘 ${l10n.scheduled}' 
+      return locale.languageCode == 'ko'
+          ? '오늘 ${l10n.scheduled}'
           : 'Today ${l10n.scheduled}';
     } else if (difference == 1) {
       // 내일 예정 / Tomorrow Scheduled
-      return locale.languageCode == 'ko' 
-          ? '내일 ${l10n.scheduled}' 
+      return locale.languageCode == 'ko'
+          ? '내일 ${l10n.scheduled}'
           : 'Tomorrow ${l10n.scheduled}';
     } else if (difference > 1 && difference < 7) {
       // N일 후 예정 / In N days
-      return locale.languageCode == 'ko' 
-          ? '$difference일 후 ${l10n.scheduled}' 
+      return locale.languageCode == 'ko'
+          ? '$difference일 후 ${l10n.scheduled}'
           : 'In $difference days';
     } else {
       // 날짜 표시 / Date display
@@ -165,12 +199,12 @@ class Meetup {
     final dayNames = languageCode == 'en' ? dayNamesEn : dayNamesKo;
     // DateTime의 weekday는 1(월요일)부터 7(일요일)까지, 배열 인덱스는 0부터 시작하므로 -1
     final dayIndex = (date.weekday - 1) % 7;
-    
+
     // 안전한 인덱스 접근
     if (dayIndex < 0 || dayIndex >= dayNames.length) {
       return '알 수 없음';
     }
-    
+
     return dayNames[dayIndex];
   }
 
@@ -193,8 +227,9 @@ class Meetup {
     }
 
     // 날짜와 시간 문자열을 결합하여 DateTime 객체 생성
-    final meetupTimeStr = time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
-    
+    final meetupTimeStr =
+        time.split('~')[0].trim(); // "14:00 ~ 16:00" => "14:00"
+
     // 안전한 시간 파싱
     final timeParts = meetupTimeStr.split(':');
     if (timeParts.length < 2) {
@@ -204,7 +239,7 @@ class Meetup {
       final closed = languageCode == 'en' ? 'Closed' : '종료';
       return now.isAfter(meetupDate) ? closed : upcoming;
     }
-    
+
     final hour = int.tryParse(timeParts[0]) ?? 0;
     final minute = int.tryParse(timeParts[1]) ?? 0;
 
@@ -219,11 +254,11 @@ class Meetup {
     // 종료 시간 추정 (시작으로부터 2시간 후로 가정)
     int endHour = hour + 2;
     int endMinute = minute;
-    
+
     if (time.contains('~')) {
       final endTimeStr = time.split('~')[1].trim();
       final endTimeParts = endTimeStr.split(':');
-      
+
       if (endTimeParts.length >= 2) {
         endHour = int.tryParse(endTimeParts[0]) ?? (hour + 2);
         endMinute = int.tryParse(endTimeParts[1]) ?? minute;
@@ -376,7 +411,8 @@ class Meetup {
       thumbnailContent: json['thumbnailContent'] ?? '',
       thumbnailImageUrl: json['thumbnailImageUrl'] ?? '',
       imageUrls: parsedUrls,
-      date: json['date']?.toDate() ?? DateTime.now(),
+      date: _parseFirestoreDate(json['date'], fallback: DateTime.now()),
+      createdAt: _parseFirestoreDate(json['createdAt']),
       category: json['category'] ?? '기타',
       userId: json['userId'],
       hostNickname: json['hostNickname'],
@@ -423,6 +459,7 @@ class Meetup {
       'thumbnailImageUrl': thumbnailImageUrl,
       'imageUrls': imageUrls,
       'date': date,
+      'createdAt': createdAt,
       'category': category,
       'userId': userId,
       'hostNickname': hostNickname,

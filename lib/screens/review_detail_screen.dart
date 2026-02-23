@@ -186,7 +186,8 @@ class _ReviewDetailScreenState extends State<ReviewDetailScreen> {
       
       // 닉네임 우선, 없으면 displayName, 둘 다 없으면 익명
       final nickname = userData['nickname'];
-      final displayName = userData['displayName'];
+      // nickname 단일 소스
+      final displayName = (userData['nickname'] ?? '').toString().trim();
       final finalName = nickname ?? displayName ?? '익명';
       
       Logger.log('📋 사용자 정보: nickname=$nickname, displayName=$displayName, final=$finalName');

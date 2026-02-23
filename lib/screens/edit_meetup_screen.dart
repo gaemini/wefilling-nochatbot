@@ -45,7 +45,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
   // 카테고리 키 (Firestore에 저장되는 값)
   final List<String> _categoryKeys = ['study', 'meal', 'cafe', 'drink', 'culture', 'etc'];
-  final List<int> _participantOptions = [3, 4];
+  final List<int> _participantOptions = [3, 4, 5, 6];
 
   @override
   void initState() {

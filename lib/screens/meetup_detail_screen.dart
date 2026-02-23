@@ -1388,7 +1388,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 새로운 디자인의 모임장 액션 버튼
   Widget _buildNewHostActionButton() {
-    final isFull = _currentMeetup.isFull();
+    // ✅ 요구사항: 정원 미달이어도 "총 3명 이상(모임장 포함)"이면 모임 마감(완료) 가능
+    final canComplete =
+        _currentMeetup.isFull() || _currentMeetup.currentParticipants >= 3;
     final isCompleted = _currentMeetup.isCompleted;
     final hasReview = _currentMeetup.hasReview;
 
@@ -1399,7 +1401,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
         height: 56,
         child: ElevatedButton(
           onPressed: _isLoading ? null : () {
-            if (isFull) {
+            if (canComplete) {
               _showCompleteMeetupDialog();
             } else {
               _showCancelConfirmation();
@@ -1428,7 +1430,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                     Icon(Icons.cancel_outlined, size: DesignTokens.icon),
                     const SizedBox(width: 8),
                     Text(
-                      isFull
+                      canComplete
                           ? (AppLocalizations.of(context)!.completeOrCancelMeetup ?? "") : AppLocalizations.of(context)!.cancelMeetup,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
@@ -1872,7 +1874,9 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임장 액션 버튼 (상태에 따라 다른 버튼 표시)
   Widget _buildHostActionButton() {
-    final isFull = _currentMeetup.isFull();
+    // ✅ 요구사항: 정원 미달이어도 "총 3명 이상(모임장 포함)"이면 모임 마감(완료) 가능
+    final canComplete =
+        _currentMeetup.isFull() || _currentMeetup.currentParticipants >= 3;
     final isCompleted = _currentMeetup.isCompleted;
     final hasReview = _currentMeetup.hasReview;
 
@@ -1880,7 +1884,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     if (!isCompleted) {
       return ElevatedButton(
         onPressed: _isLoading ? null : () {
-          if (isFull) {
+          if (canComplete) {
             // 마감된 모임이면 완료 처리 옵션 제공
             _showCompleteMeetupDialog();
           } else {
@@ -1903,7 +1907,7 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
                   color: Colors.white,
                 ),
               )
-            : Text(isFull
+            : Text(canComplete
                 ? (AppLocalizations.of(context)!.completeOrCancelMeetup ?? "") : AppLocalizations.of(context)!.cancelMeetup),
       );
     }

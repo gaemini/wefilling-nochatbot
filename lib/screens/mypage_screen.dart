@@ -30,6 +30,7 @@ import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
 import '../ui/widgets/profile_image_viewer.dart';
+import '../utils/profile_photo_policy.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -131,6 +132,10 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     final user = authProvider.user;
     final userData = authProvider.userData;
     final nationality = userData?['nationality'];
+    final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
+    final photoUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
+        ? rawPhotoUrl
+        : '';
 
     return Container(
       color: Colors.white,
@@ -143,8 +148,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             children: [
               // 프로필 사진 - 탭 가능
               GestureDetector(
-                onTap: user?.photoURL != null
-                    ? () => _openProfileImageViewer(user!.photoURL!)
+                onTap: photoUrl.isNotEmpty
+                    ? () => _openProfileImageViewer(photoUrl)
                     : null,
                 child: Hero(
                   tag: 'profile_image_${user?.uid ?? 'me'}',
@@ -155,7 +160,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                       shape: BoxShape.circle,
                       color: const Color(0xFFE5E7EB),
                       // 사진이 있을 때만 탭 가능한 느낌을 주는 그림자 추가
-                      boxShadow: user?.photoURL != null
+                      boxShadow: photoUrl.isNotEmpty
                           ? [
                               BoxShadow(
                                 color: Colors.black.withOpacity(0.1),
@@ -165,10 +170,10 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                             ]
                           : null,
                     ),
-                    child: user?.photoURL != null
+                    child: photoUrl.isNotEmpty
                         ? ClipOval(
                             child: Image.network(
-                              user!.photoURL!,
+                              photoUrl,
                               width: 100,
                               height: 100,
                               fit: BoxFit.cover,

@@ -7,6 +7,7 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../constants/app_constants.dart';
 import '../models/meetup.dart';
+import '../services/meetup_calendar_cache_service.dart';
 import '../services/meetup_service.dart';
 import '../ui/widgets/board_meetup_card.dart';
 import '../utils/logger.dart';
@@ -23,11 +24,14 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _meetupService = MeetupService();
+  final _calendarCache = MeetupCalendarCacheService.instance;
 
   StreamSubscription? _hostedSub;
   StreamSubscription? _participatingSub;
-  int _friendFutureLoadToken = 0;
-  Set<DateTime> _friendFutureMeetupDays = <DateTime>{}; // 날짜 키(자정) Set
+  Set<String> _hostedMeetupIds = <String>{};
+  // ✅ "내 참여 모임" = 승인(approved) + 참여 신청(pending) 모두 포함
+  // - 요구사항: 미래 모임에서 "참여 신청한 모임"도 보여야 함
+  Set<String> _participatingApprovedMeetupIds = <String>{};
 
   final Map<String, StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>>
       _meetupDocSubs = {};
@@ -96,8 +100,12 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     super.initState();
     _selectedDay = DateTime.now();
     _startStreams();
-    // ✅ 미래(오늘 이후): "친구들이 만든 모임" 체크 표시용 로드
-    unawaited(_loadFriendFutureMeetupsForMonth(_focusedDay));
+
+    // ✅ 친구 미래 모임은 "월 단위 캐시"로 동작 (페이지 재진입 시 재조회 최소화)
+    _calendarCache.addListener(_handleCalendarCacheUpdated);
+    _calendarCache.start();
+    unawaited(_calendarCache.warmMonth(_focusedDay));
+    unawaited(_calendarCache.warmDay(_selectedDay!));
   }
 
   @override
@@ -108,7 +116,13 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
       s.cancel();
     }
     _meetupDocSubs.clear();
+    _calendarCache.removeListener(_handleCalendarCacheUpdated);
     super.dispose();
+  }
+
+  void _handleCalendarCacheUpdated() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   void _startStreams() {
@@ -121,39 +135,47 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
         .where('userId', isEqualTo: user.uid)
         .snapshots()
         .listen((snapshot) {
-      final hostedIds = snapshot.docs.map((d) => d.id).toSet();
-      _updateMeetupIds(hostedIds, source: 'hosted');
+      _hostedMeetupIds = snapshot.docs.map((d) => d.id).toSet();
+      _recomputeAndSyncMeetupIds();
     }, onError: (e) {
       Logger.error('내가 만든 모임 스트림 오류: $e');
     });
 
-    // 2) 내가 참여(승인)한 모임들
+    // 2) 내가 참여(승인/신청)한 모임들
     _participatingSub = _firestore
         .collection('meetup_participants')
         .where('userId', isEqualTo: user.uid)
-        .where('status', isEqualTo: 'approved')
+        // 승인 + 신청(대기) 모두 포함
+        .where('status', whereIn: const ['approved', 'pending'])
         .snapshots()
         .listen((snapshot) {
-      final ids = snapshot.docs
-          .map((d) => (d.data()['meetupId'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toSet();
-      _updateMeetupIds(ids, source: 'participating');
-    }, onError: (e) {
-      Logger.error('내 참여 모임 스트림 오류: $e');
-    });
+          _participatingApprovedMeetupIds = snapshot.docs
+              .map((d) => (d.data()['meetupId'] ?? '').toString())
+              .where((id) => id.isNotEmpty)
+              .toSet();
+          _recomputeAndSyncMeetupIds();
+        }, onError: (e) {
+          Logger.error('내 참여 모임 스트림 오류: $e');
+        });
   }
 
-  void _updateMeetupIds(Set<String> incoming, {required String source}) {
-    // 두 스트림(호스트/참여)의 합집합을 유지해야 하므로,
-    // source별로 보관하지 않고 "현재까지 알려진 id"에 merge 방식으로 처리.
-    // 최신 상태를 정확히 하려면 두 소스 모두의 최신 set이 필요하지만,
-    // 여기선 doc 스트림이 final truth라서 id가 빠질 때는 doc 삭제/권한 변화로 정리된다.
-    final next = {..._currentMeetupIds, ...incoming};
+  void _recomputeAndSyncMeetupIds() {
+    final next = <String>{
+      ..._hostedMeetupIds,
+      ..._participatingApprovedMeetupIds,
+    };
     _syncMeetupDocSubs(next);
   }
 
   void _syncMeetupDocSubs(Set<String> nextIds) {
+    // unsubscribe removed
+    final removed = _currentMeetupIds.difference(nextIds);
+    for (final id in removed) {
+      _meetupDocSubs[id]?.cancel();
+      _meetupDocSubs.remove(id);
+      _meetupById.remove(id);
+    }
+
     // subscribe new
     for (final id in nextIds) {
       if (_meetupDocSubs.containsKey(id)) continue;
@@ -283,6 +305,31 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     return map;
   }
 
+  DateTime _monthStartKey(DateTime focusedDay) =>
+      DateTime(focusedDay.year, focusedDay.month, 1);
+
+  DateTime _monthEndKey(DateTime focusedDay) {
+    final monthStart = _monthStartKey(focusedDay);
+    final nextMonthStart = (monthStart.month == 12)
+        ? DateTime(monthStart.year + 1, 1, 1)
+        : DateTime(monthStart.year, monthStart.month + 1, 1);
+    return nextMonthStart.subtract(const Duration(days: 1));
+  }
+
+  int _minutesFromMeetupTime(String raw) {
+    final t = raw.trim();
+    if (t.isEmpty || t == '미정' || t == 'Undecided' || t == 'TBD') {
+      return 24 * 60 + 1;
+    }
+    if (!t.contains(':')) return 24 * 60 + 1;
+    final start = t.split('~').first.trim();
+    final parts = start.split(':');
+    if (parts.length < 2) return 24 * 60 + 1;
+    final h = int.tryParse(parts[0].trim()) ?? 23;
+    final m = int.tryParse(parts[1].trim()) ?? 59;
+    return (h.clamp(0, 23) * 60) + m.clamp(0, 59);
+  }
+
   List<Meetup> _eventsFor(DateTime day) {
     final map = _buildEventMap();
     return map[_dayKey(day.toLocal())] ?? const <Meetup>[];
@@ -293,98 +340,6 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     final startToday = DateTime(now.year, now.month, now.day);
     final d = _dayKey(day.toLocal());
     return d.isBefore(startToday);
-  }
-
-  /// 미래(오늘 이후) 날짜에 대해 "친구들이 만든 모임"이 있는 날을 로드합니다.
-  /// - 체크 표시만 필요하므로 dayKey Set만 유지
-  Future<void> _loadFriendFutureMeetupsForMonth(DateTime focusedDay) async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-
-    final token = ++_friendFutureLoadToken;
-
-    // 이번 focused 달 범위
-    final monthStart = DateTime(focusedDay.year, focusedDay.month, 1);
-    final nextMonthStart = (focusedDay.month == 12)
-        ? DateTime(focusedDay.year + 1, 1, 1)
-        : DateTime(focusedDay.year, focusedDay.month + 1, 1);
-    final monthEnd = nextMonthStart.subtract(const Duration(microseconds: 1));
-
-    // 오늘은 제외(오늘 체크표시 금지), 내일(오늘+1)부터
-    final tomorrow = _startOfToday().add(const Duration(days: 1));
-    final effectiveStart = monthStart.isAfter(tomorrow) ? monthStart : tomorrow;
-    if (effectiveStart.isAfter(monthEnd)) {
-      if (!mounted || token != _friendFutureLoadToken) return;
-      setState(() => _friendFutureMeetupDays = <DateTime>{});
-      return;
-    }
-
-    try {
-      // 친구 ID 목록
-      final friendsSnapshot = await _firestore
-          .collection('relationships')
-          .where('userId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-      final friendIds = friendsSnapshot.docs
-          .map((d) => (d.data()['friendId'] ?? '').toString())
-          .where((id) => id.isNotEmpty)
-          .toSet()
-          .toList();
-
-      if (friendIds.isEmpty) {
-        if (!mounted || token != _friendFutureLoadToken) return;
-        setState(() => _friendFutureMeetupDays = <DateTime>{});
-        return;
-      }
-
-      // Firestore whereIn 제한(10) 대응: 청크 쿼리
-      const chunkSize = 10;
-      final futures = <Future<QuerySnapshot<Map<String, dynamic>>>>[];
-      for (var i = 0; i < friendIds.length; i += chunkSize) {
-        final chunk = friendIds.sublist(
-          i,
-          (i + chunkSize) > friendIds.length
-              ? friendIds.length
-              : (i + chunkSize),
-        );
-        futures.add(
-          _firestore
-              .collection('meetups')
-              .where('userId', whereIn: chunk)
-              .where('date', isGreaterThanOrEqualTo: effectiveStart)
-              .where('date', isLessThanOrEqualTo: monthEnd)
-              .orderBy('date', descending: false)
-              .get(),
-        );
-      }
-
-      final snapshots = await Future.wait(futures, eagerError: false);
-      final meetups = <Meetup>[];
-      for (final snap in snapshots) {
-        for (final doc in snap.docs) {
-          meetups.add(_meetupFromDoc(doc));
-        }
-      }
-
-      // 공개 범위 필터(친구/카테고리 공개 포함) 적용
-      final visible = await _meetupService.filterMeetupsForCurrentUser(meetups);
-
-      // "친구들이 만든 모임" + "미래(오늘 이후)"만 dayKey Set으로
-      final todayKey = _startOfToday();
-      final dayKeys = visible
-          .where((m) => m.userId != null && friendIds.contains(m.userId))
-          .where((m) => _dayKey(m.date.toLocal()).isAfter(todayKey))
-          .map((m) => _dayKey(m.date.toLocal()))
-          .toSet();
-
-      if (!mounted || token != _friendFutureLoadToken) return;
-      setState(() => _friendFutureMeetupDays = dayKeys);
-    } catch (e) {
-      Logger.error('친구 미래 모임 로드 오류: $e');
-      if (!mounted || token != _friendFutureLoadToken) return;
-      setState(() => _friendFutureMeetupDays = <DateTime>{});
-    }
   }
 
   Widget _buildDayCell({
@@ -500,8 +455,54 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
 
     final eventsMap = _buildEventMap();
     final selected = _selectedDay ?? _focusedDay;
-    final selectedEvents =
-        eventsMap[_dayKey(selected.toLocal())] ?? const <Meetup>[];
+    final selectedKey = _dayKey(selected.toLocal());
+    final todayKey = _startOfToday();
+
+    // ✅ 요구사항: "선택한 날짜"의 모임만 표시(미래 모임들만)
+    // - 오늘/미래 날짜: 내 모임 + 친구가 만든 모임(참여 여부 무관) 합쳐서 표시
+    // - 과거 날짜: 표시하지 않음
+    final isFutureOrToday = !selectedKey.isBefore(todayKey);
+    final selectedMyMeetups = eventsMap[selectedKey] ?? const <Meetup>[];
+    final selectedFriendMeetups =
+        _calendarCache.friendMeetupsForDay(selectedKey);
+
+    // ✅ 요구사항:
+    // - 오늘/미래: 선택 날짜의 (내 모임 + 친구 모임[나에게 보이는 공개범위])만 표시
+    // - 과거: 선택 날짜의 (내가 참여 신청/참가한 모임 + 내가 만든 모임)만 표시
+    final selectedMeetups = (() {
+      final byId = <String, Meetup>{};
+      if (isFutureOrToday) {
+        for (final m in selectedMyMeetups) {
+          byId[m.id] = m;
+        }
+        for (final m in selectedFriendMeetups) {
+          byId[m.id] = m;
+        }
+      } else {
+        // 과거는 내 모임(내가 만든/참여 신청/참가)만
+        for (final m in selectedMyMeetups) {
+          byId[m.id] = m;
+        }
+      }
+
+      final merged = byId.values.toList()
+        ..sort((a, b) {
+          final d = a.date.compareTo(b.date);
+          if (d != 0) return d;
+          return _minutesFromMeetupTime(a.time)
+              .compareTo(_minutesFromMeetupTime(b.time));
+        });
+      return merged;
+    })();
+
+    final bool isSelectedToday = isSameDay(selected, DateTime.now());
+    final String listTitle = _isPastDay(selected)
+        ? (lang == 'ko' ? '지난 모임(신청/참여)' : 'Past meetups')
+        : (isSelectedToday
+            ? (lang == 'ko' ? '오늘 모임' : "Today's meetups")
+            : (lang == 'ko'
+                ? '${selected.month}월 ${selected.day}일 모임'
+                : 'Meetups on ${_monthName(selected.month)} ${selected.day}'));
 
     return Scaffold(
       backgroundColor: const Color(0xFFEBEBEB),
@@ -538,8 +539,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
               startingDayOfWeek: StartingDayOfWeek.sunday,
               onPageChanged: (focusedDay) {
                 setState(() => _focusedDay = focusedDay);
-                // ✅ 달 이동 시 해당 월의 "친구 미래 모임" 체크 갱신
-                unawaited(_loadFriendFutureMeetupsForMonth(focusedDay));
+                // ✅ 달 이동 시: 친구 미래 모임 월 캐시 예열
+                unawaited(_calendarCache.warmMonth(focusedDay));
               },
               selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
               onDaySelected: (selectedDay, focusedDay) {
@@ -547,6 +548,8 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                   _selectedDay = selectedDay;
                   _focusedDay = focusedDay;
                 });
+                // ✅ 날짜 선택 시: 해당 월 캐시가 없으면 예열(쿼리 1회)
+                unawaited(_calendarCache.warmDay(selectedDay));
               },
               eventLoader: (day) =>
                   eventsMap[_dayKey(day.toLocal())] ?? const <Meetup>[],
@@ -574,19 +577,17 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                   final isPast = _isPastDay(day);
                   final isFuture = _isFutureDay(day);
                   // 요구사항:
-                  // - 과거(<오늘): 내가 참여했던 모임만 체크(빨강)
-                  // - 미래(>오늘): 친구들이 만든 모임이 있으면 체크(파랑)
+                  // - 과거(<오늘): 수정 전 동작 유지(해당 날짜에 모임이 있으면 체크, 빨강)
+                  // - 미래(>오늘): 해당 날짜에 모임이 있으면 체크(파랑/로고색)
                   // - 오늘: 체크 표시 없음
-                  final showCheck = !isToday &&
-                      ((isPast &&
-                              (eventsMap[_dayKey(day.toLocal())]?.isNotEmpty ??
-                                  false)) ||
-                          (isFuture &&
-                              _friendFutureMeetupDays
-                                  .contains(_dayKey(day.toLocal()))));
-                  final checkColor = isPast
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF3B82F6);
+                  final key = _dayKey(day.toLocal());
+                  final futureHasAny = (eventsMap[key]?.isNotEmpty ?? false) ||
+                      _calendarCache.hasFriendMeetupOnDay(key);
+                  final showCheck =
+                      (isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
+                          (isFuture && futureHasAny);
+                  final checkColor =
+                      isPast ? const Color(0xFFEF4444) : AppColors.pointColor;
                   return _buildDayCell(
                     context: context,
                     day: day,
@@ -598,29 +599,30 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                 },
                 todayBuilder: (context, day, focusedDay) {
                   final isSelected = isSameDay(day, _selectedDay);
+                  final key = _dayKey(day.toLocal());
+                  final hasAnyToday = (eventsMap[key]?.isNotEmpty ?? false) ||
+                      _calendarCache.hasFriendMeetupOnDay(key);
                   return _buildDayCell(
                     context: context,
                     day: day,
                     isSelected: isSelected,
                     isToday: true,
-                    showCheck: false, // ✅ 오늘 날짜는 체크 표시 금지
-                    checkColor: const Color(0xFF3B82F6),
+                    showCheck: hasAnyToday, // ✅ 오늘도 모임이 있으면 체크 표시
+                    checkColor: AppColors.pointColor,
                   );
                 },
                 selectedBuilder: (context, day, focusedDay) {
                   final isToday = isSameDay(day, DateTime.now());
                   final isPast = _isPastDay(day);
                   final isFuture = _isFutureDay(day);
-                  final showCheck = !isToday &&
-                      ((isPast &&
-                              (eventsMap[_dayKey(day.toLocal())]?.isNotEmpty ??
-                                  false)) ||
-                          (isFuture &&
-                              _friendFutureMeetupDays
-                                  .contains(_dayKey(day.toLocal()))));
-                  final checkColor = isPast
-                      ? const Color(0xFFEF4444)
-                      : const Color(0xFF3B82F6);
+                  final key = _dayKey(day.toLocal());
+                  final futureHasAny = (eventsMap[key]?.isNotEmpty ?? false) ||
+                      _calendarCache.hasFriendMeetupOnDay(key);
+                  final showCheck =
+                      (isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
+                          (isFuture && futureHasAny);
+                  final checkColor =
+                      isPast ? const Color(0xFFEF4444) : AppColors.pointColor;
                   return _buildDayCell(
                     context: context,
                     day: day,
@@ -675,9 +677,7 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
                   child: Text(
-                    _isPastDay(selected)
-                        ? (lang == 'ko' ? '참여했던 모임' : 'Past meetups')
-                        : (lang == 'ko' ? '참여 예정 모임' : 'Upcoming meetups'),
+                    listTitle,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: 16,
@@ -686,14 +686,18 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                     ),
                   ),
                 ),
-                if (selectedEvents.isEmpty)
+                if (selectedMeetups.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 40),
                     child: Center(
                       child: Text(
                         lang == 'ko'
-                            ? '이 날엔 모임이 없어요.'
-                            : 'No meetups on this day.',
+                            ? (_isPastDay(selected)
+                                ? '이 날엔 신청/참여한 모임이 없어요.'
+                                : '이 날엔 모임이 없어요.')
+                            : (isFutureOrToday
+                                ? 'No meetups on this day.'
+                                : 'No meetups on this day.'),
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 14,
@@ -704,7 +708,7 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                     ),
                   )
                 else
-                  ...selectedEvents.map((m) {
+                  ...selectedMeetups.map((m) {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: StreamBuilder<int>(
@@ -787,9 +791,7 @@ class _MeetupCheckMarkPainter extends CustomPainter {
       ..lineTo(w * 0.84, h * 0.28);
 
     canvas.drawPath(path, paint);
-  }
-
-  @override
+  }  @override
   bool shouldRepaint(covariant _MeetupCheckMarkPainter oldDelegate) {
     return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
   }

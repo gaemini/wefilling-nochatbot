@@ -37,8 +37,8 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
         return null;
     const before = (change.before.data() || {});
     const after = (change.after.data() || {});
-    const beforeNickname = toStr(before.nickname || before.displayName).trim();
-    const afterNickname = toStr(after.nickname || after.displayName).trim();
+    const beforeNickname = toStr(before.nickname).trim();
+    const afterNickname = toStr(after.nickname).trim();
     const beforePhotoURL = toStr(before.photoURL).trim();
     const afterPhotoURL = toStr(after.photoURL).trim();
     const beforeNationality = toStr(before.nationality).trim();
@@ -64,6 +64,8 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
             let q = db
                 .collection('posts')
                 .where('userId', '==', userId)
+                // ✅ startAfter를 쓰려면 orderBy가 필요하다.
+                // documentId 기반 정렬은 추가 인덱스 없이도 안전한 편이다.
                 .orderBy(admin.firestore.FieldPath.documentId())
                 .limit(450);
             if (lastDoc)
@@ -145,146 +147,154 @@ exports.onUserProfileUpdatedPropagateAuthorInfo = functions
     }
     async function updateCommentsCollectionGroup() {
         // posts/{postId}/comments + meetups/{meetupId}/comments 같이 "서브컬렉션 comments"는 collectionGroup으로 일괄 처리
-        let lastDoc = null;
+        // ✅ 페이지네이션(orderBy/startAfter) 조합이 환경에 따라 FAILED_PRECONDITION(인덱스)로 실패할 수 있어
+        // "단일 get + 배치 커밋"으로 단순화한다.
+        const snap = await db
+            .collectionGroup('comments')
+            .where('userId', '==', userId)
+            .get();
         let updated = 0;
-        while (true) {
-            let q = db
-                .collectionGroup('comments')
-                .where('userId', '==', userId)
-                .orderBy(admin.firestore.FieldPath.documentId())
-                .limit(450);
-            if (lastDoc)
-                q = q.startAfter(lastDoc);
-            const snap = await q.get();
-            if (snap.empty)
-                break;
-            let batch = db.batch();
-            let ops = 0;
-            for (const doc of snap.docs) {
-                const data = doc.data();
-                const need = toStr(data === null || data === void 0 ? void 0 : data.authorNickname).trim() !== newNickname ||
-                    toStr(data === null || data === void 0 ? void 0 : data.authorPhotoUrl).trim() !== newPhotoURL;
-                if (!need)
-                    continue;
-                batch.update(doc.ref, {
-                    authorNickname: newNickname,
-                    authorPhotoUrl: newPhotoURL,
-                    authorInfoUpdatedAt: ts,
-                });
-                ops += 1;
-                updated += 1;
-                if (ops >= 450) {
-                    await batch.commit();
-                    batch = db.batch();
-                    ops = 0;
-                }
-            }
-            if (ops > 0)
+        let batch = db.batch();
+        let ops = 0;
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            const need = toStr(data === null || data === void 0 ? void 0 : data.authorNickname).trim() !== newNickname ||
+                toStr(data === null || data === void 0 ? void 0 : data.authorPhotoUrl).trim() !== newPhotoURL;
+            if (!need)
+                continue;
+            batch.update(doc.ref, {
+                authorNickname: newNickname,
+                authorPhotoUrl: newPhotoURL,
+                authorInfoUpdatedAt: ts,
+            });
+            ops += 1;
+            updated += 1;
+            if (ops >= 450) {
                 await batch.commit();
-            lastDoc = snap.docs[snap.docs.length - 1];
+                batch = db.batch();
+                ops = 0;
+            }
         }
+        if (ops > 0)
+            await batch.commit();
         console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(subcollections) updated=${updated}`);
     }
     async function updateCommentsRoot() {
         // 최상위 comments 컬렉션은 collectionGroup에 포함되지 않으므로 별도 처리
-        let lastDoc = null;
+        // ✅ 단일 get + 배치 커밋으로 단순화 (인덱스/페이지네이션 이슈 회피)
+        const snap = await db
+            .collection('comments')
+            .where('userId', '==', userId)
+            .get();
         let updated = 0;
-        while (true) {
-            let q = db
-                .collection('comments')
-                .where('userId', '==', userId)
-                .orderBy(admin.firestore.FieldPath.documentId())
-                .limit(450);
-            if (lastDoc)
-                q = q.startAfter(lastDoc);
-            const snap = await q.get();
-            if (snap.empty)
-                break;
-            let batch = db.batch();
-            let ops = 0;
-            for (const doc of snap.docs) {
-                const data = doc.data();
-                const need = toStr(data === null || data === void 0 ? void 0 : data.authorNickname).trim() !== newNickname ||
-                    toStr(data === null || data === void 0 ? void 0 : data.authorPhotoUrl).trim() !== newPhotoURL;
-                if (!need)
-                    continue;
-                batch.update(doc.ref, {
-                    authorNickname: newNickname,
-                    authorPhotoUrl: newPhotoURL,
-                    authorInfoUpdatedAt: ts,
-                });
-                ops += 1;
-                updated += 1;
-                if (ops >= 450) {
-                    await batch.commit();
-                    batch = db.batch();
-                    ops = 0;
-                }
-            }
-            if (ops > 0)
+        let batch = db.batch();
+        let ops = 0;
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            const need = toStr(data === null || data === void 0 ? void 0 : data.authorNickname).trim() !== newNickname ||
+                toStr(data === null || data === void 0 ? void 0 : data.authorPhotoUrl).trim() !== newPhotoURL;
+            if (!need)
+                continue;
+            batch.update(doc.ref, {
+                authorNickname: newNickname,
+                authorPhotoUrl: newPhotoURL,
+                authorInfoUpdatedAt: ts,
+            });
+            ops += 1;
+            updated += 1;
+            if (ops >= 450) {
                 await batch.commit();
-            lastDoc = snap.docs[snap.docs.length - 1];
+                batch = db.batch();
+                ops = 0;
+            }
         }
+        if (ops > 0)
+            await batch.commit();
         console.log(`onUserProfileUpdatedPropagateAuthorInfo: comments(root) updated=${updated}`);
     }
     async function updateConversations() {
         var _a, _b, _c;
-        let lastDoc = null;
+        // ✅ conversations는 array-contains 쿼리 + 페이지네이션(orderBy/startAfter) 조합이
+        // 인덱스/런타임 에러를 유발할 수 있어, "단일 get + 배치 커밋"으로 처리한다.
+        // (사용자 1명이 가진 1:1 DM 개수는 보통 제한적이라 실무적으로 안전)
+        const snap = await db
+            .collection('conversations')
+            .where('participants', 'array-contains', userId)
+            .get();
         let updated = 0;
-        while (true) {
-            let q = db
-                .collection('conversations')
-                .where('participants', 'array-contains', userId)
-                .orderBy(admin.firestore.FieldPath.documentId())
-                .limit(450);
-            if (lastDoc)
-                q = q.startAfter(lastDoc);
-            const snap = await q.get();
-            if (snap.empty)
-                break;
-            let batch = db.batch();
-            let ops = 0;
-            for (const doc of snap.docs) {
-                const data = doc.data();
-                const currentName = toStr((_a = data === null || data === void 0 ? void 0 : data.participantNames) === null || _a === void 0 ? void 0 : _a[userId]).trim();
-                const currentPhoto = toStr((_b = data === null || data === void 0 ? void 0 : data.participantPhotos) === null || _b === void 0 ? void 0 : _b[userId]).trim();
-                const need = currentName !== newNickname || currentPhoto !== newPhotoURL;
-                if (!need)
-                    continue;
-                const updateData = {
-                    [`participantNames.${userId}`]: newNickname,
-                    [`participantPhotos.${userId}`]: newPhotoURL,
-                    participantNamesUpdatedAt: ts,
-                };
-                // 1:1 대화방인 경우에만 displayTitle 갱신 (그 외는 기존 유지)
-                const participants = Array.isArray(data === null || data === void 0 ? void 0 : data.participants) ? data.participants.map((s) => toStr(s)) : [];
-                if (participants.length === 2) {
-                    const otherId = participants[0] === userId ? participants[1] : participants[0];
-                    const otherName = toStr((_c = data === null || data === void 0 ? void 0 : data.participantNames) === null || _c === void 0 ? void 0 : _c[otherId]).trim() || 'User';
-                    updateData.displayTitle = `${newNickname} ↔ ${otherName}`;
-                }
-                batch.update(doc.ref, updateData);
-                ops += 1;
-                updated += 1;
-                if (ops >= 450) {
-                    await batch.commit();
-                    batch = db.batch();
-                    ops = 0;
-                }
+        let batch = db.batch();
+        let ops = 0;
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            const currentName = toStr((_a = data === null || data === void 0 ? void 0 : data.participantNames) === null || _a === void 0 ? void 0 : _a[userId]).trim();
+            const currentPhoto = toStr((_b = data === null || data === void 0 ? void 0 : data.participantPhotos) === null || _b === void 0 ? void 0 : _b[userId]).trim();
+            const updateData = {
+                [`participantNames.${userId}`]: newNickname,
+                [`participantPhotos.${userId}`]: newPhotoURL,
+                participantNamesUpdatedAt: ts,
+            };
+            // 1:1 대화방인 경우에만 displayTitle 갱신 (그 외는 기존 유지)
+            const participants = Array.isArray(data === null || data === void 0 ? void 0 : data.participants)
+                ? data.participants.map((s) => toStr(s))
+                : [];
+            let expectedDisplayTitle = null;
+            if (participants.length === 2) {
+                const otherId = participants[0] === userId ? participants[1] : participants[0];
+                const otherName = toStr((_c = data === null || data === void 0 ? void 0 : data.participantNames) === null || _c === void 0 ? void 0 : _c[otherId]).trim() || 'User';
+                expectedDisplayTitle = `${newNickname} ↔ ${otherName}`;
             }
-            if (ops > 0)
+            // ✅ 닉네임 변경 시 반드시 participantNames + displayTitle이 최신화되어야 한다.
+            const currentDisplayTitle = toStr(data === null || data === void 0 ? void 0 : data.displayTitle).trim();
+            const need = currentName !== newNickname ||
+                currentPhoto !== newPhotoURL ||
+                (expectedDisplayTitle != null && currentDisplayTitle !== expectedDisplayTitle);
+            if (!need)
+                continue;
+            if (expectedDisplayTitle != null) {
+                updateData.displayTitle = expectedDisplayTitle;
+            }
+            batch.update(doc.ref, updateData);
+            ops += 1;
+            updated += 1;
+            if (ops >= 450) {
                 await batch.commit();
-            lastDoc = snap.docs[snap.docs.length - 1];
+                batch = db.batch();
+                ops = 0;
+            }
         }
+        if (ops > 0)
+            await batch.commit();
         console.log(`onUserProfileUpdatedPropagateAuthorInfo: conversations updated=${updated}`);
     }
     try {
         // 순차 실행: 한 번의 프로필 변경으로 과도한 병렬 쿼리/커밋을 피한다.
-        await updatePosts();
-        await updateMeetups();
-        await updateCommentsCollectionGroup();
-        await updateCommentsRoot();
+        // ✅ DM 표시(대화방 participantNames/displayTitle)는 UX에 바로 영향이 있으므로 최우선으로 갱신한다.
+        // 이후 게시글/모임/댓글 전파가 실패해도 DM 갱신은 이미 반영되게 한다.
         await updateConversations();
+        try {
+            await updatePosts();
+        }
+        catch (e) {
+            console.error(`onUserProfileUpdatedPropagateAuthorInfo: updatePosts 실패(계속 진행) userId=${userId}:`, e);
+        }
+        try {
+            await updateMeetups();
+        }
+        catch (e) {
+            console.error(`onUserProfileUpdatedPropagateAuthorInfo: updateMeetups 실패(계속 진행) userId=${userId}:`, e);
+        }
+        try {
+            await updateCommentsCollectionGroup();
+        }
+        catch (e) {
+            console.error(`onUserProfileUpdatedPropagateAuthorInfo: updateCommentsCollectionGroup 실패(계속 진행) userId=${userId}:`, e);
+        }
+        try {
+            await updateCommentsRoot();
+        }
+        catch (e) {
+            console.error(`onUserProfileUpdatedPropagateAuthorInfo: updateCommentsRoot 실패(계속 진행) userId=${userId}:`, e);
+        }
         console.log(`onUserProfileUpdatedPropagateAuthorInfo: 완료 userId=${userId}`);
         return null;
     }
@@ -371,11 +381,17 @@ function assertHanyangDomain(email) {
 }
 // 한양메일 인증 최종 확정(유니크 점유) - 탈퇴 시 released 되면 재사용 가능
 exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, context) => {
+    var _a;
     try {
         if (!context.auth) {
             throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
         }
         const uid = context.auth.uid;
+        const authEmail = (typeof ((_a = context.auth.token) === null || _a === void 0 ? void 0 : _a.email) === 'string')
+            ? String(context.auth.token.email)
+            : '';
+        // NOTE: displayName 필드는 더 이상 사용하지 않음 (nickname 단일 소스)
+        // NOTE: 인증 제공자 picture는 프로필 사진으로 사용하지 않음(Storage 업로드만 허용)
         const emailRaw = data === null || data === void 0 ? void 0 : data.email;
         if (!emailRaw || typeof emailRaw !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '이메일을 입력해주세요.');
@@ -437,11 +453,61 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
                 }
             }
             // 사용자 문서 업데이트
-            tx.set(userRef, {
-                hanyangEmail: email,
-                emailVerified: true,
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            }, { merge: true });
+            // ✅ users/{uid} 문서 스키마를 "가입 경로 무관하게" 동일하게 유지한다.
+            // - 과거/레거시/부분 업데이트로 필드가 누락된 문서가 생기는 것을 방지
+            // - 이미 존재하는 필드는 절대 덮어쓰지 않고(=누락 필드만 채움), 핵심 검증 필드는 최신값으로 강제
+            const existing = (userSnap.exists ? userSnap.data() : {}) || {};
+            const missing = (k) => existing[k] === undefined || existing[k] === null;
+            const schemaFill = {};
+            if (missing('uid'))
+                schemaFill.uid = uid;
+            if (missing('email'))
+                schemaFill.email = authEmail;
+            if (missing('nickname'))
+                schemaFill.nickname = '';
+            if (missing('nationality'))
+                schemaFill.nationality = '';
+            // ✅ 정책: 외부(인증 제공자) 프로필 사진은 Firestore에 저장/표시하지 않는다.
+            // 프로필 사진은 클라이언트가 지정 Storage 버킷(profile_images/)에 업로드한 것만 사용.
+            if (missing('photoURL'))
+                schemaFill.photoURL = '';
+            if (missing('photoPath'))
+                schemaFill.photoPath = '';
+            if (missing('photoAccessToken'))
+                schemaFill.photoAccessToken = '';
+            if (missing('photoVersion'))
+                schemaFill.photoVersion = 0;
+            if (missing('photoUpdatedAt'))
+                schemaFill.photoUpdatedAt = null;
+            if (missing('bio'))
+                schemaFill.bio = '';
+            if (missing('friendsCount'))
+                schemaFill.friendsCount = 0;
+            if (missing('incomingCount'))
+                schemaFill.incomingCount = 0;
+            if (missing('outgoingCount'))
+                schemaFill.outgoingCount = 0;
+            if (missing('dmUnreadTotal'))
+                schemaFill.dmUnreadTotal = 0;
+            if (missing('notificationUnreadTotal'))
+                schemaFill.notificationUnreadTotal = 0;
+            if (missing('fcmToken'))
+                schemaFill.fcmToken = '';
+            if (missing('fcmTokens'))
+                schemaFill.fcmTokens = [];
+            if (missing('fcmTokenUpdatedAt'))
+                schemaFill.fcmTokenUpdatedAt = null;
+            if (missing('preferredLanguage'))
+                schemaFill.preferredLanguage = 'ko';
+            if (missing('preferredLanguageUpdatedAt'))
+                schemaFill.preferredLanguageUpdatedAt = null;
+            if (missing('createdAt'))
+                schemaFill.createdAt = admin.firestore.FieldValue.serverTimestamp();
+            if (missing('updatedAt'))
+                schemaFill.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+            if (missing('lastLogin'))
+                schemaFill.lastLogin = admin.firestore.FieldValue.serverTimestamp();
+            tx.set(userRef, Object.assign(Object.assign({}, schemaFill), { hanyangEmail: email, emailVerified: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
             return { success: true };
         });
         return result;
@@ -602,7 +668,7 @@ exports.onUserCreated = functions.firestore
 exports.onPrivatePostCreated = functions.firestore
     .document('posts/{postId}')
     .onCreate(async (snapshot, context) => {
-    var _a, _b, _c;
+    var _a, _b;
     try {
         const post = snapshot.data();
         const postId = context.params.postId;
@@ -622,7 +688,7 @@ exports.onPrivatePostCreated = functions.firestore
         }
         // 작성자 정보 (표시용)
         const authorDoc = await db.collection('users').doc(authorId).get();
-        const authorName = authorDoc.exists ? (((_a = authorDoc.data()) === null || _a === void 0 ? void 0 : _a.nickname) || ((_b = authorDoc.data()) === null || _b === void 0 ? void 0 : _b.displayName) || 'User') : 'User';
+        const authorName = authorDoc.exists ? (((_a = authorDoc.data()) === null || _a === void 0 ? void 0 : _a.nickname) || 'User') : 'User';
         // 대상 사용자별 설정 확인 후 notifications 문서 생성
         const batch = db.batch();
         let created = 0;
@@ -630,7 +696,7 @@ exports.onPrivatePostCreated = functions.firestore
             if (uid === authorId)
                 continue;
             const settingsDoc = await db.collection('user_settings').doc(uid).get();
-            const noti = settingsDoc.exists ? (((_c = settingsDoc.data()) === null || _c === void 0 ? void 0 : _c.notifications) || {}) : {};
+            const noti = settingsDoc.exists ? (((_b = settingsDoc.data()) === null || _b === void 0 ? void 0 : _b.notifications) || {}) : {};
             const allOn = noti.all_notifications !== false; // undefined면 기본 허용
             const postPrivateOn = noti.post_private !== false;
             if (!allOn || !postPrivateOn) {
@@ -885,7 +951,7 @@ exports.onFriendCategoryDeletedSyncPostAllowedUsers = functions.firestore
 exports.onFriendRequestCreated = functions.firestore
     .document('friend_requests/{requestId}')
     .onCreate(async (snapshot, context) => {
-    var _a, _b, _c;
+    var _a, _b;
     try {
         const req = snapshot.data();
         const fromUid = req.fromUid;
@@ -899,7 +965,7 @@ exports.onFriendRequestCreated = functions.firestore
         if (!allOn || !friendOn)
             return null;
         const fromUser = await db.collection('users').doc(fromUid).get();
-        const fromName = fromUser.exists ? (((_b = fromUser.data()) === null || _b === void 0 ? void 0 : _b.nickname) || ((_c = fromUser.data()) === null || _c === void 0 ? void 0 : _c.displayName) || 'User') : 'User';
+        const fromName = fromUser.exists ? (((_b = fromUser.data()) === null || _b === void 0 ? void 0 : _b.nickname) || 'User') : 'User';
         await db.collection('notifications').add({
             userId: toUid,
             title: 'friend_request',
@@ -1266,7 +1332,7 @@ exports.onCommentDeleted = functions.firestore
 exports.onCommentLiked = functions.firestore
     .document('comments/{commentId}')
     .onUpdate(async (change, context) => {
-    var _a, _b, _c;
+    var _a, _b;
     try {
         const before = change.before.data();
         const after = change.after.data();
@@ -1306,7 +1372,7 @@ exports.onCommentLiked = functions.firestore
         }
         // 사용자 표시 이름
         const likerDoc = await db.collection('users').doc(newLiker).get();
-        const likerName = likerDoc.exists ? (((_b = likerDoc.data()) === null || _b === void 0 ? void 0 : _b.nickname) || ((_c = likerDoc.data()) === null || _c === void 0 ? void 0 : _c.displayName) || 'User') : 'User';
+        const likerName = likerDoc.exists ? (((_b = likerDoc.data()) === null || _b === void 0 ? void 0 : _b.nickname) || 'User') : 'User';
         // 게시글 정보 가져오기 (익명 여부 확인 포함)
         const postId = after.postId;
         let postTitle = '';
@@ -1365,7 +1431,7 @@ exports.onCommentLiked = functions.firestore
 exports.onPostLiked = functions.firestore
     .document('posts/{postId}')
     .onUpdate(async (change, context) => {
-    var _a, _b, _c;
+    var _a, _b;
     try {
         const before = change.before.data();
         const after = change.after.data();
@@ -1405,7 +1471,7 @@ exports.onPostLiked = functions.firestore
         }
         // 사용자 표시 이름
         const likerDoc = await db.collection('users').doc(newLiker).get();
-        const likerName = likerDoc.exists ? (((_b = likerDoc.data()) === null || _b === void 0 ? void 0 : _b.nickname) || ((_c = likerDoc.data()) === null || _c === void 0 ? void 0 : _c.displayName) || 'User') : 'User';
+        const likerName = likerDoc.exists ? (((_b = likerDoc.data()) === null || _b === void 0 ? void 0 : _b.nickname) || 'User') : 'User';
         const rawTitle = typeof after.title === 'string' ? String(after.title) : '';
         const rawContent = typeof after.content === 'string' ? String(after.content) : '';
         const normalizedContent = rawContent.replace(/\s+/g, ' ').trim();
@@ -2222,7 +2288,7 @@ exports.reportUser = functions.https.onCall(async (data, context) => {
         // 신고자 정보 가져오기
         const reporterDoc = await db.collection('users').doc(reporterUid).get();
         const reporterData = reporterDoc.data();
-        const reporterName = (reporterData === null || reporterData === void 0 ? void 0 : reporterData.nickname) || (reporterData === null || reporterData === void 0 ? void 0 : reporterData.displayName) || '익명';
+        const reporterName = (reporterData === null || reporterData === void 0 ? void 0 : reporterData.nickname) || '익명';
         // 신고 데이터 저장
         const reportData = {
             reporterId: reporterUid,
@@ -3367,8 +3433,12 @@ exports.onMeetupParticipantJoined = functions.firestore
             console.log('⏭️ 주최자가 모임 알림 꺼놓음');
             return null;
         }
-        // 알림 생성
-        await db.collection('notifications').add({
+        // 알림 생성 (idempotent)
+        // - Firestore 트리거는 at-least-once라 재시도 시 동일 알림이 중복 생성될 수 있음
+        // - eventId(재시도 시 동일)를 문서 ID로 사용해 중복을 원천 차단한다.
+        const notiId = (context === null || context === void 0 ? void 0 : context.eventId) ||
+            `meetup_participant_joined_${String(meetupId)}_${String(participantUserId)}`;
+        await db.collection('notifications').doc(String(notiId)).set({
             userId: hostId,
             title: 'meetup_participant_joined',
             message: '',
@@ -3384,7 +3454,7 @@ exports.onMeetupParticipantJoined = functions.firestore
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
-        });
+        }, { merge: false });
         console.log(`✅ 모임 참여 알림 생성: ${hostId} <- ${participantName}`);
         return null;
     }
@@ -3408,7 +3478,7 @@ exports.onMeetupCreated = functions.firestore
         // 호스트 정보 가져오기
         const hostDoc = await db.collection('users').doc(hostId).get();
         const hostData = hostDoc.data();
-        const hostName = (hostData === null || hostData === void 0 ? void 0 : hostData.nickname) || (hostData === null || hostData === void 0 ? void 0 : hostData.displayName) || '익명';
+        const hostName = (hostData === null || hostData === void 0 ? void 0 : hostData.nickname) || '익명';
         // 알림 받을 사용자 목록
         let targetUserIds = [];
         // 공개범위에 따라 대상 사용자 필터링
@@ -3745,7 +3815,7 @@ exports.onReviewRequestUpdated = functions.firestore
             // 사용자 정보 가져오기
             const userDoc = await db.collection('users').doc(userId).get();
             const userData = userDoc.data();
-            const authorName = (userData === null || userData === void 0 ? void 0 : userData.nickname) || (userData === null || userData === void 0 ? void 0 : userData.displayName) || '익명';
+            const authorName = (userData === null || userData === void 0 ? void 0 : userData.nickname) || '익명';
             const authorProfileImage = (userData === null || userData === void 0 ? void 0 : userData.photoURL) || '';
             // reviews 컬렉션에 개별 문서 생성
             const reviewRef = db.collection('reviews').doc();

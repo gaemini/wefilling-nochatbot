@@ -198,7 +198,9 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   String _getUserName(String userId) {
     final profile = _userProfiles[userId];
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return profile?['nickname'] ?? profile?['displayName'] ?? (isKo ? '알 수 없는 사용자' : 'Unknown User');
+    final nick = (profile?['nickname'] ?? '').toString().trim();
+    if (nick.isNotEmpty) return nick;
+    return isKo ? '알 수 없는 사용자' : 'Unknown User';
   }
 
   String _getFormattedDate(DateTime dateTime) {

@@ -1813,7 +1813,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get meetupCompleteMessage =>
-      '모임이 마감되었습니다. 모임을 완료 처리하시겠습니까?\n\n완료 처리하면 후기를 작성할 수 있습니다.';
+      '모임을 완료 처리하시겠습니까?\n\n완료 처리하면 후기를 작성할 수 있습니다.';
 
   @override
   String get markAsCompleted => '완료 처리';

@@ -103,9 +103,11 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     super.initState();
     _loadCachedData();
     _scheduleMidnightRefresh();
-    _todayMeetupsStream = _meetupService
-        .getTodayTabMeetups()
-        .asyncMap((meetups) => _meetupService.filterMeetupsForCurrentUser(meetups));
+    // Today 밋업 섹션은 "공개 범위"와 무관하게:
+    // - 오늘 생성된 모임
+    // - 약속 날짜가 오늘인 모임
+    // 만 노출한다. (필터링은 MeetupService.getTodayTabMeetups에서 강제)
+    _todayMeetupsStream = _meetupService.getTodayTabMeetups();
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
@@ -451,10 +453,8 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
                     return TabBar(
                       controller: _tabController,
-                      // 요구사항: Today만 로고(위필링) 색으로
-                      indicatorColor: isTodaySelected
-                          ? AppColors.pointColor
-                          : const Color(0xFF111827),
+                      // 요구사항: 선택된 탭은 로고(위필링) 색으로
+                      indicatorColor: AppColors.pointColor,
                       indicatorWeight: 2.5,
                       overlayColor:
                           WidgetStateProperty.all(Colors.black.withOpacity(0.04)),
@@ -476,7 +476,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
                             style: (!isTodaySelected ? selectedBase : unselectedBase)
                                 .copyWith(
                               color: !isTodaySelected
-                                  ? const Color(0xFF111827)
+                                  ? AppColors.pointColor
                                   : (Colors.grey[600] ?? const Color(0xFF6B7280)),
                             ),
                           ),

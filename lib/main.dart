@@ -301,10 +301,13 @@ class _MeetupAppState extends State<MeetupApp> {
       final uid = user.uid;
       final firestore = FirebaseFirestore.instance;
 
-      await firestore.collection('users').doc(uid).set({
+      // ⚠️ 주의: users/{uid} 문서의 "존재 여부"는 회원가입 완료 여부 판단에 사용된다.
+      // 따라서 여기서 merge set으로 문서를 "새로 생성"하면 스키마가 부분만 생기거나
+      // 가입 흐름이 왜곡될 수 있으므로, 문서가 있을 때만 update로 반영한다.
+      await firestore.collection('users').doc(uid).update({
         'preferredLanguage': languageCode,
         'preferredLanguageUpdatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      });
 
       await firestore.collection('user_settings').doc(uid).set({
         'locale': languageCode,

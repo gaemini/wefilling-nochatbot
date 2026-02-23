@@ -82,9 +82,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     if (q.isEmpty) return friends;
     return friends.where((f) {
       final dn = f.displayNameOrNickname.toLowerCase();
-      final displayName = f.displayName.toLowerCase();
       final nickname = (f.nickname ?? '').toLowerCase();
-      return dn.contains(q) || displayName.contains(q) || nickname.contains(q);
+      return dn.contains(q) || nickname.contains(q);
     }).toList();
   }
 
@@ -493,22 +492,6 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (friend.nickname != null &&
-                        friend.nickname != friend.displayName &&
-                        friend.nickname!.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        friend.displayName,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF6B7280),
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                     if (friend.nationality != null &&
                         friend.nationality!.isNotEmpty) ...[
                       const SizedBox(height: 2),

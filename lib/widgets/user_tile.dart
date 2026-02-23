@@ -99,17 +99,6 @@ class UserTile extends StatelessWidget {
 
         const SizedBox(height: 4),
 
-        // 닉네임 (displayName과 다른 경우에만 표시)
-        if (user.nickname != null &&
-            user.nickname != user.displayName &&
-            user.nickname!.isNotEmpty)
-          Text(
-            user.displayName,
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-
         const SizedBox(height: 4),
 
         // 국적 정보
@@ -290,15 +279,7 @@ class SimpleUserTile extends StatelessWidget {
         user.displayNameOrNickname,
         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       ),
-      subtitle:
-          user.nickname != null &&
-                  user.nickname != user.displayName &&
-                  user.nickname!.isNotEmpty
-              ? Text(
-                user.displayName,
-                style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-              )
-              : null,
+      subtitle: null,
       trailing: trailing,
       onTap: onPressed,
     );

@@ -125,7 +125,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final ImagePicker _picker = ImagePicker();
 
   // 최대 인원 선택 목록
-  final List<int> _participantOptions = [3, 4];
+  final List<int> _participantOptions = [3, 4, 5, 6];
 
   String _formatHHmm(DateTime dt) {
     final h = dt.hour.toString().padLeft(2, '0');

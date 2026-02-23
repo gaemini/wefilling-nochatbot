@@ -11,6 +11,38 @@ service firebase.storage {
         request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
     }
 
+    // ✅ 프로필 이미지: 유저별 폴더로 격리
+    // - 다른 uid 폴더에 업로드(오작동/악의적 조작)를 규칙 레벨에서 차단
+    // - 읽기는 공개(프로필/게시글/댓글 등에서 표시)
+    match /profile_images/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // (레거시) 사용자별 포스트 이미지 폴더
+    match /post_images/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // 게시글 이미지 (uuid 파일명)
+    match /posts/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 모임 이미지 (meetupId 기반)
+    match /meetup_images/{meetupId}/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
+    // 모임 후기 이미지 (리뷰 작성 시 업로드)
+    match /meetup_reviews/{fileName} {
+      allow read: if true;
+      allow write: if isSignedIn();
+    }
+
     // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
     match /dm_images/{userId}/{conversationId}/{fileName} {
       allow read: if isSignedIn() && isConversationParticipant(conversationId);
@@ -18,11 +50,9 @@ service firebase.storage {
     }
 
     match /{allPaths=**} {
-      // 완전히 공개 읽기 접근 허용 (프로젝트 멤버십 불필요)
-      allow read;
-      
-      // 쓰기는 인증된 사용자에게만 허용
-      allow write: if isSignedIn();
+      // 기본은 전부 거부 (필요한 경로만 위에서 allow)
+      allow read: if false;
+      allow write: if false;
     }
   }
 }

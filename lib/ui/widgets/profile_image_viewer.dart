@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:ui';
+import '../../utils/profile_photo_policy.dart';
 
 class ProfileImageViewer extends StatefulWidget {
   final String imageUrl;
@@ -105,6 +106,9 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
 
   @override
   Widget build(BuildContext context) {
+    final safeUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(widget.imageUrl)
+        ? widget.imageUrl
+        : '';
     final opacity = _isDragging 
         ? (1.0 - (_dragDistance.abs() / 300)).clamp(0.0, 1.0)
         : 1.0;
@@ -159,39 +163,50 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
                             tag: widget.heroTag,
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(0),
-                              child: Image.network(
-                                widget.imageUrl,
-                                fit: BoxFit.contain,
-                                loadingBuilder: (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Container(
-                                    width: 200,
-                                    height: 200,
-                                    color: Colors.grey[900],
-                                    child: Center(
-                                      child: CircularProgressIndicator(
-                                        value: loadingProgress.expectedTotalBytes != null
-                                            ? loadingProgress.cumulativeBytesLoaded /
-                                                loadingProgress.expectedTotalBytes!
-                                            : null,
+                              child: safeUrl.isEmpty
+                                  ? Container(
+                                      width: 200,
+                                      height: 200,
+                                      color: Colors.grey[900],
+                                      child: const Icon(
+                                        Icons.person,
                                         color: Colors.white,
+                                        size: 64,
                                       ),
+                                    )
+                                  : Image.network(
+                                      safeUrl,
+                                      fit: BoxFit.contain,
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) return child;
+                                        return Container(
+                                          width: 200,
+                                          height: 200,
+                                          color: Colors.grey[900],
+                                          child: Center(
+                                            child: CircularProgressIndicator(
+                                              value: loadingProgress.expectedTotalBytes != null
+                                                  ? loadingProgress.cumulativeBytesLoaded /
+                                                      loadingProgress.expectedTotalBytes!
+                                                  : null,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Container(
+                                          width: 200,
+                                          height: 200,
+                                          color: Colors.grey[900],
+                                          child: const Icon(
+                                            Icons.error_outline,
+                                            color: Colors.white,
+                                            size: 48,
+                                          ),
+                                        );
+                                      },
                                     ),
-                                  );
-                                },
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Container(
-                                    width: 200,
-                                    height: 200,
-                                    color: Colors.grey[900],
-                                    child: const Icon(
-                                      Icons.error_outline,
-                                      color: Colors.white,
-                                      size: 48,
-                                    ),
-                                  );
-                                },
-                              ),
                             ),
                           ),
                         ),

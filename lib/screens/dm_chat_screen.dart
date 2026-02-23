@@ -69,6 +69,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
   final _messageController = TextEditingController();
+  final _messageFocusNode = FocusNode();
   final _scrollController = ScrollController();
   final ImagePicker _imagePicker = ImagePicker();
   Stream<DMUserInfo?>? _otherUserInfoStream;
@@ -94,6 +95,11 @@ class _DMChatScreenState extends State<DMChatScreen> {
   // 로컬 캐시도 과하게 많이 읽으면 첫 렌더가 무거워질 수 있어 recentLimit에 맞춘다.
   static const int _initialCacheLimit = _recentLimit;
 
+  // ✅ 한번 로딩한 대화방은 화면이 살아있는 동안(나가기 전까지) 메모리 상태를 유지한다.
+  // - 같은 conversationId에 대해 _initializeMessagesStream가 다시 호출되어도
+  //   로컬 캐시로 _messages를 덮어쓰지 않게 하기 위한 가드.
+  final Set<String> _hydratedFromLocalCacheConversationIds = <String>{};
+
   // 첫 메시지 전송으로 실제 conversationId가 바뀔 수 있어, 화면 내에서는 별도로 추적한다.
   late String _activeConversationId;
   // null: 아직 확인 전(초기 로딩), false: 없음(첫 메시지 전송 시 생성), true: 존재
@@ -112,7 +118,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
   bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
   bool _composerPostContextDismissed = false; // 입력창 위 미리보기 카드 닫힘 여부
-
+  
   @override
   void initState() {
     super.initState();
@@ -454,6 +460,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     _autoMarkReadDebounce?.cancel();
     _recentMessagesSub?.cancel();
     _messageController.dispose();
+    _messageFocusNode.dispose();
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
@@ -528,27 +535,57 @@ class _DMChatScreenState extends State<DMChatScreen> {
   Future<void> _initializeMessagesStream({String? conversationId}) async {
     try {
       final targetConversationId = conversationId ?? _activeConversationId;
-      _activeConversationId = targetConversationId;
+      final previousConversationId = _activeConversationId;
+      final isConversationChanging = previousConversationId != targetConversationId;
+
+      // 동일 대화방인데 이미 스트림이 살아있으면 재초기화(캐시 덮어쓰기)를 피한다.
+      if (!isConversationChanging &&
+          _recentMessagesSub != null &&
+          _messagesError == null) {
+        return;
+      }
+
+      // 대화방이 바뀌는 경우에만 상태를 리셋한다. (같은 방에서는 유지)
+      if (isConversationChanging) {
+        _activeConversationId = targetConversationId;
+        _messages = <DMMessage>[];
+        _messagesError = null;
+        _isMessagesLoading = false;
+        _isLoadingMore = false;
+        _hasMore = true;
+      } else {
+        _activeConversationId = targetConversationId;
+      }
 
       // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
       final visibilityStartTime = await _dmService.getUserMessageVisibilityStartTime(targetConversationId);
       _visibilityStartTime = visibilityStartTime;
 
       // 1) 로컬 캐시를 먼저 읽어 즉시 렌더링 (문자앱 UX)
-      setState(() {
-        _isMessagesLoading = true;
-        _messagesError = null;
-        _hasMore = true;
-      });
-      final cached = await _dmService.loadCachedMessages(
-        targetConversationId,
-        limit: _initialCacheLimit,
-        visibilityStartTime: visibilityStartTime,
-      );
-      if (mounted && cached.isNotEmpty) {
-        setState(() {
-          _messages = cached..sort(_compareMessagesDesc);
-        });
+      // ✅ 단, 이미 이 화면에서 한 번이라도 로컬 캐시를 주입했거나,
+      //    이미 메모리에 메시지가 있다면(=과거 로드 포함) 다시 덮어쓰지 않는다.
+      final shouldHydrateFromCache =
+          _messages.isEmpty && !_hydratedFromLocalCacheConversationIds.contains(targetConversationId);
+      if (shouldHydrateFromCache) {
+        if (mounted) {
+          setState(() {
+            _isMessagesLoading = true;
+            _messagesError = null;
+            _hasMore = true;
+          });
+        }
+        final cached = await _dmService.loadCachedMessages(
+          targetConversationId,
+          limit: _initialCacheLimit,
+          visibilityStartTime: visibilityStartTime,
+        );
+        if (!mounted) return;
+        _hydratedFromLocalCacheConversationIds.add(targetConversationId);
+        if (cached.isNotEmpty) {
+          setState(() {
+            _messages = cached..sort(_compareMessagesDesc);
+          });
+        }
       }
 
       // 2) 서버 최근 N개 스트림 구독 + 로컬 캐시 저장
@@ -607,6 +644,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   void _onScroll() {
     if (!mounted) return;
+
     if (_conversationExists != true) return;
     if (_isLoadingMore) return;
     if (!_hasMore) return;
@@ -723,8 +761,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       body: Column(
         children: [
           // 익명 게시글 DM인 경우에만 게시글로 돌아가기 배너 추가
-          if (_conversation != null && 
-              _conversation!.postId != null && 
+          if (_conversation != null &&
+              _conversation!.postId != null &&
               _conversation!.postId!.isNotEmpty &&
               _conversation!.isOtherUserAnonymous(_currentUser!.uid))
             _buildPostNavigationBanner(),
@@ -1471,26 +1509,29 @@ class _DMChatScreenState extends State<DMChatScreen> {
             statusText != null && (prevStatusText == null || statusText != prevStatusText);
 
         // 같은 발신자의 연속 메시지인지 확인
-        final isConsecutive = index < messages.length - 1 &&
-            messages[index + 1].senderId == message.senderId;
+        final isConsecutive =
+            index < messages.length - 1 && messages[index + 1].senderId == message.senderId;
 
         // 날짜 구분선 표시 여부 확인 (해당 날짜의 첫 메시지 위에 표시)
         final showDateSeparator = index == messages.length - 1 ||
             !_isSameDay(message.createdAt, messages[index + 1].createdAt);
 
-        return Column(
-          children: [
-            if (showDateSeparator) _buildDateSeparator(message.createdAt),
-            _buildMessageBubble(
-              message,
-              isMine,
-              isConsecutive,
-              timeText: timeText,
-              showTimeText: showTimeText,
-              statusText: statusText,
-              showStatusText: showStatusText,
-            ),
-          ],
+        return KeyedSubtree(
+          key: ValueKey(message.id),
+          child: Column(
+            children: [
+              if (showDateSeparator) _buildDateSeparator(message.createdAt),
+              _buildMessageBubble(
+                message,
+                isMine,
+                isConsecutive,
+                timeText: timeText,
+                showTimeText: showTimeText,
+                statusText: statusText,
+                showStatusText: showStatusText,
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1670,6 +1711,53 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final isImageOnly = hasImage && !hasText && !hasPostContext;
 
     if (isMine) {
+      final bubbleChild = isImageOnly
+          ? _buildImageBubble(
+              imageUrl: message.imageUrl!,
+              isMine: true,
+              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                color: DMColors.myMessageBg,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                  bottomLeft: Radius.circular(18),
+                  bottomRight: Radius.circular(4),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (hasPostContext) ...[
+                    _buildPostContextCard(message, isMine: true),
+                    if (hasImage || hasText) const SizedBox(height: 8),
+                  ],
+                  if (hasImage) ...[
+                    _buildImageBubble(
+                      imageUrl: message.imageUrl!,
+                      isMine: true,
+                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                    ),
+                    if (hasText) const SizedBox(height: 8),
+                  ],
+                  if (hasText)
+                    Text(
+                      message.text,
+                      style: const TextStyle(
+                        color: DMColors.myMessageText,
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            );
+
       return Padding(
         padding: EdgeInsets.only(
           left: 60,
@@ -1718,57 +1806,62 @@ class _DMChatScreenState extends State<DMChatScreen> {
             const SizedBox(width: 6),
             // 메시지 버블 (이미지만 있으면 테두리 없음)
             Flexible(
-              child: isImageOnly
-                  ? _buildImageBubble(
-                      imageUrl: message.imageUrl!,
-                      isMine: true,
-                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                    )
-                  : Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: const BoxDecoration(
-                        color: DMColors.myMessageBg,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(18),
-                          topRight: Radius.circular(18),
-                          bottomLeft: Radius.circular(18),
-                          bottomRight: Radius.circular(4),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (hasPostContext) ...[
-                            _buildPostContextCard(message, isMine: true),
-                            if (hasImage || hasText) const SizedBox(height: 8),
-                          ],
-                          if (hasImage) ...[
-                            _buildImageBubble(
-                              imageUrl: message.imageUrl!,
-                              isMine: true,
-                              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                            ),
-                            if (hasText) const SizedBox(height: 8),
-                          ],
-                          if (hasText)
-                            Text(
-                              message.text,
-                              style: const TextStyle(
-                                color: DMColors.myMessageText,
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                height: 1.45,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+              child: Container(
+                key: ValueKey('dm_bubble_${message.id}'),
+                child: bubbleChild,
+              ),
             ),
           ],
         ),
       );
     } else {
+      final bubbleChild = isImageOnly
+          ? _buildImageBubble(
+              imageUrl: message.imageUrl!,
+              isMine: false,
+              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+            )
+          : Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: const BoxDecoration(
+                color: DMColors.otherMessageBg,
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(18),
+                  topRight: Radius.circular(18),
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(18),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasPostContext) ...[
+                    _buildPostContextCard(message, isMine: false),
+                    if (hasImage || hasText) const SizedBox(height: 8),
+                  ],
+                  if (hasImage) ...[
+                    _buildImageBubble(
+                      imageUrl: message.imageUrl!,
+                      isMine: false,
+                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
+                    ),
+                    if (hasText) const SizedBox(height: 8),
+                  ],
+                  if (hasText)
+                    Text(
+                      message.text,
+                      style: const TextStyle(
+                        color: DMColors.otherMessageText,
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        height: 1.45,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            );
+
       return Padding(
         padding: EdgeInsets.only(
           left: 12,
@@ -1782,52 +1875,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
           children: [
             // 메시지 버블 (이미지만 있으면 테두리 없음)
             Flexible(
-              child: isImageOnly
-                  ? _buildImageBubble(
-                      imageUrl: message.imageUrl!,
-                      isMine: false,
-                      heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                    )
-                  : Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      decoration: const BoxDecoration(
-                        color: DMColors.otherMessageBg,
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(18),
-                          topRight: Radius.circular(18),
-                          bottomLeft: Radius.circular(4),
-                          bottomRight: Radius.circular(18),
-                        ),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (hasPostContext) ...[
-                            _buildPostContextCard(message, isMine: false),
-                            if (hasImage || hasText) const SizedBox(height: 8),
-                          ],
-                          if (hasImage) ...[
-                            _buildImageBubble(
-                              imageUrl: message.imageUrl!,
-                              isMine: false,
-                              heroTag: 'dm_image_${widget.conversationId}_${message.id}',
-                            ),
-                            if (hasText) const SizedBox(height: 8),
-                          ],
-                          if (hasText)
-                            Text(
-                              message.text,
-                              style: const TextStyle(
-                                color: DMColors.otherMessageText,
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                height: 1.45,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+              child: Container(
+                key: ValueKey('dm_bubble_${message.id}'),
+                child: bubbleChild,
+              ),
             ),
             const SizedBox(width: 6),
             // 시간 표시
@@ -2142,7 +2193,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
                     ),
                     child: TextField(
                       controller: _messageController,
-                      enabled: !_isBlocked && !_isBlockedBy && !_isLoading,
+                      focusNode: _messageFocusNode,
+                      enabled: !_isBlocked && !_isBlockedBy,
                       maxLines: null,
                       maxLength: 500,
                       textInputAction: TextInputAction.newline,
@@ -2537,10 +2589,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
     final text = _messageController.text.trim();
     final imageFile = _pendingImage;
     if ((text.isEmpty && imageFile == null) || _isLoading) return;
-
     setState(() => _isLoading = true);
     _messageController.clear();
-    FocusScope.of(context).unfocus();
 
     String? uploadedImageUrl;
     try {
@@ -2586,7 +2636,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
               ),
             );
           }
-          _messageController.text = text; // 메시지 복원
+          // 실패 시: 사용자가 이미 새로 입력을 시작했으면 덮어쓰지 않는다.
+          if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
+            _messageController.text = text;
+            _messageController.selection = TextSelection.collapsed(
+              offset: _messageController.text.length,
+            );
+          }
           return;
         }
         
@@ -2635,6 +2691,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       
       if (success) {
         Logger.log('✅ 메시지 전송 성공 - 후속 처리 시작');
+        final previousConversationId = _activeConversationId;
         if (shouldAttachPostContext) {
           _originPostContextAttached = true;
         }
@@ -2656,7 +2713,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
             _conversationExists = true;
           });
         }
-        await _initializeMessagesStream(conversationId: actualConversationId);
+        // ✅ 동일 대화방에서는 재초기화(캐시 덮어쓰기)를 하지 않는다.
+        // - 새 대화방을 "처음 생성"하여 conversationId가 바뀐 경우에만 재초기화
+        final conversationChanged = previousConversationId != actualConversationId;
+        if (conversationChanged || _recentMessagesSub == null) {
+          await _initializeMessagesStream(conversationId: actualConversationId);
+        }
 
         if (_conversation == null) {
           Logger.log('📖 대화방 정보 로드 시작');
@@ -2685,8 +2747,13 @@ class _DMChatScreenState extends State<DMChatScreen> {
             await _storageService.deleteImage(uploadedImageUrl!);
           } catch (_) {}
         }
-        // 실패 시 텍스트 복원
-        _messageController.text = text;
+        // 실패 시: 사용자가 이미 새로 입력을 시작했으면 덮어쓰지 않는다.
+        if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
+          _messageController.text = text;
+          _messageController.selection = TextSelection.collapsed(
+            offset: _messageController.text.length,
+          );
+        }
       }
     } catch (e) {
       Logger.error('메시지 전송 오류: $e');
@@ -2704,7 +2771,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
           await _storageService.deleteImage(uploadedImageUrl!);
         } catch (_) {}
       }
-      _messageController.text = text;
+      if (_messageController.text.trim().isEmpty && text.isNotEmpty) {
+        _messageController.text = text;
+        _messageController.selection = TextSelection.collapsed(
+          offset: _messageController.text.length,
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

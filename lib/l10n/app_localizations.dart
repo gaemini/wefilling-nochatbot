@@ -1670,6 +1670,12 @@ abstract class AppLocalizations {
   /// **'카테고리 선택 (필수)'**
   String get selectCategoryRequired;
 
+  /// No description provided for @selectGroupRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 선택 (필수)'**
+  String get selectGroupRequired;
+
   /// No description provided for @selectedCount.
   ///
   /// In ko, this message translates to:
@@ -5204,6 +5210,12 @@ abstract class AppLocalizations {
   /// **'카테고리를 최소 1개 이상 선택해주세요.'**
   String get categorySelectAtLeastOne;
 
+  /// No description provided for @groupSelectAtLeastOne.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹을 최소 1개 이상 선택해주세요.'**
+  String get groupSelectAtLeastOne;
+
   /// No description provided for @postImageUploading.
   ///
   /// In ko, this message translates to:
@@ -5215,6 +5227,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'경고: 총 이미지 크기가 {sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.'**
   String totalImageSizeWarning(String sizeMB);
+
+  /// No description provided for @nicknameChangeLimited.
+  ///
+  /// In ko, this message translates to:
+  /// **'이름은 3일에 한 번만 변경할 수 있어요. {days}일 후 다시 시도해주세요.'**
+  String nicknameChangeLimited(int days);
+
+  /// No description provided for @nationalityChangeLimited.
+  ///
+  /// In ko, this message translates to:
+  /// **'국적은 3일에 한 번만 변경할 수 있어요. {days}일 후 다시 시도해주세요.'**
+  String nationalityChangeLimited(int days);
 }
 
 class _AppLocalizationsDelegate

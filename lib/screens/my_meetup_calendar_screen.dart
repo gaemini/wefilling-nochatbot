@@ -89,8 +89,9 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
 
   Color _weekdayColor(DateTime day) {
     // DateTime.weekday: Mon=1 ... Sun=7
-    if (day.weekday == DateTime.saturday)
+    if (day.weekday == DateTime.saturday) {
       return const Color(0xFF3B82F6); // blue
+    }
     if (day.weekday == DateTime.sunday) return const Color(0xFFEF4444); // red
     return const Color(0xFF6B7280);
   }
@@ -275,8 +276,6 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     return DateTime(now.year, now.month, now.day);
   }
 
-  bool _isToday(DateTime day) => isSameDay(day, DateTime.now());
-
   bool _isFutureDay(DateTime day) {
     final d = _dayKey(day.toLocal());
     return d.isAfter(_startOfToday());
@@ -305,17 +304,6 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     return map;
   }
 
-  DateTime _monthStartKey(DateTime focusedDay) =>
-      DateTime(focusedDay.year, focusedDay.month, 1);
-
-  DateTime _monthEndKey(DateTime focusedDay) {
-    final monthStart = _monthStartKey(focusedDay);
-    final nextMonthStart = (monthStart.month == 12)
-        ? DateTime(monthStart.year + 1, 1, 1)
-        : DateTime(monthStart.year, monthStart.month + 1, 1);
-    return nextMonthStart.subtract(const Duration(days: 1));
-  }
-
   int _minutesFromMeetupTime(String raw) {
     final t = raw.trim();
     if (t.isEmpty || t == '미정' || t == 'Undecided' || t == 'TBD') {
@@ -328,11 +316,6 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
     final h = int.tryParse(parts[0].trim()) ?? 23;
     final m = int.tryParse(parts[1].trim()) ?? 59;
     return (h.clamp(0, 23) * 60) + m.clamp(0, 59);
-  }
-
-  List<Meetup> _eventsFor(DateTime day) {
-    final map = _buildEventMap();
-    return map[_dayKey(day.toLocal())] ?? const <Meetup>[];
   }
 
   bool _isPastDay(DateTime day) {
@@ -578,14 +561,12 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                   final isFuture = _isFutureDay(day);
                   // 요구사항:
                   // - 과거(<오늘): 수정 전 동작 유지(해당 날짜에 모임이 있으면 체크, 빨강)
-                  // - 미래(>오늘): 해당 날짜에 모임이 있으면 체크(파랑/로고색)
-                  // - 오늘: 체크 표시 없음
+                  // - 미래(>오늘): "나에게 있을 모임(내가 만든/참여)"이 있는 날만 파란 체크
+                  // - 오늘: 파란 동그라미만, 체크 표시 없음
                   final key = _dayKey(day.toLocal());
-                  final futureHasAny = (eventsMap[key]?.isNotEmpty ?? false) ||
-                      _calendarCache.hasFriendMeetupOnDay(key);
-                  final showCheck =
-                      (isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
-                          (isFuture && futureHasAny);
+                  final showCheck = !isToday &&
+                      ((isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
+                          (isFuture && (eventsMap[key]?.isNotEmpty ?? false)));
                   final checkColor =
                       isPast ? const Color(0xFFEF4444) : AppColors.pointColor;
                   return _buildDayCell(
@@ -599,15 +580,13 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                 },
                 todayBuilder: (context, day, focusedDay) {
                   final isSelected = isSameDay(day, _selectedDay);
-                  final key = _dayKey(day.toLocal());
-                  final hasAnyToday = (eventsMap[key]?.isNotEmpty ?? false) ||
-                      _calendarCache.hasFriendMeetupOnDay(key);
                   return _buildDayCell(
                     context: context,
                     day: day,
                     isSelected: isSelected,
                     isToday: true,
-                    showCheck: hasAnyToday, // ✅ 오늘도 모임이 있으면 체크 표시
+                    // ✅ 요구사항: "오늘"은 파란 동그라미 외에 어떤 표시도 하지 않음
+                    showCheck: false,
                     checkColor: AppColors.pointColor,
                   );
                 },
@@ -616,11 +595,9 @@ class _MyMeetupCalendarScreenState extends State<MyMeetupCalendarScreen> {
                   final isPast = _isPastDay(day);
                   final isFuture = _isFutureDay(day);
                   final key = _dayKey(day.toLocal());
-                  final futureHasAny = (eventsMap[key]?.isNotEmpty ?? false) ||
-                      _calendarCache.hasFriendMeetupOnDay(key);
-                  final showCheck =
-                      (isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
-                          (isFuture && futureHasAny);
+                  final showCheck = !isToday &&
+                      ((isPast && (eventsMap[key]?.isNotEmpty ?? false)) ||
+                          (isFuture && (eventsMap[key]?.isNotEmpty ?? false)));
                   final checkColor =
                       isPast ? const Color(0xFFEF4444) : AppColors.pointColor;
                   return _buildDayCell(

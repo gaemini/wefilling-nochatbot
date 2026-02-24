@@ -56,10 +56,10 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   bool _isResolvingSelectedImages = false; // Asset -> File 변환 중 (업로드/용량 체크용)
   
   // 공개 범위 설정
-  String _visibility = 'category'; // 'public' 또는 'category' (기본: 카테고리별 공개)
+  String _visibility = 'category'; // 'public' 또는 'category' (기본: 그룹별 공개 - 내부 값은 레거시 유지)
   bool _isAnonymous = false; // 익명 여부
-  List<String> _selectedCategoryIds = []; // 선택된 카테고리 ID 목록
-  bool _showCategoryRequiredHint = false; // 카테고리 선택 필수 강조 표시
+  List<String> _selectedCategoryIds = []; // 선택된 그룹(친구 카테고리) ID 목록
+  bool _showCategoryRequiredHint = false; // 그룹 선택 필수 강조 표시
   
   // 게시글 타입 (일반/투표)
   String _postType = 'text'; // 'text' | 'poll'
@@ -513,7 +513,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   // 슬라이드/탭 기반 전환이라 별도 Next 버튼은 사용하지 않음
 
   Future<void> _submitPost() async {
-    // 카테고리별 공개인 경우 카테고리 선택 여부 확인
+    // 그룹(visibility == 'category') 공개인 경우 그룹 선택 여부 확인
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
       setState(() {
         _showCategoryRequiredHint = true;
@@ -539,7 +539,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(AppLocalizations.of(context)!.categorySelectAtLeastOne),
+          content: Text(AppLocalizations.of(context)!.groupSelectAtLeastOne),
           backgroundColor: Colors.orange,
           duration: const Duration(seconds: 3),
         ),
@@ -970,8 +970,14 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                                         const SizedBox(height: 2),
                                                         Text(
                                                           _selectedAssets.isNotEmpty
-                                                              ? '${_selectedAssets.length}/10장 선택됨'
-                                                              : '최대 10장까지 선택할 수 있어요',
+                                                              ? (Localizations.localeOf(context).languageCode ==
+                                                                      'ko'
+                                                                  ? '${_selectedAssets.length}/10장 선택됨'
+                                                                  : '${_selectedAssets.length}/10 selected')
+                                                              : (Localizations.localeOf(context).languageCode ==
+                                                                      'ko'
+                                                                  ? '최대 10장까지 선택할 수 있어요'
+                                                                  : 'You can select up to 10 images'),
                                                           style: const TextStyle(
                                                             fontFamily: 'Pretendard',
                                                             fontSize: 12,
@@ -1235,7 +1241,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                             Expanded(
                               child: _buildVisibilityOption(
                                 value: 'category',
-                                label: AppLocalizations.of(context)!.category,
+                                label: AppLocalizations.of(context)!.groups,
                               ),
                             ),
                           ],
@@ -1363,7 +1369,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                 Row(
                                   children: [
                                     Text(
-                                      AppLocalizations.of(context)!.selectCategoryRequired,
+                                      AppLocalizations.of(context)!.selectGroupRequired,
                                       style: TextStyle(
                                         fontFamily: 'Pretendard',
                                         fontSize: 14,
@@ -1467,7 +1473,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8.0),
                                     child: Text(
-                                      AppLocalizations.of(context)!.categorySelectAtLeastOne,
+                                      AppLocalizations.of(context)!.groupSelectAtLeastOne,
                                       style: const TextStyle(
                                         color: Color(0xFFB91C1C),
                                         fontSize: 12,

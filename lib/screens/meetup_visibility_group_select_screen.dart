@@ -77,6 +77,7 @@ class _MeetupVisibilityGroupSelectScreenState
       return;
     }
 
+    if (!mounted) return;
     setState(() {
       _isLoadingSelectedMembers = true;
     });

@@ -2,12 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:table_calendar/table_calendar.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
 import '../constants/app_constants.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
-import '../widgets/date_selector.dart';
 import 'package:image_picker/image_picker.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -103,15 +104,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   final _locationController = TextEditingController();
   String? _selectedTime; // null로 시작하여 현재 시간 이후로 설정되도록 함
   int _maxParticipants = 3; // 기본값을 3으로 설정
-  late int _selectedDayIndex;
-  late DateTime _currentWeekAnchor; // 주차 기준 날짜 추가
   final _meetupService = MeetupService();
   final _friendCategoryService = FriendCategoryService();
-  final List<String> _weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   bool _isSubmitting = false;
   String? _selectedCategory; // 초기에는 선택 안 됨
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
   // 카테고리는 build 메서드에서 동적으로 생성
+
+  // 날짜 선택 (월 캘린더)
+  DateTime _focusedDay = DateTime.now();
+  DateTime _selectedDay = DateTime.now();
+  bool _isCalendarExpanded = true; // 생성 화면은 기본 펼침(스크린샷 기준)
   
   // 공개 범위 관련 변수
   String _visibility = 'public'; // 'public', 'friends', 'category'
@@ -460,6 +463,22 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   bool _isInitialized = false;
 
+  Future<void> _closeScreen({bool shouldSaveAutofill = false}) async {
+    if (!mounted) return;
+
+    // iOS에서 route pop 직전에 키보드/Autofill/selection overlay가 남아있으면
+    // framework 쪽 Inherited dependents assertion이 발생할 수 있어 선제적으로 정리한다.
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      TextInput.finishAutofillContext(shouldSave: shouldSaveAutofill);
+    } catch (_) {
+      // 플랫폼/세션 상태에 따라 실패할 수 있으므로 무시
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    if (!mounted) return;
+    Navigator.of(context).pop();
+  }
+
   MeetupFavoriteTemplate _buildFavoritesDraft() {
     // time 저장은 locale 영향 제거: undecided 여부 + HH:mm만 저장
     final l10n = AppLocalizations.of(context)!;
@@ -550,14 +569,10 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedDayIndex = widget.initialDayIndex;
-    
-    // initialDate가 있으면 그 날짜를 기준으로, 없으면 현재 날짜 기준
-    if (widget.initialDate != null) {
-      _currentWeekAnchor = widget.initialDate!;
-    } else {
-      _currentWeekAnchor = DateTime.now();
-    }
+
+    final initial = (widget.initialDate ?? DateTime.now()).toLocal();
+    _selectedDay = DateTime(initial.year, initial.month, initial.day);
+    _focusedDay = _selectedDay;
     
     // 친구 카테고리 로드
     _loadFriendCategories();
@@ -571,13 +586,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       // time의 기본값(미정) 초기화: locale 문자열이 필요하므로 여기서 처리
       _updateTimeOptions();
     }
-  }
-
-  // 주간 날짜 목록 생성 (_currentWeekAnchor 기반)
-  List<DateTime> _getWeekDates() {
-    final startOfWeek = _currentWeekAnchor
-        .subtract(Duration(days: _currentWeekAnchor.weekday - 1));
-    return List.generate(7, (index) => startOfWeek.add(Duration(days: index)));
   }
 
   // 선택된 날짜에 맞는 시간 옵션 업데이트
@@ -613,63 +621,50 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 현재 날짜 기준 일주일 날짜 계산 (오늘부터 6일 후까지)
-    final List<DateTime> weekDates = _getWeekDates();
+    final DateTime selectedDate = _selectedDay;
 
-    // 선택된 날짜
-    final DateTime selectedDate = weekDates[_selectedDayIndex];
-    
-    // 로케일에 따라 날짜 포맷팅
-    final locale = Localizations.localeOf(context).languageCode;
-    final String dateStr;
-    if (locale == 'ko') {
-      final koreanWeekdays = ['월', '화', '수', '목', '금', '토', '일'];
-      final weekdayName = koreanWeekdays[selectedDate.weekday - 1];
-      dateStr = '${selectedDate.month}월 ${selectedDate.day}일 ($weekdayName)';
-    } else {
-      // 영어 버전
-      final weekdayName = _weekdayNames[selectedDate.weekday - 1];
-      final monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      final monthName = monthNames[selectedDate.month - 1];
-      dateStr = '$monthName ${selectedDate.day} ($weekdayName)';
-    }
-
-    return Scaffold(
-      backgroundColor: const Color(0xFFFAFBFC),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.createNewMeetup,
-          style: _appBarTitleStyle,
-        ),
-        actions: [
-          IconButton(
-            tooltip: Localizations.localeOf(context).languageCode == 'ko'
-                ? '즐겨찾기'
-                : 'Favorites',
-            onPressed: _openMeetupFavorites,
-            icon: const Icon(
-              Icons.star_border_rounded,
-              color: Color(0xFF111827),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) {
+        if (didPop) return;
+        _closeScreen(shouldSaveAutofill: false);
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFFFAFBFC),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+            onPressed: () => _closeScreen(shouldSaveAutofill: false),
+          ),
+          title: Text(
+            AppLocalizations.of(context)!.createNewMeetup,
+            style: _appBarTitleStyle,
+          ),
+          actions: [
+            IconButton(
+              tooltip: Localizations.localeOf(context).languageCode == 'ko'
+                  ? '즐겨찾기'
+                  : 'Favorites',
+              onPressed: _openMeetupFavorites,
+              icon: const Icon(
+                Icons.star_border_rounded,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(
+              height: 1,
+              color: const Color(0xFFE6EAF0),
             ),
           ),
-        ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: const Color(0xFFE6EAF0),
-          ),
         ),
-      ),
-      body: Column(
-        children: [
+        body: Column(
+          children: [
           // 스크롤 가능한 컨텐츠
           Expanded(
             child: SingleChildScrollView(
@@ -683,34 +678,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 _buildMeetupVisibilitySection(),
                 const SizedBox(height: 22),
 
-                // 개선된 날짜 및 요일 선택
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.dateSelection,
-                          style: _sectionTitleStyle,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 개선된 요일 선택 칩
-                    DateSelector(
-                      weekDates: weekDates,
-                      selectedDayIndex: _selectedDayIndex,
-                      onDateSelected: (index) {
-                        setState(() {
-                          _selectedDayIndex = index;
-                        });
-                        _updateTimeOptions();
-                      },
-                      weekdayNames: _weekdayNames,
-                    ),
-                  ],
-                ),
+                // 날짜 선택 (월 캘린더)
+                _buildMeetupDateSection(),
                 const SizedBox(height: 24),
 
                 // 제목 필드
@@ -1284,7 +1253,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                         height: 52,
                         child: OutlinedButton(
                           onPressed: _isSubmitting ? null : () {
-                            Navigator.of(context).pop();
+                            _closeScreen(shouldSaveAutofill: false);
                           },
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Color(0xFFE6EAF0), width: 1.5),
@@ -1418,12 +1387,17 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                         );
 
                                         // 콜백 호출하여 홈 화면 새로고침
-                                        widget.onCreateMeetup(widget.initialDayIndex, dummyMeetup);
-                                        
-                                        Navigator.of(context).pop();
+                                        final dayIndex = (selectedDate.weekday - 1).clamp(0, 6);
+                                        widget.onCreateMeetup(dayIndex, dummyMeetup);
+
+                                        // pop 이후에는 context(Inherited) 접근이 위험할 수 있어
+                                        // 표시할 메시지는 미리 만들어둔다.
+                                        final createdMessage =
+                                            AppLocalizations.of(context)!.meetupCreated ?? '';
+                                        await _closeScreen(shouldSaveAutofill: true);
                                         AppSnackBar.show(
                                           context,
-                                          message: AppLocalizations.of(context)!.meetupCreated ?? "",
+                                          message: createdMessage,
                                           type: AppSnackBarType.success,
                                         );
                                       }
@@ -1482,8 +1456,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           ),
         ],
       ),
+      ),
     );
-}
+  }
 
   /// 카테고리 선택 시 상태 반영
   void _onCategorySelected(String category) async {
@@ -1634,6 +1609,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   Future<void> _selectThumbnailImage() async {
     final pickedFiles = await _picker.pickMultiImage();
+    if (!mounted) return;
     if (pickedFiles.isEmpty) return;
 
     final remaining = _maxMeetupImages - _currentMeetupImageCount();
@@ -1682,6 +1658,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   Future<void> _checkThumbnailImageSize() async {
     if (_meetupImageFiles.isEmpty) return;
+    // async 중 화면이 pop되더라도, 이후에는 context(Inherited) 접근을 하지 않도록
+    // 로컬라이즈 객체를 미리 잡아둔다.
+    final l10n = AppLocalizations.of(context)!;
 
     int totalBytes = 0;
     for (final f in _meetupImageFiles) {
@@ -1694,16 +1673,15 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     if (sizeInMB <= 10) return;
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          AppLocalizations.of(context)!.totalImageSizeWarning(
-            sizeInMB.toStringAsFixed(1),
-          ),
-        ),
-        backgroundColor: Colors.orange,
-        duration: const Duration(seconds: 5),
+    AppSnackBar.show(
+      context,
+      message: l10n.totalImageSizeWarning(
+        sizeInMB.toStringAsFixed(1),
       ),
+      type: AppSnackBarType.warning,
+      duration: const Duration(seconds: 5),
+      backgroundColor: Colors.orange,
+      leadingIcon: Icons.warning_rounded,
     );
   }
 
@@ -1718,116 +1696,221 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           style: _sectionTitleStyle,
         ),
         const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          child: Row(
-            children: [
-              _buildVisibilityButton(
-                label: l10n.publicPost,
-                isSelected: _visibility == 'public',
-                onTap: () {
-                  setState(() {
-                    _visibility = 'public';
-                    _selectedCategoryIds.clear();
-                  });
-                },
-              ),
-              const SizedBox(width: 10),
-              _buildVisibilityButton(
-                label: l10n.meetupVisibilityFriendsAll,
-                isSelected: _visibility == 'friends',
-                onTap: () {
-                  setState(() {
-                    _visibility = 'friends';
-                    _selectedCategoryIds.clear();
-                  });
-                },
-              ),
-              const SizedBox(width: 10),
-              _buildVisibilityButton(
-                label: l10n.meetupVisibilityGroupSelect,
-                isSelected: _visibility == 'category',
-                onTap: _openMeetupGroupSelection,
-              ),
-            ],
-          ),
+        _VisibilitySegmentedControl(
+          selected: _visibility,
+          groupSelectedCount: _selectedCategoryIds.length,
+          onSelectPublic: () {
+            setState(() {
+              _visibility = 'public';
+              _selectedCategoryIds.clear();
+            });
+          },
+          onSelectFriends: () {
+            setState(() {
+              _visibility = 'friends';
+              _selectedCategoryIds.clear();
+            });
+          },
+          onSelectGroup: _openMeetupGroupSelection,
         ),
-        if (_visibility == 'category') ...[
-          const SizedBox(height: 10),
-          InkWell(
-            onTap: _openMeetupGroupSelection,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE6EAF0)),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.meetupVisibilityGroupSelect,
-                      style: _inputTextStyle,
-                    ),
-                  ),
-                  if (_selectedCategoryIds.isNotEmpty)
-                    Text(
-                      '${_selectedCategoryIds.length}${l10n.selectedCount}',
-                      style: _helperStyle,
-                    ),
-                  const SizedBox(width: 6),
-                  const Icon(
-                    Icons.chevron_right,
-                    size: 20,
-                    color: Color(0xFF9CA3AF),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
       ],
     );
   }
 
-  Widget _buildVisibilityButton({
-    required String label,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          height: 44,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+  Widget _buildMeetupDateSection() {
+    final l10n = AppLocalizations.of(context)!;
+    final lang = Localizations.localeOf(context).languageCode;
+
+    String short(DateTime d) => '${d.month}/${d.day}';
+    String monthTitle(DateTime d) {
+      final local = d.toLocal();
+      if (lang == 'ko') return '${local.month}월';
+      const names = <int, String>{
+        1: 'January',
+        2: 'February',
+        3: 'March',
+        4: 'April',
+        5: 'May',
+        6: 'June',
+        7: 'July',
+        8: 'August',
+        9: 'September',
+        10: 'October',
+        11: 'November',
+        12: 'December',
+      };
+      return names[local.month] ?? '';
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(l10n.dateSelection, style: _sectionTitleStyle),
+            const SizedBox(width: 8),
+            Text(
+              '(${short(_selectedDay)})',
+              style: _helperStyle.copyWith(
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111827),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Container(
           decoration: BoxDecoration(
-            color: isSelected ? AppColors.pointColor : Colors.white,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(
-              color: isSelected ? AppColors.pointColor : const Color(0xFFE1E6EE),
-              width: 1.2,
-            ),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE6EAF0)),
           ),
-          child: Text(
-            label,
-            maxLines: 1,
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              height: 1.1,
-              color: isSelected ? Colors.white : const Color(0xFF111827),
-            ),
+          child: Column(
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _isCalendarExpanded = !_isCalendarExpanded;
+                    });
+                  },
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                    child: Row(
+                      children: [
+                        const SizedBox(width: 28), // 좌우 균형
+                        Expanded(
+                          child: Center(
+                            child: Text(
+                              monthTitle(_focusedDay),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFF111827),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Icon(
+                          _isCalendarExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          size: 28,
+                          color: const Color(0xFF111827),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                child: _isCalendarExpanded
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                        child: TableCalendar<void>(
+                          firstDay: DateTime.utc(2020, 1, 1),
+                          lastDay: DateTime.utc(2035, 12, 31),
+                          focusedDay: _focusedDay,
+                          locale: lang == 'ko' ? 'ko_KR' : 'en_US',
+                          calendarFormat: CalendarFormat.month,
+                          startingDayOfWeek: StartingDayOfWeek.sunday,
+                          availableGestures: AvailableGestures.horizontalSwipe,
+                          onPageChanged: (focusedDay) {
+                            setState(() => _focusedDay = focusedDay);
+                          },
+                          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                          onDaySelected: (selectedDay, focusedDay) {
+                            setState(() {
+                              _selectedDay = DateTime(
+                                selectedDay.year,
+                                selectedDay.month,
+                                selectedDay.day,
+                              );
+                              _focusedDay = focusedDay;
+                            });
+                            _updateTimeOptions();
+                          },
+                          eventLoader: (_) => const <void>[],
+                          calendarBuilders: CalendarBuilders<void>(
+                            markerBuilder: (_, __, ___) => const SizedBox.shrink(),
+                            dowBuilder: (context, day) {
+                              final isSat = day.weekday == DateTime.saturday;
+                              final isSun = day.weekday == DateTime.sunday;
+                              final color = isSun
+                                  ? const Color(0xFFEF4444)
+                                  : (isSat
+                                      ? const Color(0xFF3B82F6)
+                                      : const Color(0xFF6B7280));
+                              final label = lang == 'ko'
+                                  ? const ['일', '월', '화', '수', '목', '금', '토'][day.weekday % 7]
+                                  : const ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day.weekday % 7];
+                              return Center(
+                                child: Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: color,
+                                  ),
+                                ),
+                              );
+                            },
+                            defaultBuilder: (context, day, focusedDay) {
+                              return _CreateMeetupCalendarDayCell(
+                                day: day,
+                                isSelected: isSameDay(day, _selectedDay),
+                                isToday: isSameDay(day, DateTime.now()),
+                              );
+                            },
+                            todayBuilder: (context, day, focusedDay) {
+                              return _CreateMeetupCalendarDayCell(
+                                day: day,
+                                isSelected: isSameDay(day, _selectedDay),
+                                isToday: true,
+                              );
+                            },
+                            selectedBuilder: (context, day, focusedDay) {
+                              return _CreateMeetupCalendarDayCell(
+                                day: day,
+                                isSelected: true,
+                                isToday: isSameDay(day, DateTime.now()),
+                              );
+                            },
+                          ),
+                          headerStyle: const HeaderStyle(
+                            titleCentered: true,
+                            formatButtonVisible: false,
+                            leftChevronVisible: false,
+                            rightChevronVisible: false,
+                            headerPadding: EdgeInsets.zero,
+                            titleTextStyle: TextStyle(fontSize: 0),
+                          ),
+                          calendarStyle: const CalendarStyle(
+                            outsideDaysVisible: false,
+                            todayDecoration: BoxDecoration(
+                              color: Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                            selectedDecoration: BoxDecoration(
+                              color: Colors.transparent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
-      ),
+      ],
     );
   }
 
@@ -1848,6 +1931,200 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _visibility = 'category';
       _selectedCategoryIds = result;
     });
+  }
+}
+
+class _VisibilitySegmentedControl extends StatelessWidget {
+  final String selected; // 'public' | 'friends' | 'category'
+  final int groupSelectedCount;
+  final VoidCallback onSelectPublic;
+  final VoidCallback onSelectFriends;
+  final VoidCallback onSelectGroup;
+
+  const _VisibilitySegmentedControl({
+    required this.selected,
+    required this.groupSelectedCount,
+    required this.onSelectPublic,
+    required this.onSelectFriends,
+    required this.onSelectGroup,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+
+    const selectedBg = Color(0xFF6CCFF6); // 스크린샷 톤
+    const selectedText = Colors.white;
+    const unselectedText = Color(0xFF111827);
+    const dividerColor = Color(0xFFD1D5DB);
+
+    Widget item({
+      required Widget child,
+      required bool isSelected,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              height: 44,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected ? selectedBg : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: DefaultTextStyle(
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? selectedText : unselectedText,
+                  height: 1.1,
+                ),
+                child: child,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final isPublic = selected == 'public';
+    final isFriends = selected == 'friends';
+    final isGroup = selected == 'category';
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            item(
+              isSelected: isPublic,
+              onTap: onSelectPublic,
+              child: Text(l10n.all),
+            ),
+            const VerticalDivider(
+              width: 1,
+              thickness: 1,
+              color: dividerColor,
+            ),
+            item(
+              isSelected: isFriends,
+              onTap: onSelectFriends,
+              child: Text(l10n.meetupVisibilityFriendsAll),
+            ),
+            const VerticalDivider(
+              width: 1,
+              thickness: 1,
+              color: dividerColor,
+            ),
+            item(
+              isSelected: isGroup,
+              onTap: onSelectGroup,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.change_history_rounded,
+                    size: 18,
+                    color: isGroup ? Colors.white : AppColors.accentRed,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(l10n.groups),
+                  if (groupSelectedCount > 0) ...[
+                    const SizedBox(width: 6),
+                    Text('($groupSelectedCount)'),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateMeetupCalendarDayCell extends StatelessWidget {
+  final DateTime day;
+  final bool isSelected;
+  final bool isToday;
+
+  const _CreateMeetupCalendarDayCell({
+    required this.day,
+    required this.isSelected,
+    required this.isToday,
+  });
+
+  Color _weekdayColor(DateTime d) {
+    if (d.weekday == DateTime.saturday) return const Color(0xFF3B82F6);
+    if (d.weekday == DateTime.sunday) return const Color(0xFFEF4444);
+    return const Color(0xFF111827);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = isSelected ? AppColors.pointColor : Colors.transparent;
+    final textColor = isSelected ? Colors.white : _weekdayColor(day);
+    final fontWeight = isSelected ? FontWeight.w900 : FontWeight.w700;
+
+    return Center(
+      child: SizedBox(
+        width: 38,
+        height: 38,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: Container(
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: fill,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${day.day}',
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: fontWeight,
+                    color: textColor,
+                  ),
+                ),
+              ),
+            ),
+            if (isToday && !isSelected)
+              const Positioned(
+                bottom: -5,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: SizedBox(
+                    width: 4,
+                    height: 4,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: AppColors.pointColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -286,6 +286,56 @@ class Meetup {
     }
   }
 
+  DateTime _safeLocalDay() => DateTime(date.year, date.month, date.day);
+
+  /// 모임 종료 시각을 계산합니다.
+  /// - time이 "미정"/비어있음/잘못된 형식이면 해당 날짜 23:59로 처리합니다.
+  /// - "14:00 ~ 16:00" 형태면 종료 시간을 사용합니다.
+  /// - 종료 시간이 없으면 시작 시각 + 2시간으로 추정합니다.
+  DateTime getEndDateTime() {
+    final d = _safeLocalDay();
+    final raw = time.trim();
+
+    if (raw.isEmpty || raw == '미정' || !raw.contains(':')) {
+      return DateTime(d.year, d.month, d.day, 23, 59);
+    }
+
+    final startStr = raw.split('~').first.trim();
+    final startParts = startStr.split(':');
+    if (startParts.length < 2) {
+      return DateTime(d.year, d.month, d.day, 23, 59);
+    }
+
+    final startHour = int.tryParse(startParts[0].trim()) ?? 0;
+    final startMinute = int.tryParse(startParts[1].trim()) ?? 0;
+
+    int endHour = startHour + 2;
+    int endMinute = startMinute;
+
+    if (raw.contains('~')) {
+      final endStr = raw.split('~')[1].trim();
+      final endParts = endStr.split(':');
+      if (endParts.length >= 2) {
+        endHour = int.tryParse(endParts[0].trim()) ?? endHour;
+        endMinute = int.tryParse(endParts[1].trim()) ?? endMinute;
+      }
+    }
+
+    return DateTime(
+      d.year,
+      d.month,
+      d.day,
+      endHour.clamp(0, 23),
+      endMinute.clamp(0, 59),
+    );
+  }
+
+  /// 약속 시간/날짜가 지나 "만료"된 모임인지 여부.
+  bool isExpired({DateTime? now}) {
+    final base = (now ?? DateTime.now()).toLocal();
+    return base.isAfter(getEndDateTime());
+  }
+
   // 모임이 가득 찼는지 확인
   bool isFull() {
     return currentParticipants >= maxParticipants;

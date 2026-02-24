@@ -4,6 +4,7 @@
 import 'package:flutter/material.dart';
 import 'notification_badge.dart';
 import '../ui/widgets/shape_icon.dart';
+import '../constants/app_constants.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
@@ -156,7 +157,9 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     final isGroupsTriangle =
         item.icon == Icons.change_history_outlined || item.selectedIcon == Icons.change_history;
     // 그룹(세모)도 다른 탭과 동일하게: 선택=검정, 비선택=회색
-    final iconColor = isSelected ? selectedColor : unselectedColor;
+    final iconColor = isGroupsTriangle
+        ? AppColors.friendsOnlyAccent
+        : (isSelected ? selectedColor : unselectedColor);
 
     return InkWell(
       onTap: onTap,

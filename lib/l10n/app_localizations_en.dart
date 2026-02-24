@@ -806,6 +806,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectCategoryRequired => 'Select Category (Required)';
 
   @override
+  String get selectGroupRequired => 'Select Groups (Required)';
+
+  @override
   String get selectedCount => ' selected';
 
   @override
@@ -2792,10 +2795,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get categorySelectAtLeastOne => 'Please select at least one category.';
 
   @override
+  String get groupSelectAtLeastOne => 'Please select at least one group.';
+
+  @override
   String get postImageUploading => 'Uploading images. Please wait...';
 
   @override
   String totalImageSizeWarning(String sizeMB) {
     return 'Warning: Total image size is ${sizeMB}MB. Posting may take a while.';
+  }
+
+  @override
+  String nicknameChangeLimited(int days) {
+    return 'You can change your name only once every 3 days. Try again in $days day(s).';
+  }
+
+  @override
+  String nationalityChangeLimited(int days) {
+    return 'You can change your nationality only once every 3 days. Try again in $days day(s).';
   }
 }

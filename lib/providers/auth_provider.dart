@@ -23,6 +23,8 @@ import '../utils/profile_photo_policy.dart';
 
 class AuthProvider with ChangeNotifier {
   static const String _profilePhotoPathPrefix = 'profile_images/';
+  static const Duration _profileNicknameCooldown = Duration(days: 3);
+  static const Duration _profileNationalityCooldown = Duration(days: 3);
 
   String _profilePhotoPathForUid(String uid) => '$_profilePhotoPathPrefix$uid/profile.jpg';
 
@@ -33,6 +35,26 @@ class AuthProvider with ChangeNotifier {
     } catch (_) {
       return '';
     }
+  }
+
+  DateTime? _timestampToDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    return null;
+  }
+
+  int _remainingDaysForCooldown({
+    required DateTime now,
+    required DateTime lastChangedAt,
+    required Duration cooldown,
+  }) {
+    final elapsed = now.difference(lastChangedAt);
+    final remaining = cooldown - elapsed;
+    if (!remaining.isNegative && remaining.inMilliseconds > 0) {
+      // 0~24h 남았으면 1일로 표시되도록 ceil 처리
+      final days = (remaining.inHours / 24).ceil();
+      return days < 1 ? 1 : days;
+    }
+    return 0;
   }
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
@@ -724,14 +746,14 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 닉네임 및 국적 설정 (재시도 로직 포함)
-  Future<bool> updateUserProfile({
+  Future<ProfileUpdateResult> updateUserProfile({
     required String nickname,
     required String nationality,
     String? photoURL,
     String? photoPath,
     String? bio, // 한 줄 소개 추가
   }) async {
-    if (_user == null) return false;
+    if (_user == null) return const ProfileUpdateResult.failure();
 
     int retryCount = 0;
     const maxRetries = 3;
@@ -758,6 +780,54 @@ class AuthProvider with ChangeNotifier {
           final docSnapshot = await docRef.get();
           final docData = docSnapshot.data();
 
+          // -----------------------------------------------------------------
+          // 정책: 닉네임/국적은 3일에 1번만 변경 가능
+          // - 상태메시지(bio) 및 사진 등 다른 필드는 제한 없이 업데이트 가능
+          // -----------------------------------------------------------------
+          final now = DateTime.now();
+          final currentNickname = (docData?['nickname'] ?? _userData?['nickname'] ?? '').toString().trim();
+          final currentNationality = (docData?['nationality'] ?? _userData?['nationality'] ?? '').toString().trim();
+          final requestedNickname = nickname.trim();
+          final requestedNationality = nationality.trim();
+
+          final lastNicknameChangedAt =
+              _timestampToDateTime(docData?['nicknameUpdatedAt'] ?? _userData?['nicknameUpdatedAt']);
+          final lastNationalityChangedAt =
+              _timestampToDateTime(docData?['nationalityUpdatedAt'] ?? _userData?['nationalityUpdatedAt']);
+
+          final nicknameChanged = requestedNickname != currentNickname;
+          final nationalityChanged = requestedNationality != currentNationality;
+
+          int? nicknameDaysRemaining;
+          int? nationalityDaysRemaining;
+
+          bool nicknameAllowed = true;
+          bool nationalityAllowed = true;
+
+          if (nicknameChanged && lastNicknameChangedAt != null) {
+            final rem = _remainingDaysForCooldown(
+              now: now,
+              lastChangedAt: lastNicknameChangedAt,
+              cooldown: _profileNicknameCooldown,
+            );
+            nicknameAllowed = rem == 0;
+            if (!nicknameAllowed) nicknameDaysRemaining = rem;
+          }
+          if (nationalityChanged && lastNationalityChangedAt != null) {
+            final rem = _remainingDaysForCooldown(
+              now: now,
+              lastChangedAt: lastNationalityChangedAt,
+              cooldown: _profileNationalityCooldown,
+            );
+            nationalityAllowed = rem == 0;
+            if (!nationalityAllowed) nationalityDaysRemaining = rem;
+          }
+
+          final nicknameToWrite = nicknameAllowed ? requestedNickname : currentNickname;
+          final nationalityToWrite = nationalityAllowed ? requestedNationality : currentNationality;
+          final nicknameApplied = !nicknameChanged || nicknameAllowed;
+          final nationalityApplied = !nationalityChanged || nationalityAllowed;
+
           // photoVersion: 프로필 사진 변경 시에만 증가 (로컬 캐시/DM 전환을 안정화)
           final currentPhotoVersion =
               (docData?['photoVersion'] is int)
@@ -780,10 +850,16 @@ class AuthProvider with ChangeNotifier {
           
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
-            'nickname': nickname,
-            'nationality': nationality,
+            'nickname': nicknameToWrite,
+            'nationality': nationalityToWrite,
             'updatedAt': FieldValue.serverTimestamp(),
           };
+          if (nicknameChanged && nicknameAllowed) {
+            updateData['nicknameUpdatedAt'] = FieldValue.serverTimestamp();
+          }
+          if (nationalityChanged && nationalityAllowed) {
+            updateData['nationalityUpdatedAt'] = FieldValue.serverTimestamp();
+          }
           // bio가 제공되면 업데이트
           if (bio != null) {
             updateData['bio'] = bio;
@@ -811,8 +887,8 @@ class AuthProvider with ChangeNotifier {
               user: _user!,
               hanyangEmail: (_user!.email ?? ''),
               emailVerified: true,
-              nickname: nickname,
-              nationality: nationality,
+              nickname: nicknameToWrite,
+              nationality: nationalityToWrite,
               photoURL: newPhotoUrlStr,
               bio: bio ?? '',
             );
@@ -824,6 +900,13 @@ class AuthProvider with ChangeNotifier {
             } else {
               full['photoUpdatedAt'] = null;
             }
+            // 정책 타임스탬프 (초기 설정도 변경으로 간주)
+            full['nicknameUpdatedAt'] = (nicknameToWrite.trim().isNotEmpty)
+                ? FieldValue.serverTimestamp()
+                : null;
+            full['nationalityUpdatedAt'] = (nationalityToWrite.trim().isNotEmpty)
+                ? FieldValue.serverTimestamp()
+                : null;
             await docRef.set(full);
             Logger.log("✅ 사용자 문서 생성 완료");
           } else {
@@ -896,7 +979,12 @@ class AuthProvider with ChangeNotifier {
           }
           
           await _loadUserData();
-          return true;
+          return ProfileUpdateResult.success(
+            nicknameApplied: nicknameApplied,
+            nationalityApplied: nationalityApplied,
+            nicknameDaysRemaining: nicknameDaysRemaining,
+            nationalityDaysRemaining: nationalityDaysRemaining,
+          );
         } catch (e) {
           retryCount++;
           Logger.error('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
@@ -910,10 +998,10 @@ class AuthProvider with ChangeNotifier {
         }
       }
       
-      return false;
+      return const ProfileUpdateResult.failure();
     } catch (e) {
       Logger.error('프로필 업데이트 최종 실패: $e');
-      return false;
+      return const ProfileUpdateResult.failure();
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -1738,6 +1826,8 @@ class AuthProvider with ChangeNotifier {
     if (missing('photoUpdatedAt')) updates['photoUpdatedAt'] = null;
     if (missing('bio')) updates['bio'] = '';
     if (missing('nationality')) updates['nationality'] = '';
+    if (missing('nicknameUpdatedAt')) updates['nicknameUpdatedAt'] = null;
+    if (missing('nationalityUpdatedAt')) updates['nationalityUpdatedAt'] = null;
 
     // 카운터들
     if (missing('friendsCount')) updates['friendsCount'] = 0;
@@ -1780,6 +1870,8 @@ class AuthProvider with ChangeNotifier {
       'emailVerified': emailVerified,
       'nickname': nickname,
       'nationality': nationality,
+      'nicknameUpdatedAt': null,
+      'nationalityUpdatedAt': null,
       'photoURL': photoURL,
       'photoPath': photoURL.isNotEmpty ? _profilePhotoPathForUid(user.uid) : '',
       'photoAccessToken': photoURL.isNotEmpty ? _extractStorageDownloadToken(photoURL) : '',
@@ -1801,4 +1893,42 @@ class AuthProvider with ChangeNotifier {
       'lastLogin': FieldValue.serverTimestamp(),
     };
   }
+}
+
+class ProfileUpdateResult {
+  final bool success;
+  final bool nicknameApplied;
+  final bool nationalityApplied;
+  final int? nicknameDaysRemaining;
+  final int? nationalityDaysRemaining;
+
+  const ProfileUpdateResult._({
+    required this.success,
+    required this.nicknameApplied,
+    required this.nationalityApplied,
+    this.nicknameDaysRemaining,
+    this.nationalityDaysRemaining,
+  });
+
+  const ProfileUpdateResult.failure()
+      : this._(
+          success: false,
+          nicknameApplied: true,
+          nationalityApplied: true,
+        );
+
+  const ProfileUpdateResult.success({
+    bool nicknameApplied = true,
+    bool nationalityApplied = true,
+    int? nicknameDaysRemaining,
+    int? nationalityDaysRemaining,
+  }) : this._(
+          success: true,
+          nicknameApplied: nicknameApplied,
+          nationalityApplied: nationalityApplied,
+          nicknameDaysRemaining: nicknameDaysRemaining,
+          nationalityDaysRemaining: nationalityDaysRemaining,
+        );
+
+  bool get hasRestrictedFields => !nicknameApplied || !nationalityApplied;
 }

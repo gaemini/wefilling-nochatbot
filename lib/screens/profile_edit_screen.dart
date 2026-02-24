@@ -26,6 +26,7 @@ class ProfileEditScreen extends StatefulWidget {
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nicknameController = TextEditingController();
+  final _bioController = TextEditingController();
   String? _bio; // 한 줄 소개
   String _selectedNationality = '한국'; // 기본값 (한글 이름)
   final ImagePicker _imagePicker = ImagePicker();
@@ -36,6 +37,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   bool _isSubmitting = false;
   bool _isForceUpdating = false;
+  bool _nicknameLocked = false;
+  bool _nationalityLocked = false;
+  int? _nicknameRemainingDays;
+  int? _nationalityRemainingDays;
+
+  DateTime? _timestampToDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    return null;
+  }
+
+  int _remainingDaysForCooldown(DateTime lastChangedAt) {
+    final now = DateTime.now();
+    const cooldown = Duration(days: 3);
+    final elapsed = now.difference(lastChangedAt);
+    final remaining = cooldown - elapsed;
+    if (!remaining.isNegative && remaining.inMilliseconds > 0) {
+      final days = (remaining.inHours / 24).ceil();
+      return days < 1 ? 1 : days;
+    }
+    return 0;
+  }
 
   @override
   void initState() {
@@ -50,6 +72,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           _nicknameController.text = currentNickname;
         }
 
+        // bio(상태메시지) 설정
+        final currentBio = authProvider.userData!['bio'];
+        if (currentBio != null) {
+          _bioController.text = currentBio.toString();
+          _bio = _bioController.text.trim();
+        }
+
         // 국적 설정
         final currentNationality = authProvider.userData!['nationality'];
         if (currentNationality != null) {
@@ -57,6 +86,18 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
             _selectedNationality = currentNationality;
           });
         }
+
+        // 3일 제한(닉네임/국적) 잠금 상태 계산
+        final lastNick = _timestampToDateTime(authProvider.userData!['nicknameUpdatedAt']);
+        final lastNat = _timestampToDateTime(authProvider.userData!['nationalityUpdatedAt']);
+        final nickRem = lastNick != null ? _remainingDaysForCooldown(lastNick) : 0;
+        final natRem = lastNat != null ? _remainingDaysForCooldown(lastNat) : 0;
+        setState(() {
+          _nicknameLocked = nickRem > 0;
+          _nationalityLocked = natRem > 0;
+          _nicknameRemainingDays = nickRem > 0 ? nickRem : null;
+          _nationalityRemainingDays = natRem > 0 ? natRem : null;
+        });
       }
     });
   }
@@ -64,6 +105,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   @override
   void dispose() {
     _nicknameController.dispose();
+    _bioController.dispose();
     super.dispose();
   }
 
@@ -175,18 +217,18 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        bool success = false;
+        ProfileUpdateResult? result;
 
         // 기본 이미지로 변경하는 경우
         if (_useDefaultImage) {
           Logger.log("🗑️ 기본 이미지로 변경 요청");
           
           // resetProfilePhotoToDefault를 호출하여 Storage 이미지 삭제 및 과거 콘텐츠 업데이트
-          success = await authProvider.resetProfilePhotoToDefault();
+          final success = await authProvider.resetProfilePhotoToDefault();
           
           if (success && mounted) {
             // 닉네임과 국적도 함께 업데이트 (photoURL은 이미 처리됨)
-            success = await authProvider.updateUserProfile(
+            result = await authProvider.updateUserProfile(
               nickname: _nicknameController.text.trim(),
               nationality: _selectedNationality,
               photoURL: '', // 빈 문자열로 유지
@@ -219,7 +261,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           }
           
           // 프로필 업데이트 수행 (닉네임, 국적, photoURL 모두 포함)
-          success = await authProvider.updateUserProfile(
+          result = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
             nationality: _selectedNationality,
             photoURL: upload.downloadUrl, // ✅ 새 토큰 포함 URL
@@ -229,14 +271,33 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         }
         // 이미지 변경 없이 닉네임/국적만 업데이트
         else {
-          success = await authProvider.updateUserProfile(
+          result = await authProvider.updateUserProfile(
             nickname: _nicknameController.text.trim(),
             nationality: _selectedNationality,
             bio: _bio,
           );
         }
 
-        if (success && mounted) {
+        if (result?.success == true && mounted) {
+          final l10n = AppLocalizations.of(context);
+          if (result!.hasRestrictedFields) {
+            final messages = <String>[];
+            if (!result.nicknameApplied && (result.nicknameDaysRemaining ?? 0) > 0) {
+              messages.add(l10n?.nicknameChangeLimited(result.nicknameDaysRemaining!) ?? '');
+            }
+            if (!result.nationalityApplied && (result.nationalityDaysRemaining ?? 0) > 0) {
+              messages.add(l10n?.nationalityChangeLimited(result.nationalityDaysRemaining!) ?? '');
+            }
+            final text = messages.where((m) => m.trim().isNotEmpty).join('\n');
+            if (text.isNotEmpty) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(text),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+          }
           // 프로필 업데이트 성공
           // 참고: 과거 게시글/댓글은 authProvider.updateUserProfile 또는 
           // resetProfilePhotoToDefault 내부에서 이미 업데이트됨
@@ -583,6 +644,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _nicknameController,
+                enabled: !_nicknameLocked,
                 decoration: InputDecoration(
                   hintText: '닉네임을 입력하세요',
                   hintStyle: const TextStyle(
@@ -622,6 +684,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   return null;
                 },
               ),
+              if (_nicknameLocked && (_nicknameRemainingDays ?? 0) > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  AppLocalizations.of(context)!.nicknameChangeLimited(_nicknameRemainingDays!),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
 
   // 한 줄 소개 입력 (선택)
@@ -636,6 +709,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   ),
   const SizedBox(height: 8),
   TextFormField(
+    controller: _bioController,
     maxLength: 60, // 영어/한국어 모두 안전한 길이
     decoration: InputDecoration(
       hintText: AppLocalizations.of(context)!.bioPlaceholder,
@@ -719,14 +793,27 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                     ),
                   );
                 }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedNationality = value;
-                    });
-                  }
-                },
+                onChanged: _nationalityLocked
+                    ? null
+                    : (value) {
+                        if (value != null) {
+                          setState(() {
+                            _selectedNationality = value;
+                          });
+                        }
+                      },
               ),
+              if (_nationalityLocked && (_nationalityRemainingDays ?? 0) > 0) ...[
+                const SizedBox(height: 8),
+                Text(
+                  AppLocalizations.of(context)!.nationalityChangeLimited(_nationalityRemainingDays!),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
             ],
           ),

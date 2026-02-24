@@ -47,6 +47,9 @@ class AppColors {
   // 포인트 컬러 (전역 수정 용이성 확보)
   static const Color pointColor = Color(0xFF4990E2);
 
+  // Friends Only(친구공개) 전용 액센트 컬러 (디자인 첨부 이미지 텍스트 색상)
+  static const Color friendsOnlyAccent = Color(0xFFFD4400);
+
   // 주 배경색 (60% - 배경) - Modern & Clean
   static const Color backgroundPrimary = Color(0xFFFAFAFA); // Soft white
   static const Color backgroundSecondary = Color(0xFFF1F5F9); // Cool gray

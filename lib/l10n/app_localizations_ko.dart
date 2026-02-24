@@ -796,6 +796,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get selectCategoryRequired => '카테고리 선택 (필수)';
 
   @override
+  String get selectGroupRequired => '그룹 선택 (필수)';
+
+  @override
   String get selectedCount => '개 선택됨';
 
   @override
@@ -2713,10 +2716,23 @@ class AppLocalizationsKo extends AppLocalizations {
   String get categorySelectAtLeastOne => '카테고리를 최소 1개 이상 선택해주세요.';
 
   @override
+  String get groupSelectAtLeastOne => '그룹을 최소 1개 이상 선택해주세요.';
+
+  @override
   String get postImageUploading => '이미지를 업로드 중입니다. 잠시만 기다려주세요...';
 
   @override
   String totalImageSizeWarning(String sizeMB) {
     return '경고: 총 이미지 크기가 ${sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.';
+  }
+
+  @override
+  String nicknameChangeLimited(int days) {
+    return '이름은 3일에 한 번만 변경할 수 있어요. $days일 후 다시 시도해주세요.';
+  }
+
+  @override
+  String nationalityChangeLimited(int days) {
+    return '국적은 3일에 한 번만 변경할 수 있어요. $days일 후 다시 시도해주세요.';
   }
 }

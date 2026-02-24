@@ -10,7 +10,6 @@ import '../utils/profile_photo_policy.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
-import '../constants/app_constants.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'view_history_service.dart';
@@ -119,6 +118,82 @@ class MeetupService {
     return (h.clamp(0, 23) * 60) + m.clamp(0, 59);
   }
 
+  DateTime _computeMeetupStartsAt(DateTime date, String rawTime) {
+    final d = date.toLocal();
+    final baseDay = DateTime(d.year, d.month, d.day);
+    final t = rawTime.trim();
+    if (t.isEmpty || t == '미정' || !t.contains(':')) {
+      // 시간 미정: 일단 당일 시작(00:00)로 저장
+      return baseDay;
+    }
+    final startStr = t.split('~').first.trim();
+    final parts = startStr.split(':');
+    if (parts.length < 2) return baseDay;
+    final h = int.tryParse(parts[0].trim()) ?? 0;
+    final m = int.tryParse(parts[1].trim()) ?? 0;
+    return DateTime(baseDay.year, baseDay.month, baseDay.day, h.clamp(0, 23), m.clamp(0, 59));
+  }
+
+  DateTime _computeMeetupEndsAt(DateTime date, String rawTime) {
+    final d = date.toLocal();
+    final baseDay = DateTime(d.year, d.month, d.day);
+    final t = rawTime.trim();
+    if (t.isEmpty || t == '미정' || !t.contains(':')) {
+      return DateTime(baseDay.year, baseDay.month, baseDay.day, 23, 59);
+    }
+
+    final startStr = t.split('~').first.trim();
+    final startParts = startStr.split(':');
+    if (startParts.length < 2) {
+      return DateTime(baseDay.year, baseDay.month, baseDay.day, 23, 59);
+    }
+
+    final startHour = int.tryParse(startParts[0].trim()) ?? 0;
+    final startMinute = int.tryParse(startParts[1].trim()) ?? 0;
+
+    int endHour = startHour + 2;
+    int endMinute = startMinute;
+
+    if (t.contains('~')) {
+      final endStr = t.split('~')[1].trim();
+      final endParts = endStr.split(':');
+      if (endParts.length >= 2) {
+        endHour = int.tryParse(endParts[0].trim()) ?? endHour;
+        endMinute = int.tryParse(endParts[1].trim()) ?? endMinute;
+      }
+    }
+
+    return DateTime(
+      baseDay.year,
+      baseDay.month,
+      baseDay.day,
+      endHour.clamp(0, 23),
+      endMinute.clamp(0, 59),
+    );
+  }
+
+  bool _isMeetupExpiredFromMeetupDocData(
+    Map<String, dynamic> meetupData, {
+    DateTime? now,
+  }) {
+    final baseNow = (now ?? DateTime.now()).toLocal();
+
+    // 우선 endsAt 필드가 있으면 그것을 사용(시간까지 정확).
+    final rawEndsAt = meetupData['endsAt'];
+    if (rawEndsAt is Timestamp) {
+      return baseNow.isAfter(rawEndsAt.toDate().toLocal());
+    }
+    if (rawEndsAt is DateTime) {
+      return baseNow.isAfter(rawEndsAt.toLocal());
+    }
+
+    // fallback: date + time으로 계산 (레거시 문서도 대응)
+    final date = _parseMeetupDateFromFirestore(meetupData);
+    final time = (meetupData['time'] ?? '').toString();
+    final endsAt = _computeMeetupEndsAt(date, time);
+    return baseNow.isAfter(endsAt);
+  }
+
   String _pad2(int v) => v.toString().padLeft(2, '0');
 
   /// 날짜를 타임존과 무관한 "캘린더 날짜 키"로 정규화합니다.
@@ -203,6 +278,9 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
+      final startsAt = _computeMeetupStartsAt(date, time);
+      final endsAt = _computeMeetupEndsAt(date, time);
+
       // ---- 이미지 입력 정규화 (최대 3장) ----
       final remoteUrls = <String>[];
       void addRemote(String? u) {
@@ -258,6 +336,9 @@ class MeetupService {
         'currentParticipants': 1, // 주최자 포함
         'participants': [user.uid], // 주최자 ID
         'date': date,
+        // 약속 시작/종료 (서버 규칙에서 만료 판정에 사용 가능)
+        'startsAt': Timestamp.fromDate(startsAt),
+        'endsAt': Timestamp.fromDate(endsAt),
         // 캘린더 날짜 기반 조회를 위한 키(타임존 영향 최소화)
         'dateKey': _dateKey(date),
         'createdAt': now,
@@ -426,6 +507,191 @@ class MeetupService {
 
     return _combineMeetupStreams(
         byDateKey, _combineMeetupStreams(byTimestampRange, byLegacyStrings));
+  }
+
+  Stream<List<Meetup>> _mergeManyMeetupStreams(List<Stream<List<Meetup>>> streams) {
+    if (streams.isEmpty) return Stream.value(const <Meetup>[]);
+    return streams.skip(1).fold<Stream<List<Meetup>>>(
+      streams.first,
+      (acc, s) => _combineMeetupStreams(acc, s),
+    );
+  }
+
+  DateTime _monthStart(DateTime d) {
+    final local = d.toLocal();
+    return DateTime(local.year, local.month, 1);
+  }
+
+  DateTime _monthEnd(DateTime d) {
+    final local = d.toLocal();
+    return DateTime(local.year, local.month + 1, 0, 23, 59, 59, 999);
+  }
+
+  bool _isSameMonth(DateTime a, DateTime b) {
+    final x = a.toLocal();
+    final y = b.toLocal();
+    return x.year == y.year && x.month == y.month;
+  }
+
+  /// 밋업 탭(월간 달력)에서 사용할 "해당 월의 모임" 스트림.
+  /// - dateKey range + Timestamp range를 병합(중복 제거)합니다.
+  /// - 공개범위(친구/카테고리) 필터 + 차단 필터를 적용합니다.
+  Stream<List<Meetup>> watchVisibleMeetupsForMonth(DateTime focusedMonth) {
+    final monthStart = _monthStart(focusedMonth);
+    final monthEnd = _monthEnd(focusedMonth);
+    final startKey = _dateKey(monthStart);
+    final endKey = _dateKey(monthEnd);
+
+    final byDateKeyRange = _firestore
+        .collection('meetups')
+        .where('dateKey', isGreaterThanOrEqualTo: startKey)
+        .where('dateKey', isLessThanOrEqualTo: endKey)
+        .orderBy('dateKey', descending: false)
+        .snapshots()
+        .map(_convertToMeetups);
+
+    final byTimestampRange = _firestore
+        .collection('meetups')
+        .where('date', isGreaterThanOrEqualTo: monthStart)
+        .where('date', isLessThanOrEqualTo: monthEnd)
+        .orderBy('date', descending: false)
+        .snapshots()
+        .map(_convertToMeetups);
+
+    return _combineMeetupStreams(byDateKeyRange, byTimestampRange)
+        .asyncMap((meetups) async {
+      final visibilityFiltered = await filterMeetupsForCurrentUser(meetups);
+      return await ContentFilterService.filterMeetups(visibilityFiltered);
+    });
+  }
+
+  /// 내 참여/참가신청(approved/pending) 모임 ID 스트림.
+  Stream<Set<String>> watchMyParticipatingMeetupIds() {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(<String>{});
+
+    return _firestore
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', whereIn: const [ParticipantStatus.approved, ParticipantStatus.pending])
+        .snapshots()
+        .map((snapshot) {
+          final ids = <String>{};
+          for (final d in snapshot.docs) {
+            final data = d.data();
+            final meetupId = (data['meetupId'] ?? '').toString().trim();
+            if (meetupId.isNotEmpty) ids.add(meetupId);
+          }
+          return ids;
+        });
+  }
+
+  /// 내 "승인된 참여"(approved) 모임 ID 스트림.
+  /// - 밋업 탭의 과거 날짜에서는 "참여했던 모임"만 보여야 하므로 pending은 제외한다.
+  Stream<Set<String>> watchMyApprovedParticipatingMeetupIds() {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(<String>{});
+
+    return _firestore
+        .collection('meetup_participants')
+        .where('userId', isEqualTo: user.uid)
+        .where('status', isEqualTo: ParticipantStatus.approved)
+        .snapshots()
+        .map((snapshot) {
+          final ids = <String>{};
+          for (final d in snapshot.docs) {
+            final data = d.data();
+            final meetupId = (data['meetupId'] ?? '').toString().trim();
+            if (meetupId.isNotEmpty) ids.add(meetupId);
+          }
+          return ids;
+        });
+  }
+
+  Stream<List<Meetup>> _watchMeetupsByIds(Set<String> ids) {
+    if (ids.isEmpty) return Stream.value(const <Meetup>[]);
+
+    final list = ids.toList();
+    final streams = <Stream<List<Meetup>>>[];
+
+    for (var i = 0; i < list.length; i += 10) {
+      final chunk = list.sublist(i, (i + 10).clamp(0, list.length));
+      streams.add(
+        _firestore
+            .collection('meetups')
+            .where(FieldPath.documentId, whereIn: chunk)
+            .snapshots()
+            .map(_convertToMeetups)
+            .asyncMap(ContentFilterService.filterMeetups),
+      );
+    }
+
+    return _mergeManyMeetupStreams(streams);
+  }
+
+  /// 밋업 탭에서 과거 날짜용으로 사용할 "내 관련 모임(호스트 + 참여/신청)" 월 스트림.
+  /// - 과거 날짜에서는 전체 모임을 조회/표시하지 않고, 내 관련 모임만 노출하기 위함.
+  Stream<List<Meetup>> watchMyRelevantMeetupsForMonth(DateTime focusedMonth) {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(const <Meetup>[]);
+
+    final controller = StreamController<List<Meetup>>.broadcast();
+    StreamSubscription? hostedSub;
+    StreamSubscription? idsSub;
+    StreamSubscription? participatingMeetupsSub;
+
+    var latestHosted = const <Meetup>[];
+    var latestParticipating = const <Meetup>[];
+
+    List<Meetup> filterToMonth(List<Meetup> src) {
+      final m = _monthStart(focusedMonth);
+      return src
+          .where((x) => _isSameMonth(x.date, m))
+          .toList();
+    }
+
+    void emit() {
+      final byId = <String, Meetup>{};
+      for (final m in latestHosted) {
+        byId[m.id] = m;
+      }
+      for (final m in latestParticipating) {
+        byId[m.id] = m;
+      }
+      final merged = byId.values.toList()
+        ..sort((a, b) {
+          final d = a.date.compareTo(b.date);
+          if (d != 0) return d;
+          return _minutesFromMeetupTime(a.time).compareTo(_minutesFromMeetupTime(b.time));
+        });
+      controller.add(merged);
+    }
+
+    hostedSub = _firestore
+        .collection('meetups')
+        .where('userId', isEqualTo: user.uid)
+        .snapshots()
+        .map(_convertToMeetups)
+        .listen((meetups) async {
+          latestHosted = filterToMonth(await ContentFilterService.filterMeetups(meetups));
+          emit();
+        }, onError: controller.addError);
+
+    idsSub = watchMyApprovedParticipatingMeetupIds().listen((ids) {
+      participatingMeetupsSub?.cancel();
+      participatingMeetupsSub = _watchMeetupsByIds(ids).listen((meetups) {
+        latestParticipating = filterToMonth(meetups);
+        emit();
+      }, onError: controller.addError);
+    }, onError: controller.addError);
+
+    controller.onCancel = () async {
+      await hostedSub?.cancel();
+      await idsSub?.cancel();
+      await participatingMeetupsSub?.cancel();
+    };
+
+    return controller.stream;
   }
 
   /// 오늘 "생성된" 모임 가져오기 (약속 날짜와 무관)
@@ -1105,6 +1371,11 @@ class MeetupService {
       }
 
       final meetupData = meetupDoc.data()!;
+      // ⛔️ 과거(만료) 모임은 참가 불가 (상태 유지)
+      if (_isMeetupExpiredFromMeetupDocData(meetupData)) {
+        Logger.log('⛔️ 만료된 모임 참여 차단: $meetupId');
+        return false;
+      }
       final hostId = meetupData['userId'];
       final meetupTitle = meetupData['title'] ?? '';
       final maxParticipants = meetupData['maxParticipants'] ?? 1;
@@ -1182,27 +1453,6 @@ class MeetupService {
 
       // 🔧 캐시 무효화 (참여 상태 변경됨)
       _cacheService.invalidateCache(meetupId, user.uid);
-
-      // 정원이 다 찬 경우 알림 발송
-      final newCurrentParticipants = currentParticipants + 1;
-      if (newCurrentParticipants >= maxParticipants) {
-        // 모임 객체 생성
-        final meetup = Meetup(
-          id: meetupId,
-          title: meetupTitle,
-          description: '', // 알림에 사용되지 않음
-          location: '', // 알림에 사용되지 않음
-          time: '', // 알림에 사용되지 않음
-          maxParticipants: maxParticipants,
-          currentParticipants: newCurrentParticipants,
-          host: '', // 알림에 사용되지 않음
-          imageUrl: '', // 알림에 사용되지 않음
-          date: DateTime.now(), // 알림에 사용되지 않음
-        );
-
-        // 모임 주최자에게 알림 전송
-        await _notificationService.sendMeetupFullNotification(meetup, hostId);
-      }
 
       return true;
     } catch (e) {
@@ -1748,6 +1998,11 @@ class MeetupService {
       final meetupDoc =
           await _firestore.collection('meetups').doc(meetupId).get();
       final meetupData = meetupDoc.data() ?? const <String, dynamic>{};
+      // ⛔️ 과거(만료) 모임은 나가기(상태 변경) 불가
+      if (meetupData.isNotEmpty && _isMeetupExpiredFromMeetupDocData(meetupData)) {
+        Logger.log('⛔️ 만료된 모임 나가기 차단: $meetupId');
+        return false;
+      }
       final hostId = meetupData['userId']?.toString() ?? '';
       final meetupTitle = meetupData['title']?.toString() ?? '';
 

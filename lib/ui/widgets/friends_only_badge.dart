@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'shape_icon.dart';
+import '../../constants/app_constants.dart';
 
 /// 친구 공개(Friends Only) 배지
 /// - 크기는 호출부에서 패딩/아이콘 크기로 동일 유지
@@ -22,7 +23,7 @@ class FriendsOnlyBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     // 기존 디자인(연한 주황 배경 + 주황 텍스트/아이콘)로 유지
     const bg = Color(0xFFFFF3E0);
-    const fg = Color(0xFFFF8A65);
+    const fg = AppColors.friendsOnlyAccent;
     // 우측이 너무 어두워 보이지 않도록, 아주 미세하게만 톤을 내려주는 컬러
     const bgRight = Color(0xFFFFEBDD);
 

@@ -625,20 +625,33 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
             ),
 
             // 하단 버튼 (모임장 또는 참여자) - 새로운 디자인
-            if (_isHost || _isParticipant) 
+            if (_isHost || _isParticipant)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
-                child: _isHost 
-                    ? _buildNewHostActionButton() 
-                    : _buildParticipantButton(), // 🔧 새로운 메서드로 변경
+                child: _currentMeetup.isExpired()
+                    ? _buildExpiredStatusButton()
+                    : (_isHost
+                        ? _buildNewHostActionButton()
+                        : _buildParticipantButton()), // 🔧 새로운 메서드로 변경
               ),
             // 참여하지 않은 사용자를 위한 참여 버튼
-            if (!_isHost && !_isParticipant && !_currentMeetup.isFull() && !_currentMeetup.isCompleted)
+            if (!_isHost &&
+                !_isParticipant &&
+                !_currentMeetup.isExpired() &&
+                !_currentMeetup.isFull() &&
+                !_currentMeetup.isCompleted)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(24),
                 child: _buildJoinButton(),
+              ),
+            // 과거(만료) 모임은 참가/나가기 없이 "만료"만 표시
+            if (!_isHost && !_isParticipant && _currentMeetup.isExpired())
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                child: _buildExpiredStatusButton(),
               ),
           ],
         ),
@@ -1556,6 +1569,11 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 참여자용 버튼 (모임 상태에 따라 다른 버튼 표시)
   Widget _buildParticipantButton() {
+    // ✅ 약속 시간/날짜가 지난 모임은 더 이상 상태 업데이트 불가: "만료"로 고정
+    if (_currentMeetup.isExpired()) {
+      return _buildExpiredStatusButton();
+    }
+
     // 🔧 모임이 완료된 경우
     if (_currentMeetup.isCompleted) {
       if (_currentMeetup.hasReview) {
@@ -1594,6 +1612,46 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
               const SizedBox(width: 8),
               Text(
                 AppLocalizations.of(context)!.closedStatus,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 모임 만료 상태 표시 버튼 (회색, 비활성화)
+  Widget _buildExpiredStatusButton() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final label = isKo ? '만료' : 'Expired';
+
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.grey[300],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey[400]!, width: 1),
+        ),
+        child: Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.timer_off_outlined,
+                size: DesignTokens.icon,
+                color: Colors.grey[600],
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
                 style: TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 16,
@@ -1696,6 +1754,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임 참여하기
   Future<void> _joinMeetup() async {
+    if (_currentMeetup.isExpired()) {
+      AppSnackBar.show(
+        context,
+        message: Localizations.localeOf(context).languageCode == 'ko'
+            ? '만료된 모임입니다'
+            : 'This meetup has expired.',
+        type: AppSnackBarType.error,
+      );
+      return;
+    }
+
     // ✅ 강퇴된 사용자는 참여 불가 + 통일된 안내 문구
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -1793,6 +1862,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
 
   /// 모임 나가기
   Future<void> _leaveMeetup() async {
+    if (_currentMeetup.isExpired()) {
+      AppSnackBar.show(
+        context,
+        message: Localizations.localeOf(context).languageCode == 'ko'
+            ? '만료된 모임입니다'
+            : 'This meetup has expired.',
+        type: AppSnackBarType.error,
+      );
+      return;
+    }
+
     if (mounted) {
       setState(() {
         _isLoading = true;

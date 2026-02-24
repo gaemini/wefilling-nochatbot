@@ -32,6 +32,12 @@ class _DMListScreenState extends State<DMListScreen> {
   final RelationshipService _relationshipService = RelationshipService();
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
   final _currentUser = FirebaseAuth.instance.currentUser;
+  late final Stream<
+      ({
+        List<Conversation> conversations,
+        bool isFromCache,
+        bool hasPendingWrites
+      })> _conversationsStream;
   Set<String> _hiddenConversationIds = {};
   // 첫 진입 UX:
   // - 캐시(empty) → 서버 전환 과정에서 "대화 없음"이 잠깐 보였다가 리스트가 나타나는 플래시를 방지한다.
@@ -170,6 +176,8 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   void initState() {
     super.initState();
+    // ✅ build()마다 새 스트림 생성/재구독 방지(깜빡임 감소)
+    _conversationsStream = _dmService.getMyConversationsWithMeta();
     _loadHiddenConversations();
     _loadCachedAnonTitles();
 
@@ -252,7 +260,7 @@ class _DMListScreenState extends State<DMListScreen> {
                 bool isFromCache,
                 bool hasPendingWrites
               })>(
-            stream: _dmService.getMyConversationsWithMeta(),
+            stream: _conversationsStream,
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return _buildListSkeleton();

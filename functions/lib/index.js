@@ -1055,8 +1055,38 @@ exports.onMeetupUpdated = functions.firestore
         const fullOn = noti.meetup_full !== false;
         if (!allOn || !fullOn)
             return null;
+        // ✅ 순서 보장:
+        // - "마지막 참여자 참가" 상황에서 meetup_participant_joined 알림이 먼저 생성/발송되고,
+        //   그 다음 meetup_full 알림이 오도록 약간의 대기 + 확인을 수행한다.
+        // - (클라가 meetup_full을 직접 만들면 순서가 뒤섞일 수 있어 클라 발송은 제거됨)
+        //
+        // Firestore/Functions는 at-least-once이므로 eventId로 idempotent 처리
+        const fullNotiId = (context === null || context === void 0 ? void 0 : context.eventId) ||
+            `meetup_full_${String(meetupId)}_${Date.now()}`;
+        // join 알림 생성 여부 best-effort 확인 (최대 약 3초 대기)
+        // - join 알림 문서가 생성되면 onNotificationCreated가 먼저 실행될 가능성이 높아진다.
+        for (let attempt = 0; attempt < 6; attempt++) {
+            try {
+                const snap = await db
+                    .collection('notifications')
+                    .where('userId', '==', String(hostId))
+                    .where('type', '==', 'meetup_participant_joined')
+                    .where('meetupId', '==', String(meetupId))
+                    .limit(1)
+                    .get();
+                if (!snap.empty) {
+                    break;
+                }
+            }
+            catch (e) {
+                // 인덱스/네트워크 이슈 등은 순서 보장에 치명적이지 않으므로 무시하고 진행
+                console.warn('⚠️ meetup_participant_joined 존재 확인 실패(무시):', e);
+                break;
+            }
+            await new Promise((r) => setTimeout(r, 500));
+        }
         // 저장 시 다국어 문자열을 직접 넣지 않고, 클라이언트에서 i18n 하도록 최소 데이터만 저장
-        await db.collection('notifications').add({
+        await db.collection('notifications').doc(String(fullNotiId)).set({
             userId: hostId,
             title: 'meetup_full', // 클라이언트에서 타입 기반으로 번역 처리
             message: '', // 메시지는 클라이언트에서 생성
@@ -1069,7 +1099,7 @@ exports.onMeetupUpdated = functions.firestore
             },
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             isRead: false,
-        });
+        }, { merge: false });
         console.log('onMeetupUpdated: 정원 마감 알림 생성');
         return null;
     }

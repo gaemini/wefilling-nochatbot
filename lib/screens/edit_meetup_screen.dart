@@ -226,6 +226,49 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       if (timeToSave == AppLocalizations.of(context)!.undecided) {
         timeToSave = '미정';
       }
+
+      DateTime computeStartsAt(DateTime date, String rawTime) {
+        final d = date.toLocal();
+        final baseDay = DateTime(d.year, d.month, d.day);
+        final t = rawTime.trim();
+        if (t.isEmpty || t == '미정' || !t.contains(':')) return baseDay;
+        final startStr = t.split('~').first.trim();
+        final parts = startStr.split(':');
+        if (parts.length < 2) return baseDay;
+        final h = int.tryParse(parts[0].trim()) ?? 0;
+        final m = int.tryParse(parts[1].trim()) ?? 0;
+        return DateTime(baseDay.year, baseDay.month, baseDay.day, h.clamp(0, 23), m.clamp(0, 59));
+      }
+
+      DateTime computeEndsAt(DateTime date, String rawTime) {
+        final d = date.toLocal();
+        final baseDay = DateTime(d.year, d.month, d.day);
+        final t = rawTime.trim();
+        if (t.isEmpty || t == '미정' || !t.contains(':')) {
+          return DateTime(baseDay.year, baseDay.month, baseDay.day, 23, 59);
+        }
+        final startStr = t.split('~').first.trim();
+        final startParts = startStr.split(':');
+        if (startParts.length < 2) {
+          return DateTime(baseDay.year, baseDay.month, baseDay.day, 23, 59);
+        }
+        final startHour = int.tryParse(startParts[0].trim()) ?? 0;
+        final startMinute = int.tryParse(startParts[1].trim()) ?? 0;
+        int endHour = startHour + 2;
+        int endMinute = startMinute;
+        if (t.contains('~')) {
+          final endStr = t.split('~')[1].trim();
+          final endParts = endStr.split(':');
+          if (endParts.length >= 2) {
+            endHour = int.tryParse(endParts[0].trim()) ?? endHour;
+            endMinute = int.tryParse(endParts[1].trim()) ?? endMinute;
+          }
+        }
+        return DateTime(baseDay.year, baseDay.month, baseDay.day, endHour.clamp(0, 23), endMinute.clamp(0, 59));
+      }
+
+      final startsAt = computeStartsAt(_selectedDate, timeToSave);
+      final endsAt = computeEndsAt(_selectedDate, timeToSave);
       
       final updateData = {
         'title': _titleController.text.trim(),
@@ -234,6 +277,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         'time': timeToSave,
         'maxParticipants': _selectedMaxParticipants,
         'date': Timestamp.fromDate(_selectedDate),
+        'startsAt': Timestamp.fromDate(startsAt),
+        'endsAt': Timestamp.fromDate(endsAt),
         // 캘린더 날짜 기반 조회(타임존 영향 최소화)
         'dateKey': '${_selectedDate.toLocal().year}-${_selectedDate.toLocal().month.toString().padLeft(2, '0')}-${_selectedDate.toLocal().day.toString().padLeft(2, '0')}',
         'category': _selectedCategory,

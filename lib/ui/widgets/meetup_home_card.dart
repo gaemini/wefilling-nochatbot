@@ -118,6 +118,36 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
     // 내가 만든 모임이면 버튼 표시 안함
     if (widget.meetup.userId == currentUser.uid) return const SizedBox.shrink();
 
+    // ✅ 만료된 모임: 참가/나가기 불가 → "만료" 상태로 고정 (상세페이지와 동일)
+    if (widget.meetup.isExpired()) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      final label = isKo ? '만료' : 'Expired';
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey[200],
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey[300]!),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.timer_off_outlined, size: 12, color: Colors.grey[600]),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // 상태가 아직 없으면(로딩/미조회) 홈과 동일하게 자리만 유지
     if (widget.isParticipating == null) {
       return const SizedBox(width: 64, height: 32);
@@ -366,15 +396,21 @@ class _MeetupHomeCardState extends State<MeetupHomeCard> {
                             builder: (context, snapshot) {
                               final participantCount = snapshot.data ??
                                   widget.meetup.currentParticipants;
+                              final remaining =
+                                  widget.meetup.maxParticipants - participantCount;
+                              final isAlmostFull = remaining == 1;
                               return Text(
                                 AppLocalizations.of(context)!.participantCount(
                                   '$participantCount',
                                   '${widget.meetup.maxParticipants}',
                                 ),
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: 'Pretendard',
                                   fontSize: 14,
-                                  color: Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w800,
+                                  color: isAlmostFull
+                                      ? const Color(0xFFEF4444)
+                                      : const Color(0xFF6B7280),
                                 ),
                               );
                             },

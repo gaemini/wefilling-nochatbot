@@ -1,6 +1,23 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // ===== 밋업(모임) 만료 판정 유틸 =====
+    // - endsAt(타임스탬프)가 있으면 그 값을 우선 사용(시간까지 정확)
+    // - 없으면 date(타임스탬프) + 1일(자정 기준)로 fallback
+    // - 레거시 문서(date가 문자열 등)로 만료를 판정할 수 없으면 기존 동작을 유지(차단하지 않음)
+    function meetupEndsAt(meetupDoc) {
+      return (meetupDoc.data.keys().hasAny(['endsAt']) && meetupDoc.data.endsAt is timestamp)
+        ? meetupDoc.data.endsAt
+        : ((meetupDoc.data.keys().hasAny(['date']) && meetupDoc.data.date is timestamp)
+            ? meetupDoc.data.date + duration.value(1, 'd')
+            : null);
+    }
+
+    function meetupNotExpired(meetupDoc) {
+      let end = meetupEndsAt(meetupDoc);
+      return end == null || request.time < end;
+    }
+
     // ===== 한양메일 점유 상태(서버 전용) =====
     match /email_claims/{emailId} {
       allow read, write: if false;
@@ -311,9 +328,10 @@ service cloud.firestore {
       // 업데이트 규칙 세분화
       allow update: if request.auth != null && (
         // 주최자는 모든 필드 수정 가능
-        request.auth.uid == resource.data.userId ||
+        (request.auth.uid == resource.data.userId && meetupNotExpired(resource)) ||
         // 참여자는 currentParticipants만 수정 가능 (참여/취소 시)
         (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentParticipants', 'updatedAt']) &&
+         meetupNotExpired(resource) &&
          request.resource.data.currentParticipants is int &&
          request.resource.data.currentParticipants >= 1 &&
          request.resource.data.currentParticipants <= resource.data.maxParticipants + 1) ||
@@ -450,17 +468,26 @@ service cloud.firestore {
       // 생성: 본인만 참여 신청 가능
       allow create: if 
         request.auth != null &&
-        request.auth.uid == request.resource.data.userId;
+        request.auth.uid == request.resource.data.userId &&
+        request.resource.data.meetupId is string &&
+        exists(/databases/$(database)/documents/meetups/$(request.resource.data.meetupId)) &&
+        meetupNotExpired(get(/databases/$(database)/documents/meetups/$(request.resource.data.meetupId)));
       
       // 업데이트: 본인 또는 모임 주최자만 수정 가능
       allow update: if 
         request.auth != null &&
+        resource.data.meetupId is string &&
+        exists(/databases/$(database)/documents/meetups/$(resource.data.meetupId)) &&
+        meetupNotExpired(get(/databases/$(database)/documents/meetups/$(resource.data.meetupId))) &&
         (request.auth.uid == resource.data.userId || 
          request.auth.uid == resource.data.hostId);
       
       // 삭제: 본인만 참여 취소 가능
       allow delete: if 
         request.auth != null &&
+        resource.data.meetupId is string &&
+        exists(/databases/$(database)/documents/meetups/$(resource.data.meetupId)) &&
+        meetupNotExpired(get(/databases/$(database)/documents/meetups/$(resource.data.meetupId))) &&
         request.auth.uid == resource.data.userId;
     }
     

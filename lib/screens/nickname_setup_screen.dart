@@ -41,7 +41,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         });
 
         // 닉네임과 국적 업데이트
-        final success = await authProvider.updateUserProfile(
+        final result = await authProvider.updateUserProfile(
           nickname: _nicknameController.text.trim(),
           nationality: _selectedNationality,
         );
@@ -50,7 +50,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
         if (!mounted) return;
 
         // 성공 여부에 따른 처리
-        if (success) {
+        if (result.success) {
           // 성공 메시지
           messenger.showSnackBar(
             SnackBar(

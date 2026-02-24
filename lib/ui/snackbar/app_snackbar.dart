@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/app_messenger.dart';
 
 enum AppSnackBarType { success, info, warning, error }
 
@@ -12,7 +13,11 @@ class AppSnackBar {
     Color? backgroundColor,
     IconData? leadingIcon,
   }) {
-    final theme = Theme.of(context);
+    // context는 call site 호환을 위해 유지하되, 화면 pop 직후의 deactivated context로
+    // ScaffoldMessenger/Theme를 찾다가 framework assertion이 나는 케이스를 방지하기 위해
+    // 전역 ScaffoldMessenger를 사용한다.
+    final messenger = AppMessenger.scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
 
     final Color background = backgroundColor ??
         switch (type) {
@@ -30,23 +35,16 @@ class AppSnackBar {
       AppSnackBarType.error => Icons.error_rounded,
     };
 
-    final textStyle = theme.textTheme.bodyMedium?.copyWith(
-          fontFamily: 'Pretendard',
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          height: 1.25,
-          color: Colors.white,
-        ) ??
-        const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 15,
-          fontWeight: FontWeight.w700,
-          height: 1.25,
-          color: Colors.white,
-        );
+    const textStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 15,
+      fontWeight: FontWeight.w700,
+      height: 1.25,
+      color: Colors.white,
+    );
 
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: background,

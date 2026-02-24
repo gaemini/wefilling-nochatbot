@@ -34,6 +34,7 @@ import 'services/cache/cache_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
 import 'screens/admin_migration_screen.dart';
+import 'services/app_messenger.dart';
 
 void main() {
   runZonedGuarded(
@@ -368,6 +369,7 @@ class _MeetupAppState extends State<MeetupApp> {
       theme: AppTheme.light(),
       themeMode: ThemeMode.light, // 강제 라이트모드
       locale: _locale, // 현재 선택된 언어
+      scaffoldMessengerKey: AppMessenger.scaffoldMessengerKey,
       localizationsDelegates: const [
         AppLocalizations.delegate, // 앱 전용 번역
         GlobalMaterialLocalizations.delegate,

@@ -70,6 +70,12 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   List<Post>? _cachedTodayPosts;
   List<Post>? _cachedAllPosts;
   bool _isInitialLoad = true;
+  int _debugTodaySnapLogs = 0;
+  int _debugAllSnapLogs = 0;
+  int _debugTodayDecisionLogs = 0;
+  int _debugAllDecisionLogs = 0;
+  int _debugTodayMeetupLogs = 0;
+  int _debugAllViewLogs = 0;
   
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
@@ -533,6 +539,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
                                !snapshot.hasData && 
                                _cachedTodayPosts == null;
+
+        if (_debugTodaySnapLogs < 8) {
+          _debugTodaySnapLogs++;
+          Logger.log(
+            '🧩 Board(Today) snap: state=${snapshot.connectionState} hasData=${snapshot.hasData} dataLen=${snapshot.data?.length} cachedLen=${_cachedTodayPosts?.length} isLoading=$isLoading hasError=${snapshot.hasError}',
+          );
+        }
         
         if (isLoading) {
           return _buildTodayLoadingView();
@@ -550,6 +563,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         // 최신 데이터(전체) 또는 캐시된 Today 데이터 사용
         final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
         final todayPosts = sourcePosts.where(_isPostInToday).toList();
+
+        if (_debugTodayDecisionLogs < 8) {
+          _debugTodayDecisionLogs++;
+          Logger.log(
+            '🧭 Board(Today) decide: sourceLen=${sourcePosts.length} todayLen=${todayPosts.length} tabIndex=${_controllersInitialized ? _tabController.index : -1}',
+          );
+        }
 
         // 캐시 업데이트 (날짜가 바뀌었을 때 "어제 Today"가 남지 않도록, 빈 리스트도 반영)
         if (snapshot.hasData) {
@@ -664,6 +684,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
         final todayMeetups =
             meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
+
+        if (_debugTodayMeetupLogs < 8) {
+          _debugTodayMeetupLogs++;
+          Logger.log(
+            '🧭 Board(Today) meetups: state=${meetupSnapshot.connectionState} hasData=${meetupSnapshot.hasData} meetupsLen=${todayMeetups.length} isMeetupsLoading=$isMeetupsLoading postsLen=${todayPosts.length}',
+          );
+        }
 
         // 캐시 업데이트:
         // - empty가 순간적으로 들어와도(재구독/중간 emit) 카드가 사라졌다가 생기는 현상을 줄이기 위해
@@ -936,6 +963,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
                                !snapshot.hasData && 
                                _cachedAllPosts == null;
+
+        if (_debugAllSnapLogs < 8) {
+          _debugAllSnapLogs++;
+          Logger.log(
+            '🧩 Board(All) snap: state=${snapshot.connectionState} hasData=${snapshot.hasData} dataLen=${snapshot.data?.length} cachedLen=${_cachedAllPosts?.length} isLoading=$isLoading hasError=${snapshot.hasError}',
+          );
+        }
         
         if (isLoading) {
           return _buildAllLoadingView();
@@ -954,6 +988,13 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
         final posts = sourcePosts.where(_isPostInAllTab).toList();
 
+        if (_debugAllDecisionLogs < 8) {
+          _debugAllDecisionLogs++;
+          Logger.log(
+            '🧭 Board(All) decide: sourceLen=${sourcePosts.length} allLen=${posts.length} tabIndex=${_controllersInitialized ? _tabController.index : -1}',
+          );
+        }
+
         // 캐시 업데이트 (빈 리스트도 반영: 글 삭제/날짜 변경 시 stale 방지)
         if (snapshot.hasData) {
           _cachedAllPosts = posts;
@@ -971,10 +1012,18 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
         // 빈 상태
         if (posts.isEmpty) {
+          if (_debugAllViewLogs < 6) {
+            _debugAllViewLogs++;
+            Logger.log('🧭 Board(All) view: EMPTY');
+          }
           return _buildAllEmptyView();
         }
 
         // 게시글 목록 표시
+        if (_debugAllViewLogs < 6) {
+          _debugAllViewLogs++;
+          Logger.log('🧭 Board(All) view: LIST len=${posts.length}');
+        }
         return _buildAllPostsView(posts);
       },
     );

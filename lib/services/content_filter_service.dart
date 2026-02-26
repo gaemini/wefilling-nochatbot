@@ -10,12 +10,27 @@ import '../utils/logger.dart';
 class ContentFilterService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static const Duration _blockQueryTimeout = Duration(seconds: 2);
   
   // 차단된 사용자 목록 캐시 (성능 향상을 위해)
   static Set<String>? _blockedUserIds;
   static Set<String>? _blockedByUserIds;
   static DateTime? _lastCacheUpdate;
   static const Duration _cacheExpiry = Duration(minutes: 5);
+  
+  /// PostService의 blocks 스트림 결과로 캐시를 즉시 채웁니다.
+  /// - 네트워크/쿼리 지연으로 피드가 멈추는 것을 방지
+  /// - 차단/차단해제 직후 즉시 필터링(Apple 요구사항)에도 유리
+  static void setBlockedUserIds(Set<String> ids) {
+    _blockedUserIds = ids;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  /// "나를 차단한 사용자" 캐시를 즉시 채웁니다.
+  static void setBlockedByUserIds(Set<String> ids) {
+    _blockedByUserIds = ids;
+    _lastCacheUpdate = DateTime.now();
+  }
 
   /// 차단된 사용자 목록을 가져오고 캐시합니다
   static Future<Set<String>> _getBlockedUserIds() async {
@@ -33,7 +48,8 @@ class ContentFilterService {
       final querySnapshot = await _firestore
           .collection('blocks')
           .where('blocker', isEqualTo: currentUser.uid)
-          .get();
+          .get()
+          .timeout(_blockQueryTimeout);
 
       _blockedUserIds = querySnapshot.docs
           .map((doc) => doc.data()['blocked'] as String)
@@ -63,11 +79,15 @@ class ContentFilterService {
       final querySnapshot = await _firestore
           .collection('blocks')
           .where('blocked', isEqualTo: currentUser.uid)
-          .where('isImplicit', isEqualTo: true)
-          .get();
+          .get()
+          .timeout(_blockQueryTimeout);
 
+      // ✅ 복합 인덱스가 필요한 where(isImplicit==true)를 제거하고
+      // 클라이언트에서 isImplicit == true 인 문서만 필터링한다.
       _blockedByUserIds = querySnapshot.docs
-          .map((doc) => doc.data()['blocker'] as String)
+          .where((doc) => doc.data()['isImplicit'] == true)
+          .map((doc) => (doc.data()['blocker'] ?? '').toString())
+          .where((v) => v.trim().isNotEmpty)
           .toSet();
       // blocked 목록과 동일하게 캐시 갱신 시간도 업데이트
       _lastCacheUpdate = DateTime.now();
@@ -110,7 +130,6 @@ class ContentFilterService {
     if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return posts;
 
     return posts.where((post) => 
-      post.userId != null && 
       !blockedUserIds.contains(post.userId) &&
       !blockedByUserIds.contains(post.userId)
     ).toList();
@@ -124,7 +143,6 @@ class ContentFilterService {
     if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return meetups;
 
     return meetups.where((meetup) => 
-      meetup.userId != null && 
       !blockedUserIds.contains(meetup.userId) &&
       !blockedByUserIds.contains(meetup.userId)
     ).toList();

@@ -37,6 +37,8 @@ class PostService {
   StreamSubscription<User?>? _authSub;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
+  List<Post> _lastDeliveredPosts = const <Post>[];
+  bool _hasDeliveredPosts = false;
 
   /// 레거시/누락 데이터 보강용:
   /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
@@ -746,42 +748,71 @@ class PostService {
 
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
-    if (_postsStreamCached != null) return _postsStreamCached!;
+    // ⚠️ 중요: BoardScreen은 탭 2개에서 같은 stream을 "늦게" 구독할 수 있다.
+    // broadcast stream은 이전 이벤트를 replay하지 않기 때문에,
+    // All 탭이 첫 emit(166개 등)을 놓치면 ConnectionState.waiting에 고정될 수 있다.
+    // 그래서 getPostsStream()은 "최신값 1회 replay" 래퍼를 매번 반환한다.
+    if (_postsStreamCached != null) {
+      return _replayLatest(_postsStreamCached!);
+    }
 
     _postsStreamController = StreamController<List<Post>>.broadcast(
       onListen: () {
+        // ✅ 무조건 1회는 emit해서 StreamBuilder가 waiting에 고정되지 않게 한다.
+        // (Firestore snapshots가 지연/실패하더라도 UI는 로딩 뷰에서 빠져나오게 됨)
+        scheduleMicrotask(() {
+          try {
+            _deliverPosts(const <Post>[]);
+          } catch (_) {}
+        });
+
         Future<void> start() async {
+          try {
+            Logger.log('📰 getPostsStream start()');
           Future<void> emitFiltered() async {
+            final sw = Stopwatch()..start();
             final parsed = _lastParsedPosts ?? const <Post>[];
             final currentUser = _auth.currentUser;
 
-            // 1) blocked filter
-            final nonBlocked = await ContentFilterService.filterPosts(parsed);
-
-            // 2) visibility filter
+            // 0) visibility filter first (fast, synchronous)
+            final List<Post> visibilityFiltered;
             if (currentUser != null) {
-              final visiblePosts = nonBlocked
-                  .where((post) => _canUserReadPost(post, currentUser))
+              visibilityFiltered =
+                  parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
+            } else {
+              visibilityFiltered = parsed
+                  .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
                   .toList();
-
-              if (CacheFeatureFlags.isPostCacheEnabled) {
-                unawaited(_cache.savePosts(visiblePosts, visibility: 'public'));
-              }
-
-              _postsStreamController?.add(visiblePosts);
-              return;
             }
 
-            final publicPosts = nonBlocked
-                .where((post) =>
-                    post.visibility == 'public' || post.visibility.isEmpty)
-                .toList();
+            // 1) Immediately emit something so UI doesn't stick on "waiting".
+            _deliverPosts(visibilityFiltered);
+
+            // 2) blocked filter (can be slow/network dependent)
+            List<Post> nonBlocked = visibilityFiltered;
+            try {
+              nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
+                  .timeout(const Duration(seconds: 2), onTimeout: () {
+                Logger.warning('차단 필터 timeout → 필터 없이 표시');
+                return visibilityFiltered;
+              });
+            } catch (e) {
+              Logger.error('차단 필터 오류(폴백): $e');
+              nonBlocked = visibilityFiltered;
+            }
+
+            // 3) If changed after block-filtering, emit again.
+            if (nonBlocked.length != visibilityFiltered.length) {
+              _deliverPosts(nonBlocked);
+            }
 
             if (CacheFeatureFlags.isPostCacheEnabled) {
-              unawaited(_cache.savePosts(publicPosts, visibility: 'public'));
+              unawaited(_cache.savePosts(nonBlocked, visibility: 'public'));
             }
 
-            _postsStreamController?.add(publicPosts);
+            Logger.log(
+              '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
+            );
           }
 
           Future<void> ensureBlockSubscriptions() async {
@@ -813,9 +844,14 @@ class PostService {
                 .collection('blocks')
                 .where('blocker', isEqualTo: uid)
                 .snapshots()
-                .listen((_) async {
-              ContentFilterService.refreshCache();
-              await emitFiltered();
+                .listen((snap) async {
+              // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
+              final ids = snap.docs
+                  .map((d) => (d.data()['blocked'] ?? '').toString().trim())
+                  .where((v) => v.isNotEmpty)
+                  .toSet();
+              ContentFilterService.setBlockedUserIds(ids);
+              unawaited(emitFiltered());
             }, onError: (e) {
               Logger.error('blocks(byMe) 스트림 오류: $e');
               _postsStreamController?.addError(e);
@@ -824,11 +860,16 @@ class PostService {
             _blockedBySub ??= _firestore
                 .collection('blocks')
                 .where('blocked', isEqualTo: uid)
-                .where('isImplicit', isEqualTo: true)
                 .snapshots()
-                .listen((_) async {
-              ContentFilterService.refreshCache();
-              await emitFiltered();
+                .listen((snap) async {
+              // ✅ 복합 where(isImplicit==true) 제거 → 클라이언트에서 필터링
+              final ids = snap.docs
+                  .where((d) => d.data()['isImplicit'] == true)
+                  .map((d) => (d.data()['blocker'] ?? '').toString().trim())
+                  .where((v) => v.isNotEmpty)
+                  .toSet();
+              ContentFilterService.setBlockedByUserIds(ids);
+              unawaited(emitFiltered());
             }, onError: (e) {
               Logger.error('blocks(blockedBy) 스트림 오류: $e');
               _postsStreamController?.addError(e);
@@ -841,6 +882,7 @@ class PostService {
               .orderBy('createdAt', descending: true)
               .snapshots()
               .listen((snapshot) async {
+            Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
             final posts = snapshot.docs.map((doc) {
               try {
                 return _buildPostFromFirestore(doc.id, doc.data());
@@ -867,7 +909,7 @@ class PostService {
             }).toList();
 
             _lastParsedPosts = posts;
-            await emitFiltered();
+            unawaited(emitFiltered());
           }, onError: (e) {
             // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
             // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
@@ -880,7 +922,7 @@ class PostService {
           _authSub ??= _auth.authStateChanges().listen((_) async {
             ContentFilterService.refreshCache();
             await ensureBlockSubscriptions();
-            await emitFiltered();
+            unawaited(emitFiltered());
           }, onError: (e) {
             Logger.error('Auth 스트림 오류: $e');
             _postsStreamController?.addError(e);
@@ -888,6 +930,12 @@ class PostService {
 
           // 현재 상태 기준 blocks 구독 설정
           await ensureBlockSubscriptions();
+          } catch (e, st) {
+            Logger.error('getPostsStream start() 실패: $e', e, st);
+            try {
+              _postsStreamController?.addError(e);
+            } catch (_) {}
+          }
         }
 
         // fire-and-forget start (controller is broadcast)
@@ -909,7 +957,19 @@ class PostService {
     );
 
     _postsStreamCached = _postsStreamController!.stream;
-    return _postsStreamCached!;
+    return _replayLatest(_postsStreamCached!);
+  }
+
+  void _deliverPosts(List<Post> posts) {
+    _lastDeliveredPosts = posts;
+    _hasDeliveredPosts = true;
+    _postsStreamController?.add(posts);
+  }
+
+  Stream<List<Post>> _replayLatest(Stream<List<Post>> upstream) async* {
+    // 새로운 구독자(All 탭 등)가 이전 emit을 놓쳐도, 즉시 최신값을 1회 전달한다.
+    yield _hasDeliveredPosts ? _lastDeliveredPosts : const <Post>[];
+    yield* upstream;
   }
 
   /// 현재 사용자가 게시글 작성자인지 확인

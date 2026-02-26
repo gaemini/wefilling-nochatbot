@@ -3002,6 +3002,12 @@ abstract class AppLocalizations {
   /// **'4자리 인증번호를 입력해주세요'**
   String get verificationCodeLength;
 
+  /// No description provided for @verificationCodePlaceholder.
+  ///
+  /// In ko, this message translates to:
+  /// **'4자리 인증번호'**
+  String get verificationCodePlaceholder;
+
   /// No description provided for @passwordRequired.
   ///
   /// In ko, this message translates to:
@@ -3211,6 +3217,66 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'새로운 친구요청이 도착하면 알림'**
   String get friendRequestAlertSubtitle;
+
+  /// No description provided for @meetupAlertsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 알림'**
+  String get meetupAlertsTitle;
+
+  /// No description provided for @meetupAlertsSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'정원 마감, 취소, 참여자 변경'**
+  String get meetupAlertsSubtitle;
+
+  /// No description provided for @friendAlertsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 알림'**
+  String get friendAlertsTitle;
+
+  /// No description provided for @friendAlertsSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 요청 및 수락'**
+  String get friendAlertsSubtitle;
+
+  /// No description provided for @postInteractionsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 알림'**
+  String get postInteractionsTitle;
+
+  /// No description provided for @postInteractionsSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'댓글, 좋아요, 새 포스트'**
+  String get postInteractionsSubtitle;
+
+  /// No description provided for @dmMessagesTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'DM 메시지'**
+  String get dmMessagesTitle;
+
+  /// No description provided for @dmMessagesSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'1:1 대화 알림'**
+  String get dmMessagesSubtitle;
+
+  /// No description provided for @marketingTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'광고/프로모션'**
+  String get marketingTitle;
+
+  /// No description provided for @marketingSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이벤트 및 광고 알림'**
+  String get marketingSubtitle;
 
   /// No description provided for @commentAlertTitle.
   ///
@@ -5239,6 +5305,24 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'국적은 3일에 한 번만 변경할 수 있어요. {days}일 후 다시 시도해주세요.'**
   String nationalityChangeLimited(int days);
+
+  /// No description provided for @disableAllNotificationsTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'모든 알림 끄기'**
+  String get disableAllNotificationsTitle;
+
+  /// No description provided for @disableAllNotificationsMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'모든 알림을 끄시겠습니까?\n중요한 알림을 놓칠 수 있습니다.'**
+  String get disableAllNotificationsMessage;
+
+  /// No description provided for @turnOff.
+  ///
+  /// In ko, this message translates to:
+  /// **'끄기'**
+  String get turnOff;
 }
 
 class _AppLocalizationsDelegate

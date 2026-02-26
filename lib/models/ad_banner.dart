@@ -36,8 +36,8 @@ class AdBanner {
       'imageUrl': imageUrl,
       'isActive': isActive,
       'order': order,
-      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': createdAt?.toIso8601String(),
+      'updatedAt': updatedAt?.toIso8601String(),
     };
   }
 
@@ -53,10 +53,14 @@ class AdBanner {
       order: json['order'] as int? ?? 0,
       createdAt: json['createdAt'] is Timestamp 
           ? (json['createdAt'] as Timestamp).toDate() 
-          : null,
+          : json['createdAt'] is String
+              ? DateTime.parse(json['createdAt'] as String)
+              : null,
       updatedAt: json['updatedAt'] is Timestamp 
-          ? (json['updatedAt'] as Timestamp).toDate() 
-          : null,
+          ? (json['updatedAt'] as Timestamp).toDate()
+          : json['updatedAt'] is String
+              ? DateTime.parse(json['updatedAt'] as String)
+              : null,
     );
   }
 

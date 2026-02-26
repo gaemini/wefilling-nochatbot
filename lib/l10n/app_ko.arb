@@ -647,6 +647,7 @@
   "emailFormatInvalid": "올바른 이메일 형식이 아닙니다",
   "verificationCodeRequired": "인증번호를 입력해주세요",
   "verificationCodeLength": "4자리 인증번호를 입력해주세요",
+  "verificationCodePlaceholder": "4자리 인증번호",
   "passwordRequired": "비밀번호를 입력해주세요",
   "passwordMinLength": "비밀번호는 6자 이상이어야 합니다",
   "passwordMismatch": "비밀번호가 일치하지 않습니다",
@@ -686,6 +687,16 @@
   "meetupCancelledAlertSubtitle": "참여 신청한 모임이 취소되면 알림",
   "friendRequestAlertTitle": "친구요청 알림",
   "friendRequestAlertSubtitle": "새로운 친구요청이 도착하면 알림",
+  "meetupAlertsTitle": "모임 알림",
+  "meetupAlertsSubtitle": "정원 마감, 취소, 참여자 변경",
+  "friendAlertsTitle": "친구 알림",
+  "friendAlertsSubtitle": "친구 요청 및 수락",
+  "postInteractionsTitle": "게시글 알림",
+  "postInteractionsSubtitle": "댓글, 좋아요, 새 포스트",
+  "dmMessagesTitle": "DM 메시지",
+  "dmMessagesSubtitle": "1:1 대화 알림",
+  "marketingTitle": "광고/프로모션",
+  "marketingSubtitle": "이벤트 및 광고 알림",
   "commentAlertTitle": "댓글 알림",
   "commentAlertSubtitle": "내 포스트에 댓글이 작성되면 알림",
   "likeAlertTitle": "좋아요 알림",
@@ -1291,5 +1302,8 @@
         "type": "int"
       }
     }
-  }
+  },
+  "disableAllNotificationsTitle": "모든 알림 끄기",
+  "disableAllNotificationsMessage": "모든 알림을 끄시겠습니까?\n중요한 알림을 놓칠 수 있습니다.",
+  "turnOff": "끄기"
 }

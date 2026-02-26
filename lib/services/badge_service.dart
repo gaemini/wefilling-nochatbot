@@ -248,6 +248,19 @@ class BadgeService {
     _updateDebounceTimer?.cancel();
     _updateDebounceTimer = null;
   }
+
+  /// 로그아웃 시 배지를 즉시 제거한다.
+  /// - 이전 계정의 배지 숫자가 다음 세션까지 남지 않도록 강제 초기화
+  static Future<void> clearBadgeOnSignOut() async {
+    try {
+      await stopRealtimeBadgeSync();
+      await _setBadge(0);
+      _currentBadgeCount = 0;
+      Logger.log('✅ 로그아웃 배지 초기화 완료');
+    } catch (e) {
+      Logger.error('⚠️ 로그아웃 배지 초기화 실패(계속 진행): $e');
+    }
+  }
   
   /// 데이터 변경 감지 시 호출 (디바운싱 적용)
   static void _onDataChanged() {

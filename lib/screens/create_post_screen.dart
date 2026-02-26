@@ -189,107 +189,147 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     _checkCanSubmit();
   }
 
-  Widget _buildPostTypeOption({
-    required String value,
-    required String label,
-  }) {
-    final selected = _postType == value;
+  Widget _buildPostTypeSegmentedControl() {
+    final l10n = AppLocalizations.of(context)!;
+    
+    const selectedBg = Color(0xFF6CCFF6);
+    const selectedText = Colors.white;
+    const unselectedText = Color(0xFF111827);
+    const dividerColor = Color(0xFFD1D5DB);
 
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          // 다른 선택 컴포넌트(카테고리 선택 등)와 톤 통일: pointColor + 투명도
-          color: selected ? AppColors.pointColor.withOpacity(0.10) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.pointColor : const Color(0xFFE5E7EB),
-            width: selected ? 1.4 : 1,
-          ),
-        ),
+    Widget item({
+      required String value,
+      required String label,
+    }) {
+      final isSelected = _postType == value;
+      
+      return Expanded(
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
           child: InkWell(
             onTap: () => _setPostType(value),
-            borderRadius: BorderRadius.circular(12),
-            // 크기/톤 통일: 아이콘 제거 + 컴팩트한 높이
-            child: SizedBox(
-              height: 44,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-                      color: const Color(0xFF111827),
-                    ),
-                  ),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
+              height: 38, // Content/Visibility 탭과 동일한 높이
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected ? selectedBg : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? selectedText : unselectedText,
+                  height: 1.1,
                 ),
               ),
             ),
           ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            item(
+              value: 'text',
+              label: l10n.postTypeTextLabel,
+            ),
+            const VerticalDivider(
+              width: 10,
+              thickness: 1,
+              color: dividerColor,
+            ),
+            item(
+              value: 'poll',
+              label: l10n.postTypePollLabel,
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildVisibilityOption({
-    required String value,
-    required String label,
-  }) {
-    final selected = _visibility == value;
+  Widget _buildVisibilitySegmentedControl() {
+    final l10n = AppLocalizations.of(context)!;
+    
+    const selectedBg = Color(0xFF6CCFF6);
+    const selectedText = Colors.white;
+    const unselectedText = Color(0xFF111827);
+    const dividerColor = Color(0xFFD1D5DB);
 
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        curve: Curves.easeOut,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.pointColor.withOpacity(0.10) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? AppColors.pointColor : const Color(0xFFE5E7EB),
-            width: selected ? 1.4 : 1,
-          ),
-        ),
+    Widget item({
+      required String value,
+      required String label,
+    }) {
+      final isSelected = _visibility == value;
+      
+      return Expanded(
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
           child: InkWell(
             onTap: () => _setVisibility(value),
-            borderRadius: BorderRadius.circular(12),
-            child: SizedBox(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
               height: 44,
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: selected ? FontWeight.w800 : FontWeight.w700,
-                      color: const Color(0xFF111827),
-                    ),
-                  ),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSelected ? selectedBg : Colors.transparent,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? selectedText : unselectedText,
+                  height: 1.1,
                 ),
               ),
             ),
           ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          children: [
+            item(
+              value: 'public',
+              label: l10n.publicPost ?? "",
+            ),
+            const VerticalDivider(
+              width: 10,
+              thickness: 1,
+              color: dividerColor,
+            ),
+            item(
+              value: 'category',
+              label: l10n.groups,
+            ),
+          ],
         ),
       ),
     );
@@ -338,8 +378,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        // ✅ 최대 10장 제한
-        maxAssets: 10,
+        // ✅ 최대 15장 제한
+        maxAssets: 15,
         // ✅ 드래그로 다중 선택 비활성화 (탭으로만 선택)
         dragToSelect: false,
       ),
@@ -351,7 +391,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets.take(10));
+        ..addAll(pickedAssets.take(15));
     });
 
     // 업로드/용량 체크용 파일 리스트 동기화
@@ -703,7 +743,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           ),
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(48),
+          preferredSize: const Size.fromHeight(54), // 높이 조정 (48 → 54)
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             alignment: Alignment.center,
@@ -723,7 +763,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                     dividerColor: Colors.transparent,
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicator: BoxDecoration(
-                      color: Colors.white,
+                      color: const Color(0xFF6CCFF6), // 하늘색으로 변경
                       borderRadius: BorderRadius.circular(10),
                       boxShadow: [
                         BoxShadow(
@@ -743,40 +783,21 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                     ),
-                    labelColor: const Color(0xFF111827),
+                    labelColor: Colors.white, // 선택된 탭 텍스트 흰색
                     unselectedLabelColor: const Color(0xFF6B7280),
                     splashBorderRadius: BorderRadius.circular(10),
                     onTap: (_) => _dismissKeyboard(),
-                    tabs: [
+                    tabs: const [
                       Tab(
-                        child: SizedBox(
-                          height: 38,
-                          child: Center(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                Localizations.localeOf(context).languageCode == 'ko'
-                                    ? '내용'
-                                    : 'Content',
-                                maxLines: 1,
-                              ),
-                            ),
-                          ),
+                        height: 38, // 탭 높이를 38로 명시
+                        child: Center(
+                          child: Text('Content'),
                         ),
                       ),
                       Tab(
-                        child: SizedBox(
-                          height: 38,
-                          child: Center(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                // '범위' 대신 '공개범위' 용어 사용 (l10n)
-                                AppLocalizations.of(context)!.visibilityScope,
-                                maxLines: 1,
-                              ),
-                            ),
-                          ),
+                        height: 38, // 탭 높이를 38로 명시
+                        child: Center(
+                          child: Text('Visibility'),
                         ),
                       ),
                     ],
@@ -845,12 +866,10 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
-
                   // 작성 타입 선택 (일반/투표)
                   Container(
-                    padding: const EdgeInsets.all(16),
-                    margin: const EdgeInsets.only(bottom: 16.0),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                    margin: const EdgeInsets.only(bottom: 12.0),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF9FAFB),
                       borderRadius: BorderRadius.circular(12),
@@ -868,30 +887,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                             color: Color(0xFF111827),
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        Align(
-                          alignment: Alignment.center,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 360),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _buildPostTypeOption(
-                                    value: 'text',
-                                    label: AppLocalizations.of(context)!.postTypeTextLabel,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _buildPostTypeOption(
-                                    value: 'poll',
-                                    label: AppLocalizations.of(context)!.postTypePollLabel,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
+                        const SizedBox(height: 6),
+                        _buildPostTypeSegmentedControl(),
                       ],
                     ),
                   ),
@@ -904,7 +901,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                       children: [
                         // 이미지 첨부 버튼: 바깥 카드(테두리) 제거해서 이중 테두리 방지
                         Container(
-                          margin: const EdgeInsets.only(bottom: 16.0),
+                          margin: const EdgeInsets.only(bottom: 12.0),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -972,12 +969,12 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                                           _selectedAssets.isNotEmpty
                                                               ? (Localizations.localeOf(context).languageCode ==
                                                                       'ko'
-                                                                  ? '${_selectedAssets.length}/10장 선택됨'
-                                                                  : '${_selectedAssets.length}/10 selected')
+                                                                  ? '${_selectedAssets.length}/15장 선택됨'
+                                                                  : '${_selectedAssets.length}/15 selected')
                                                               : (Localizations.localeOf(context).languageCode ==
                                                                       'ko'
-                                                                  ? '최대 10장까지 선택할 수 있어요'
-                                                                  : 'You can select up to 10 images'),
+                                                                  ? '최대 15장까지 선택할 수 있어요'
+                                                                  : 'You can select up to 15 images'),
                                                           style: const TextStyle(
                                                             fontFamily: 'Pretendard',
                                                             fontSize: 12,
@@ -1093,13 +1090,11 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                     ),
                   ),
 
-                  const SizedBox(height: 16),
-
                   if (_postType == 'poll') ...[
                     Container(
                       key: _pollOptionsSectionKey,
                       padding: const EdgeInsets.all(16),
-                      margin: const EdgeInsets.only(bottom: 16.0),
+                      margin: const EdgeInsets.only(bottom: 12.0),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF9FAFB),
                         borderRadius: BorderRadius.circular(12),
@@ -1197,7 +1192,6 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
                 ],
               ),
             ),
@@ -1214,11 +1208,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
-
                   // 공개 범위 선택
                   Container(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                     margin: const EdgeInsets.only(bottom: 16.0),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF9FAFB),
@@ -1229,23 +1221,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildVisibilityOption(
-                                value: 'public',
-                                label: AppLocalizations.of(context)!.publicPost ?? "",
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildVisibilityOption(
-                                value: 'category',
-                                label: AppLocalizations.of(context)!.groups,
-                              ),
-                            ),
-                          ],
-                        ),
+                        _buildVisibilitySegmentedControl(),
 
                         if (_visibility == 'public') ...[
                           const SizedBox(height: 8),
@@ -1389,7 +1365,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                         borderRadius: BorderRadius.circular(999),
                                       ),
                                       child: Text(
-                                        '${_selectedCategoryIds.length}개 선택',
+                                        '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
                                         style: TextStyle(
                                           fontFamily: 'Pretendard',
                                           fontSize: 12,

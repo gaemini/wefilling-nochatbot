@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -28,7 +29,6 @@ import 'screens/nickname_setup_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
-import 'services/ad_banner_service.dart';
 import 'services/language_service.dart';
 import 'services/cache/cache_manager.dart';
 import 'l10n/app_localizations.dart';
@@ -78,6 +78,26 @@ void main() {
             debugPrint('🔥 Firebase 초기화 중 오류: $e');
           }
           rethrow;
+        }
+      }
+
+      // App Check (Android: Play Integrity, iOS: DeviceCheck)
+      // - Android 로그의 "No AppCheckProvider installed"를 방지하고,
+      // - 콘솔에서 App Check enforcement를 켠 경우에도 정상 동작하도록 준비.
+      // - 설정/키가 아직 없더라도 앱 부팅을 막지 않도록 실패는 무시한다.
+      try {
+        await FirebaseAppCheck.instance.activate(
+          providerAndroid:
+              kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+          providerApple:
+              kDebugMode ? const AppleDebugProvider() : const AppleDeviceCheckProvider(),
+        );
+        if (kDebugMode) {
+          debugPrint('🛡️ App Check 활성화 완료');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ App Check 초기화 실패(무시): $e');
         }
       }
 
@@ -188,21 +208,9 @@ void main() {
             debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
           }
 
-          // 광고 배너 초기화
-          try {
-            if (kDebugMode) {
-              debugPrint('📢 광고 배너 초기화 시작');
-            }
-            final adBannerService = AdBannerService();
-            await adBannerService.initializeSampleBanners();
-            if (kDebugMode) {
-              debugPrint('✅ 광고 배너 초기화 완료');
-            }
-          } catch (adError) {
-            if (kDebugMode) {
-              debugPrint('❌ 광고 배너 초기화 오류: $adError');
-            }
-          }
+          // 광고 배너는 클라이언트에서 "샘플 생성/덮어쓰기"를 시도하지 않습니다.
+          // (FireStore rules에서 write가 금지되어 permission-denied 로그가 발생하고,
+          //  앱 시작 플로우 디버깅을 방해할 수 있음)
         } catch (firestoreError) {
           if (kDebugMode) {
             debugPrint('❌ Firestore 설정 중 오류: $firestoreError');

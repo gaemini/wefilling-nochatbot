@@ -630,50 +630,81 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
   
-  /// 언어 선택 다이얼로그 (국기 없이)
+  /// 언어 선택 다이얼로그
   void _showLanguageDialog(BuildContext context) {
     final currentLocale = Localizations.localeOf(context).languageCode;
     
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        backgroundColor: Colors.white,
+        contentPadding: const EdgeInsets.all(24),
         title: Text(
           currentLocale == 'ko' ? '언어 선택' : 'Select Language',
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+            letterSpacing: -0.3,
+          ),
+          textAlign: TextAlign.center,
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            RadioListTile<String>(
-              title: Text(AppLocalizations.of(context)!.korean),
+            const SizedBox(height: 8),
+            _LanguageOption(
+              label: AppLocalizations.of(context)!.korean,
               value: 'ko',
               groupValue: currentLocale,
-              onChanged: (value) {
-                if (value != null) {
-                  MeetupApp.of(context)?.changeLanguage(value);
-                  Navigator.pop(dialogContext);
-                }
+              onTap: () {
+                MeetupApp.of(context)?.changeLanguage('ko');
+                Navigator.pop(dialogContext);
               },
             ),
-            RadioListTile<String>(
-              title: const Text('English'),
+            const SizedBox(height: 12),
+            _LanguageOption(
+              label: 'English',
               value: 'en',
               groupValue: currentLocale,
-              onChanged: (value) {
-                if (value != null) {
-                  MeetupApp.of(context)?.changeLanguage(value);
-                  Navigator.pop(dialogContext);
-                }
+              onTap: () {
+                MeetupApp.of(context)?.changeLanguage('en');
+                Navigator.pop(dialogContext);
               },
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF6B7280),
+                  side: const BorderSide(
+                    color: Color(0xFFE6EAF0),
+                    width: 1.5,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  currentLocale == 'ko' ? '취소' : 'Cancel',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: Text(currentLocale == 'ko' ? '취소' : 'Cancel'),
-          ),
-        ],
       ),
     );
   }
@@ -1247,4 +1278,86 @@ class GoogleLogoPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// 언어 선택 옵션 위젯
+class _LanguageOption extends StatelessWidget {
+  final String label;
+  final String value;
+  final String groupValue;
+  final VoidCallback onTap;
+
+  const _LanguageOption({
+    required this.label,
+    required this.value,
+    required this.groupValue,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isSelected = value == groupValue;
+    
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: isSelected 
+                ? const Color(0xFF6CCFF6).withOpacity(0.08) 
+                : const Color(0xFFF9FAFB),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: isSelected 
+                  ? const Color(0xFF6CCFF6) 
+                  : const Color(0xFFE5E7EB),
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: 22,
+                height: 22,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected 
+                      ? const Color(0xFF6CCFF6) 
+                      : Colors.transparent,
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFF6CCFF6)
+                        : const Color(0xFFD1D5DB),
+                    width: 2,
+                  ),
+                ),
+                child: isSelected
+                    ? const Icon(
+                        Icons.check,
+                        size: 14,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

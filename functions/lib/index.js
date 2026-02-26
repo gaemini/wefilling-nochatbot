@@ -379,6 +379,8 @@ function assertHanyangDomain(email) {
         throw new functions.https.HttpsError('invalid-argument', '한양대학교 이메일 주소만 사용할 수 있습니다.');
     }
 }
+// email_verifications 컬렉션을 콘솔에서 안정적으로 확인하기 위한 고정 메타 문서 ID
+const EMAIL_VERIFICATIONS_META_DOC_ID = '_meta';
 // 한양메일 인증 최종 확정(유니크 점유) - 탈퇴 시 released 되면 재사용 가능
 exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, context) => {
     var _a;
@@ -961,7 +963,8 @@ exports.onFriendRequestCreated = functions.firestore
         const settingsDoc = await db.collection('user_settings').doc(toUid).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
         const allOn = noti.all_notifications !== false;
-        const friendOn = noti.friend_request !== false;
+        // 통합 키 사용 (friend_alerts), 레거시 키(friend_request) 폴백
+        const friendOn = noti.friend_alerts !== false && noti.friend_request !== false;
         if (!allOn || !friendOn)
             return null;
         const fromUser = await db.collection('users').doc(fromUid).get();
@@ -1599,6 +1602,14 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             attempts: 0, // 시도 횟수
         });
+        // 컬렉션이 비어도 콘솔에서 경로를 쉽게 찾을 수 있도록 메타 문서를 유지
+        await db.collection(firestore_paths_1.COL.emailVerifications).doc(EMAIL_VERIFICATIONS_META_DOC_ID).set({
+            collection: firestore_paths_1.COL.emailVerifications,
+            note: 'metadata doc for console visibility',
+            lastIssuedEmail: emailDocId,
+            lastIssuedAt: admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
         // 이메일 전송
         // 안전하게 현재 설정으로 트랜스포터 생성
         const mailTransporter = nodemailer.createTransport({
@@ -1699,6 +1710,23 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
         const emailTrimmed = String(email).trim();
         if (!/^[^\s@]+@hanyang\.ac\.kr$/i.test(emailTrimmed)) {
             throw new functions.https.HttpsError('invalid-argument', '한양대학교 이메일 주소만 사용할 수 있습니다.');
+        }
+        // -----------------------------------------------------------------------
+        // App Review demo: fixed code bypass (minimal scope)
+        // - Allows App Review to complete registration without needing an emailed code.
+        // - Must run BEFORE email_claims check to avoid already-exists blocking.
+        // -----------------------------------------------------------------------
+        const demoEmail = 'review_demo@hanyang.ac.kr';
+        const demoCode = '0000';
+        if (emailTrimmed.toLowerCase() === demoEmail && String(code) === demoCode) {
+            // Best-effort cleanup: avoid leaving stale verification docs around.
+            const normalizedEmail = normalizeEmail(emailTrimmed);
+            await db
+                .collection(firestore_paths_1.COL.emailVerifications)
+                .doc(normalizedEmail)
+                .delete()
+                .catch(() => { });
+            return { success: true };
         }
         // 기존 점유 여부 확인 (이미 사용 중이면 코드 확인 전에 차단)
         try {
@@ -2253,6 +2281,25 @@ exports.blockUser = functions.https.onCall(async (data, context) => {
             }
             return { success: true };
         });
+        // Developer notification for blocking (Guideline 1.2)
+        // - Reuse existing reports pipeline (onReportCreated trigger sends email)
+        // - Best-effort: blocking should succeed even if reporting fails
+        try {
+            await db.collection(firestore_paths_1.COL.reports).add({
+                reporterId: blockerUid,
+                reportedUserId: targetUid,
+                targetType: 'block',
+                targetId: `${blockerUid}_${targetUid}`,
+                targetTitle: '',
+                reason: 'User blocked',
+                description: 'Block action',
+                status: 'PENDING',
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        }
+        catch (e) {
+            console.warn('blockUser: reports 생성 실패(무시):', e);
+        }
         return result;
     }
     catch (error) {

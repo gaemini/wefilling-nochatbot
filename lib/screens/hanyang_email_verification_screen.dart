@@ -502,21 +502,21 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
                     controller: _verificationCodeController,
                     keyboardType: TextInputType.number,
                     maxLength: 4,
-                    decoration: const InputDecoration(
-                      hintText: '4자리 인증번호',
-                      hintStyle: TextStyle(
+                    decoration: InputDecoration(
+                      hintText: AppLocalizations.of(context)!.verificationCodePlaceholder,
+                      hintStyle: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 16,
                         color: Color(0xFFCBD5E1),
                         letterSpacing: -0.2,
                       ),
-                      prefixIcon: Icon(
+                      prefixIcon: const Icon(
                         Icons.lock_outline,
                         color: AppColors.pointColor,
                         size: 22,
                       ),
                       border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
+                      contentPadding: const EdgeInsets.symmetric(
                         horizontal: 20,
                         vertical: 18,
                       ),

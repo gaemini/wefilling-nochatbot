@@ -648,6 +648,7 @@
   "emailFormatInvalid": "Invalid email format",
   "verificationCodeRequired": "Please enter verification code",
   "verificationCodeLength": "Please enter 4-digit verification code",
+  "verificationCodePlaceholder": "4-digit code",
   "passwordRequired": "Please enter password",
   "passwordMinLength": "Password must be at least 6 characters",
   "passwordMismatch": "Passwords do not match",
@@ -687,6 +688,16 @@
   "meetupCancelledAlertSubtitle": "Notify when a meetup I applied for is cancelled",
   "friendRequestAlertTitle": "Friend Request Alert",
   "friendRequestAlertSubtitle": "Notify when a new friend request arrives",
+  "meetupAlertsTitle": "Meetup Alerts",
+  "meetupAlertsSubtitle": "Full, cancelled, participant changes",
+  "friendAlertsTitle": "Friend Alerts",
+  "friendAlertsSubtitle": "Friend requests and acceptances",
+  "postInteractionsTitle": "Post Alerts",
+  "postInteractionsSubtitle": "Comments, likes, new posts",
+  "dmMessagesTitle": "DM Messages",
+  "dmMessagesSubtitle": "1:1 conversation alerts",
+  "marketingTitle": "Ads/Promotions",
+  "marketingSubtitle": "Events and advertising alerts",
   "commentAlertTitle": "Comment Alert",
   "commentAlertSubtitle": "Notify when a comment is posted on my post",
   "likeAlertTitle": "Like Alert",
@@ -1295,5 +1306,8 @@
         "type": "int"
       }
     }
-  }
+  },
+  "disableAllNotificationsTitle": "Turn Off All Notifications",
+  "disableAllNotificationsMessage": "Are you sure you want to turn off all notifications?\nYou may miss important alerts.",
+  "turnOff": "Turn Off"
 }

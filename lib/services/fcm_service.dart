@@ -3,6 +3,7 @@
 // 푸시 알림 토큰 관리 및 메시지 처리
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -12,7 +13,9 @@ import 'package:app_badge_plus/app_badge_plus.dart';
 import 'dart:ui' as ui;
 import 'badge_service.dart';
 import 'navigation_service.dart';
+import 'dm_active_conversation.dart';
 import '../utils/logger.dart';
+import 'dart:io';
 
 // 백그라운드 메시지 핸들러 (최상위 함수여야 함)
 // iOS에서 앱이 백그라운드/종료 상태일 때 메시지를 처리
@@ -118,8 +121,16 @@ class FCMService {
         return;
       }
 
-      // ✅ iOS: AppDelegate의 UNUserNotificationCenterDelegate가 알림 표시 처리
-      // ✅ Android: Firebase Cloud Messaging이 자동으로 알림 표시
+      // ✅ iOS(포그라운드): 시스템 자동 배너를 끄고(전역),
+      //    Flutter에서 "원할 때만" 로컬 알림을 표시한다.
+      // - 목적: DM 채팅 중에는 DM 알림을 띄우지 않기 위함(대화방 활성 시)
+      if (!kIsWeb && Platform.isIOS) {
+        await _messaging.setForegroundNotificationPresentationOptions(
+          alert: false,
+          badge: true,
+          sound: true,
+        );
+      }
 
       // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
       _startTokenSync(userId);
@@ -137,12 +148,21 @@ class FCMService {
         Logger.log('📱 내용: ${message.notification?.body}');
         Logger.log('📱 데이터: ${message.data}');
 
-        // iOS: setForegroundNotificationPresentationOptions 설정으로
-        //      FCM이 자동으로 알림을 표시하므로 로컬 알림 불필요
-        // Android: Firebase Cloud Messaging이 자동으로 처리
-        //          (notification 필드가 있으면 자동으로 알림 표시)
-        
-        // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
+        // ✅ 포그라운드 알림 정책:
+        // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
+        // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
+        final type = (message.data['type'] ?? '').toString();
+        final conversationId = (message.data['conversationId'] ?? '').toString();
+        final isDm = type == 'dm_received' && conversationId.isNotEmpty;
+
+        if (!kIsWeb && Platform.isIOS) {
+          // 채팅방을 보고 있으면: 알림 스킵 (미읽음일 때만 알림)
+          if (isDm && DMActiveConversation.isActive(conversationId)) {
+            return;
+          }
+          // 그 외: 로컬 알림 표시 (기존 포그라운드 배너 UX 유지)
+          unawaited(_showLocalNotification(message));
+        }
       });
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
@@ -215,18 +235,14 @@ class FCMService {
   }
 
   // 로컬 알림 표시 (현재 미사용)
-  // iOS: setForegroundNotificationPresentationOptions로 자동 처리
-  // Android: Firebase Cloud Messaging이 자동으로 notification 표시
-  // 
-  // 향후 커스텀 알림 UI가 필요할 경우를 위해 코드 보존
-  /*
+  // iOS: 포그라운드에서 자동 배너를 끈 뒤, 필요한 경우만 로컬 알림을 표시한다.
+  // Android: 기존 정책 유지(중복 표시 위험 방지) - 현재는 iOS에서만 호출
   Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
       final notification = message.notification;
-      if (notification == null) {
-        Logger.log('⚠️ 알림 데이터가 없습니다');
-        return;
-      }
+      final title = notification?.title ?? (message.data['title'] ?? '').toString();
+      final body = notification?.body ?? (message.data['body'] ?? '').toString();
+      if (title.trim().isEmpty && body.trim().isEmpty) return;
 
       const AndroidNotificationDetails androidDetails = 
           AndroidNotificationDetails(
@@ -253,8 +269,8 @@ class FCMService {
 
       await _localNotifications.show(
         message.hashCode,
-        notification.title,
-        notification.body,
+        title,
+        body,
         details,
         payload: jsonEncode(message.data),
       );
@@ -264,7 +280,6 @@ class FCMService {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
     }
   }
-  */
 
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {

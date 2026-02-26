@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
@@ -44,9 +45,24 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
           _banners = banners;
         });
         _startAutoScroll();
+        _preloadImages();
       }
     } catch (e) {
       // 광고 배너 로드 오류 (조용히 처리)
+    }
+  }
+
+  // 이미지 프리로딩
+  void _preloadImages() {
+    if (!mounted) return;
+    
+    for (final banner in _banners) {
+      if (banner.imageUrl != null && banner.imageUrl!.isNotEmpty) {
+        precacheImage(
+          CachedNetworkImageProvider(banner.imageUrl!),
+          context,
+        );
+      }
     }
   }
 
@@ -202,35 +218,33 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
               banner.imageUrl != null && banner.imageUrl!.isNotEmpty
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        banner.imageUrl!,
+                      child: CachedNetworkImage(
+                        imageUrl: banner.imageUrl!,
                         width: 100,
                         height: 100,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
+                        placeholder: (context, url) => Container(
+                          width: 100,
+                          height: 100,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ),
+                        errorWidget: (context, url, error) {
                           // 이미지 로드 실패 시 아이콘 표시
                           return _buildIconPlaceholder();
                         },
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Container(
-                            width: 100,
-                            height: 100,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Center(
-                              child: CircularProgressIndicator(
-                                value: loadingProgress.expectedTotalBytes != null
-                                    ? loadingProgress.cumulativeBytesLoaded /
-                                        loadingProgress.expectedTotalBytes!
-                                    : null,
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          );
-                        },
+                        // 이미지 캐싱 설정
+                        memCacheWidth: 200, // 메모리 캐시 너비 제한
+                        memCacheHeight: 200, // 메모리 캐시 높이 제한
+                        maxWidthDiskCache: 400, // 디스크 캐시 너비 제한
+                        maxHeightDiskCache: 400, // 디스크 캐시 높이 제한
                       ),
                     )
                   : _buildIconPlaceholder(),

@@ -2,12 +2,20 @@
 // Firebase Firestore에서 광고 배너를 관리하는 서비스
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 import '../models/ad_banner.dart';
 import '../utils/logger.dart';
 
 class AdBannerService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static const String _collectionName = 'ad_banners';
+  static const String _cacheKey = 'cached_ad_banners';
+  static const String _cacheTimeKey = 'cached_ad_banners_time';
+  static const Duration _cacheExpiration = Duration(hours: 1); // 1시간 캐시 유효기간
+  
+  List<AdBanner>? _memoryCache;
+  DateTime? _memoryCacheTime;
 
   /// 모든 활성 광고 배너를 실시간으로 스트림
   /// 인덱스 불필요: 전체 조회 후 클라이언트에서 필터링 및 정렬
@@ -40,30 +48,135 @@ class AdBannerService {
   /// 인덱스 불필요: 전체 조회 후 클라이언트에서 필터링 및 정렬
   Future<List<AdBanner>> getActiveBanners() async {
     try {
-      final snapshot = await _firestore
-          .collection(_collectionName)
-          .get();
+      // 1. 메모리 캐시 확인
+      if (_memoryCache != null && _memoryCacheTime != null) {
+        if (DateTime.now().difference(_memoryCacheTime!) < _cacheExpiration) {
+          Logger.log('✅ 광고 배너 메모리 캐시에서 로드');
+          return _memoryCache!;
+        }
+      }
 
-      final banners = snapshot.docs
-          .map((doc) {
-            try {
-              return AdBanner.fromFirestore(doc);
-            } catch (e) {
-              Logger.error('❌ 배너 파싱 실패: ${doc.id} - $e');
-              return null;
-            }
-          })
-          .where((banner) => banner != null && banner.isActive)
-          .cast<AdBanner>()
-          .toList();
-      
-      // order 필드로 정렬
-      banners.sort((a, b) => a.order.compareTo(b.order));
-      
-      return banners;
+      // 2. 로컬 스토리지 캐시 확인
+      final cachedBanners = await _loadFromCache();
+      if (cachedBanners != null) {
+        _memoryCache = cachedBanners;
+        _memoryCacheTime = DateTime.now();
+        Logger.log('✅ 광고 배너 로컬 캐시에서 로드');
+        
+        // 백그라운드에서 데이터 업데이트
+        _updateCacheInBackground();
+        
+        return cachedBanners;
+      }
+
+      // 3. Firebase에서 가져오기
+      return await _fetchAndCacheBanners();
     } catch (e) {
       Logger.error('❌ 광고 배너 가져오기 오류: $e');
+      
+      // 오류 발생 시 캐시된 데이터라도 반환
+      final cachedBanners = await _loadFromCache();
+      if (cachedBanners != null) {
+        return cachedBanners;
+      }
+      
       return [];
+    }
+  }
+
+  /// Firebase에서 배너를 가져와 캐시에 저장
+  Future<List<AdBanner>> _fetchAndCacheBanners() async {
+    final snapshot = await _firestore
+        .collection(_collectionName)
+        .get();
+
+    final banners = snapshot.docs
+        .map((doc) {
+          try {
+            return AdBanner.fromFirestore(doc);
+          } catch (e) {
+            Logger.error('❌ 배너 파싱 실패: ${doc.id} - $e');
+            return null;
+          }
+        })
+        .where((banner) => banner != null && banner.isActive)
+        .cast<AdBanner>()
+        .toList();
+    
+    // order 필드로 정렬
+    banners.sort((a, b) => a.order.compareTo(b.order));
+    
+    // 캐시에 저장
+    await _saveToCache(banners);
+    
+    // 메모리 캐시에도 저장
+    _memoryCache = banners;
+    _memoryCacheTime = DateTime.now();
+    
+    Logger.log('✅ 광고 배너 Firebase에서 로드 및 캐시 저장');
+    
+    return banners;
+  }
+
+  /// 백그라운드에서 캐시 업데이트
+  Future<void> _updateCacheInBackground() async {
+    try {
+      await _fetchAndCacheBanners();
+    } catch (e) {
+      Logger.error('❌ 백그라운드 캐시 업데이트 실패: $e');
+    }
+  }
+
+  /// 로컬 스토리지에서 캐시 로드
+  Future<List<AdBanner>?> _loadFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cacheTimeStr = prefs.getString(_cacheTimeKey);
+      
+      if (cacheTimeStr == null) return null;
+      
+      final cacheTime = DateTime.parse(cacheTimeStr);
+      if (DateTime.now().difference(cacheTime) > _cacheExpiration) {
+        // 캐시 만료
+        return null;
+      }
+      
+      final cachedJson = prefs.getString(_cacheKey);
+      if (cachedJson == null) return null;
+      
+      final List<dynamic> bannersJson = json.decode(cachedJson);
+      return bannersJson
+          .map((json) => AdBanner.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      Logger.error('❌ 캐시 로드 실패: $e');
+      return null;
+    }
+  }
+
+  /// 로컬 스토리지에 캐시 저장
+  Future<void> _saveToCache(List<AdBanner> banners) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final bannersJson = banners.map((b) => b.toJson()).toList();
+      await prefs.setString(_cacheKey, json.encode(bannersJson));
+      await prefs.setString(_cacheTimeKey, DateTime.now().toIso8601String());
+    } catch (e) {
+      Logger.error('❌ 캐시 저장 실패: $e');
+    }
+  }
+
+  /// 캐시 초기화
+  Future<void> clearCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_cacheKey);
+      await prefs.remove(_cacheTimeKey);
+      _memoryCache = null;
+      _memoryCacheTime = null;
+      Logger.log('✅ 광고 배너 캐시 초기화');
+    } catch (e) {
+      Logger.error('❌ 캐시 초기화 실패: $e');
     }
   }
 
@@ -90,8 +203,22 @@ class AdBannerService {
     try {
       final docRef = await _firestore
           .collection(_collectionName)
-          .add(banner.toJson());
+          .add({
+        'id': banner.id,
+        'title': banner.title,
+        'description': banner.description,
+        'url': banner.url,
+        'imageUrl': banner.imageUrl,
+        'isActive': banner.isActive,
+        'order': banner.order,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
       Logger.log('✅ 광고 배너 추가 완료: ${docRef.id}');
+      
+      // 캐시 초기화
+      await clearCache();
+      
       return docRef.id;
     } catch (e) {
       Logger.error('❌ 광고 배너 추가 오류: $e');
@@ -110,6 +237,10 @@ class AdBannerService {
         'updatedAt': FieldValue.serverTimestamp(),
       });
       Logger.log('✅ 광고 배너 수정 완료: $bannerId');
+      
+      // 캐시 초기화
+      await clearCache();
+      
       return true;
     } catch (e) {
       Logger.error('❌ 광고 배너 수정 오류: $e');
@@ -125,6 +256,10 @@ class AdBannerService {
           .doc(bannerId)
           .delete();
       Logger.log('✅ 광고 배너 삭제 완료: $bannerId');
+      
+      // 캐시 초기화
+      await clearCache();
+      
       return true;
     } catch (e) {
       Logger.error('❌ 광고 배너 삭제 오류: $e');
@@ -200,9 +335,22 @@ class AdBannerService {
         await _firestore
             .collection(_collectionName)
             .doc(banner.id)
-            .set(banner.toJson(), SetOptions(merge: false)); // 기존 데이터 덮어쓰기
+            .set({
+          'id': banner.id,
+          'title': banner.title,
+          'description': banner.description,
+          'url': banner.url,
+          'imageUrl': banner.imageUrl,
+          'isActive': banner.isActive,
+          'order': banner.order,
+          'createdAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: false)); // 기존 데이터 덮어쓰기
         Logger.log('✅ 광고 배너 업데이트: ${banner.id} - ${banner.title}');
       }
+      
+      // 캐시 초기화
+      await clearCache();
 
     } catch (e) {
       // 광고 배너는 선택적 기능이므로 오류를 조용히 처리

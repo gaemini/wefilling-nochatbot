@@ -26,6 +26,18 @@ class PostService {
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
 
+  // Feed stream caching:
+  // BoardScreen uses the same PostService instance for multiple tabs.
+  // If we subscribe to posts + blocks per StreamBuilder, reads can double.
+  Stream<List<Post>>? _postsStreamCached;
+  StreamController<List<Post>>? _postsStreamController;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _postsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blocksByMeSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blockedBySub;
+  StreamSubscription<User?>? _authSub;
+  String? _blockListenUid;
+  List<Post>? _lastParsedPosts;
+
   /// 레거시/누락 데이터 보강용:
   /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
   /// - visibleToCategoryIds(친구 카테고리 문서 ID들) 기반으로 현재 유저 포함 여부를 계산
@@ -280,7 +292,7 @@ class PostService {
       }
 
       // Firestore에 저장
-      final docRef = await _firestore.collection('posts').add(postData);
+      await _firestore.collection('posts').add(postData);
 
       // 캐시 무효화 (새 게시글이 추가되었으므로 목록 캐시 삭제)
       if (CacheFeatureFlags.isPostCacheEnabled) {
@@ -734,95 +746,170 @@ class PostService {
 
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
-    final user = _auth.currentUser;
+    if (_postsStreamCached != null) return _postsStreamCached!;
 
-    return _firestore
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final posts = snapshot.docs.map((doc) {
-        try {
-          final data = doc.data();
-          final post = _buildPostFromFirestore(doc.id, data);
-          return post;
-        } catch (e) {
-          Logger.error('포스트 파싱 오류: $e');
-          // 오류 발생 시 기본 Post 객체 반환
-          return Post(
-            id: doc.id,
-            title: '제목 없음',
-            content: '내용을 불러올 수 없습니다.',
-            author: '알 수 없음',
-            category: '일반',
-            createdAt: DateTime.now(),
-            userId: '',
-            imageUrls: [],
-            visibility: 'public',
-            isAnonymous: false,
-            visibleToCategoryIds: [],
-            likes: 0,
-            type: 'text',
-            pollOptions: const [],
-            pollTotalVotes: 0,
-          );
-        }
-      }).toList();
+    _postsStreamController = StreamController<List<Post>>.broadcast(
+      onListen: () {
+        Future<void> start() async {
+          Future<void> emitFiltered() async {
+            final parsed = _lastParsedPosts ?? const <Post>[];
+            final currentUser = _auth.currentUser;
 
-      // 1단계: 차단된 사용자의 게시물 필터링
-      final nonBlockedPosts = await ContentFilterService.filterPosts(posts);
+            // 1) blocked filter
+            final nonBlocked = await ContentFilterService.filterPosts(parsed);
 
-      // 2단계: 비공개 게시글 필터링 (매우 중요!)
-      if (user != null) {
-        final visiblePosts = nonBlockedPosts.where((post) {
-          final visibility = post.visibility;
+            // 2) visibility filter
+            if (currentUser != null) {
+              final visiblePosts = nonBlocked
+                  .where((post) => _canUserReadPost(post, currentUser))
+                  .toList();
 
-          // 전체 공개 게시글은 모두 표시
-          if (visibility == 'public' || visibility.isEmpty) {
-            return true;
-          }
+              if (CacheFeatureFlags.isPostCacheEnabled) {
+                unawaited(_cache.savePosts(visiblePosts, visibility: 'public'));
+              }
 
-          // 카테고리별 비공개 게시글 - 엄격하게 필터링
-          if (visibility == 'category') {
-            // 1. 작성자 본인
-            if (post.userId == user.uid) {
-              return true;
+              _postsStreamController?.add(visiblePosts);
+              return;
             }
 
-            // 2. allowedUserIds 비어있으면 차단
-            if (post.allowedUserIds.isEmpty) {
-              return false;
+            final publicPosts = nonBlocked
+                .where((post) =>
+                    post.visibility == 'public' || post.visibility.isEmpty)
+                .toList();
+
+            if (CacheFeatureFlags.isPostCacheEnabled) {
+              unawaited(_cache.savePosts(publicPosts, visibility: 'public'));
             }
 
-            // 3. allowedUserIds에 포함 여부 확인
-            return post.allowedUserIds.contains(user.uid);
+            _postsStreamController?.add(publicPosts);
           }
 
-          // 알 수 없는 visibility는 차단
-          return false;
-        }).toList();
+          Future<void> ensureBlockSubscriptions() async {
+            final u = _auth.currentUser;
+            final uid = u?.uid;
 
-        // 캐시 업데이트 (백그라운드, 실패해도 무시)
-        if (CacheFeatureFlags.isPostCacheEnabled) {
-          unawaited(_cache.savePosts(visiblePosts, visibility: 'public'));
+            // 로그아웃 또는 계정 변경 시: 기존 구독 정리
+            if (uid == null || (_blockListenUid != null && _blockListenUid != uid)) {
+              await _blocksByMeSub?.cancel();
+              await _blockedBySub?.cancel();
+              _blocksByMeSub = null;
+              _blockedBySub = null;
+              _blockListenUid = null;
+            }
+
+            // 로그인 전이면 blocks 구독 없이 종료
+            if (uid == null) return;
+
+            // 이미 같은 uid로 구독 중이면 스킵
+            if (_blockListenUid == uid &&
+                _blocksByMeSub != null &&
+                _blockedBySub != null) {
+              return;
+            }
+
+            _blockListenUid = uid;
+
+            _blocksByMeSub ??= _firestore
+                .collection('blocks')
+                .where('blocker', isEqualTo: uid)
+                .snapshots()
+                .listen((_) async {
+              ContentFilterService.refreshCache();
+              await emitFiltered();
+            }, onError: (e) {
+              Logger.error('blocks(byMe) 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+
+            _blockedBySub ??= _firestore
+                .collection('blocks')
+                .where('blocked', isEqualTo: uid)
+                .where('isImplicit', isEqualTo: true)
+                .snapshots()
+                .listen((_) async {
+              ContentFilterService.refreshCache();
+              await emitFiltered();
+            }, onError: (e) {
+              Logger.error('blocks(blockedBy) 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+          }
+
+          // posts snapshots
+          _postsSub = _firestore
+              .collection('posts')
+              .orderBy('createdAt', descending: true)
+              .snapshots()
+              .listen((snapshot) async {
+            final posts = snapshot.docs.map((doc) {
+              try {
+                return _buildPostFromFirestore(doc.id, doc.data());
+              } catch (e) {
+                Logger.error('포스트 파싱 오류: $e');
+                return Post(
+                  id: doc.id,
+                  title: '제목 없음',
+                  content: '내용을 불러올 수 없습니다.',
+                  author: '알 수 없음',
+                  category: '일반',
+                  createdAt: DateTime.now(),
+                  userId: '',
+                  imageUrls: [],
+                  visibility: 'public',
+                  isAnonymous: false,
+                  visibleToCategoryIds: [],
+                  likes: 0,
+                  type: 'text',
+                  pollOptions: const [],
+                  pollTotalVotes: 0,
+                );
+              }
+            }).toList();
+
+            _lastParsedPosts = posts;
+            await emitFiltered();
+          }, onError: (e) {
+            // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
+            // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
+            Logger.error('포스트 스트림 오류: $e');
+            _postsStreamController?.addError(e);
+          });
+
+          // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
+          // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
+          _authSub ??= _auth.authStateChanges().listen((_) async {
+            ContentFilterService.refreshCache();
+            await ensureBlockSubscriptions();
+            await emitFiltered();
+          }, onError: (e) {
+            Logger.error('Auth 스트림 오류: $e');
+            _postsStreamController?.addError(e);
+          });
+
+          // 현재 상태 기준 blocks 구독 설정
+          await ensureBlockSubscriptions();
         }
 
-        return visiblePosts;
-      }
+        // fire-and-forget start (controller is broadcast)
+        unawaited(start());
+      },
+      onCancel: () async {
+        // When there are no listeners, close underlying subscriptions.
+        await _postsSub?.cancel();
+        await _blocksByMeSub?.cancel();
+        await _blockedBySub?.cancel();
+        await _authSub?.cancel();
+        _postsSub = null;
+        _blocksByMeSub = null;
+        _blockedBySub = null;
+        _authSub = null;
+        _blockListenUid = null;
+        _lastParsedPosts = null;
+      },
+    );
 
-      // 로그인하지 않은 경우 전체 공개만
-      final publicPosts = nonBlockedPosts
-          .where(
-              (post) => post.visibility == 'public' || post.visibility.isEmpty)
-          .toList();
-
-      // 캐시 업데이트 (백그라운드, 실패해도 무시)
-      if (CacheFeatureFlags.isPostCacheEnabled) {
-        unawaited(_cache.savePosts(publicPosts, visibility: 'public'));
-      }
-
-      return publicPosts;
-    });
+    _postsStreamCached = _postsStreamController!.stream;
+    return _postsStreamCached!;
   }
 
   /// 현재 사용자가 게시글 작성자인지 확인
@@ -1098,7 +1185,7 @@ class PostService {
       }
 
       return failCount == 0;
-    } catch (e, stackTrace) {
+    } catch (e) {
       Logger.error('게시물 배치 업데이트 실패', e);
       return false;
     }

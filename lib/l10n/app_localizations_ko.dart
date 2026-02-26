@@ -1535,6 +1535,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get verificationCodeLength => '4자리 인증번호를 입력해주세요';
 
   @override
+  String get verificationCodePlaceholder => '4자리 인증번호';
+
+  @override
   String get passwordRequired => '비밀번호를 입력해주세요';
 
   @override
@@ -1641,6 +1644,36 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get friendRequestAlertSubtitle => '새로운 친구요청이 도착하면 알림';
+
+  @override
+  String get meetupAlertsTitle => '모임 알림';
+
+  @override
+  String get meetupAlertsSubtitle => '정원 마감, 취소, 참여자 변경';
+
+  @override
+  String get friendAlertsTitle => '친구 알림';
+
+  @override
+  String get friendAlertsSubtitle => '친구 요청 및 수락';
+
+  @override
+  String get postInteractionsTitle => '게시글 알림';
+
+  @override
+  String get postInteractionsSubtitle => '댓글, 좋아요, 새 포스트';
+
+  @override
+  String get dmMessagesTitle => 'DM 메시지';
+
+  @override
+  String get dmMessagesSubtitle => '1:1 대화 알림';
+
+  @override
+  String get marketingTitle => '광고/프로모션';
+
+  @override
+  String get marketingSubtitle => '이벤트 및 광고 알림';
 
   @override
   String get commentAlertTitle => '댓글 알림';
@@ -2735,4 +2768,14 @@ class AppLocalizationsKo extends AppLocalizations {
   String nationalityChangeLimited(int days) {
     return '국적은 3일에 한 번만 변경할 수 있어요. $days일 후 다시 시도해주세요.';
   }
+
+  @override
+  String get disableAllNotificationsTitle => '모든 알림 끄기';
+
+  @override
+  String get disableAllNotificationsMessage =>
+      '모든 알림을 끄시겠습니까?\n중요한 알림을 놓칠 수 있습니다.';
+
+  @override
+  String get turnOff => '끄기';
 }

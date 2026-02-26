@@ -652,71 +652,94 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         child: InkWell(
           borderRadius: BorderRadius.circular(_cardRadius),
           onTap: widget.onTap,
-          child: Padding(
-            padding: widget.contentPadding,  // 외부에서 제어 가능 (기본값은 기존과 동일)
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 프로필과 텍스트 영역은 기존 패딩 유지
+              Padding(
+                padding: widget.contentPadding,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 작성자 정보와 제목을 한 줄에 표시
+                    _buildAuthorInfoWithTitle(post, theme, colorScheme),
 
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 작성자 정보와 제목을 한 줄에 표시
-                _buildAuthorInfoWithTitle(post, theme, colorScheme),
+                    // 스크린샷처럼 이미지 카드의 텍스트는 한 줄만(제목 영역은 없고, 내용의 첫 줄만 노출)
+                    if (post.imageUrls.isNotEmpty && headlineText.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      _buildSmartEllipsizedText(
+                        text: headlineText,
+                        maxLines: 1,
+                        // 이미지 카드(1줄)에서는 "다음 줄이 존재"하면 무조건 더 있음을 표시
+                        forceSuffix: hasMoreThanFirstLine,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                              color: const Color(0xFF111827),
+                              fontFamily: 'Pretendard',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              height: 1.25,
+                              letterSpacing: -0.2,
+                            ) ??
+                            const TextStyle(
+                              color: Color(0xFF111827),
+                              fontFamily: 'Pretendard',
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              height: 1.25,
+                              letterSpacing: -0.2,
+                            ),
+                      ),
+                    ],
 
-                // 스크린샷처럼 이미지 카드의 텍스트는 한 줄만(제목 영역은 없고, 내용의 첫 줄만 노출)
-                if (post.imageUrls.isNotEmpty && headlineText.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  _buildSmartEllipsizedText(
-                    text: headlineText,
-                    maxLines: 1,
-                    // 이미지 카드(1줄)에서는 "다음 줄이 존재"하면 무조건 더 있음을 표시
-                    forceSuffix: hasMoreThanFirstLine,
-                    style: theme.textTheme.titleSmall?.copyWith(
-                          color: const Color(0xFF111827),
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          height: 1.25,
-                          letterSpacing: -0.2,
-                        ) ??
-                        const TextStyle(
-                          color: Color(0xFF111827),
-                          fontFamily: 'Pretendard',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 16,
-                          height: 1.25,
-                          letterSpacing: -0.2,
-                        ),
-                  ),
-                ],
+                    // 이미지가 없을 때 텍스트 미리보기
+                    if (post.imageUrls.isEmpty) ...[
+                      const SizedBox(height: 10),
+                      _buildTextOnlyPreview(unifiedText, theme, colorScheme),
+                    ],
+                  ],
+                ),
+              ),
 
-                // 이미지 (있는 경우)
-                if (post.imageUrls.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  _buildPostImages(post.imageUrls),
-                ] else ...[
-                  // 이미지가 없는 글은 본문 미리보기를 2줄로 고정해 카드 높이의 통일감을 맞춤
-                  const SizedBox(height: 10),
-                  _buildTextOnlyPreview(unifiedText, theme, colorScheme),
-                ],
-
-                // ✅ 투표형 게시글: 카드 안에서 바로 투표 항목 표시 (배지 대신)
-                if (post.type == 'poll') ...[
-                  const SizedBox(height: 12),
-                  PollPostWidget(postId: post.id),
-                ],
-
-                const SizedBox(height: 8),
-
-                // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
-                _buildPostMeta(
-                  post.copyWith(
-                    commentCount:
-                        widget.externalCommentCountOverride ?? post.commentCount,
-                  ),
-                  theme,
-                  colorScheme,
+              // 이미지 (있는 경우) - 좌우 여백 5px만 적용
+              if (post.imageUrls.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                  child: _buildPostImages(post.imageUrls),
                 ),
               ],
-            ),
+
+              // ✅ 투표형 게시글: 카드 안에서 바로 투표 항목 표시 (배지 대신)
+              if (post.type == 'poll') ...[
+                Padding(
+                  padding: widget.contentPadding,
+                  child: Column(
+                    children: [
+                      const SizedBox(height: 12),
+                      PollPostWidget(postId: post.id),
+                    ],
+                  ),
+                ),
+              ],
+
+              // 게시글 메타 정보 (날짜, 좋아요, 댓글, 저장)
+              Padding(
+                padding: widget.contentPadding,
+                child: Column(
+                  children: [
+                    const SizedBox(height: 8),
+                    _buildPostMeta(
+                      post.copyWith(
+                        commentCount:
+                            widget.externalCommentCountOverride ?? post.commentCount,
+                      ),
+                      theme,
+                      colorScheme,
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1040,60 +1063,42 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   Widget _buildPostImages(List<String> imageUrls) {
     if (imageUrls.isEmpty) return const SizedBox.shrink();
 
-    // 스크린샷처럼 한 번에 보이는 이미지가 더 크게 보이도록 비율을 더 세로로 조정 (4:3)
-    // 여러 장 첨부되더라도 첫 장만 표시하고, 오른쪽 상단에 "여러 장" 아이콘 배지를 표시
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(_imageRadius),
-      child: Stack(
-        children: [
-          AspectRatio(
-            aspectRatio: 4 / 3,
-            child: CachedNetworkImage(
-              imageUrl: imageUrls.first,
-              cacheManager: AppImageCacheManager.instance,
-              fit: BoxFit.cover,
-              fadeInDuration: const Duration(milliseconds: 140),
-              fadeOutDuration: const Duration(milliseconds: 120),
-              placeholder: (context, url) => Container(
-                color: Colors.grey[300],
-                child: const Center(
-                  child: SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+    // 이미지가 1장이면 기존 방식 사용
+    if (imageUrls.length == 1) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(_imageRadius),
+        child: AspectRatio(
+          aspectRatio: 1 / 1,
+          child: CachedNetworkImage(
+            imageUrl: imageUrls.first,
+            cacheManager: AppImageCacheManager.instance,
+            memCacheWidth: 800,
+            fit: BoxFit.cover,
+            fadeInDuration: const Duration(milliseconds: 100),
+            fadeOutDuration: const Duration(milliseconds: 80),
+            placeholder: (context, url) => Container(
+              color: Colors.grey[300],
+              child: const Center(
+                child: SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               ),
-              errorWidget: (_, __, ___) => Container(
-                color: Colors.grey[300],
-                child: const Icon(Icons.image_not_supported),
-              ),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              color: Colors.grey[300],
+              child: const Icon(Icons.image_not_supported),
             ),
           ),
-          if (imageUrls.length > 1)
-            Positioned(
-              top: 8,
-              right: 8,
-              child: Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.35),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '1/${imageUrls.length}',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                    height: 1,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
+        ),
+      );
+    }
+
+    // 여러 장인 경우 PageView로 슬라이드 가능하게
+    return _ImageSlider(
+      imageUrls: imageUrls,
+      imageRadius: _imageRadius,
     );
   }
 
@@ -1105,11 +1110,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       builder: (context, constraints) {
         // 화면 폭에 따라 자연스럽게 좁아지는 고정 폭/간격
         final w = constraints.maxWidth;
-        // 아이콘을 18로 키운 만큼, 아이템 폭도 살짝 여유를 준다(오버플로우 방지)
-        final itemWidth = w < 330 ? 42.0 : 46.0; // 좋아요/댓글
-        final eyeWidth = w < 330 ? 46.0 : 50.0; // 조회수(숫자 자리 여유 조금)
-        final gap = w < 330 ? 6.0 : 8.0;
-        const iconSize = 18.0;
+        // 아이콘을 23으로 키운 만큼, 아이템 폭도 살짝 여유를 준다(오버플로우 방지)
+        final itemWidth = w < 330 ? 50.0 : 54.0; // 좋아요/댓글
+        final eyeWidth = w < 330 ? 54.0 : 58.0; // 조회수(숫자 자리 여유 조금)
+        final gap = w < 330 ? 8.0 : 10.0;
+        const iconSize = 23.0;
 
         Widget metaItem({
           required IconData icon,
@@ -1179,6 +1184,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
         return Row(
           children: [
+            const SizedBox(width: 8), // 왼쪽 여백 추가
             // 좋아요 (아이콘 위치 고정, 숫자는 0이면 숨김, 빨간색은 '내가 눌렀을 때만')
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -1206,7 +1212,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 active: isLikedByMe,
                 count: _likesOverride,
                 activeColor: BrandColors.error,
-                inactiveColor: BrandColors.neutral500,
+                inactiveColor: Colors.black,
                 width: itemWidth,
                 onTap: null, // 탭/홀드는 외부 GestureDetector에서 처리
               ),
@@ -1476,4 +1482,147 @@ class _PostLikeUser {
     required this.photoVersion,
     required this.nationality,
   });
+}
+
+/// 이미지 슬라이더 위젯 (여러 장의 이미지를 슬라이드로 볼 수 있음)
+class _ImageSlider extends StatefulWidget {
+  final List<String> imageUrls;
+  final double imageRadius;
+
+  const _ImageSlider({
+    required this.imageUrls,
+    required this.imageRadius,
+  });
+
+  @override
+  State<_ImageSlider> createState() => _ImageSliderState();
+}
+
+class _ImageSliderState extends State<_ImageSlider> {
+  late PageController _pageController;
+  int _currentPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0, keepPage: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ImageSlider oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_listEquals(oldWidget.imageUrls, widget.imageUrls)) {
+      _currentPage = 0;
+      _pageController.dispose();
+      _pageController = PageController(initialPage: 0, keepPage: false);
+    }
+  }
+
+  static bool _listEquals(List<String> a, List<String> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(widget.imageRadius),
+      child: Stack(
+        children: [
+          AspectRatio(
+            aspectRatio: 1 / 1,
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.imageUrls.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _currentPage = index;
+                });
+              },
+              itemBuilder: (context, index) {
+                return CachedNetworkImage(
+                  imageUrl: widget.imageUrls[index],
+                  cacheManager: AppImageCacheManager.instance,
+                  memCacheWidth: 800,
+                  fit: BoxFit.cover,
+                  fadeInDuration: const Duration(milliseconds: 100),
+                  fadeOutDuration: const Duration(milliseconds: 80),
+                  placeholder: (context, url) => Container(
+                    color: Colors.grey[300],
+                    child: const Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                  ),
+                  errorWidget: (_, __, ___) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.image_not_supported),
+                  ),
+                );
+              },
+            ),
+          ),
+          // 페이지 인디케이터 (우측 상단)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_currentPage + 1}/${widget.imageUrls.length}',
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+          // 페이지 점 인디케이터 (하단 중앙)
+          if (widget.imageUrls.length > 1)
+            Positioned(
+              bottom: 8,
+              left: 0,
+              right: 0,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: List.generate(
+                  widget.imageUrls.length,
+                  (index) => Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 3),
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _currentPage == index
+                          ? Colors.white
+                          : Colors.white.withOpacity(0.4),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }

@@ -47,6 +47,11 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   DateTime _focusedMonth = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   String _selectedCategoryKey = 'all';
+  
+  // PageView 컨트롤러 (날짜 슬라이드용)
+  late PageController _pageController;
+  static const int _initialPageIndex = 10000; // 충분히 큰 초기 인덱스 (과거/미래로 이동 가능)
+  late DateTime _baseDate; // PageView 계산을 위한 기준 날짜 (고정)
 
   // ✅ 월 스트림 캐시(리빌드마다 재구독 방지 → 깜빡임 감소)
   late Stream<List<Meetup>> _visibleMonthStream;
@@ -72,6 +77,10 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     final now = DateTime.now().toLocal();
     _selectedDay = DateTime(now.year, now.month, now.day);
     _focusedMonth = _selectedDay;
+    _baseDate = _selectedDay; // 기준 날짜 고정 (PageView 계산용)
+    
+    // PageController 초기화
+    _pageController = PageController(initialPage: _initialPageIndex);
 
     _ensureMonthStreams(_focusedMonth);
 
@@ -90,6 +99,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _calendarCache.removeListener(_onCalendarCacheChanged);
     for (final subscription in _participationSubscriptions.values) {
       subscription?.cancel();
@@ -703,6 +713,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
       {'key': 'drink', 'label': AppLocalizations.of(context)!.drink},
       {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
+      {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
     ];
 
     return Container(
@@ -835,11 +846,18 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                 },
                 selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
                 onDaySelected: (selectedDay, focusedDay) {
+                  final newDateKey = _dayKey(selectedDay);
                   setState(() {
-                    _selectedDay = _dayKey(selectedDay);
+                    _selectedDay = newDateKey;
                     _focusedMonth = focusedDay;
                     _ensureMonthStreams(focusedDay);
                   });
+                  
+                  // PageView도 선택된 날짜로 이동
+                  final daysDiff = newDateKey.difference(_baseDate).inDays;
+                  final targetPage = _initialPageIndex + daysDiff;
+                  _pageController.jumpToPage(targetPage);
+                  
                   unawaited(_calendarCache.warmDay(selectedDay));
                 },
                 // 마커는 직접 그릴 것이므로 비활성
@@ -926,6 +944,31 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     );
   }
 
+  // 날짜 변경 (PageView 인덱스 기반)
+  DateTime _getDateFromPageIndex(int pageIndex) {
+    final offset = pageIndex - _initialPageIndex;
+    return _baseDate.add(Duration(days: offset));
+  }
+
+  void _onPageChanged(int pageIndex) {
+    final newDate = _getDateFromPageIndex(pageIndex);
+    final newDateKey = _dayKey(newDate);
+    
+    // 선택 날짜가 실제로 바뀐 경우에만 setState
+    if (newDateKey != _dayKey(_selectedDay)) {
+      setState(() {
+        _selectedDay = newDateKey;
+        // 월이 바뀌면 focusedMonth도 업데이트
+        if (_selectedDay.year != _focusedMonth.year || 
+            _selectedDay.month != _focusedMonth.month) {
+          _focusedMonth = DateTime(_selectedDay.year, _selectedDay.month);
+          _ensureMonthStreams(_focusedMonth);
+          unawaited(_calendarCache.warmMonth(_focusedMonth));
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final selectedKey = _dayKey(_selectedDay);
@@ -969,65 +1012,87 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     _buildCalendarHeader(),
                     _buildCalendar(visibleByDay: visibleByDay, myByDay: myByDay),
                     const SizedBox(height: 8),
-                    // 리스트(스크롤)
+                    // PageView로 날짜별 리스트 슬라이드
                     Expanded(
-                      child: showSkeleton
-                          ? ListView(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
-                              children: List.generate(
-                                3,
-                                (i) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _buildMeetupSkeleton(),
-                                ),
-                              ),
-                            )
-                          : (selectedMeetups.isEmpty
+                      child: PageView.builder(
+                        controller: _pageController,
+                        onPageChanged: _onPageChanged,
+                        itemBuilder: (context, pageIndex) {
+                          // 현재 페이지의 날짜 계산
+                          final pageDate = _getDateFromPageIndex(pageIndex);
+                          final pageDateKey = _dayKey(pageDate);
+                          final isPagePast = _isPastDay(pageDateKey);
+                          
+                          // 해당 날짜의 모임 목록
+                          final pageMeetups = (isPagePast
+                                  ? (myByDay[pageDateKey] ?? const <Meetup>[])
+                                  : (visibleByDay[pageDateKey] ?? const <Meetup>[]))
+                              .toList();
+                          
+                          // 스켈레톤 표시 여부
+                          final pageShowSkeleton = isPagePast
+                              ? (mySnap.connectionState == ConnectionState.waiting &&
+                                  !mySnap.hasData)
+                              : (visibleSnap.connectionState == ConnectionState.waiting &&
+                                  !visibleSnap.hasData);
+                          
+                          return pageShowSkeleton
                               ? ListView(
-                                  children: [
-                                    SizedBox(
-                                      height:
-                                          MediaQuery.of(context).size.height * 0.55,
-                                      child: AppEmptyState.noMeetups(
-                                        context: context,
-                                        onCreateMeetup: _navigateToCreateMeetup,
-                                        centerVertically: true,
-                                      ),
+                                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
+                                  children: List.generate(
+                                    3,
+                                    (i) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _buildMeetupSkeleton(),
                                     ),
-                                  ],
-                                )
-                              : RefreshIndicator(
-                                  color: AppColors.pointColor,
-                                  backgroundColor: Colors.white,
-                                  onRefresh: () async {
-                                    setState(() {});
-                                    await Future.delayed(
-                                      const Duration(milliseconds: 350),
-                                    );
-                                  },
-                                  child: ListView.builder(
-                                    physics: const AlwaysScrollableScrollPhysics(),
-                                    padding:
-                                        const EdgeInsets.fromLTRB(12, 8, 12, 90),
-                                    itemCount: selectedMeetups.length,
-                                    itemBuilder: (context, index) {
-                                      final meetup = selectedMeetups[index];
-                                      // ✅ 과거 리스트는 이미 "내 관련 모임"이므로
-                                      // 참여 상태 조회/오버레이 로딩을 돌리지 않아도 된다(깜빡임 방지).
-                                      return Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 12),
-                                        child: _buildMeetupCard(
-                                          meetup,
-                                          forceIsParticipating:
-                                              isPastSelected ? true : null,
-                                          disableParticipationLookup:
-                                              isPastSelected,
-                                        ),
-                                      );
-                                    },
                                   ),
-                                )),
+                                )
+                              : (pageMeetups.isEmpty
+                                  ? ListView(
+                                      children: [
+                                        SizedBox(
+                                          height:
+                                              MediaQuery.of(context).size.height * 0.55,
+                                          child: AppEmptyState.noMeetups(
+                                            context: context,
+                                            onCreateMeetup: _navigateToCreateMeetup,
+                                            centerVertically: true,
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : RefreshIndicator(
+                                      color: AppColors.pointColor,
+                                      backgroundColor: Colors.white,
+                                      onRefresh: () async {
+                                        setState(() {});
+                                        await Future.delayed(
+                                          const Duration(milliseconds: 350),
+                                        );
+                                      },
+                                      child: ListView.builder(
+                                        physics: const AlwaysScrollableScrollPhysics(),
+                                        padding:
+                                            const EdgeInsets.fromLTRB(12, 8, 12, 90),
+                                        itemCount: pageMeetups.length,
+                                        itemBuilder: (context, index) {
+                                          final meetup = pageMeetups[index];
+                                          return Padding(
+                                            padding:
+                                                const EdgeInsets.only(bottom: 12),
+                                            child: _buildMeetupCard(
+                                              meetup,
+                                              forceIsParticipating:
+                                                  isPagePast ? true : null,
+                                              disableParticipationLookup:
+                                                  isPagePast,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ));
+                        },
+                      ),
                     ),
                   ],
                 );
@@ -1177,7 +1242,7 @@ class _CategoryTabItem extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: selected ? selectedBg : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
@@ -1186,10 +1251,10 @@ class _CategoryTabItem extends StatelessWidget {
             label,
             style: TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
               color: selected ? selectedText : unselectedText,
-              height: 1.1,
+              height: 0.9,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

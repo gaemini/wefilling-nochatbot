@@ -14,6 +14,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
+import '../services/badge_service.dart';
 import '../services/auth_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/avatar_cache_service.dart';
@@ -265,7 +266,21 @@ class AuthProvider with ChangeNotifier {
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
-          
+
+          // ✅ 중요: 이 시점의 Google 로그인은 "회원가입을 위한 계정 생성"이 아니라,
+          // "로그인 시도" 과정에서 Firebase Auth 사용자 레코드가 생성될 수 있습니다.
+          // users/{uid} 문서가 없어서 회원가입이 필요하다고 판단한 경우,
+          // 이 Auth 레코드를 남겨두면 동일 이메일로 '아이디(이메일/비밀번호) 가입'을 할 때
+          // email-already-in-use로 막혀 "인증용 한양메일이 아이디에 포함됐다"처럼 보이는 문제가 발생합니다.
+          //
+          // 따라서 skipEmailVerifiedCheck=false(=로그인 시도)에서만 best-effort로 정리합니다.
+          try {
+            await _user?.delete();
+            Logger.log('🧹 신규/탈퇴 사용자 Google Auth 레코드 삭제 완료');
+          } catch (e) {
+            Logger.error('⚠️ Google Auth 레코드 삭제 실패(계속 진행): $e');
+          }
+
           // Google 로그인은 유지하고 Firebase만 로그아웃
           await _auth.signOut();
           _user = null;
@@ -414,7 +429,15 @@ class AuthProvider with ChangeNotifier {
           
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
-          
+
+          // ✅ Google과 동일한 이유로, "로그인 시도"에서 생성된 Auth 레코드는 남기지 않는다.
+          try {
+            await _user?.delete();
+            Logger.log('🧹 신규 사용자 Apple Auth 레코드 삭제 완료');
+          } catch (e) {
+            Logger.error('⚠️ Apple Auth 레코드 삭제 실패(계속 진행): $e');
+          }
+
           // Firebase 로그아웃
           await _auth.signOut();
           _user = null;
@@ -535,6 +558,8 @@ class AuthProvider with ChangeNotifier {
       _user = userCredential.user;
       Logger.log('✅ Firebase Auth 계정 생성 완료: ${_user!.uid}');
 
+      bool hanyangClaimFinalized = false;
+
       // ✅ 한양메일 유니크 점유(email_claims) 확정
       // - Google/Apple 플로우는 completeEmailVerification에서 처리하지만,
       //   이메일/비밀번호 회원가입 플로우는 여기서 반드시 처리해야 "메일 1개=계정 1개"가 보장됨
@@ -543,6 +568,7 @@ class AuthProvider with ChangeNotifier {
         await callable.call({
           'email': hanyangEmail.trim(),
         });
+        hanyangClaimFinalized = true;
         Logger.log('✅ 한양메일 claim 점유 완료: $hanyangEmail');
       } on FirebaseFunctionsException catch (e) {
         Logger.error('❌ 한양메일 claim 점유 실패: ${e.code} - ${e.message}');
@@ -566,21 +592,34 @@ class AuthProvider with ChangeNotifier {
 
       // Firestore에 사용자 문서 생성 (한양메일 정보 포함)
       // - finalizeHanyangEmailVerification가 먼저 users/{uid}를 merge로 만들 수 있으므로 merge로 저장
-      await _upsertUserDocWithFullSchema(
-        user: _user!,
-        hanyangEmail: hanyangEmail,
-        emailVerified: true,
-        // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
-        nickname: '',
-        nationality: '',
-        // ✅ 정책: 외부(Auth 제공) 사진은 저장/표시하지 않는다. (버킷 업로드만 허용)
-        photoURL: '',
-      );
+      // - 이 단계가 일시적으로 실패하더라도 "가입 자체"는 이미 완료된 상태일 수 있음
+      //   (finalize 함수가 users/{uid} + email_claims를 생성/업데이트)
+      try {
+        await _upsertUserDocWithFullSchema(
+          user: _user!,
+          hanyangEmail: hanyangEmail,
+          emailVerified: true,
+          // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
+          nickname: '',
+          nationality: '',
+          // ✅ 정책: 외부(Auth 제공) 사진은 저장/표시하지 않는다. (버킷 업로드만 허용)
+          photoURL: '',
+        );
+        Logger.log('✅ Firestore 사용자 문서 생성/보정 완료');
+      } catch (e) {
+        // 🔥 핵심: 여기서 false를 반환하면, 사용자는 "가입 실패"로 인지하고 재시도하게 되며
+        // 이미 생성된 Firebase Auth 계정 때문에 email-already-in-use로 이어질 수 있다.
+        // 따라서 best-effort로 처리하고 다음 단계로 진행한다.
+        Logger.error('⚠️ Firestore 사용자 문서 생성/보정 실패(가입은 계속 진행): $e');
+      }
 
-      Logger.log('✅ Firestore 사용자 문서 생성 완료');
-
-      await _loadUserData();
-      return true;
+      // 최종적으로 사용자 데이터 로드 (실패해도 Auth는 생성된 상태)
+      try {
+        await _loadUserData();
+      } catch (e) {
+        Logger.error('⚠️ 가입 후 사용자 데이터 로드 실패(무시): $e');
+      }
+      return hanyangClaimFinalized;
     } on FirebaseAuthException catch (e) {
       Logger.error('이메일 회원가입 오류 (FirebaseAuthException): ${e.code}', e);
       _isLoading = false;
@@ -1661,6 +1700,9 @@ class AuthProvider with ChangeNotifier {
   // 실제 로그아웃 작업 수행
   Future<void> _performSignOut() async {
     Logger.log('🔄 로그아웃 작업 시작');
+
+    // 앱 아이콘 배지는 로그아웃 즉시 0으로 내려 이전 계정 흔적이 남지 않게 한다.
+    await BadgeService.clearBadgeOnSignOut();
     
     // FCM 토큰 삭제 (3초 타임아웃) - UI 메시지 표시 안 함
     if (_user != null) {

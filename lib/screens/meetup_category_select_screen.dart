@@ -44,6 +44,7 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
     'cafe',
     'drink',
     'culture',
+    'etc',
   ];
 
   @override
@@ -69,6 +70,8 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
         return l10n.drink;
       case 'culture':
         return l10n.culture;
+      case 'etc':
+        return l10n.other;
       default:
         return key;
     }

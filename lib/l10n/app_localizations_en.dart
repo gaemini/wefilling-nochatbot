@@ -1567,6 +1567,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get verificationCodeLength => 'Please enter 4-digit verification code';
 
   @override
+  String get verificationCodePlaceholder => '4-digit code';
+
+  @override
   String get passwordRequired => 'Please enter password';
 
   @override
@@ -1680,6 +1683,36 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get friendRequestAlertSubtitle =>
       'Notify when a new friend request arrives';
+
+  @override
+  String get meetupAlertsTitle => 'Meetup Alerts';
+
+  @override
+  String get meetupAlertsSubtitle => 'Full, cancelled, participant changes';
+
+  @override
+  String get friendAlertsTitle => 'Friend Alerts';
+
+  @override
+  String get friendAlertsSubtitle => 'Friend requests and acceptances';
+
+  @override
+  String get postInteractionsTitle => 'Post Alerts';
+
+  @override
+  String get postInteractionsSubtitle => 'Comments, likes, new posts';
+
+  @override
+  String get dmMessagesTitle => 'DM Messages';
+
+  @override
+  String get dmMessagesSubtitle => '1:1 conversation alerts';
+
+  @override
+  String get marketingTitle => 'Ads/Promotions';
+
+  @override
+  String get marketingSubtitle => 'Events and advertising alerts';
 
   @override
   String get commentAlertTitle => 'Comment Alert';
@@ -2814,4 +2847,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String nationalityChangeLimited(int days) {
     return 'You can change your nationality only once every 3 days. Try again in $days day(s).';
   }
+
+  @override
+  String get disableAllNotificationsTitle => 'Turn Off All Notifications';
+
+  @override
+  String get disableAllNotificationsMessage =>
+      'Are you sure you want to turn off all notifications?\nYou may miss important alerts.';
+
+  @override
+  String get turnOff => 'Turn Off';
 }

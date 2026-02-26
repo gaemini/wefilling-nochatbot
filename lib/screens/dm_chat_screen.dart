@@ -16,8 +16,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../services/dm_service.dart';
+import '../services/dm_active_conversation.dart';
 import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
+import '../services/report_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../utils/time_formatter.dart';
@@ -119,10 +121,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
   bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
   bool _composerPostContextDismissed = false; // 입력창 위 미리보기 카드 닫힘 여부
   
+  void _setActiveConversationId(String conversationId) {
+    _activeConversationId = conversationId;
+    // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
+    DMActiveConversation.setActive(conversationId);
+  }
+
   @override
   void initState() {
     super.initState();
-    _activeConversationId = widget.conversationId;
+    // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
+    _setActiveConversationId(widget.conversationId);
     _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
     _scrollController.addListener(_onScroll);
     
@@ -457,6 +466,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   @override
   void dispose() {
+    // ✅ 현재 화면이 활성 대화방이면 해제
+    if (DMActiveConversation.isActive(_activeConversationId)) {
+      DMActiveConversation.setActive(null);
+    }
     _autoMarkReadDebounce?.cancel();
     _recentMessagesSub?.cancel();
     _messageController.dispose();
@@ -547,14 +560,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
       // 대화방이 바뀌는 경우에만 상태를 리셋한다. (같은 방에서는 유지)
       if (isConversationChanging) {
-        _activeConversationId = targetConversationId;
+        _setActiveConversationId(targetConversationId);
         _messages = <DMMessage>[];
         _messagesError = null;
         _isMessagesLoading = false;
         _isLoadingMore = false;
         _hasMore = true;
       } else {
-        _activeConversationId = targetConversationId;
+        _setActiveConversationId(targetConversationId);
       }
 
       // 사용자가 실제로 '나가기'를 한 적이 있으면 해당 시점 이후만 표시
@@ -602,6 +615,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
           _messages = _mergeRecentIntoAll(recent, _messages);
           _isMessagesLoading = false;
         });
+        // ✅ 채팅 화면이 열려 있을 때 들어오는 메시지는 빠르게 읽음 처리(디바운스)
+        _scheduleAutoMarkAsRead(_messages);
       }, onError: (e) {
         if (!mounted) return;
         setState(() {
@@ -731,7 +746,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 읽음 처리
   Future<void> _markAsRead() async {
-    await Future.delayed(const Duration(milliseconds: 500));
     try {
       await _dmService.markAsRead(_activeConversationId);
       
@@ -2706,7 +2720,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
         // 로컬 캐시 기반 메시지 로딩 + 서버 동기화를 해당 ID로 재시작한다.
         if (_activeConversationId != actualConversationId) {
           Logger.log('🔄 activeConversationId 업데이트: $_activeConversationId → $actualConversationId');
-          _activeConversationId = actualConversationId;
+          _setActiveConversationId(actualConversationId);
         }
         if (mounted) {
           setState(() {
@@ -2808,16 +2822,40 @@ class _DMChatScreenState extends State<DMChatScreen> {
     );
 
     if (confirmed == true && mounted) {
-      // 차단 로직 구현 (향후 추가)
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            Localizations.localeOf(context).languageCode == 'ko'
-                ? '차단 기능은 곧 추가됩니다'
-                : 'Block feature coming soon'
-          )
-        ),
-      );
+      try {
+        final ok = await ReportService.blockUser(widget.otherUserId);
+        if (!mounted) return;
+
+        if (ok) {
+          ContentFilterService.refreshCache();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.userBlockedSuccess),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          // 차단 즉시 DM 화면 종료 (접근 차단 UX + 심사 재현성)
+          Navigator.pop(context);
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(AppLocalizations.of(context)!.userBlockFailed),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 

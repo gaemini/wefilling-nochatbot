@@ -67,7 +67,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isTogglingSave = false;
   late Post _currentPost;
   bool _accessValidated = false;
-  final PageController _imagePageController = PageController();
+  final PageController _imagePageController = PageController(initialPage: 0, keepPage: false);
   int _currentImageIndex = 0;
   
   // 이미지 페이지 인디케이터 표시 상태
@@ -2114,48 +2114,47 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   // 이미지 유무에 따라 레이아웃 분기
                   if (_currentPost.imageUrls.isNotEmpty) ...[
                     // === 이미지가 있는 경우: 제목 → 이미지 → 좋아요 → 본문 ===
-                    // 게시글 이미지 (인스타그램 스타일 - 전체 너비, 좌우 여백 없음)
-                    AspectRatio(
-                      aspectRatio: 1.0, // 정사각형 비율 (인스타그램 스타일)
-                      child: Stack(
-                        children: [
-                          PageView.builder(
-                            controller: _imagePageController,
-                            allowImplicitScrolling: true,
-                            onPageChanged: (i) {
-                              setState(() => _currentImageIndex = i);
-                              _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
-                              _prefetchPostImages(initial: false, aroundIndex: i);
-                            },
-                            itemCount: _currentPost.imageUrls.length,
-                            itemBuilder: (context, index) {
-                              final imageUrl = _currentPost.imageUrls[index];
-                              return GestureDetector(
-                                onTap: () {
-                                  // 전체화면 이미지 뷰어 열기
-                                  showFullscreenImageViewer(
-                                    context,
-                                    imageUrls: _currentPost.imageUrls,
-                                    initialIndex: index,
-                                    heroTag: 'post_image_$index',
-                                  );
-                                },
-                                child: Hero(
-                                  tag: 'post_image_$index',
-                                  child: Container(
-                                    width: double.infinity,
-                                    height: double.infinity,
-                                    color: Colors.black,
-                                    child: _buildRetryableImage(
-                                      imageUrl,
-                                      fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
-                                      isFullScreen: false,
-                                    ),
+                  // 게시글 이미지 (인스타그램 스타일 - 전체 너비, 좌우 여백 없음)
+                  AspectRatio(
+                    aspectRatio: 1.0, // 정사각형 비율 (인스타그램 스타일)
+                    child: Stack(
+                      children: [
+                        PageView.builder(
+                          controller: _imagePageController,
+                          onPageChanged: (i) {
+                            setState(() => _currentImageIndex = i);
+                            _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
+                            _prefetchPostImages(initial: false, aroundIndex: i);
+                          },
+                          itemCount: _currentPost.imageUrls.length,
+                          itemBuilder: (context, index) {
+                            final imageUrl = _currentPost.imageUrls[index];
+                            return GestureDetector(
+                              onTap: () {
+                                // 전체화면 이미지 뷰어 열기
+                                showFullscreenImageViewer(
+                                  context,
+                                  imageUrls: _currentPost.imageUrls,
+                                  initialIndex: index,
+                                  heroTag: 'post_image_$index',
+                                );
+                              },
+                              child: Hero(
+                                tag: 'post_image_$index',
+                                child: Container(
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  color: Colors.black,
+                                  child: _buildRetryableImage(
+                                    imageUrl,
+                                    fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
+                                    isFullScreen: false,
                                   ),
                                 ),
-                              );
-                            },
-                          ),
+                              ),
+                            );
+                          },
+                        ),
                           // 다중 이미지 배지: 카드와 동일한 1/N 형태로 우상단에 표시
                           if (_currentPost.imageUrls.length > 1)
                             Positioned(

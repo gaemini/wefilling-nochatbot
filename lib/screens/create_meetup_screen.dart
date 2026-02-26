@@ -1527,6 +1527,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         return l10n.drink;
       case 'culture':
         return l10n.culture;
+      case 'etc':
+        return l10n.other;
       default:
         return categoryKey;
     }
@@ -1975,7 +1977,7 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: isSelected ? selectedBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(6),
               ),
               child: DefaultTextStyle(
                 style: TextStyle(
@@ -2013,7 +2015,7 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               child: Text(l10n.all),
             ),
             const VerticalDivider(
-              width: 1,
+              width: 10,
               thickness: 1,
               color: dividerColor,
             ),
@@ -2023,7 +2025,7 @@ class _VisibilitySegmentedControl extends StatelessWidget {
               child: Text(l10n.meetupVisibilityFriendsAll),
             ),
             const VerticalDivider(
-              width: 1,
+              width: 10,
               thickness: 1,
               color: dividerColor,
             ),

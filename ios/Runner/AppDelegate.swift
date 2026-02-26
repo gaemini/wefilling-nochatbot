@@ -28,15 +28,10 @@ import UserNotifications
   ) {
     let userInfo = notification.request.content.userInfo
     print("📱 포어그라운드 알림 수신: \(userInfo)")
-    
-    // iOS 14 이상
-    if #available(iOS 14.0, *) {
-      completionHandler([[.banner, .badge, .sound]])
-    }
-    // iOS 10-13
-    else {
-      completionHandler([[.alert, .badge, .sound]])
-    }
+
+    // 포그라운드에서는 시스템 배너/사운드를 띄우지 않는다.
+    // 실제 표시 여부는 Flutter(fcm_service)의 로컬 알림 정책에서 제어한다.
+    completionHandler([])
   }
   
   // 알림을 탭했을 때 호출됨 (백그라운드/종료 상태)

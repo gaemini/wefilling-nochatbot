@@ -693,6 +693,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
             key: const PageStorageKey('board_today_list'),
             controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
+            cacheExtent: 1000,
             padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount:
             1 + // AdBanner
@@ -1087,6 +1088,7 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
         key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
+        cacheExtent: 1000,
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _calculateAllItemCount(groupedPosts),
         itemBuilder: (context, index) {

@@ -103,7 +103,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Future<void> _selectImages() async {
-    final remaining = (10 - _keptImageUrls.length).clamp(0, 10);
+    final remaining = (15 - _keptImageUrls.length).clamp(0, 15);
     if (remaining <= 0) return;
 
     final pickedAssets = await AssetPicker.pickAssets(

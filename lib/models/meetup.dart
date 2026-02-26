@@ -362,9 +362,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return Icons.palette_outlined;
+      case '술':
+      case 'drink':
+        return Icons.local_bar_outlined;
       case '문화':
       case 'culture':
         return Icons.theater_comedy_outlined;
+      case '기타':
+      case 'etc':
+      case 'other':
+        return Icons.more_horiz_rounded;
       default:
         return Icons.groups_outlined;
     }
@@ -385,9 +392,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFF34C759); // 초록색
+      case '술':
+      case 'drink':
+        return const Color(0xFFEF4444); // 레드
       case '문화':
       case 'culture':
         return const Color(0xFFAF52DE); // 보라색
+      case '기타':
+      case 'etc':
+      case 'other':
+        return const Color(0xFF8E8E93); // 회색
       default:
         return const Color(0xFF8E8E93); // 회색
     }
@@ -408,9 +422,16 @@ class Meetup {
       case 'cafe':
       case 'hobby':
         return const Color(0xFFF0FFF4); // 연한 초록색
+      case '술':
+      case 'drink':
+        return const Color(0xFFFFF1F2); // 연한 레드
       case '문화':
       case 'culture':
         return const Color(0xFFF8F0FF); // 연한 보라색
+      case '기타':
+      case 'etc':
+      case 'other':
+        return const Color(0xFFF8F8F8); // 연한 회색
       default:
         return const Color(0xFFF8F8F8); // 연한 회색
     }

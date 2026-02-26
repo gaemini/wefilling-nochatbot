@@ -175,13 +175,20 @@ class AppEmptyState extends StatelessWidget {
       color: backgroundColor,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          // padding이 적용된 영역 안에서만 중앙 정렬이 되도록, 최소 높이를 보장한다.
-          final minHeight = (constraints.maxHeight - padding.vertical).clamp(0.0, double.infinity);
+          // 스크롤 컨텍스트(ListView/SliverList 등)에서는 maxHeight가 Infinity일 수 있다.
+          // 이때 minHeight=Infinity로 ConstrainedBox를 만들면 렌더링이 크래시난다.
+          final hasBoundedHeight = constraints.hasBoundedHeight;
+          final minHeight = hasBoundedHeight
+              ? (constraints.maxHeight - padding.vertical)
+                  .clamp(0.0, double.infinity)
+              : 0.0;
 
           return SingleChildScrollView(
             padding: padding,
             child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: minHeight),
+              constraints: hasBoundedHeight
+                  ? BoxConstraints(minHeight: minHeight)
+                  : const BoxConstraints(),
               child: Column(
                 mainAxisSize: centerVertically ? MainAxisSize.max : MainAxisSize.min,
                 mainAxisAlignment: centerVertically ? MainAxisAlignment.center : MainAxisAlignment.center,

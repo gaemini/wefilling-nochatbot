@@ -19,6 +19,10 @@ import '../utils/profile_photo_policy.dart';
 import '../utils/logger.dart';
 
 class PostService {
+  static final PostService instance = PostService._internal();
+  factory PostService() => instance;
+  PostService._internal();
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationService _notificationService = NotificationService();
@@ -37,8 +41,6 @@ class PostService {
   StreamSubscription<User?>? _authSub;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
-  List<Post> _lastDeliveredPosts = const <Post>[];
-  bool _hasDeliveredPosts = false;
 
   /// 레거시/누락 데이터 보강용:
   /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
@@ -748,13 +750,7 @@ class PostService {
 
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
-    // ⚠️ 중요: BoardScreen은 탭 2개에서 같은 stream을 "늦게" 구독할 수 있다.
-    // broadcast stream은 이전 이벤트를 replay하지 않기 때문에,
-    // All 탭이 첫 emit(166개 등)을 놓치면 ConnectionState.waiting에 고정될 수 있다.
-    // 그래서 getPostsStream()은 "최신값 1회 replay" 래퍼를 매번 반환한다.
-    if (_postsStreamCached != null) {
-      return _replayLatest(_postsStreamCached!);
-    }
+    if (_postsStreamCached != null) return _postsStreamCached!;
 
     _postsStreamController = StreamController<List<Post>>.broadcast(
       onListen: () {
@@ -762,7 +758,7 @@ class PostService {
         // (Firestore snapshots가 지연/실패하더라도 UI는 로딩 뷰에서 빠져나오게 됨)
         scheduleMicrotask(() {
           try {
-            _deliverPosts(const <Post>[]);
+            _postsStreamController?.add(const <Post>[]);
           } catch (_) {}
         });
 
@@ -786,7 +782,7 @@ class PostService {
             }
 
             // 1) Immediately emit something so UI doesn't stick on "waiting".
-            _deliverPosts(visibilityFiltered);
+            _postsStreamController?.add(visibilityFiltered);
 
             // 2) blocked filter (can be slow/network dependent)
             List<Post> nonBlocked = visibilityFiltered;
@@ -803,7 +799,7 @@ class PostService {
 
             // 3) If changed after block-filtering, emit again.
             if (nonBlocked.length != visibilityFiltered.length) {
-              _deliverPosts(nonBlocked);
+              _postsStreamController?.add(nonBlocked);
             }
 
             if (CacheFeatureFlags.isPostCacheEnabled) {
@@ -957,19 +953,7 @@ class PostService {
     );
 
     _postsStreamCached = _postsStreamController!.stream;
-    return _replayLatest(_postsStreamCached!);
-  }
-
-  void _deliverPosts(List<Post> posts) {
-    _lastDeliveredPosts = posts;
-    _hasDeliveredPosts = true;
-    _postsStreamController?.add(posts);
-  }
-
-  Stream<List<Post>> _replayLatest(Stream<List<Post>> upstream) async* {
-    // 새로운 구독자(All 탭 등)가 이전 emit을 놓쳐도, 즉시 최신값을 1회 전달한다.
-    yield _hasDeliveredPosts ? _lastDeliveredPosts : const <Post>[];
-    yield* upstream;
+    return _postsStreamCached!;
   }
 
   /// 현재 사용자가 게시글 작성자인지 확인

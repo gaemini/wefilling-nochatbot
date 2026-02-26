@@ -70,12 +70,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   List<Post>? _cachedTodayPosts;
   List<Post>? _cachedAllPosts;
   bool _isInitialLoad = true;
-  int _debugTodaySnapLogs = 0;
-  int _debugAllSnapLogs = 0;
-  int _debugTodayDecisionLogs = 0;
-  int _debugAllDecisionLogs = 0;
-  int _debugTodayMeetupLogs = 0;
-  int _debugAllViewLogs = 0;
   
   // AppLocalizations 안전 호출 헬퍼
   String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
@@ -494,14 +488,19 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
               ),
               // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // 오늘 탭
-                    _buildTodayPostsTab(),
-                    // 전체 탭
-                    _buildAllPostsTab(),
-                  ],
+                child: StreamBuilder<List<Post>>(
+                  stream: _postService.getPostsStream(),
+                  builder: (context, postSnap) {
+                    return TabBarView(
+                      controller: _tabController,
+                      children: [
+                        // Today
+                        _buildTodayPostsTab(postSnap),
+                        // All
+                        _buildAllPostsTab(postSnap),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -529,72 +528,35 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
     );
   }
 
-  /// 오늘 게시글 탭
-  Widget _buildTodayPostsTab() {
-    return StreamBuilder<List<Post>>(
-      stream: _postService.getPostsStream(),
-      builder: (context, snapshot) {
-        // 🎯 핵심 개선: 데이터가 있으면 로딩 화면을 보여주지 않음
-        // 초기 로딩 시에만 스켈레톤 UI 표시
-        final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
-                               !snapshot.hasData && 
-                               _cachedTodayPosts == null;
+  /// 오늘 게시글 탭 (posts 스트림은 build()에서 1회 구독)
+  Widget _buildTodayPostsTab(AsyncSnapshot<List<Post>> snapshot) {
+    final bool isPostsLoading = snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData &&
+        _cachedTodayPosts == null;
 
-        if (_debugTodaySnapLogs < 8) {
-          _debugTodaySnapLogs++;
-          Logger.log(
-            '🧩 Board(Today) snap: state=${snapshot.connectionState} hasData=${snapshot.hasData} dataLen=${snapshot.data?.length} cachedLen=${_cachedTodayPosts?.length} isLoading=$isLoading hasError=${snapshot.hasError}',
-          );
-        }
-        
-        if (isLoading) {
-          return _buildTodayLoadingView();
-        }
+    final bool isPostsError = snapshot.hasError &&
+        (_cachedTodayPosts == null || _cachedTodayPosts!.isEmpty);
 
-        // 에러 발생 시 - 캐시된 데이터가 있으면 그것을 사용
-        if (snapshot.hasError) {
-          if (_cachedTodayPosts != null && _cachedTodayPosts!.isNotEmpty) {
-            Logger.log('⚠️ 스트림 에러 발생, 캐시된 데이터 사용');
-            return _buildTodayPostsView(_cachedTodayPosts!);
-          }
-          return _buildTodayErrorView();
-        }
+    final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
+    final todayPosts = sourcePosts.where(_isPostInToday).toList();
 
-        // 최신 데이터(전체) 또는 캐시된 Today 데이터 사용
-        final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
-        final todayPosts = sourcePosts.where(_isPostInToday).toList();
+    if (snapshot.hasData) {
+      _cachedTodayPosts = todayPosts;
+      if (_isInitialLoad) _isInitialLoad = false;
+    }
 
-        if (_debugTodayDecisionLogs < 8) {
-          _debugTodayDecisionLogs++;
-          Logger.log(
-            '🧭 Board(Today) decide: sourceLen=${sourcePosts.length} todayLen=${todayPosts.length} tabIndex=${_controllersInitialized ? _tabController.index : -1}',
-          );
-        }
+    if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
+      _didAutoRefreshTodayCommentCounts = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshCommentCountsForPosts(todayPosts, silent: true);
+      });
+    }
 
-        // 캐시 업데이트 (날짜가 바뀌었을 때 "어제 Today"가 남지 않도록, 빈 리스트도 반영)
-        if (snapshot.hasData) {
-          _cachedTodayPosts = todayPosts;
-
-          // 초기 로드 완료 표시
-          if (_isInitialLoad) {
-            _isInitialLoad = false;
-          }
-        }
-
-        // 앱 첫 진입 시 자동으로 댓글 수 재집계 (백그라운드에서 조용히)
-        if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
-          _didAutoRefreshTodayCommentCounts = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            // silent 모드로 setState 없이 처리
-            _refreshCommentCountsForPosts(todayPosts, silent: true);
-          });
-        }
-
-        // Today 탭은 "오늘의 모임" 섹션이 추가되므로,
-        // 게시글이 비어도 피드(모임 + 게시글)를 그대로 렌더링한다.
-        return _buildTodayPostsView(todayPosts);
-      },
+    return _buildTodayUnifiedList(
+      todayPosts: todayPosts,
+      isPostsLoading: isPostsLoading,
+      isPostsError: isPostsError,
     );
   }
   
@@ -684,13 +646,6 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
 
         final todayMeetups =
             meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
-
-        if (_debugTodayMeetupLogs < 8) {
-          _debugTodayMeetupLogs++;
-          Logger.log(
-            '🧭 Board(Today) meetups: state=${meetupSnapshot.connectionState} hasData=${meetupSnapshot.hasData} meetupsLen=${todayMeetups.length} isMeetupsLoading=$isMeetupsLoading postsLen=${todayPosts.length}',
-          );
-        }
 
         // 캐시 업데이트:
         // - empty가 순간적으로 들어와도(재구독/중간 emit) 카드가 사라졌다가 생기는 현상을 줄이기 위해
@@ -953,78 +908,360 @@ class _BoardScreenState extends State<BoardScreen> with SingleTickerProviderStat
   }
 
 
-  /// 전체 게시글 탭
-  Widget _buildAllPostsTab() {
-    return StreamBuilder<List<Post>>(
-      stream: _postService.getPostsStream(),
-      builder: (context, snapshot) {
-        // 🎯 핵심 개선: 데이터가 있으면 로딩 화면을 보여주지 않음
-        // 초기 로딩 시에만 스켈레톤 UI 표시
-        final bool isLoading = snapshot.connectionState == ConnectionState.waiting && 
-                               !snapshot.hasData && 
-                               _cachedAllPosts == null;
+  /// 전체 게시글 탭 (posts 스트림은 build()에서 1회 구독)
+  Widget _buildAllPostsTab(AsyncSnapshot<List<Post>> snapshot) {
+    final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData &&
+        _cachedAllPosts == null;
 
-        if (_debugAllSnapLogs < 8) {
-          _debugAllSnapLogs++;
-          Logger.log(
-            '🧩 Board(All) snap: state=${snapshot.connectionState} hasData=${snapshot.hasData} dataLen=${snapshot.data?.length} cachedLen=${_cachedAllPosts?.length} isLoading=$isLoading hasError=${snapshot.hasError}',
-          );
-        }
-        
-        if (isLoading) {
-          return _buildAllLoadingView();
-        }
+    final bool isError =
+        snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
 
-        // 에러 발생 시 - 캐시된 데이터가 있으면 그것을 사용
-        if (snapshot.hasError) {
-          if (_cachedAllPosts != null && _cachedAllPosts!.isNotEmpty) {
-            Logger.log('⚠️ 스트림 에러 발생, 캐시된 데이터 사용');
-            return _buildAllPostsView(_cachedAllPosts!);
+    final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
+    final posts = sourcePosts.where(_isPostInAllTab).toList();
+
+    if (snapshot.hasData) {
+      _cachedAllPosts = posts;
+    }
+
+    if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
+      _didAutoRefreshAllCommentCounts = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshCommentCountsForPosts(posts, silent: true);
+      });
+    }
+
+    // ✅ 상태와 무관하게 ScrollView는 1개만 유지
+    final groupedPosts = (!isLoading && !isError && posts.isNotEmpty)
+        ? _groupPostsByDate(posts)
+        : const <Map<String, dynamic>>[];
+
+    final int bodyCount;
+    if (isLoading) {
+      bodyCount = 5;
+    } else if (isError) {
+      bodyCount = 1;
+    } else if (posts.isEmpty) {
+      bodyCount = 1;
+    } else {
+      bodyCount = _calculateAllItemCount(groupedPosts) - 1; // minus banner
+    }
+
+    return RefreshIndicator(
+      color: AppColors.pointColor,
+      backgroundColor: Colors.white,
+      onRefresh: () async {
+        if (!isLoading && !isError) {
+          await _refreshCommentCountsForPosts(posts);
+        } else {
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) setState(() {});
+        }
+      },
+      child: ListView.builder(
+        key: const PageStorageKey('board_all_list_unified'),
+        controller: _allScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        cacheExtent: 1000,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        itemCount: 1 + bodyCount,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return AdBannerWidget(
+              key: const ValueKey('board_banner_all'),
+              widgetId: 'board_banner_all',
+            );
           }
-          return _buildAllErrorView();
-        }
 
-        // 최신 데이터(전체) 또는 캐시된 All 데이터 사용
-        final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
-        final posts = sourcePosts.where(_isPostInAllTab).toList();
-
-        if (_debugAllDecisionLogs < 8) {
-          _debugAllDecisionLogs++;
-          Logger.log(
-            '🧭 Board(All) decide: sourceLen=${sourcePosts.length} allLen=${posts.length} tabIndex=${_controllersInitialized ? _tabController.index : -1}',
-          );
-        }
-
-        // 캐시 업데이트 (빈 리스트도 반영: 글 삭제/날짜 변경 시 stale 방지)
-        if (snapshot.hasData) {
-          _cachedAllPosts = posts;
-        }
-
-        // 앱 첫 진입 시 자동으로 댓글 수 재집계 (백그라운드에서 조용히)
-        if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
-          _didAutoRefreshAllCommentCounts = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            // silent 모드로 setState 없이 처리
-            _refreshCommentCountsForPosts(posts, silent: true);
-          });
-        }
-
-        // 빈 상태
-        if (posts.isEmpty) {
-          if (_debugAllViewLogs < 6) {
-            _debugAllViewLogs++;
-            Logger.log('🧭 Board(All) view: EMPTY');
+          if (isLoading) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _buildPostSkeleton(),
+            );
           }
-          return _buildAllEmptyView();
+
+          if (isError) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+            );
+          }
+
+          if (posts.isEmpty) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
+              child: AppEmptyState.noPosts(
+                onCreatePost: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CreatePostScreen(
+                        onPostCreated: () {
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            );
+          }
+
+          return _buildAllGroupedItem(groupedPosts, index - 1);
+        },
+      ),
+    );
+  }
+
+  Widget _buildTodayUnifiedList({
+    required List<Post> todayPosts,
+    required bool isPostsLoading,
+    required bool isPostsError,
+  }) {
+    return StreamBuilder<List<Meetup>>(
+      stream: _todayMeetupsStream,
+      builder: (context, meetupSnapshot) {
+        final todayMeetupsTitle = _safeL10n(
+          (l) => l.todayMeetupsSectionTitle,
+          '오늘의 밋업',
+        );
+        final todayPostsTitle = _safeL10n(
+          (l) => l.todayPostsSectionTitle,
+          '오늘의 게시글',
+        );
+        final noTodayMeetupsText = _safeL10n(
+          (l) => l.todayNoMeetups,
+          '오늘 올라온 밋업이 없어요.',
+        );
+        final noTodayPostsText = _safeL10n(
+          (l) => l.todayNoPosts,
+          '오늘 올라온 게시글이 없어요.',
+        );
+
+        final bool isMeetupsLoading =
+            meetupSnapshot.connectionState == ConnectionState.waiting &&
+            !meetupSnapshot.hasData &&
+            _cachedTodayMeetups == null;
+
+        final todayMeetups =
+            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
+
+        // meetups cache update (기존 로직 유지)
+        if (meetupSnapshot.hasData) {
+          final incoming = meetupSnapshot.data ?? const <Meetup>[];
+          final now = DateTime.now();
+          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
+            _cachedTodayMeetups = incoming;
+            _lastNonEmptyMeetupsAt = incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
+          } else {
+            final last = _lastNonEmptyMeetupsAt;
+            if (last == null || now.difference(last) > const Duration(seconds: 3)) {
+              _cachedTodayMeetups = incoming;
+            }
+          }
         }
 
-        // 게시글 목록 표시
-        if (_debugAllViewLogs < 6) {
-          _debugAllViewLogs++;
-          Logger.log('🧭 Board(All) view: LIST len=${posts.length}');
-        }
-        return _buildAllPostsView(posts);
+        final meetupsCount = isMeetupsLoading
+            ? 2
+            : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
+
+        final postsCount = isPostsLoading
+            ? 3
+            : (isPostsError ? 1 : (todayPosts.isNotEmpty ? todayPosts.length : 1));
+
+        final itemCount =
+            1 + // banner
+            1 + // meetups header
+            meetupsCount +
+            1 + // posts header
+            postsCount;
+
+        return RefreshIndicator(
+          color: AppColors.pointColor,
+          backgroundColor: Colors.white,
+          onRefresh: () async {
+            if (!isPostsLoading && !isPostsError) {
+              await _refreshCommentCountsForPosts(todayPosts);
+            } else {
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (mounted) setState(() {});
+            }
+          },
+          child: ListView.builder(
+            key: const PageStorageKey('board_today_list_unified'),
+            controller: _todayScrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            cacheExtent: 1000,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            itemCount: itemCount,
+            itemBuilder: (context, index) {
+              var i = index;
+
+              // 0) banner
+              if (i == 0) {
+                return AdBannerWidget(
+                  key: const ValueKey('board_banner_today'),
+                  widgetId: 'board_banner_today',
+                );
+              }
+              i -= 1;
+
+              // 1) meetups header
+              if (i == 0) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.event_available_rounded,
+                          size: 18, color: Color(0xFF111827)),
+                      const SizedBox(width: 8),
+                      Text(
+                        todayMeetupsTitle,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (isMeetupsLoading)
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        Text(
+                          '${todayMeetups.length}',
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              }
+              i -= 1;
+
+              // 2) meetups list/skeleton/empty
+              if (i < meetupsCount) {
+                if (isMeetupsLoading) {
+                  return Padding(
+                    padding: _boardPostCardMargin,
+                    child: _buildMeetupSkeletonCard(),
+                  );
+                }
+                if (todayMeetups.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: Text(
+                      noTodayMeetupsText,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  );
+                }
+
+                final meetup = todayMeetups[i];
+                return Padding(
+                  padding: _boardPostCardMargin,
+                  child: StreamBuilder<int>(
+                    stream: _meetupService.participantCountStream(
+                      meetup.id,
+                      fallback: meetup.currentParticipants,
+                    ),
+                    builder: (context, countSnap) {
+                      final count = countSnap.data ?? meetup.currentParticipants;
+                      return BoardMeetupCard(
+                        key: ValueKey('board_meetup_${meetup.id}'),
+                        meetup: meetup,
+                        currentParticipants: count,
+                        onTap: () => _navigateToMeetupDetail(meetup),
+                      );
+                    },
+                  ),
+                );
+              }
+              i -= meetupsCount;
+
+              // 3) posts header
+              if (i == 0) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.article_rounded,
+                          size: 18, color: Color(0xFF111827)),
+                      const SizedBox(width: 8),
+                      Text(
+                        todayPostsTitle,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              i -= 1;
+
+              // 4) posts list/skeleton/error/empty
+              if (isPostsLoading) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildPostSkeleton(),
+                );
+              }
+
+              if (isPostsError) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+                );
+              }
+
+              if (todayPosts.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                  child: Text(
+                    noTodayPostsText,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                );
+              }
+
+              final postIndex = i;
+              final post = todayPosts[postIndex];
+              return OptimizedPostCard(
+                key: ValueKey(post.id),
+                post: post,
+                index: postIndex,
+                onTap: () => _navigateToPostDetail(post),
+                externalCommentCountOverride: _commentCountOverrides[post.id],
+                preloadImage: postIndex < 3,
+                margin: _boardPostCardMargin,
+                contentPadding: _boardPostCardContentPadding,
+              );
+            },
+          ),
+        );
       },
     );
   }

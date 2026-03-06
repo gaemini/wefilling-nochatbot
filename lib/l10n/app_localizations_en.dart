@@ -2857,4 +2857,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get turnOff => 'Turn Off';
+
+  @override
+  String get exitMeetupCreation => 'Exit Meetup Creation';
+
+  @override
+  String get exitMeetupCreationMessage =>
+      'Are you sure you want to exit?\nYour entered information will not be saved.';
+
+  @override
+  String get exit => 'Exit';
+
+  @override
+  String get stay => 'Stay';
+
+  @override
+  String get termsAgreementTitle => 'Terms Agreement';
+
+  @override
+  String get termsAgreementDescription =>
+      'Please agree to the terms\nbefore using the service.';
 }

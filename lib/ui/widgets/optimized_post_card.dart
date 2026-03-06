@@ -22,6 +22,8 @@ import '../../l10n/app_localizations.dart';
 import '../../screens/dm_chat_screen.dart';
 import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
+import '../../ui/dialogs/block_dialog.dart';
+import '../../ui/dialogs/report_dialog.dart';
 import '../../utils/logger.dart';
 import 'friends_only_badge.dart';
 import 'poll_post_widget.dart';
@@ -902,6 +904,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       required String resolvedNickname,
       required String resolvedPhotoURL,
     }) {
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final canOpenActions = currentUser != null &&
+          post.userId.isNotEmpty &&
+          post.userId != 'deleted' &&
+          post.userId != currentUser.uid;
       final String? resolvedImageUrl = (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
           ? resolvedPhotoURL.trim()
           : authorImageUrl;
@@ -1022,6 +1029,20 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   _buildVisibilityIndicator(post),
+                  if (canOpenActions)
+                    IconButton(
+                      tooltip: 'More',
+                      onPressed: () => _openPostActionsSheet(
+                        post: post,
+                        authorName: resolvedNickname,
+                      ),
+                      icon: const Icon(
+                        Icons.more_vert,
+                        size: 20,
+                        color: Color(0xFF111827),
+                      ),
+                      splashRadius: 18,
+                    ),
                 ],
               ),
             ],
@@ -1454,6 +1475,116 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         );
       }
     }
+  }
+
+  Future<void> _openPostActionsSheet({
+    required Post post,
+    required String authorName,
+  }) async {
+    final l10n = AppLocalizations.of(context)!;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
+
+    final canSendDM = currentUser != null &&
+        post.userId.isNotEmpty &&
+        post.userId != 'deleted' &&
+        post.userId != currentUser.uid &&
+        uidPattern.hasMatch(post.userId);
+    final canReportOrBlock = currentUser != null &&
+        post.userId.isNotEmpty &&
+        post.userId != 'deleted' &&
+        post.userId != currentUser.uid;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (canSendDM)
+                  ListTile(
+                    leading: Transform.rotate(
+                      angle: -math.pi / 4,
+                      child: const Icon(
+                        Icons.send_rounded,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    title: Text(
+                      l10n.directMessage,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      await _openDM(post);
+                    },
+                  ),
+                if (canReportOrBlock)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.report_gmailerrorred_outlined,
+                      color: Color(0xFFEF4444),
+                    ),
+                    title: Text(
+                      l10n.reportTitle,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final headline = post.content.trim().split('\n').first.trim();
+                      await showReportDialog(
+                        context,
+                        reportedUserId: post.userId,
+                        targetType: 'post',
+                        targetId: post.id,
+                        targetTitle: headline.isNotEmpty ? headline : null,
+                      );
+                    },
+                  ),
+                if (canReportOrBlock)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.block,
+                      color: Color(0xFFEF4444),
+                    ),
+                    title: Text(
+                      l10n.blockAction,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      await showBlockUserDialog(
+                        context,
+                        userId: post.userId,
+                        userName: authorName,
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override

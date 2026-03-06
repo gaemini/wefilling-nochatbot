@@ -1309,5 +1309,11 @@
   },
   "disableAllNotificationsTitle": "Turn Off All Notifications",
   "disableAllNotificationsMessage": "Are you sure you want to turn off all notifications?\nYou may miss important alerts.",
-  "turnOff": "Turn Off"
+  "turnOff": "Turn Off",
+  "exitMeetupCreation": "Exit Meetup Creation",
+  "exitMeetupCreationMessage": "Are you sure you want to exit?\nYour entered information will not be saved.",
+  "exit": "Exit",
+  "stay": "Stay",
+  "termsAgreementTitle": "Terms Agreement",
+  "termsAgreementDescription": "Please agree to the terms\nbefore using the service."
 }

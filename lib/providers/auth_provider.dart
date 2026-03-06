@@ -1887,6 +1887,10 @@ class AuthProvider with ChangeNotifier {
     if (missing('preferredLanguage')) updates['preferredLanguage'] = 'ko';
     if (missing('preferredLanguageUpdatedAt')) updates['preferredLanguageUpdatedAt'] = null;
 
+    // 약관 동의 (레거시 계정 자동 마이그레이션)
+    if (missing('termsAccepted')) updates['termsAccepted'] = true;
+    if (missing('termsAcceptedAt')) updates['termsAcceptedAt'] = FieldValue.serverTimestamp();
+
     // 타임스탬프
     if (missing('createdAt')) updates['createdAt'] = FieldValue.serverTimestamp();
     if (missing('updatedAt')) updates['updatedAt'] = FieldValue.serverTimestamp();
@@ -1930,6 +1934,8 @@ class AuthProvider with ChangeNotifier {
       'fcmTokenUpdatedAt': null,
       'preferredLanguage': 'ko',
       'preferredLanguageUpdatedAt': null,
+      'termsAccepted': true,
+      'termsAcceptedAt': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
       'lastLogin': FieldValue.serverTimestamp(),

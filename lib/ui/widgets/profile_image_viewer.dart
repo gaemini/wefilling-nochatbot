@@ -4,7 +4,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:ui';
 import '../../utils/profile_photo_policy.dart';
 
 class ProfileImageViewer extends StatefulWidget {
@@ -104,36 +103,35 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
     }
   }
 
+  void _onVerticalDragCancel() {
+    if (!_isDragging && _dragDistance == 0) return;
+    setState(() {
+      _isDragging = false;
+      _dragDistance = 0;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(widget.imageUrl)
         ? widget.imageUrl
         : '';
-    final opacity = _isDragging 
-        ? (1.0 - (_dragDistance.abs() / 300)).clamp(0.0, 1.0)
-        : 1.0;
     
     final scale = _isDragging
         ? (1.0 - (_dragDistance.abs() / 1000)).clamp(0.85, 1.0)
         : 1.0;
 
     return Scaffold(
-      backgroundColor: Colors.black.withOpacity(opacity),
+      // 릴리즈(실기기)에서 발생하던 반투명 합성 이슈를 피하기 위해
+      // 배경은 항상 완전 불투명으로 유지한다.
+      backgroundColor: Colors.black,
       body: GestureDetector(
+        behavior: HitTestBehavior.opaque,
         onVerticalDragUpdate: _onVerticalDragUpdate,
         onVerticalDragEnd: _onVerticalDragEnd,
+        onVerticalDragCancel: _onVerticalDragCancel,
         child: Stack(
           children: [
-            // 배경 블러 효과
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                child: Container(
-                  color: Colors.black.withOpacity(0.3),
-                ),
-              ),
-            ),
-            
             // 이미지 뷰어
             Center(
               child: Transform.translate(
@@ -177,6 +175,8 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
                                   : Image.network(
                                       safeUrl,
                                       fit: BoxFit.contain,
+                                      filterQuality: FilterQuality.high,
+                                      gaplessPlayback: true,
                                       loadingBuilder: (context, child, loadingProgress) {
                                         if (loadingProgress == null) return child;
                                         return Container(
@@ -218,10 +218,10 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
             ),
             
             // 상단 닫기 버튼
-            SafeArea(
-              child: Positioned(
-                top: 16,
-                right: 16,
+            Positioned(
+              top: 16,
+              right: 16,
+              child: SafeArea(
                 child: Material(
                   color: Colors.transparent,
                   child: InkWell(

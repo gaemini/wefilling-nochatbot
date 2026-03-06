@@ -582,16 +582,15 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
   void _openProfileImageViewer(String imageUrl) {
     Navigator.of(context).push(
       PageRouteBuilder(
-        opaque: false,
-        barrierColor: Colors.transparent,
+        opaque: true,
         pageBuilder: (context, animation, secondaryAnimation) {
-          return FadeTransition(
-            opacity: animation,
-            child: ProfileImageViewer(
-              imageUrl: imageUrl,
-              heroTag: 'profile_image_${Provider.of<AuthProvider>(context, listen: false).user?.uid ?? 'me'}',
-            ),
+          return ProfileImageViewer(
+            imageUrl: imageUrl,
+            heroTag: 'profile_image_${Provider.of<AuthProvider>(context, listen: false).user?.uid ?? 'me'}',
           );
+        },
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return child;
         },
         transitionDuration: const Duration(milliseconds: 300),
         reverseTransitionDuration: const Duration(milliseconds: 250),

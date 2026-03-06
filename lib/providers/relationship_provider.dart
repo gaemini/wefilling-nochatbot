@@ -305,9 +305,6 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.blockUser(targetUid);
       if (success) {
-        // 캐시 즉시 갱신
-        ContentFilterService.refreshCache();
-        
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
         // 검색 결과에서 제거
@@ -336,9 +333,6 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.unblockUser(targetUid);
       if (success) {
-        // 캐시 즉시 갱신
-        ContentFilterService.refreshCache();
-        
         // 관계 상태 업데이트
         await updateRelationshipStatus(targetUid);
         // 검색 결과에 해당 사용자 다시 추가

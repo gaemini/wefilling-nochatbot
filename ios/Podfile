@@ -45,9 +45,20 @@ post_install do |installer|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
       config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'i386 x86_64'
+      # Simulator builds do not need signing for Pods frameworks and bundles.
+      # Disabling it avoids sporadic CodeSign failures on local simulator runs.
+      config.build_settings['CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]'] = 'NO'
+      config.build_settings['CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]'] = 'NO'
+      config.build_settings['CODE_SIGNING_IDENTITY[sdk=iphonesimulator*]'] = ''
+      config.build_settings['EXPANDED_CODE_SIGN_IDENTITY[sdk=iphonesimulator*]'] = ''
       if config.build_settings['DEVELOPMENT_TEAM'].nil?
         config.build_settings['DEVELOPMENT_TEAM'] = ''
       end
     end
   end
+  
+  # Clean up extended attributes that cause codesign errors
+  system("find #{Dir.pwd}/Pods -type f -name '._*' -delete")
+  system("find #{Dir.pwd}/Pods -type f -name '.DS_Store' -delete")
+  system("xattr -cr #{Dir.pwd}/Pods")
 end

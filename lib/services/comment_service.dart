@@ -9,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/comment.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
+import 'content_hide_service.dart';
 import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'meetup_service.dart';
@@ -291,14 +292,24 @@ class CommentService {
                   return Comment.fromFirestore(doc);
                 }).toList();
 
-            // 차단된 사용자의 댓글 필터링
+            // 차단/차단당한 사용자의 댓글 필터링
             final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-            if (blockedUserIds.isNotEmpty) {
+            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
               comments = comments.where((comment) => 
                 comment.userId != null && 
-                !blockedUserIds.contains(comment.userId)
+                !blockedUserIds.contains(comment.userId) &&
+                !blockedByUserIds.contains(comment.userId)
               ).toList();
             }
+
+            // 신고/숨김 처리된 댓글/사용자 즉시 제외
+            comments = comments.where((comment) {
+              return !ContentHideService.shouldHideComment(
+                commentId: comment.id,
+                userId: comment.userId,
+              );
+            }).toList();
 
             // 클라이언트 측에서 정렬 수행
             comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -432,13 +443,32 @@ class CommentService {
           .handleError((e, st) {
             Logger.error('댓글 스트림 오류(postId=$postId)', e);
           })
-          .map((snapshot) {
+          .asyncMap((snapshot) async {
             List<Comment> allComments = snapshot.docs.map((doc) {
               return Comment.fromFirestore(doc);
             }).toList();
+
+            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
+              allComments = allComments.where((comment) {
+                final uid = comment.userId;
+                return uid != null &&
+                    !blockedUserIds.contains(uid) &&
+                    !blockedByUserIds.contains(uid);
+              }).toList();
+            }
             
             // 클라이언트 측에서 정렬 수행
             allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+            // 신고/숨김 처리된 댓글/사용자 즉시 제외
+            allComments = allComments.where((comment) {
+              return !ContentHideService.shouldHideComment(
+                commentId: comment.id,
+                userId: comment.userId,
+              );
+            }).toList();
             
             return allComments;
           });

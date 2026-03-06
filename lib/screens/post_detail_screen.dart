@@ -32,6 +32,8 @@ import 'friend_profile_screen.dart';
 import 'main_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
+import '../services/content_hide_service.dart';
+import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -240,6 +242,36 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         targetTitle: headline.isNotEmpty ? headline : null,
       ),
     );
+
+    if (!mounted) return;
+    if (ContentHideService.isHiddenPost(_currentPost.id)) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _blockPostAuthor() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final targetUserId = _currentPost.userId.trim();
+    if (targetUserId.isEmpty || targetUserId == 'deleted' || targetUserId == currentUser.uid) {
+      return;
+    }
+
+    final displayName = _currentPost.author.trim().isNotEmpty
+        ? _currentPost.author.trim()
+        : (AppLocalizations.of(context)!.deletedAccount ?? 'User');
+
+    final result = await showBlockUserDialog(
+      context,
+      userId: targetUserId,
+      userName: displayName,
+    );
+
+    if (!mounted) return;
+    if (result != null && result is Map<String, dynamic> && result['success'] == true) {
+      Navigator.of(context).pop();
+    }
   }
   
   @override
@@ -1163,6 +1195,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             _currentPost.userId.isNotEmpty &&
             _currentPost.userId != 'deleted' &&
             _currentPost.userId != currentUser.uid;
+        final canBlock = currentUser != null && !_isAuthor;
 
         return SafeArea(
           child: Padding(
@@ -1233,6 +1266,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     onTap: () async {
                       Navigator.pop(context);
                       await _openReportPostDialog();
+                    },
+                  ),
+                if (canBlock)
+                  ListTile(
+                    leading: const Icon(
+                      Icons.block,
+                      color: Color(0xFFEF4444),
+                    ),
+                    title: Text(
+                      AppLocalizations.of(context)!.blockAction,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFFEF4444),
+                      ),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _blockPostAuthor();
                     },
                   ),
                 if (_isAuthor)
@@ -2249,7 +2301,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       // NOTE: 부모 댓글이 먼저 삭제되고 대댓글은 서버 트리거로 지워지는 동안,
                       // "고아 대댓글"이 잠깐 남아 commentCount가 튀는 UX를 방지하기 위해
                       // 화면에서는 부모가 존재하는 대댓글만 집계/표시한다.
-                      final rawComments = snapshot.data ?? [];
+                      final rawComments = (snapshot.data ?? []).where((c) {
+                        return !ContentHideService.shouldHideComment(
+                          commentId: c.id,
+                          userId: c.userId,
+                        );
+                      }).toList();
                       final topLevelComments =
                           rawComments.where((c) => c.isTopLevel).toList();
                       final topLevelIds =
@@ -2301,6 +2358,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                             replies: replies,
                             postId: _currentPost.id,
                             onDeleteComment: _deleteCommentWithReplies,
+                            onBlockApplied: () {
+                              if (!mounted) return;
+                              setState(() {});
+                            },
                             isAnonymousPost: _currentPost.isAnonymous,
                             getDisplayName: (comment) => getCommentAuthorName(comment, currentUser?.uid),
                             isReplyTarget: _replyTargetCommentId == comment.id,

@@ -12,6 +12,7 @@ import '../models/post.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 import 'content_filter_service.dart';
+import 'content_hide_service.dart';
 import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
@@ -22,6 +23,11 @@ class PostService {
   static final PostService instance = PostService._internal();
   factory PostService() => instance;
   PostService._internal();
+
+  // 실시간 피드는 상위 N개만 구독해 비용/지연을 줄입니다.
+  // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
+  // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
+  static const int _feedRealtimeLimit = 300;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -41,6 +47,75 @@ class PostService {
   StreamSubscription<User?>? _authSub;
   String? _blockListenUid;
   List<Post>? _lastParsedPosts;
+  int _debugPostsStartLogs = 0;
+  int _debugPostsSnapshotLogs = 0;
+  int _debugEmitFilteredLogs = 0;
+
+  /// 차단/차단해제 직후 "즉시 피드 제거/복구"를 위해 마지막 posts를 기준으로 재필터링해서 다시 emit합니다.
+  /// - Firestore snapshots(특히 blocks)가 도착하기 전에도 UI가 즉시 반영되게 함
+  /// - 기존 스트림/구독 구조는 건드리지 않고, 추가 emit만 수행 (회귀 위험 최소화)
+  void requestReemitWithCurrentFilters() {
+    final controller = _postsStreamController;
+    if (controller == null) return;
+
+    final parsed = _lastParsedPosts ?? const <Post>[];
+    final currentUser = _auth.currentUser;
+
+    // 0) visibility filter (sync)
+    final List<Post> visibilityFiltered;
+    if (currentUser != null) {
+      visibilityFiltered = parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
+    } else {
+      visibilityFiltered =
+          parsed.where((p) => p.visibility == 'public' || p.visibility.isEmpty).toList();
+    }
+
+    // 1) blocked filter using cached sets (sync, immediate)
+    final blocked = ContentFilterService.getBlockedUserIdsCached();
+    final blockedBy = ContentFilterService.getBlockedByUserIdsCached();
+    final List<Post> fastFiltered;
+    if (blocked.isEmpty && blockedBy.isEmpty) {
+      fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered);
+    } else {
+      fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered)
+          .where((p) => !blocked.contains(p.userId) && !blockedBy.contains(p.userId))
+          .toList();
+    }
+
+    controller.add(fastFiltered);
+
+    // 2) reconcile with async filter (network/get() fallback) – best effort, non-blocking
+    unawaited(_reconcileBlockFilterAsync(
+      controller: controller,
+      visibilityFiltered: visibilityFiltered,
+      alreadyEmittedLen: fastFiltered.length,
+    ));
+  }
+
+  Future<void> _reconcileBlockFilterAsync({
+    required StreamController<List<Post>> controller,
+    required List<Post> visibilityFiltered,
+    required int alreadyEmittedLen,
+  }) async {
+    // controller가 닫혔거나 교체된 경우를 최대한 안전하게 회피
+    if (controller.isClosed) return;
+    if (!identical(controller, _postsStreamController)) return;
+
+    try {
+      final nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
+          .timeout(const Duration(seconds: 2), onTimeout: () => visibilityFiltered);
+      if (controller.isClosed) return;
+      if (!identical(controller, _postsStreamController)) return;
+
+      // 길이만으로 중복 emit을 줄임(완전 일치 비교는 비용↑)
+      final hiddenFiltered = ContentHideService.filterPostsSync(nonBlocked);
+      if (hiddenFiltered.length != alreadyEmittedLen) {
+        controller.add(hiddenFiltered);
+      }
+    } catch (_) {
+      // best-effort: 실패해도 이미 fastFiltered를 emit 했으므로 무시
+    }
+  }
 
   /// 레거시/누락 데이터 보강용:
   /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
@@ -508,14 +583,16 @@ class PostService {
           return false;
         }).toList();
 
-        return filteredPosts;
+        return ContentHideService.filterPostsSync(filteredPosts);
       }
 
       // 로그인하지 않은 경우 전체 공개 게시글만 표시
-      return posts
+      return ContentHideService.filterPostsSync(
+        posts
           .where(
               (post) => post.visibility == 'public' || post.visibility.isEmpty)
-          .toList();
+          .toList(),
+      );
     });
   }
 
@@ -539,6 +616,9 @@ class PostService {
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts([post]);
       if (filtered.isEmpty) return null;
+      if (ContentHideService.isHiddenPost(post.id) || ContentHideService.isHiddenUser(post.userId)) {
+        return null;
+      }
 
       return post;
     } catch (e) {
@@ -764,7 +844,10 @@ class PostService {
 
         Future<void> start() async {
           try {
-            Logger.log('📰 getPostsStream start()');
+            if (_debugPostsStartLogs < 1) {
+              _debugPostsStartLogs++;
+              Logger.log('📰 getPostsStream start()');
+            }
           Future<void> emitFiltered() async {
             final sw = Stopwatch()..start();
             final parsed = _lastParsedPosts ?? const <Post>[];
@@ -782,7 +865,7 @@ class PostService {
             }
 
             // 1) Immediately emit something so UI doesn't stick on "waiting".
-            _postsStreamController?.add(visibilityFiltered);
+            _postsStreamController?.add(ContentHideService.filterPostsSync(visibilityFiltered));
 
             // 2) blocked filter (can be slow/network dependent)
             List<Post> nonBlocked = visibilityFiltered;
@@ -799,16 +882,21 @@ class PostService {
 
             // 3) If changed after block-filtering, emit again.
             if (nonBlocked.length != visibilityFiltered.length) {
-              _postsStreamController?.add(nonBlocked);
+              _postsStreamController?.add(ContentHideService.filterPostsSync(nonBlocked));
             }
 
             if (CacheFeatureFlags.isPostCacheEnabled) {
-              unawaited(_cache.savePosts(nonBlocked, visibility: 'public'));
+              unawaited(
+                _cache.savePosts(ContentHideService.filterPostsSync(nonBlocked), visibility: 'public'),
+              );
             }
 
-            Logger.log(
-              '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
-            );
+            if (_debugEmitFilteredLogs < 6) {
+              _debugEmitFilteredLogs++;
+              Logger.log(
+                '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
+              );
+            }
           }
 
           Future<void> ensureBlockSubscriptions() async {
@@ -858,9 +946,7 @@ class PostService {
                 .where('blocked', isEqualTo: uid)
                 .snapshots()
                 .listen((snap) async {
-              // ✅ 복합 where(isImplicit==true) 제거 → 클라이언트에서 필터링
               final ids = snap.docs
-                  .where((d) => d.data()['isImplicit'] == true)
                   .map((d) => (d.data()['blocker'] ?? '').toString().trim())
                   .where((v) => v.isNotEmpty)
                   .toSet();
@@ -876,9 +962,13 @@ class PostService {
           _postsSub = _firestore
               .collection('posts')
               .orderBy('createdAt', descending: true)
+              .limit(_feedRealtimeLimit)
               .snapshots()
               .listen((snapshot) async {
-            Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
+            if (_debugPostsSnapshotLogs < 6) {
+              _debugPostsSnapshotLogs++;
+              Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
+            }
             final posts = snapshot.docs.map((doc) {
               try {
                 return _buildPostFromFirestore(doc.id, doc.data());
@@ -1051,7 +1141,7 @@ class PostService {
 
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts(matched);
-      return filtered;
+      return ContentHideService.filterPostsSync(filtered);
     } catch (e) {
       Logger.error('포스트 검색 오류: $e');
       return [];

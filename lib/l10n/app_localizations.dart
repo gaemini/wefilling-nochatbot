@@ -5323,6 +5323,42 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'끄기'**
   String get turnOff;
+
+  /// No description provided for @exitMeetupCreation.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 생성 나가기'**
+  String get exitMeetupCreation;
+
+  /// No description provided for @exitMeetupCreationMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.'**
+  String get exitMeetupCreationMessage;
+
+  /// No description provided for @exit.
+  ///
+  /// In ko, this message translates to:
+  /// **'나가기'**
+  String get exit;
+
+  /// No description provided for @stay.
+  ///
+  /// In ko, this message translates to:
+  /// **'머무르기'**
+  String get stay;
+
+  /// No description provided for @termsAgreementTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'약관 동의'**
+  String get termsAgreementTitle;
+
+  /// No description provided for @termsAgreementDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'서비스를 이용하기 전에\n약관에 동의해주세요.'**
+  String get termsAgreementDescription;
 }
 
 class _AppLocalizationsDelegate

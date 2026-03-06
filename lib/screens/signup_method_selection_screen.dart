@@ -13,6 +13,8 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import 'email_signup_screen.dart';
 import 'nickname_setup_screen.dart';
+import 'terms_screen.dart';
+import 'privacy_policy_screen.dart';
 
 class SignUpMethodSelectionScreen extends StatefulWidget {
   final String verifiedHanyangEmail;
@@ -31,6 +33,7 @@ class _SignUpMethodSelectionScreenState
     extends State<SignUpMethodSelectionScreen> {
   bool _isLoading = false;
   String? _errorMessage;
+  bool _agreedTerms = false;
 
   Future<bool> _blockIfExistingAccount({
     required String providerLabel,
@@ -354,11 +357,75 @@ class _SignUpMethodSelectionScreenState
 
             const SizedBox(height: 28),
 
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Checkbox(
+                        value: _agreedTerms,
+                        onChanged: _isLoading
+                            ? null
+                            : (v) => setState(() => _agreedTerms = v ?? false),
+                      ),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            AppLocalizations.of(context)!.loginTermsNotice,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 13,
+                              color: Color(0xFF334155),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const TermsScreen()),
+                          );
+                        },
+                        child: Text(AppLocalizations.of(context)!.termsOfService),
+                      ),
+                      TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+                          );
+                        },
+                        child: Text(AppLocalizations.of(context)!.privacyPolicy),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
             // Apple
             SizedBox(
               height: 56,
               child: OutlinedButton.icon(
-                onPressed: _isLoading || !isAppleSupported ? null : _signUpWithApple,
+                onPressed: _isLoading || !isAppleSupported || !_agreedTerms
+                    ? null
+                    : _signUpWithApple,
                 icon: const Icon(Icons.apple, size: 20),
                 label: Text(
                   isAppleSupported
@@ -388,7 +455,7 @@ class _SignUpMethodSelectionScreenState
             SizedBox(
               height: 56,
               child: OutlinedButton.icon(
-                onPressed: _isLoading ? null : _signUpWithGoogle,
+                onPressed: _isLoading || !_agreedTerms ? null : _signUpWithGoogle,
                 icon: Image.asset(
                   'assets/icons/google_logo.png',
                   width: 20,
@@ -420,7 +487,7 @@ class _SignUpMethodSelectionScreenState
             SizedBox(
               height: 56,
               child: ElevatedButton.icon(
-                onPressed: _isLoading ? null : _signUpWithId,
+                onPressed: _isLoading || !_agreedTerms ? null : _signUpWithId,
                 icon: const Icon(Icons.email_outlined, size: 20),
                 label: Text(
                   l10n.signUpWithId,

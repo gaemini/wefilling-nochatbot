@@ -3,7 +3,6 @@
 
 import 'package:flutter/material.dart';
 import '../../services/report_service.dart';
-import '../../services/content_filter_service.dart';
 import '../../l10n/app_localizations.dart';
 
 // 사용자 차단 확인 다이얼로그
@@ -183,6 +182,9 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
   }
 
   Future<void> _blockUser() async {
+    final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
     setState(() {
       isBlocking = true;
     });
@@ -191,9 +193,6 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
       final success = await ReportService.blockUser(widget.userId);
 
       if (success) {
-        // 캐시 즉시 갱신
-        ContentFilterService.refreshCache();
-        
         if (mounted) {
           Navigator.pop(context, {
             'success': true,
@@ -206,13 +205,19 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
                 children: [
                   Icon(Icons.check_circle, color: Colors.white),
                   SizedBox(width: 8),
-                  Text('${widget.userName}님을 차단했습니다.'),
+                  Expanded(
+                    child: Text(
+                      isKo
+                          ? '${widget.userName}님을 차단했습니다.'
+                          : 'Blocked ${widget.userName}.',
+                    ),
+                  ),
                 ],
               ),
               backgroundColor: Colors.green,
               duration: Duration(seconds: 3),
               action: SnackBarAction(
-                label: '실행 취소',
+                label: l10n.unblockUserButton,
                 textColor: Colors.white,
                 onPressed: () => _undoBlock(),
               ),
@@ -223,7 +228,7 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('차단에 실패했습니다. 다시 시도해주세요.'),
+              content: Text(l10n.errorOccurred),
               backgroundColor: Colors.red,
             ),
           );
@@ -233,7 +238,7 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
+            content: Text('${l10n.errorOccurred}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -248,13 +253,13 @@ class _BlockUserDialogState extends State<BlockUserDialog> {
   }
 
   Future<void> _undoBlock() async {
+    final l10n = AppLocalizations.of(context)!;
     final success = await ReportService.unblockUser(widget.userId);
     if (success) {
-      ContentFilterService.refreshCache();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('차단을 취소했습니다.'),
+            content: Text(l10n.userUnblocked),
             backgroundColor: Colors.blue,
           ),
         );
@@ -391,6 +396,9 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
   }
 
   Future<void> _unblockUser() async {
+    final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
     setState(() {
       isUnblocking = true;
     });
@@ -403,7 +411,11 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
           Navigator.pop(context, true); // 성공 시 true 반환
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${widget.userName}님의 차단을 해제했습니다.'),
+              content: Text(
+                isKo
+                    ? '${widget.userName}님의 차단을 해제했습니다.'
+                    : 'Unblocked ${widget.userName}.',
+              ),
               backgroundColor: Colors.green,
             ),
           );
@@ -412,7 +424,7 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('차단 해제에 실패했습니다. 다시 시도해주세요.'),
+              content: Text(l10n.unblockFailed),
               backgroundColor: Colors.red,
             ),
           );
@@ -422,7 +434,7 @@ class _UnblockUserDialogState extends State<UnblockUserDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('오류가 발생했습니다: $e'),
+            content: Text('${l10n.errorOccurred}: $e'),
             backgroundColor: Colors.red,
           ),
         );

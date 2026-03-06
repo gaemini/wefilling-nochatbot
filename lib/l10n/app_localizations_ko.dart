@@ -2778,4 +2778,22 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get turnOff => '끄기';
+
+  @override
+  String get exitMeetupCreation => '모임 생성 나가기';
+
+  @override
+  String get exitMeetupCreationMessage => '정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.';
+
+  @override
+  String get exit => '나가기';
+
+  @override
+  String get stay => '머무르기';
+
+  @override
+  String get termsAgreementTitle => '약관 동의';
+
+  @override
+  String get termsAgreementDescription => '서비스를 이용하기 전에\n약관에 동의해주세요.';
 }

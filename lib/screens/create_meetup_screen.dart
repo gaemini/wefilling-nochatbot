@@ -479,6 +479,65 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     Navigator.of(context).pop();
   }
 
+  Future<bool> _showExitConfirmationDialog() async {
+    final l10n = AppLocalizations.of(context)!;
+    
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          l10n.exitMeetupCreation,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
+          ),
+        ),
+        content: Text(
+          l10n.exitMeetupCreationMessage,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF6B7280),
+          ),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              l10n.stay,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              l10n.exit,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: AppColors.pointColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    
+    return result ?? false;
+  }
+
   MeetupFavoriteTemplate _buildFavoritesDraft() {
     // time 저장은 locale 영향 제거: undecided 여부 + HH:mm만 저장
     final l10n = AppLocalizations.of(context)!;
@@ -625,9 +684,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvoked: (didPop) async {
         if (didPop) return;
-        _closeScreen(shouldSaveAutofill: false);
+        final shouldExit = await _showExitConfirmationDialog();
+        if (shouldExit && mounted) {
+          _closeScreen(shouldSaveAutofill: false);
+        }
       },
       child: Scaffold(
         backgroundColor: const Color(0xFFFAFBFC),
@@ -637,7 +699,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           centerTitle: true,
           leading: IconButton(
             icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
-            onPressed: () => _closeScreen(shouldSaveAutofill: false),
+            onPressed: () async {
+              final shouldExit = await _showExitConfirmationDialog();
+              if (shouldExit && mounted) {
+                _closeScreen(shouldSaveAutofill: false);
+              }
+            },
           ),
           title: Text(
             AppLocalizations.of(context)!.createNewMeetup,
@@ -1252,8 +1319,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       child: SizedBox(
                         height: 52,
                         child: OutlinedButton(
-                          onPressed: _isSubmitting ? null : () {
-                            _closeScreen(shouldSaveAutofill: false);
+                          onPressed: _isSubmitting ? null : () async {
+                            final shouldExit = await _showExitConfirmationDialog();
+                            if (shouldExit && mounted) {
+                              _closeScreen(shouldSaveAutofill: false);
+                            }
                           },
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: Color(0xFFE6EAF0), width: 1.5),

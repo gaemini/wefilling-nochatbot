@@ -4,6 +4,8 @@
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'content_filter_service.dart';
+import 'post_service.dart';
 import '../models/user_profile.dart';
 import '../models/friend_request.dart';
 import '../models/relationship_status.dart';
@@ -210,6 +212,9 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('사용자 차단 성공: $targetUid');
+        // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
+        ContentFilterService.addBlockedUserId(targetUid);
+        PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';
@@ -235,6 +240,9 @@ class RelationshipService {
       final success = result.data['success'] as bool? ?? false;
       if (success) {
         Logger.log('사용자 차단 해제 성공: $targetUid');
+        // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
+        ContentFilterService.removeBlockedUserId(targetUid);
+        PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
         final error = result.data['error'] as String? ?? '알 수 없는 오류';

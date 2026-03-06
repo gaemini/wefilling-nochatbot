@@ -25,6 +25,7 @@ class BadgeService {
   
   // 디바운싱을 위한 타이머
   static Timer? _updateDebounceTimer;
+  static int _debugBadgeUpdateLogs = 0;
   
   /// 실시간 배지 리스너 시작
   static Future<void> startRealtimeBadgeSync() async {
@@ -316,7 +317,10 @@ class BadgeService {
         if (_currentBadgeCount != totalBadge) {
           await _setBadge(totalBadge);
           _currentBadgeCount = totalBadge;
-          Logger.log('✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount)');
+          if (_debugBadgeUpdateLogs < 10) {
+            _debugBadgeUpdateLogs++;
+            Logger.log('✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount)');
+          }
         }
         
         // 성공하면 즉시 리턴
@@ -426,7 +430,6 @@ class BadgeService {
   static Future<void> _setBadge(int count) async {
     try {
       final safeCount = count < 0 ? 0 : count;
-      Logger.log('🔔 배지 설정: $safeCount');
       await AppBadgePlus.updateBadge(safeCount);
     } catch (e) {
       Logger.error('배지 적용 실패', e);

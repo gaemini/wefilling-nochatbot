@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import 'content_hide_service.dart';
 import '../utils/logger.dart';
 
 class ContentFilterService {
@@ -26,9 +27,62 @@ class ContentFilterService {
     _lastCacheUpdate = DateTime.now();
   }
 
+  /// 차단 직후 "즉시 제거"를 위해 in-memory 캐시에 추가합니다.
+  /// - Firestore snapshot 반영을 기다리지 않아도 필터가 즉시 적용되게 함
+  static void addBlockedUserId(String userId) {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    final current = _blockedUserIds ?? <String>{};
+    _blockedUserIds = {...current, uid};
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  /// 차단 해제 직후 in-memory 캐시에서 제거합니다.
+  static void removeBlockedUserId(String userId) {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    if (_blockedUserIds == null) return;
+    final next = {..._blockedUserIds!}..remove(uid);
+    _blockedUserIds = next;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  /// 네트워크 없이 현재 캐시값을 즉시 반환합니다 (optimistic UI 용도).
+  static Set<String> getBlockedUserIdsCached() {
+    final v = _blockedUserIds;
+    if (v == null || v.isEmpty) return const <String>{};
+    return Set<String>.unmodifiable(v);
+  }
+
+  /// 네트워크 없이 현재 캐시값을 즉시 반환합니다 (optimistic UI 용도).
+  static Set<String> getBlockedByUserIdsCached() {
+    final v = _blockedByUserIds;
+    if (v == null || v.isEmpty) return const <String>{};
+    return Set<String>.unmodifiable(v);
+  }
+
   /// "나를 차단한 사용자" 캐시를 즉시 채웁니다.
   static void setBlockedByUserIds(Set<String> ids) {
     _blockedByUserIds = ids;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  /// "나를 차단한 사용자"가 즉시 반영되도록 in-memory 캐시에 추가합니다.
+  static void addBlockedByUserId(String userId) {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    final current = _blockedByUserIds ?? <String>{};
+    _blockedByUserIds = {...current, uid};
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  /// "나를 차단한 사용자" 캐시에서 즉시 제거합니다.
+  static void removeBlockedByUserId(String userId) {
+    final uid = userId.trim();
+    if (uid.isEmpty) return;
+    if (_blockedByUserIds == null) return;
+    final next = {..._blockedByUserIds!}..remove(uid);
+    _blockedByUserIds = next;
     _lastCacheUpdate = DateTime.now();
   }
 
@@ -82,10 +136,7 @@ class ContentFilterService {
           .get()
           .timeout(_blockQueryTimeout);
 
-      // ✅ 복합 인덱스가 필요한 where(isImplicit==true)를 제거하고
-      // 클라이언트에서 isImplicit == true 인 문서만 필터링한다.
       _blockedByUserIds = querySnapshot.docs
-          .where((doc) => doc.data()['isImplicit'] == true)
           .map((doc) => (doc.data()['blocker'] ?? '').toString())
           .where((v) => v.trim().isNotEmpty)
           .toSet();
@@ -127,9 +178,11 @@ class ContentFilterService {
     final blockedUserIds = await _getBlockedUserIds();
     final blockedByUserIds = await _getBlockedByUserIds();
     
-    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return posts;
+    final hiddenApplied = ContentHideService.filterPostsSync(posts);
 
-    return posts.where((post) => 
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return hiddenApplied;
+
+    return hiddenApplied.where((post) => 
       !blockedUserIds.contains(post.userId) &&
       !blockedByUserIds.contains(post.userId)
     ).toList();
@@ -140,9 +193,11 @@ class ContentFilterService {
     final blockedUserIds = await _getBlockedUserIds();
     final blockedByUserIds = await _getBlockedByUserIds();
     
-    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return meetups;
+    final hiddenApplied = ContentHideService.filterMeetupsSync(meetups);
 
-    return meetups.where((meetup) => 
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return hiddenApplied;
+
+    return hiddenApplied.where((meetup) => 
       !blockedUserIds.contains(meetup.userId) &&
       !blockedByUserIds.contains(meetup.userId)
     ).toList();
@@ -165,6 +220,7 @@ class ContentFilterService {
 
     return users.where((user) => 
       user['uid'] != null && 
+      !ContentHideService.isHiddenUser((user['uid'] ?? '').toString()) &&
       !blockedUserIds.contains(user['uid']) &&
       !blockedByUserIds.contains(user['uid'])
     ).toList();
@@ -242,7 +298,8 @@ class ContentFilterService {
     return notifications.where((notification) {
       final fromUserId = notification['fromUserId'];
       return fromUserId == null || 
-             (!blockedUserIds.contains(fromUserId) && 
+             (!ContentHideService.isHiddenUser(fromUserId.toString()) &&
+              !blockedUserIds.contains(fromUserId) && 
               !blockedByUserIds.contains(fromUserId));
     }).toList();
   }

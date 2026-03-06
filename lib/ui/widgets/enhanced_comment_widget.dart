@@ -9,6 +9,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:linkify/linkify.dart' as linkify;
 import '../../models/comment.dart';
 import '../../services/comment_service.dart';
+import '../../services/content_hide_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../services/report_service.dart';
 import '../../l10n/app_localizations.dart';
@@ -24,6 +25,7 @@ class EnhancedCommentWidget extends StatefulWidget {
   final String postId;
   final VoidCallback? onReplyTap;
   final Function(String)? onDeleteComment;
+  final VoidCallback? onBlockApplied;
   final Function(String, String, String)? onReplySubmit;
   final bool isAnonymousPost; // 익명 게시글 여부
   final String Function(Comment)? getDisplayName; // 댓글 작성자 표시명 함수
@@ -37,6 +39,7 @@ class EnhancedCommentWidget extends StatefulWidget {
     required this.postId,
     this.onReplyTap,
     this.onDeleteComment,
+    this.onBlockApplied,
     this.onReplySubmit,
     this.isAnonymousPost = false,
     this.getDisplayName,
@@ -51,6 +54,7 @@ class EnhancedCommentWidget extends StatefulWidget {
 class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
   final CommentService _commentService = CommentService();
   bool _showReplies = true;
+  bool _hiddenByReport = false;
 
   Future<void> _openLinkUrl(String url) async {
     final uri = Uri.tryParse(url);
@@ -128,11 +132,20 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       onTap: () async {
                         Navigator.pop(sheetContext);
                         if (!mounted) return;
-                        await showBlockUserDialog(
+                        final result = await showBlockUserDialog(
                           context,
                           userId: widget.comment.userId,
                           userName: targetName,
                         );
+                        if (!mounted) return;
+                        if (result != null &&
+                            result is Map<String, dynamic> &&
+                            result['success'] == true) {
+                          setState(() {
+                            _hiddenByReport = true;
+                          });
+                          widget.onBlockApplied?.call();
+                        }
                       },
                     ),
                   if ((canReport || canBlock) && canDelete) const _ActionDivider(),
@@ -340,6 +353,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
     if (mounted) {
       if (success) {
+        setState(() {
+          _hiddenByReport = true;
+        });
         AppSnackBar.show(
           context,
           message: AppLocalizations.of(context)!.reportSubmitted,
@@ -552,6 +568,14 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (_hiddenByReport ||
+        ContentHideService.shouldHideComment(
+          commentId: widget.comment.id,
+          userId: widget.comment.userId,
+        )) {
+      return const SizedBox.shrink();
+    }
+
     final currentUser = FirebaseAuth.instance.currentUser;
     final isMyComment = currentUser?.uid == widget.comment.userId;
     final isLiked = currentUser != null && widget.comment.isLikedBy(currentUser.uid);

@@ -10,6 +10,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:ui' as ui;
 import 'badge_service.dart';
 import 'navigation_service.dart';
@@ -40,23 +41,37 @@ class FCMService {
   final FlutterLocalNotificationsPlugin _localNotifications = 
       FlutterLocalNotificationsPlugin();
 
+  static const String _channelHighImportanceId = 'high_importance_channel';
+  static const String _channelHighImportanceName = 'High Importance Notifications';
+  static const String _channelMeetupId = 'meetup_notifications';
+  static const String _channelMeetupName = 'Meetup Notifications';
+
   // 로컬 알림 초기화
   Future<void> _initializeLocalNotifications() async {
     // Android 알림 채널 설정
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'high_importance_channel', // 채널 ID
-      'High Importance Notifications', // 채널 이름
-      description: 'This channel is used for important notifications.', // 채널 설명
+    const AndroidNotificationChannel highImportanceChannel = AndroidNotificationChannel(
+      _channelHighImportanceId,
+      _channelHighImportanceName,
+      description: 'This channel is used for important notifications.',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    );
+
+    const AndroidNotificationChannel meetupChannel = AndroidNotificationChannel(
+      _channelMeetupId,
+      _channelMeetupName,
+      description: 'This channel is used for meetup-related notifications.',
       importance: Importance.high,
       playSound: true,
       enableVibration: true,
     );
 
     // Android 알림 채널 생성
-    await _localNotifications
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+    final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin>();
+    await androidPlugin?.createNotificationChannel(highImportanceChannel);
+    await androidPlugin?.createNotificationChannel(meetupChannel);
 
     // 초기화 설정
     const AndroidInitializationSettings initializationSettingsAndroid =
@@ -93,6 +108,28 @@ class FCMService {
     );
   }
 
+  Future<bool> _ensureAndroidPostNotificationsPermission() async {
+    if (kIsWeb || !Platform.isAndroid) return true;
+    try {
+      // Android 13+에서만 런타임 권한이 의미가 있고,
+      // permission_handler는 OS별로 적절히 status/grant를 반환한다.
+      final status = await Permission.notification.status;
+      if (status.isGranted) return true;
+
+      final requested = await Permission.notification.request();
+      if (requested.isGranted) return true;
+
+      // 거부/영구 거부 상태: OS 팝업이 더 이상 안 뜰 수 있다.
+      // 배포 품질: 최소한 로그로 원인 노출 (UI 안내는 상위 레이어에서 처리 권장)
+      Logger.log('❌ Android 알림 권한 미허용: $requested');
+      return false;
+    } catch (e) {
+      Logger.error('❌ Android 알림 권한 요청 실패', e);
+      // 실패하더라도 앱 동작은 계속 (best-effort)
+      return false;
+    }
+  }
+
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
@@ -100,8 +137,13 @@ class FCMService {
       // 로컬 알림 초기화
       await _initializeLocalNotifications();
 
-      // iOS 및 Android 알림 권한 요청
-      NotificationSettings settings = await _messaging.requestPermission(
+      // ✅ Android 13+: POST_NOTIFICATIONS 런타임 권한을 명시적으로 요청
+      if (!kIsWeb && Platform.isAndroid) {
+        await _ensureAndroidPostNotificationsPermission();
+      }
+
+      // iOS: 알림 권한 요청 (Android는 의미가 약하므로 best-effort로만 호출)
+      final settings = await _messaging.requestPermission(
         alert: true,
         announcement: false,
         badge: true,
@@ -111,14 +153,15 @@ class FCMService {
         sound: true,
       );
 
-      if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-        // 알림 권한 승인됨
-      } else if (settings.authorizationStatus ==
-          AuthorizationStatus.provisional) {
-        // 임시 알림 권한 승인됨
-      } else {
-        Logger.log('❌ 알림 권한 거부됨');
-        return;
+      if (!kIsWeb && Platform.isIOS) {
+        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+          // ok
+        } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+          // ok (quiet)
+        } else {
+          Logger.log('❌ iOS 알림 권한 거부됨');
+          return;
+        }
       }
 
       // ✅ iOS(포그라운드): 시스템 자동 배너를 끄고(전역),
@@ -155,7 +198,7 @@ class FCMService {
         final conversationId = (message.data['conversationId'] ?? '').toString();
         final isDm = type == 'dm_received' && conversationId.isNotEmpty;
 
-        if (!kIsWeb && Platform.isIOS) {
+        if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
           // 채팅방을 보고 있으면: 알림 스킵 (미읽음일 때만 알림)
           if (isDm && DMActiveConversation.isActive(conversationId)) {
             return;
@@ -201,12 +244,16 @@ class FCMService {
         await Future.delayed(Duration(seconds: retrySeconds[i]));
       }
 
+      final bool shouldLogRetry = i == 0 || i == retrySeconds.length - 1;
+
       // iOS에서 APNs 토큰 먼저 확인 (필수)
       if (defaultTargetPlatform == TargetPlatform.iOS) {
         try {
           final String? apnsToken = await _messaging.getAPNSToken();
           if (apnsToken == null || apnsToken.isEmpty) {
-            Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            if (shouldLogRetry) {
+              Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            }
             continue;
           } else {
             Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
@@ -221,11 +268,13 @@ class FCMService {
       try {
         final String? token = await _messaging.getToken();
         if (token != null && token.isNotEmpty) {
-          Logger.log('📱 FCM 토큰: $token');
+          Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
           await _saveFCMToken(userId, token);
           return;
         }
-        Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+        if (shouldLogRetry) {
+          Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+        }
       } catch (e) {
         Logger.error('❌ FCM 토큰 가져오기 실패: $e');
       }
@@ -244,11 +293,17 @@ class FCMService {
       final body = notification?.body ?? (message.data['body'] ?? '').toString();
       if (title.trim().isEmpty && body.trim().isEmpty) return;
 
-      const AndroidNotificationDetails androidDetails = 
-          AndroidNotificationDetails(
-        'high_importance_channel',
-        'High Importance Notifications',
-        channelDescription: 'This channel is used for important notifications.',
+      final type = (message.data['type'] ?? '').toString();
+      final String androidChannelId = _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
+      final String androidChannelName = _isMeetupType(type) ? _channelMeetupName : _channelHighImportanceName;
+      final String androidChannelDesc = _isMeetupType(type)
+          ? 'This channel is used for meetup-related notifications.'
+          : 'This channel is used for important notifications.';
+
+      final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        androidChannelId,
+        androidChannelName,
+        channelDescription: androidChannelDesc,
         importance: Importance.high,
         priority: Priority.high,
         showWhen: true,
@@ -262,7 +317,7 @@ class FCMService {
         presentSound: true,
       );
 
-      const NotificationDetails details = NotificationDetails(
+      final NotificationDetails details = NotificationDetails(
         android: androidDetails,
         iOS: iosDetails,
       );
@@ -278,6 +333,20 @@ class FCMService {
       Logger.log('✅ 로컬 알림 표시 완료');
     } catch (e) {
       Logger.error('❌ 로컬 알림 표시 실패: $e');
+    }
+  }
+
+  bool _isMeetupType(String type) {
+    if (type.isEmpty) return false;
+    if (type.startsWith('meetup_')) return true;
+    // 서버/클라 타입이 바뀌는 경우를 대비한 안전장치
+    switch (type) {
+      case 'review_approval_request':
+      case 'review_published':
+      case 'review_rejected':
+        return true;
+      default:
+        return false;
     }
   }
 

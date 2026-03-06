@@ -7,7 +7,6 @@ import '../models/report.dart';
 import '../l10n/app_localizations.dart';
 import '../services/report_service.dart';
 import '../services/auth_service.dart';
-import '../services/content_filter_service.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/empty_state.dart';
 import '../utils/logger.dart';
@@ -94,9 +93,6 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
       final success = await ReportService.unblockUser(blockedUser.blockedUserId);
       
       if (success) {
-        // 캐시 즉시 갱신
-        ContentFilterService.refreshCache();
-        
         setState(() {
           _blockedUsers.removeWhere((user) => user.id == blockedUser.id);
           _userProfiles.remove(blockedUser.blockedUserId);

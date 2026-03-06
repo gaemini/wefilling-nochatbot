@@ -4,6 +4,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'content_filter_service.dart';
+import 'content_hide_service.dart';
+import 'post_service.dart';
 import '../models/report.dart';
 import '../utils/logger.dart';
 
@@ -45,6 +48,14 @@ class ReportService {
       }
 
       await reportRef.set(reportData);
+
+      // 신고 직후 즉시 사용자 피드에서 숨김 (Apple Guideline 1.2)
+      ContentHideService.hideReportedTarget(
+        targetType: targetType,
+        targetId: targetId,
+        reportedUserId: reportedUserId,
+      );
+      PostService.instance.requestReemitWithCurrentFilters();
       
       Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
       return true;
@@ -68,6 +79,14 @@ class ReportService {
 
       if (result.data['success'] == true) {
         Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
+        // ✅ 즉시 피드에서 제거되도록 in-memory 캐시 업데이트 + 재필터 emit
+        ContentFilterService.addBlockedUserId(blockedUserId);
+        ContentHideService.hideReportedTarget(
+          targetType: 'user',
+          targetId: blockedUserId,
+          reportedUserId: blockedUserId,
+        );
+        PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
         Logger.error('❌ 사용자 차단 실패');
@@ -93,8 +112,9 @@ class ReportService {
 
       if (result.data['success'] == true) {
         Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
-        // ContentFilterService 캐시 갱신
-        await Future.delayed(Duration(milliseconds: 100)); // Firestore 동기화 대기
+        // ✅ 즉시 피드에서 복구되도록 in-memory 캐시 업데이트 + 재필터 emit
+        ContentFilterService.removeBlockedUserId(blockedUserId);
+        PostService.instance.requestReemitWithCurrentFilters();
         return true;
       } else {
         Logger.error('❌ 사용자 차단 해제 실패');

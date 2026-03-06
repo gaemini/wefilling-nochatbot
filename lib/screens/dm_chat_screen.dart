@@ -2827,7 +2827,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
         if (!mounted) return;
 
         if (ok) {
-          ContentFilterService.refreshCache();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(AppLocalizations.of(context)!.userBlockedSuccess),

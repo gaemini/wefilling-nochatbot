@@ -13,6 +13,7 @@ import '../utils/country_flag_helper.dart';
 import '../design/tokens.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/dialogs/block_dialog.dart';
+import '../services/content_hide_service.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
 import 'edit_meetup_screen.dart';
@@ -1304,13 +1305,17 @@ class _MeetupDetailScreenState extends State<MeetupDetailScreen> with WidgetsBin
     switch (action) {
       case 'report':
         if (_currentMeetup.userId != null) {
-          showReportDialog(
+          await showReportDialog(
             context,
             reportedUserId: _currentMeetup.userId!,
             targetType: 'meetup',
             targetId: _currentMeetup.id,
             targetTitle: _currentMeetup.title,
           );
+          if (!mounted) return;
+          if (ContentHideService.isHiddenMeetup(_currentMeetup.id)) {
+            Navigator.pop(context);
+          }
         }
         break;
       case 'block':

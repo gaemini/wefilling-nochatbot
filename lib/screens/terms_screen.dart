@@ -155,6 +155,14 @@ class TermsScreen extends StatelessWidget {
       ),
 
       _buildSection(
+        '제12조의2 (사용자 생성 콘텐츠 및 무관용 정책)',
+        '''1. 회사는 사용자 생성 콘텐츠(게시물, 댓글, 이미지, 메시지 등)에 대해 부적절한 콘텐츠 및 악성 사용자 행위에 대한 무관용(no tolerance) 정책을 적용합니다.
+2. 이용자는 음란물, 혐오/차별 표현, 폭력적 위협, 불법 행위 조장, 사기/스팸 등 타인 또는 서비스에 피해를 줄 수 있는 콘텐츠를 게시해서는 안 됩니다.
+3. 회사는 위반 콘텐츠 또는 계정에 대해 사전 통지 없이 콘텐츠 삭제/노출 제한, 계정 제한, 차단, 영구 이용 제한 등의 조치를 취할 수 있습니다.
+4. 이용자는 서비스 내 신고 및 차단 기능을 통해 부적절한 콘텐츠 또는 사용자를 신고할 수 있으며, 회사는 관련 정책에 따라 이를 검토합니다.''',
+      ),
+
+      _buildSection(
         '제13조 (저작권의 귀속 및 이용제한)',
         '''1. 회사가 작성한 저작물에 대한 저작권 기타 지적재산권은 회사에 귀속합니다.
 2. 이용자는 서비스를 이용함으로써 얻은 정보 중 회사에게 지적재산권이 귀속된 정보를 회사의 사전 승낙 없이 복제, 송신, 출판, 배포, 방송 기타 방법에 의하여 영리목적으로 이용하거나 제3자에게 이용하게 하여서는 안 됩니다.
@@ -334,6 +342,14 @@ class TermsScreen extends StatelessWidget {
    - Using the Service for commercial purposes without the Company's consent
    - Other illegal or improper acts
 2. Users shall comply with relevant laws, provisions of these Terms, user guides and notices related to the Service, and matters notified by the Company, and shall not engage in acts that interfere with the Company's business.''',
+      ),
+
+      _buildSection(
+        'Article 12-2 (User-Generated Content and No-Tolerance Policy)',
+        '''1. The Company applies a no-tolerance policy to inappropriate content and malicious behavior in user-generated content (including posts, comments, images, and messages).
+2. Users must not publish content that may harm others or the Service, including pornography, hate/discriminatory speech, violent threats, promotion of illegal activity, fraud, or spam.
+3. The Company may take action without prior notice, including content removal/visibility restriction, account restriction, blocking, or permanent suspension.
+4. Users may report inappropriate content or malicious users through in-app report and block features, and the Company reviews such reports under its policies.''',
       ),
 
       _buildSection(

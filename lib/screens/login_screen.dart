@@ -258,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen>
                                         letterSpacing: 1.2,
                                       ),
                                     ),
-                                    const SizedBox(height: 12),
+                                    const SizedBox(height: 4),
                                     Text(
                                       AppLocalizations.of(context)!.appTagline,
                                       style: TextStyle(
@@ -270,7 +270,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ],
                                 ),
 
-                                SizedBox(height: size.height * 0.08),
+                                SizedBox(height: size.height * 0.01),
 
                                 // 로그인 안내 메시지
                                 Container(

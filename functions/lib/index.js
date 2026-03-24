@@ -3,7 +3,7 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
+exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -27,6 +27,45 @@ function toInt(v) {
 function toNonNegativeInt(v) {
     const n = toInt(v);
     return n < 0 ? 0 : n;
+}
+function normalizeUidLoose(v) {
+    return (v !== null && v !== void 0 ? v : '').toString().trim();
+}
+async function hasBlockRelationship(userA, userB) {
+    const uidA = normalizeUidLoose(userA);
+    const uidB = normalizeUidLoose(userB);
+    if (!uidA || !uidB || uidA === uidB) {
+        return false;
+    }
+    const [aToB, bToA] = await Promise.all([
+        db.collection('blocks').doc(`${uidA}_${uidB}`).get(),
+        db.collection('blocks').doc(`${uidB}_${uidA}`).get(),
+    ]);
+    return aToB.exists || bToA.exists;
+}
+async function filterTargetUserIdsByBlockRelationship(actorId, targetUserIds) {
+    const sourceUid = normalizeUidLoose(actorId);
+    const uniqueTargets = Array.from(new Set(targetUserIds
+        .map((id) => normalizeUidLoose(id))
+        .filter((id) => id.length > 0 && id !== sourceUid)));
+    if (!sourceUid || uniqueTargets.length === 0) {
+        return uniqueTargets;
+    }
+    const refs = [];
+    for (const targetUid of uniqueTargets) {
+        refs.push(db.collection('blocks').doc(`${sourceUid}_${targetUid}`));
+        refs.push(db.collection('blocks').doc(`${targetUid}_${sourceUid}`));
+    }
+    const snapshots = await db.getAll(...refs);
+    const visibleTargets = [];
+    for (let i = 0; i < uniqueTargets.length; i++) {
+        const blockedByActor = snapshots[i * 2];
+        const blockedByTarget = snapshots[i * 2 + 1];
+        if (!blockedByActor.exists && !blockedByTarget.exists) {
+            visibleTargets.push(uniqueTargets[i]);
+        }
+    }
+    return visibleTargets;
 }
 exports.onUserProfileUpdatedPropagateAuthorInfo = functions
     .runWith({ timeoutSeconds: 540, memory: '1GB' })
@@ -521,6 +560,115 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
         throw new functions.https.HttpsError('internal', '이메일 최종 확인 중 오류가 발생했습니다.');
     }
 });
+// 영어 소셜 회원가입 승인(한양메일 인증 우회 전용)
+// - Google/Apple 로그인 사용자만 허용
+// - users/{uid}.emailVerified=true 를 서버에서 확정 저장
+exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, context) => {
+    var _a, _b, _c;
+    try {
+        if (!context.auth) {
+            throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+        }
+        const uid = context.auth.uid;
+        const signupLanguageRaw = typeof (data === null || data === void 0 ? void 0 : data.signupLanguage) === 'string'
+            ? String(data.signupLanguage)
+            : 'en';
+        const signupLanguage = signupLanguageRaw.toLowerCase().startsWith('en') ? 'en' : 'en';
+        const tokenEmail = (typeof ((_a = context.auth.token) === null || _a === void 0 ? void 0 : _a.email) === 'string')
+            ? String(context.auth.token.email)
+            : '';
+        const tokenProvider = (typeof ((_c = (_b = context.auth.token) === null || _b === void 0 ? void 0 : _b.firebase) === null || _c === void 0 ? void 0 : _c.sign_in_provider) === 'string')
+            ? String(context.auth.token.firebase.sign_in_provider)
+            : '';
+        const authUser = await admin.auth().getUser(uid);
+        const authEmail = authUser.email || tokenEmail || '';
+        const providerIds = (authUser.providerData || []).map((p) => String(p.providerId || ''));
+        const normalizedProviderIds = providerIds.map((p) => p.toLowerCase());
+        let providerId = tokenProvider.toLowerCase();
+        if (providerId !== 'google.com' && providerId !== 'apple.com') {
+            if (normalizedProviderIds.includes('google.com')) {
+                providerId = 'google.com';
+            }
+            else if (normalizedProviderIds.includes('apple.com')) {
+                providerId = 'apple.com';
+            }
+        }
+        if (providerId !== 'google.com' && providerId !== 'apple.com') {
+            throw new functions.https.HttpsError('permission-denied', '영어 회원가입은 Google/Apple 계정으로만 가능합니다.');
+        }
+        const normalizedAuthEmail = authEmail ? normalizeEmail(authEmail) : '';
+        const result = await db.runTransaction(async (tx) => {
+            const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
+            const userSnap = await tx.get(userRef);
+            const existing = (userSnap.exists ? userSnap.data() : {}) || {};
+            // 한양메일 인증 계정은 기존 정책 유지(충돌 방지)
+            const existingHanyangEmail = String((existing === null || existing === void 0 ? void 0 : existing.hanyangEmail) || '').trim();
+            const hasVerifiedHanyang = /^[^\s@]+@hanyang\.ac\.kr$/i.test(existingHanyangEmail)
+                && (existing === null || existing === void 0 ? void 0 : existing.emailVerified) === true;
+            if (hasVerifiedHanyang) {
+                throw new functions.https.HttpsError('failed-precondition', '이미 한양메일 인증 계정이 등록되어 있습니다.');
+            }
+            const missing = (k) => existing[k] === undefined || existing[k] === null;
+            const schemaFill = {};
+            if (missing('uid'))
+                schemaFill.uid = uid;
+            if (missing('email'))
+                schemaFill.email = authEmail;
+            if (missing('nickname'))
+                schemaFill.nickname = '';
+            if (missing('nationality'))
+                schemaFill.nationality = '';
+            if (missing('photoURL'))
+                schemaFill.photoURL = '';
+            if (missing('photoPath'))
+                schemaFill.photoPath = '';
+            if (missing('photoAccessToken'))
+                schemaFill.photoAccessToken = '';
+            if (missing('photoVersion'))
+                schemaFill.photoVersion = 0;
+            if (missing('photoUpdatedAt'))
+                schemaFill.photoUpdatedAt = null;
+            if (missing('bio'))
+                schemaFill.bio = '';
+            if (missing('friendsCount'))
+                schemaFill.friendsCount = 0;
+            if (missing('incomingCount'))
+                schemaFill.incomingCount = 0;
+            if (missing('outgoingCount'))
+                schemaFill.outgoingCount = 0;
+            if (missing('dmUnreadTotal'))
+                schemaFill.dmUnreadTotal = 0;
+            if (missing('notificationUnreadTotal'))
+                schemaFill.notificationUnreadTotal = 0;
+            if (missing('fcmToken'))
+                schemaFill.fcmToken = '';
+            if (missing('fcmTokens'))
+                schemaFill.fcmTokens = [];
+            if (missing('fcmTokenUpdatedAt'))
+                schemaFill.fcmTokenUpdatedAt = null;
+            if (missing('preferredLanguage'))
+                schemaFill.preferredLanguage = signupLanguage;
+            if (missing('preferredLanguageUpdatedAt'))
+                schemaFill.preferredLanguageUpdatedAt = null;
+            if (missing('termsAccepted'))
+                schemaFill.termsAccepted = true;
+            if (missing('termsAcceptedAt'))
+                schemaFill.termsAcceptedAt = admin.firestore.FieldValue.serverTimestamp();
+            if (missing('createdAt'))
+                schemaFill.createdAt = admin.firestore.FieldValue.serverTimestamp();
+            const targetHanyangEmail = existingHanyangEmail || normalizedAuthEmail;
+            tx.set(userRef, Object.assign(Object.assign({}, schemaFill), { uid, email: authEmail, hanyangEmail: targetHanyangEmail, emailVerified: true, signupLanguage, verificationMethod: 'social_en_bypass', signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            return { success: true, provider: providerId };
+        });
+        return result;
+    }
+    catch (error) {
+        console.error('finalizeEnglishSocialSignup 오류:', error);
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        throw new functions.https.HttpsError('internal', '영어 소셜 회원가입 승인 처리 중 오류가 발생했습니다.');
+    }
+});
 // 기존 사용자 백필: emailVerified==true 인 사용자들의 email_claims 생성/정합성 보정 (관리자 전용)
 exports.backfillEmailClaims = functions.https.onCall(async (data, context) => {
     var _a;
@@ -960,6 +1108,10 @@ exports.onFriendRequestCreated = functions.firestore
         const toUid = req.toUid;
         if (!fromUid || !toUid)
             return null;
+        if (await hasBlockRelationship(fromUid, toUid)) {
+            console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
+            return null;
+        }
         const settingsDoc = await db.collection('user_settings').doc(toUid).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
         const allOn = noti.all_notifications !== false;
@@ -1122,7 +1274,8 @@ exports.onMeetupDeleted = functions.firestore
         const title = data.title || '';
         const hostId = data.userId;
         const participants = Array.isArray(data.participants) ? data.participants : [];
-        const targetIds = participants.filter((uid) => uid && uid !== hostId);
+        let targetIds = participants.filter((uid) => uid && uid !== hostId);
+        targetIds = await filterTargetUserIdsByBlockRelationship(hostId, targetIds);
         if (targetIds.length === 0)
             return null;
         const batch = db.batch();
@@ -1222,35 +1375,40 @@ exports.onCommentCreated = functions.firestore
         // - 답글(parentCommentId)이고, 부모 댓글 작성자=게시글 작성자라면 중복 알림을 피하기 위해 new_comment는 생략
         const skipPostAuthorNewComment = isReply && parentAuthorId && parentAuthorId === postAuthorId;
         if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
-            const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
-            const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
-            const allOn = noti.all_notifications !== false;
-            const commentOn = noti.new_comment !== false;
-            if (allOn && commentOn) {
-                // 익명 게시글이면 작성자 정보를 노출하지 않음
-                const notificationTitle = postIsAnonymous ? 'New comment on your post' : '새 댓글이 달렸습니다';
-                const notificationMessage = postIsAnonymous
-                    ? 'A new comment was added to your post.'
-                    : `${commenterName}님이 회원님의 포스트에 댓글을 남겼습니다.`;
-                await db.collection('notifications').add({
-                    userId: postAuthorId,
-                    title: notificationTitle,
-                    message: notificationMessage,
-                    type: 'new_comment',
-                    postId,
-                    actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
-                    actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
-                    data: {
-                        postId: postId,
-                        postTitle: postTitle,
-                        commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
-                        thumbnailUrl,
-                        postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
-                    },
-                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    isRead: false,
-                });
-                console.log('onCommentCreated: 댓글 알림 생성 완료');
+            if (await hasBlockRelationship(postAuthorId, commenterId)) {
+                console.log('⏭️ 차단 관계(new_comment) - 알림 스킵');
+            }
+            else {
+                const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
+                const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
+                const allOn = noti.all_notifications !== false;
+                const commentOn = noti.new_comment !== false;
+                if (allOn && commentOn) {
+                    // 익명 게시글이면 작성자 정보를 노출하지 않음
+                    const notificationTitle = postIsAnonymous ? 'New comment on your post' : '새 댓글이 달렸습니다';
+                    const notificationMessage = postIsAnonymous
+                        ? 'A new comment was added to your post.'
+                        : `${commenterName}님이 회원님의 포스트에 댓글을 남겼습니다.`;
+                    await db.collection('notifications').add({
+                        userId: postAuthorId,
+                        title: notificationTitle,
+                        message: notificationMessage,
+                        type: 'new_comment',
+                        postId,
+                        actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
+                        actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
+                        data: {
+                            postId: postId,
+                            postTitle: postTitle,
+                            commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
+                            thumbnailUrl,
+                            postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
+                        },
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                        isRead: false,
+                    });
+                    console.log('onCommentCreated: 댓글 알림 생성 완료');
+                }
             }
         }
         // ✅ (B) 댓글 대댓글 알림: "내 댓글에 답글"이 달리면 원댓글 작성자에게
@@ -1259,47 +1417,52 @@ exports.onCommentCreated = functions.firestore
             try {
                 // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
                 if (parentAuthorId && parentAuthorId !== commenterId) {
-                    const settingsDoc = await db.collection('user_settings').doc(parentAuthorId).get();
-                    const noti = settingsDoc.exists ? (((_b = settingsDoc.data()) === null || _b === void 0 ? void 0 : _b.notifications) || {}) : {};
-                    const allOn = noti.all_notifications !== false;
-                    // 별도 설정 키가 없을 수 있으므로(new_comment와 묶어서) 기본 허용
-                    const replyOn = noti.new_comment !== false;
-                    if (allOn && replyOn) {
-                        // 중복 알림 방지: 최근 5분 내 동일 알림이 있으면 스킵
-                        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-                        const recent = await db.collection('notifications')
-                            .where('userId', '==', parentAuthorId)
-                            .where('type', '==', 'comment_reply')
-                            .where('parentCommentId', '==', parentCommentId)
-                            .where('createdAt', '>', fiveMinutesAgo)
-                            .limit(1)
-                            .get();
-                        if (!recent.empty) {
-                            console.log('onCommentCreated: 대댓글 알림 중복 방지 - 최근 알림 존재');
-                        }
-                        else {
-                            await db.collection('notifications').add({
-                                userId: parentAuthorId,
-                                title: 'comment_reply',
-                                message: '',
-                                type: 'comment_reply',
-                                postId,
-                                actorId: postIsAnonymous ? null : commenterId,
-                                actorName: postIsAnonymous ? null : commenterName,
-                                parentCommentId,
-                                data: {
-                                    postId: postId,
-                                    postTitle: postTitle,
-                                    thumbnailUrl,
-                                    postIsAnonymous: postIsAnonymous,
+                    if (await hasBlockRelationship(parentAuthorId, commenterId)) {
+                        console.log('⏭️ 차단 관계(comment_reply) - 알림 스킵');
+                    }
+                    else {
+                        const settingsDoc = await db.collection('user_settings').doc(parentAuthorId).get();
+                        const noti = settingsDoc.exists ? (((_b = settingsDoc.data()) === null || _b === void 0 ? void 0 : _b.notifications) || {}) : {};
+                        const allOn = noti.all_notifications !== false;
+                        // 별도 설정 키가 없을 수 있으므로(new_comment와 묶어서) 기본 허용
+                        const replyOn = noti.new_comment !== false;
+                        if (allOn && replyOn) {
+                            // 중복 알림 방지: 최근 5분 내 동일 알림이 있으면 스킵
+                            const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                            const recent = await db.collection('notifications')
+                                .where('userId', '==', parentAuthorId)
+                                .where('type', '==', 'comment_reply')
+                                .where('parentCommentId', '==', parentCommentId)
+                                .where('createdAt', '>', fiveMinutesAgo)
+                                .limit(1)
+                                .get();
+                            if (!recent.empty) {
+                                console.log('onCommentCreated: 대댓글 알림 중복 방지 - 최근 알림 존재');
+                            }
+                            else {
+                                await db.collection('notifications').add({
+                                    userId: parentAuthorId,
+                                    title: 'comment_reply',
+                                    message: '',
+                                    type: 'comment_reply',
+                                    postId,
+                                    actorId: postIsAnonymous ? null : commenterId,
+                                    actorName: postIsAnonymous ? null : commenterName,
                                     parentCommentId,
-                                    commentId: context.params.commentId,
-                                    replierName: postIsAnonymous ? null : commenterName,
-                                },
-                                createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                                isRead: false,
-                            });
-                            console.log('onCommentCreated: 대댓글 알림 생성 완료');
+                                    data: {
+                                        postId: postId,
+                                        postTitle: postTitle,
+                                        thumbnailUrl,
+                                        postIsAnonymous: postIsAnonymous,
+                                        parentCommentId,
+                                        commentId: context.params.commentId,
+                                        replierName: postIsAnonymous ? null : commenterName,
+                                    },
+                                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                                    isRead: false,
+                                });
+                                console.log('onCommentCreated: 대댓글 알림 생성 완료');
+                            }
                         }
                     }
                 }
@@ -1382,6 +1545,10 @@ exports.onCommentLiked = functions.firestore
         const commentAuthorId = after.userId;
         if (!commentAuthorId || commentAuthorId === newLiker)
             return null;
+        if (await hasBlockRelationship(commentAuthorId, newLiker)) {
+            console.log('⏭️ 차단 관계(comment_like) - 알림 스킵');
+            return null;
+        }
         // 설정 확인
         const settingsDoc = await db.collection('user_settings').doc(commentAuthorId).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
@@ -1481,6 +1648,10 @@ exports.onPostLiked = functions.firestore
         const postAuthorId = after.userId;
         if (!postAuthorId || postAuthorId === newLiker)
             return null;
+        if (await hasBlockRelationship(postAuthorId, newLiker)) {
+            console.log('⏭️ 차단 관계(new_like) - 알림 스킵');
+            return null;
+        }
         // 설정 확인
         const settingsDoc = await db.collection('user_settings').doc(postAuthorId).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
@@ -1889,10 +2060,17 @@ exports.sendFriendRequest = functions.https.onCall(async (data, context) => {
                 }
             }
             // 차단 관계 확인
+            // - 명시적으로 내가 차단한 사용자(isImplicit != true)에게는 요청 불가
+            // - 상대가 나를 차단한 경우(isImplicit == true)에는 요청은 저장하되,
+            //   onFriendRequestCreated에서 알림/푸시는 보내지 않는다.
             const blockId = `${fromUid}_${toUid}`;
             const blockDoc = await transaction.get(db.collection('blocks').doc(blockId));
             if (blockDoc.exists) {
-                throw new functions.https.HttpsError('permission-denied', '차단된 사용자에게 친구요청을 보낼 수 없습니다.');
+                const blockData = blockDoc.data();
+                const isImplicitBlock = (blockData === null || blockData === void 0 ? void 0 : blockData.isImplicit) === true;
+                if (!isImplicitBlock) {
+                    throw new functions.https.HttpsError('permission-denied', '차단된 사용자에게 친구요청을 보낼 수 없습니다.');
+                }
             }
             // 이미 친구인지 확인
             const sortedIds = [fromUid, toUid].sort();
@@ -2343,6 +2521,150 @@ exports.unblockUser = functions.https.onCall(async (data, context) => {
             throw error;
         }
         throw new functions.https.HttpsError('internal', '사용자 차단 해제 중 오류가 발생했습니다.');
+    }
+});
+// 익명 게시글 단위 차단(숨김)
+exports.blockAnonymousPost = functions.https.onCall(async (data, context) => {
+    var _a;
+    try {
+        if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+            throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+        }
+        const blockerUid = context.auth.uid;
+        const postId = toStr(data === null || data === void 0 ? void 0 : data.postId).trim();
+        const titleSnapshot = toStr(data === null || data === void 0 ? void 0 : data.titleSnapshot).trim();
+        const previewSnapshot = toStr(data === null || data === void 0 ? void 0 : data.previewSnapshot).trim();
+        if (!postId) {
+            throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 게시글 ID입니다.');
+        }
+        const postRef = db.collection('posts').doc(postId);
+        const postDoc = await postRef.get();
+        if (!postDoc.exists) {
+            throw new functions.https.HttpsError('not-found', '게시글을 찾을 수 없습니다.');
+        }
+        const postData = postDoc.data();
+        const postOwnerUid = toStr(postData.userId).trim();
+        const isAnonymous = postData.isAnonymous === true;
+        if (!isAnonymous) {
+            throw new functions.https.HttpsError('failed-precondition', '익명 게시글만 차단할 수 있습니다.');
+        }
+        if (postOwnerUid && postOwnerUid === blockerUid) {
+            throw new functions.https.HttpsError('invalid-argument', '본인 게시글은 차단할 수 없습니다.');
+        }
+        const docId = `${blockerUid}_${postId}`;
+        await db.collection('anonymous_post_blocks').doc(docId).set({
+            blockerUid,
+            postId,
+            postOwnerUid,
+            isAnonymous: true,
+            titleSnapshot: titleSnapshot.slice(0, 120),
+            previewSnapshot: previewSnapshot.slice(0, 280),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return { success: true };
+    }
+    catch (error) {
+        console.error('익명 게시글 차단 오류:', error);
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        throw new functions.https.HttpsError('internal', '익명 게시글 차단 중 오류가 발생했습니다.');
+    }
+});
+// 익명 게시글 단위 차단 해제(복구)
+exports.unblockAnonymousPost = functions.https.onCall(async (data, context) => {
+    var _a;
+    try {
+        if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+            throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+        }
+        const blockerUid = context.auth.uid;
+        const postId = toStr(data === null || data === void 0 ? void 0 : data.postId).trim();
+        if (!postId) {
+            throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 게시글 ID입니다.');
+        }
+        const docId = `${blockerUid}_${postId}`;
+        await db.collection('anonymous_post_blocks').doc(docId).delete();
+        return { success: true };
+    }
+    catch (error) {
+        console.error('익명 게시글 차단 해제 오류:', error);
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        throw new functions.https.HttpsError('internal', '익명 게시글 차단 해제 중 오류가 발생했습니다.');
+    }
+});
+// 익명 댓글 숨김 (차단 목록에는 노출하지 않음)
+exports.hideAnonymousComment = functions.https.onCall(async (data, context) => {
+    var _a;
+    try {
+        if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+            throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+        }
+        const blockerUid = context.auth.uid;
+        const commentId = toStr(data === null || data === void 0 ? void 0 : data.commentId).trim();
+        const postId = toStr(data === null || data === void 0 ? void 0 : data.postId).trim();
+        if (!commentId || !postId) {
+            throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 댓글/게시글 ID입니다.');
+        }
+        const [postDoc, commentDoc] = await Promise.all([
+            db.collection('posts').doc(postId).get(),
+            db.collection('comments').doc(commentId).get(),
+        ]);
+        if (!postDoc.exists || !commentDoc.exists) {
+            throw new functions.https.HttpsError('not-found', '댓글 또는 게시글을 찾을 수 없습니다.');
+        }
+        const postData = postDoc.data();
+        if (postData.isAnonymous !== true) {
+            throw new functions.https.HttpsError('failed-precondition', '익명 게시글의 댓글만 숨길 수 있습니다.');
+        }
+        const commentData = commentDoc.data();
+        const commentPostId = toStr(commentData.postId).trim();
+        const commentOwnerUid = toStr(commentData.userId).trim();
+        if (commentPostId != postId) {
+            throw new functions.https.HttpsError('failed-precondition', '댓글이 해당 게시글에 속하지 않습니다.');
+        }
+        if (commentOwnerUid && commentOwnerUid === blockerUid) {
+            throw new functions.https.HttpsError('invalid-argument', '본인 댓글은 숨길 수 없습니다.');
+        }
+        const docId = `${blockerUid}_${commentId}`;
+        await db.collection('hidden_comments').doc(docId).set({
+            blockerUid,
+            commentId,
+            postId,
+            commentOwnerUid,
+            isAnonymousContext: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        return { success: true };
+    }
+    catch (error) {
+        console.error('익명 댓글 숨김 오류:', error);
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        throw new functions.https.HttpsError('internal', '익명 댓글 숨김 중 오류가 발생했습니다.');
+    }
+});
+// 익명 댓글 숨김 해제
+exports.unhideAnonymousComment = functions.https.onCall(async (data, context) => {
+    var _a;
+    try {
+        if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+            throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+        }
+        const blockerUid = context.auth.uid;
+        const commentId = toStr(data === null || data === void 0 ? void 0 : data.commentId).trim();
+        if (!commentId) {
+            throw new functions.https.HttpsError('invalid-argument', '유효하지 않은 댓글 ID입니다.');
+        }
+        const docId = `${blockerUid}_${commentId}`;
+        await db.collection('hidden_comments').doc(docId).delete();
+        return { success: true };
+    }
+    catch (error) {
+        console.error('익명 댓글 숨김 해제 오류:', error);
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        throw new functions.https.HttpsError('internal', '익명 댓글 숨김 해제 중 오류가 발생했습니다.');
     }
 });
 // 신고하기 기능
@@ -3148,6 +3470,7 @@ exports.unregisterFcmToken = functions.https.onCall(async (data, context) => {
 exports.onNotificationCreated = functions.firestore
     .document('notifications/{notificationId}')
     .onCreate(async (snapshot, context) => {
+    var _a, _b, _c, _d, _e;
     try {
         const notificationData = snapshot.data();
         const notificationId = context.params.notificationId;
@@ -3155,7 +3478,18 @@ exports.onNotificationCreated = functions.firestore
         const title = notificationData.title;
         const message = notificationData.message;
         const type = notificationData.type;
+        const actorId = normalizeUidLoose(notificationData.actorId) ||
+            normalizeUidLoose((_a = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _a === void 0 ? void 0 : _a.actorId) ||
+            normalizeUidLoose((_b = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _b === void 0 ? void 0 : _b.fromUid) ||
+            normalizeUidLoose((_c = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _c === void 0 ? void 0 : _c.senderId) ||
+            normalizeUidLoose((_d = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _d === void 0 ? void 0 : _d.requesterId) ||
+            normalizeUidLoose((_e = notificationData === null || notificationData === void 0 ? void 0 : notificationData.data) === null || _e === void 0 ? void 0 : _e.participantId);
         console.log(`📢 새 알림 생성 감지: ${notificationId}, 유형: ${type}`);
+        if (actorId && await hasBlockRelationship(userId, actorId)) {
+            console.log(`⏭️ 차단 관계(notification=${notificationId}) - 알림/푸시 삭제`);
+            await snapshot.ref.delete();
+            return null;
+        }
         // 대상 사용자의 FCM 토큰 가져오기
         const userDoc = await db.collection('users').doc(userId).get();
         if (!userDoc.exists) {
@@ -3501,11 +3835,17 @@ exports.onMeetupParticipantJoined = functions.firestore
             console.log('⏭️ 주최자 본인 참여 - 알림 스킵');
             return null;
         }
+        if (await hasBlockRelationship(hostId, participantUserId)) {
+            console.log('⏭️ 차단 관계(meetup_participant_joined) - 알림 스킵');
+            return null;
+        }
         // 주최자의 알림 설정 확인
         const settingsDoc = await db.collection('user_settings').doc(hostId).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
         const allOn = noti.all_notifications !== false;
-        const meetupOn = noti.meetup_alert !== false;
+        // 통합 키(meetup_alerts) 우선, 과거 키(meetup_alert)는 폴백으로 함께 허용
+        const meetupOn = noti.meetup_alerts !== false &&
+            noti.meetup_alert !== false;
         if (!allOn || !meetupOn) {
             console.log('⏭️ 주최자가 모임 알림 꺼놓음');
             return null;
@@ -3638,6 +3978,7 @@ exports.onMeetupCreated = functions.firestore
             targetUserIds = Array.from(participantIds);
             console.log(`카테고리 관심 사용자: ${targetUserIds.length}명`);
         }
+        targetUserIds = await filterTargetUserIdsByBlockRelationship(hostId, targetUserIds);
         if (targetUserIds.length === 0) {
             console.log('알림 대상이 없습니다.');
             return null;
@@ -3804,11 +4145,17 @@ exports.onReviewRequestCreated = functions.firestore
             console.log('⏭️ recipientId 없음');
             return null;
         }
+        if (await hasBlockRelationship(recipientId, requestData.requesterId)) {
+            console.log('⏭️ 차단 관계(review_approval_request) - 알림 스킵');
+            return null;
+        }
         // 수신자 알림 설정 확인
         const settingsDoc = await db.collection('user_settings').doc(recipientId).get();
         const noti = settingsDoc.exists ? (((_a = settingsDoc.data()) === null || _a === void 0 ? void 0 : _a.notifications) || {}) : {};
         const allOn = noti.all_notifications !== false;
-        const meetupOn = noti.meetup_alert !== false;
+        // 통합 키(meetup_alerts) 우선, 과거 키(meetup_alert)는 폴백으로 함께 허용
+        const meetupOn = noti.meetup_alerts !== false &&
+            noti.meetup_alert !== false;
         if (!allOn || !meetupOn) {
             console.log('⏭️ 수신자가 알림 꺼놓음');
             return null;
@@ -4150,6 +4497,10 @@ exports.onDMMessageCreated = functions.firestore
         // (그룹 DM이 생기더라도 unreadCount/dmUnreadTotal 증분은 recipients 전체에 반영됨)
         const recipientId = recipients[0];
         console.log(`  - 수신자: ${recipientId} (recipients=${recipients.length})`);
+        if (await hasBlockRelationship(senderId, recipientId)) {
+            console.log('⏭️ 차단 관계(dm_received) - 푸시/안읽음 증분 스킵');
+            return null;
+        }
         // 발신자 정보 조회
         const senderDoc = await db.collection('users').doc(senderId).get();
         const senderData = senderDoc.data();

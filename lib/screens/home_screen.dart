@@ -781,7 +781,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
-                      color: Color(0xFF111827),
+                      color: Color(0xFF4B5563),
                     ),
                   ),
                 ),
@@ -1283,7 +1283,7 @@ class _CalendarDayCell extends StatelessWidget {
   Color _weekdayColor(DateTime d) {
     if (d.weekday == DateTime.saturday) return const Color(0xFF3B82F6);
     if (d.weekday == DateTime.sunday) return const Color(0xFFEF4444);
-    return const Color(0xFF111827);
+    return const Color(0xFF4B5563); // 부드러운 회색으로 변경
   }
 
   @override
@@ -1296,7 +1296,7 @@ class _CalendarDayCell extends StatelessWidget {
         : (isSelected ? const Color(0xFFE5E7EB) : Colors.transparent);
     final textColor = isToday
         ? Colors.white
-        : (isSelected ? const Color(0xFF111827) : _weekdayColor(day));
+        : (isSelected ? const Color(0xFF4B5563) : _weekdayColor(day)); // 선택된 날짜도 부드러운 회색
 
     return Center(
       child: SizedBox(
@@ -1318,7 +1318,7 @@ class _CalendarDayCell extends StatelessWidget {
                     fontFamily: 'Pretendard',
                     fontSize: 14,
                     fontWeight:
-                        (isToday || isSelected) ? FontWeight.w900 : FontWeight.w700,
+                        (isToday || isSelected) ? FontWeight.w700 : FontWeight.w600,
                     color: textColor,
                   ),
                 ),

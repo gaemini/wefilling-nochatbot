@@ -1174,9 +1174,16 @@ class _DMListScreenState extends State<DMListScreen> {
                       );
                     }
 
+                    final bottomInset = MediaQuery.of(context).padding.bottom;
+
                     return ListView.builder(
                       controller: scrollController,
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: EdgeInsets.fromLTRB(
+                        0,
+                        8,
+                        0,
+                        8 + bottomInset + 12,
+                      ),
                       itemCount: friends.length,
                       itemBuilder: (context, index) {
                         final friend = friends[index];

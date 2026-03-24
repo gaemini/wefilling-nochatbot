@@ -14,6 +14,7 @@ import '../../design/tokens.dart';
 import '../../constants/app_constants.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
+import '../../services/report_service.dart';
 import '../../utils/category_label_utils.dart';
 import '../../services/dm_service.dart';
 import '../../services/user_info_cache_service.dart';
@@ -1025,26 +1026,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ),
 
               // 공개 범위 배지를 오른쪽 상단에 배치
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildVisibilityIndicator(post),
-                  if (canOpenActions)
-                    IconButton(
-                      tooltip: 'More',
-                      onPressed: () => _openPostActionsSheet(
-                        post: post,
-                        authorName: resolvedNickname,
-                      ),
-                      icon: const Icon(
-                        Icons.more_vert,
-                        size: 20,
-                        color: Color(0xFF111827),
-                      ),
-                      splashRadius: 18,
-                    ),
-                ],
-              ),
+              _buildVisibilityIndicator(post),
             ],
           ),
 
@@ -1572,6 +1554,66 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     onTap: () async {
                       Navigator.pop(sheetContext);
+                      if (post.isAnonymous) {
+                        final isKo =
+                            Localizations.localeOf(context).languageCode == 'ko';
+                        final confirmed = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: Text(
+                                  isKo
+                                      ? '익명 게시글 차단'
+                                      : 'Block anonymous post',
+                                ),
+                                content: Text(
+                                  isKo
+                                      ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
+                                      : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                    child: Text(isKo ? '취소' : 'Cancel'),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                    child: Text(isKo ? '차단' : 'Block'),
+                                  ),
+                                ],
+                              ),
+                            ) ??
+                            false;
+                        if (!confirmed || !mounted) return;
+                        final headline = post.content
+                            .trim()
+                            .split('\n')
+                            .first
+                            .trim();
+                        final success = await ReportService.blockAnonymousPost(
+                          postId: post.id,
+                          titleSnapshot: headline,
+                          previewSnapshot: headline,
+                        );
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              success
+                                  ? (isKo
+                                      ? '익명 게시글을 차단했습니다.'
+                                      : 'Anonymous post blocked.')
+                                  : (isKo
+                                      ? '익명 게시글 차단에 실패했습니다.'
+                                      : 'Failed to block anonymous post.'),
+                            ),
+                            backgroundColor:
+                                success ? Colors.green : Colors.red,
+                          ),
+                        );
+                        return;
+                      }
                       await showBlockUserDialog(
                         context,
                         userId: post.userId,

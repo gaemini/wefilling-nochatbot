@@ -25,6 +25,7 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
   late TransformationController _transformationController;
   late AnimationController _animationController;
   Animation<Matrix4>? _animation;
+  Offset? _doubleTapDownPosition;
   
   // 드래그로 닫기 기능
   double _dragDistance = 0;
@@ -56,18 +57,39 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
     super.dispose();
   }
 
+  void _onDoubleTapDown(TapDownDetails details) {
+    _doubleTapDownPosition = details.localPosition;
+  }
+
+  Matrix4 _doubleTapZoomMatrix({
+    required Offset tapPosition,
+    double scale = 2.5,
+  }) {
+    final scenePoint = _transformationController.toScene(tapPosition);
+    final dx = -scenePoint.dx * (scale - 1);
+    final dy = -scenePoint.dy * (scale - 1);
+    return Matrix4.identity()
+      ..translate(dx, dy)
+      ..scale(scale);
+  }
+
   void _onDoubleTap() {
     final currentScale = _transformationController.value.getMaxScaleOnAxis();
     
     Matrix4 endMatrix;
-    if (currentScale > 1.0) {
+    if (currentScale > 1.01) {
       // 줌 아웃
       endMatrix = Matrix4.identity();
     } else {
-      // 줌 인 (2배)
-      endMatrix = Matrix4.identity()..scale(2.0);
+      final mediaSize = MediaQuery.of(context).size;
+      final tapPosition = _doubleTapDownPosition ??
+          Offset(mediaSize.width / 2, mediaSize.height / 2);
+      // 탭한 위치를 기준으로 자연스럽게 줌 인
+      endMatrix = _doubleTapZoomMatrix(tapPosition: tapPosition);
     }
 
+    _animationController.stop();
+    _animationController.reset();
     _animation = Matrix4Tween(
       begin: _transformationController.value,
       end: endMatrix,
@@ -146,16 +168,19 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
                       }
                       return InteractiveViewer(
                         transformationController: _transformationController,
-                        minScale: 0.5,
+                        minScale: 1.0,
                         maxScale: 4.0,
+                        boundaryMargin: const EdgeInsets.all(24),
                         onInteractionEnd: (details) {
-                          // 줌 아웃 상태에서 손을 떼면 원래 크기로
+                          // 기준 배율보다 작아진 경우만 원래 크기로 복원
                           final scale = _transformationController.value.getMaxScaleOnAxis();
                           if (scale < 1.0) {
                             _transformationController.value = Matrix4.identity();
                           }
                         },
                         child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onDoubleTapDown: _onDoubleTapDown,
                           onDoubleTap: _onDoubleTap,
                           child: Hero(
                             tag: widget.heroTag,
@@ -258,7 +283,7 @@ class _ProfileImageViewerState extends State<ProfileImageViewer>
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text(
-                      '더블탭으로 확대 • 드래그로 닫기',
+                      '두 손가락 확대/축소 • 더블탭 확대',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 13,

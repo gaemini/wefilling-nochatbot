@@ -21,72 +21,30 @@ class FriendsOnlyBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 기존 디자인(연한 주황 배경 + 주황 텍스트/아이콘)로 유지
-    const bg = Color(0xFFFFF3E0);
+    // 배경 제거: 글씨와 아이콘만 표시
     const fg = AppColors.friendsOnlyAccent;
-    // 우측이 너무 어두워 보이지 않도록, 아주 미세하게만 톤을 내려주는 컬러
-    const bgRight = Color(0xFFFFEBDD);
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(radius),
-      child: Stack(
-        children: [
-          // 베이스 배경 (테두리 없음)
-          Container(
-            padding: padding,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [bg, bgRight],
-              ),
-              borderRadius: BorderRadius.circular(radius),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ShapeIcon(
-                  iconName: 'shape_triangle',
-                  color: fg,
-                  size: iconSize,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: fg,
-                    height: 1,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ],
-            ),
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ShapeIcon(
+          iconName: 'shape_triangle',
+          color: fg,
+          size: iconSize,
+        ),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: fg,
+            height: 1,
+            letterSpacing: -0.1,
           ),
-
-          // 광택(좌→우 하이라이트): 색은 유지하면서 표면만 반짝이게
-          Positioned.fill(
-            child: IgnorePointer(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: [
-                      Colors.white.withAlpha(150),
-                      Colors.white.withAlpha(40),
-                      Colors.transparent,
-                    ],
-                    stops: const [0.0, 0.28, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

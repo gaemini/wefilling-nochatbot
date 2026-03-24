@@ -16,6 +16,7 @@ class ContentFilterService {
   // 차단된 사용자 목록 캐시 (성능 향상을 위해)
   static Set<String>? _blockedUserIds;
   static Set<String>? _blockedByUserIds;
+  static Set<String>? _blockedAnonymousPostIds;
   static DateTime? _lastCacheUpdate;
   static const Duration _cacheExpiry = Duration(minutes: 5);
   
@@ -59,6 +60,62 @@ class ContentFilterService {
     final v = _blockedByUserIds;
     if (v == null || v.isEmpty) return const <String>{};
     return Set<String>.unmodifiable(v);
+  }
+
+  static void setBlockedAnonymousPostIds(Set<String> postIds) {
+    _blockedAnonymousPostIds = postIds;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  static void addBlockedAnonymousPostId(String postId) {
+    final id = postId.trim();
+    if (id.isEmpty) return;
+    final current = _blockedAnonymousPostIds ?? <String>{};
+    _blockedAnonymousPostIds = {...current, id};
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  static void removeBlockedAnonymousPostId(String postId) {
+    final id = postId.trim();
+    if (id.isEmpty || _blockedAnonymousPostIds == null) return;
+    final next = {..._blockedAnonymousPostIds!}..remove(id);
+    _blockedAnonymousPostIds = next;
+    _lastCacheUpdate = DateTime.now();
+  }
+
+  static Set<String> getBlockedAnonymousPostIdsCached() {
+    final v = _blockedAnonymousPostIds;
+    if (v == null || v.isEmpty) return const <String>{};
+    return Set<String>.unmodifiable(v);
+  }
+
+  static Future<Set<String>> _getBlockedAnonymousPostIds() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return {};
+
+    if (_blockedAnonymousPostIds != null &&
+        _lastCacheUpdate != null &&
+        DateTime.now().difference(_lastCacheUpdate!) < _cacheExpiry) {
+      return _blockedAnonymousPostIds!;
+    }
+
+    try {
+      final querySnapshot = await _firestore
+          .collection('anonymous_post_blocks')
+          .where('blockerUid', isEqualTo: currentUser.uid)
+          .get()
+          .timeout(_blockQueryTimeout);
+
+      _blockedAnonymousPostIds = querySnapshot.docs
+          .map((doc) => (doc.data()['postId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+      _lastCacheUpdate = DateTime.now();
+      return _blockedAnonymousPostIds!;
+    } catch (e) {
+      Logger.error('익명 게시글 차단 목록 조회 실패: $e');
+      return {};
+    }
   }
 
   /// "나를 차단한 사용자" 캐시를 즉시 채웁니다.
@@ -154,7 +211,23 @@ class ContentFilterService {
   static void refreshCache() {
     _blockedUserIds = null;
     _blockedByUserIds = null;
+    _blockedAnonymousPostIds = null;
     _lastCacheUpdate = null;
+  }
+
+  /// 앱 시작 시 차단 목록을 미리 로드합니다 (flickering 방지)
+  static Future<void> preloadBlockLists() async {
+    try {
+      await Future.wait([
+        _getBlockedUserIds(),
+        _getBlockedByUserIds(),
+        _getBlockedAnonymousPostIds(),
+      ]);
+      Logger.log('✅ 차단 목록 사전 로드 완료');
+    } catch (e) {
+      Logger.error('⚠️ 차단 목록 사전 로드 실패 (계속 진행): $e');
+      // 에러가 발생해도 앱 실행은 계속되어야 함
+    }
   }
 
   /// 차단된 사용자 ID 목록을 가져옵니다 (public 메서드)
@@ -167,25 +240,106 @@ class ContentFilterService {
     return await _getBlockedByUserIds();
   }
 
+  /// 차단/차단당함을 합친 제외 대상 사용자 ID 목록입니다.
+  static Future<Set<String>> getExcludedUserIds() async {
+    final blockedUserIds = await _getBlockedUserIds();
+    final blockedByUserIds = await _getBlockedByUserIds();
+    return _combineExcludedUserIds(blockedUserIds, blockedByUserIds);
+  }
+
+  /// 캐시 기준 차단/차단당함 제외 대상 사용자 목록입니다.
+  static Set<String> getExcludedUserIdsCached() {
+    return _combineExcludedUserIds(
+      getBlockedUserIdsCached(),
+      getBlockedByUserIdsCached(),
+    );
+  }
+
   /// 특정 사용자가 나를 차단했는지 확인합니다
   static Future<bool> isBlockedByUser(String userId) async {
     final blockedByUserIds = await _getBlockedByUserIds();
     return blockedByUserIds.contains(userId);
   }
 
+  /// 차단했거나 차단당한 사용자면 true를 반환합니다.
+  static Future<bool> isUserExcluded(String userId) async {
+    final excludedUserIds = await getExcludedUserIds();
+    return excludedUserIds.contains(userId);
+  }
+
+  static Set<String> _combineExcludedUserIds(
+    Set<String> blockedUserIds,
+    Set<String> blockedByUserIds,
+  ) {
+    return {
+      ...blockedUserIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+      ...blockedByUserIds.map((id) => id.trim()).where((id) => id.isNotEmpty),
+    };
+  }
+
+  /// 공통 필터 판정용 유틸입니다.
+  static bool isUserIdExcluded(
+    String? userId, {
+    required Set<String> blockedUserIds,
+    required Set<String> blockedByUserIds,
+  }) {
+    final normalized = (userId ?? '').trim();
+    if (normalized.isEmpty) return false;
+    if (ContentHideService.isHiddenUser(normalized)) return true;
+    return blockedUserIds.contains(normalized) ||
+        blockedByUserIds.contains(normalized);
+  }
+
+  /// 알림 문서에서 "실제 행위자"가 누구인지 최대한 추론합니다.
+  static String? extractNotificationActorId(Map<String, dynamic> notification) {
+    final rawData = notification['data'];
+    final data =
+        rawData is Map<String, dynamic>
+            ? rawData
+            : (rawData is Map ? Map<String, dynamic>.from(rawData) : null);
+
+    final candidates = <dynamic>[
+      notification['actorId'],
+      notification['fromUserId'],
+      notification['senderId'],
+      notification['requesterId'],
+      data?['actorId'],
+      data?['fromUid'],
+      data?['senderId'],
+      data?['requesterId'],
+      data?['participantId'],
+      data?['userId'],
+    ];
+
+    for (final candidate in candidates) {
+      final normalized = (candidate ?? '').toString().trim();
+      if (normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+
+    return null;
+  }
+
   /// 게시물 목록에서 차단된 사용자의 게시물을 필터링합니다
   static Future<List<Post>> filterPosts(List<Post> posts) async {
     final blockedUserIds = await _getBlockedUserIds();
     final blockedByUserIds = await _getBlockedByUserIds();
+    final blockedAnonymousPostIds = await _getBlockedAnonymousPostIds();
     
     final hiddenApplied = ContentHideService.filterPostsSync(posts);
 
-    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return hiddenApplied;
+    if (blockedUserIds.isEmpty &&
+        blockedByUserIds.isEmpty &&
+        blockedAnonymousPostIds.isEmpty) {
+      return hiddenApplied;
+    }
 
-    return hiddenApplied.where((post) => 
-      !blockedUserIds.contains(post.userId) &&
-      !blockedByUserIds.contains(post.userId)
-    ).toList();
+    return hiddenApplied.where((post) {
+      return !blockedUserIds.contains(post.userId) &&
+          !blockedByUserIds.contains(post.userId) &&
+          !blockedAnonymousPostIds.contains(post.id);
+    }).toList();
   }
 
   /// 모임 목록에서 차단된 사용자의 모임을 필터링합니다
@@ -296,11 +450,12 @@ class ContentFilterService {
     if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) return notifications;
 
     return notifications.where((notification) {
-      final fromUserId = notification['fromUserId'];
-      return fromUserId == null || 
-             (!ContentHideService.isHiddenUser(fromUserId.toString()) &&
-              !blockedUserIds.contains(fromUserId) && 
-              !blockedByUserIds.contains(fromUserId));
+      final actorId = extractNotificationActorId(notification);
+      return !isUserIdExcluded(
+        actorId,
+        blockedUserIds: blockedUserIds,
+        blockedByUserIds: blockedByUserIds,
+      );
     }).toList();
   }
 }

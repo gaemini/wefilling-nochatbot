@@ -9,7 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/app_notification.dart';
 import '../models/meetup.dart';
 import 'notification_settings_service.dart';
-import 'badge_service.dart';
+import 'content_filter_service.dart';
 import '../utils/logger.dart';
 
 class NotificationService {
@@ -280,17 +280,20 @@ class NotificationService {
         .where('userId', isEqualTo: user.uid)
         .orderBy('createdAt', descending: true)
         .snapshots(includeMetadataChanges: true)
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
           Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
-          final list = snapshot.docs
+          final list =
+              snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               // DM 알림은 알림(Notifications) 탭에서 표시하지 않음
               .where((n) => n.type != 'dm_received')
               .toList();
 
+          final visibleList = await _filterBlockedNotifications(list);
+
           // 서버/클라이언트/트리거 재시도 등으로 동일 알림이 2개 생성되는 경우가 있어
           // UI에선 중복을 숨긴다 (특히 meetup 참여/나가기 알림)
-          return _dedupeForUi(list);
+          return _dedupeForUi(visibleList);
         });
   }
 
@@ -306,13 +309,16 @@ class NotificationService {
         .where('userId', isEqualTo: user.uid)
         .where('isRead', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
-        .map((snapshot) {
-          final list = snapshot.docs
+        .asyncMap((snapshot) async {
+          final list =
+              snapshot.docs
               .map((doc) => AppNotification.fromFirestore(doc))
               // DM 알림은 전역 알림 뱃지/카운트에서 제외
               .where((n) => n.type != 'dm_received')
               .toList();
-          return _dedupeForUi(list).length;
+
+          final visibleList = await _filterBlockedNotifications(list);
+          return _dedupeForUi(visibleList).length;
         })
         .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
@@ -430,5 +436,29 @@ class NotificationService {
 
     // meetup 알림은 meetupId + actorId 조합이 핵심
     return '${n.type}|$meetupId|$postId|$actorId|$actorName';
+  }
+
+  Future<List<AppNotification>> _filterBlockedNotifications(
+    List<AppNotification> notifications,
+  ) async {
+    if (notifications.isEmpty) return notifications;
+
+    final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+    final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) {
+      return notifications;
+    }
+
+    return notifications.where((notification) {
+      final actorId = ContentFilterService.extractNotificationActorId({
+        'actorId': notification.actorId,
+        'data': notification.data,
+      });
+      return !ContentFilterService.isUserIdExcluded(
+        actorId,
+        blockedUserIds: blockedUserIds,
+        blockedByUserIds: blockedByUserIds,
+      );
+    }).toList();
   }
 }

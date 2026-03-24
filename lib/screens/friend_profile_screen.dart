@@ -185,7 +185,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
   Widget _buildLockedProfile(AppLocalizations l10n) {
     final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest = status == RelationshipStatus.none;
+    final canRequest =
+        status == RelationshipStatus.none ||
+        status == RelationshipStatus.blockedBy;
     final isPending = status == RelationshipStatus.pendingOut;
 
     return Center(
@@ -324,7 +326,9 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
     final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest = status == RelationshipStatus.none;
+    final canRequest =
+        status == RelationshipStatus.none ||
+        status == RelationshipStatus.blockedBy;
     final isPending = status == RelationshipStatus.pendingOut;
 
     return Container(

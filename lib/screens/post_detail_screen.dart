@@ -33,6 +33,7 @@ import 'main_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
 import '../services/content_hide_service.dart';
+import '../services/report_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 
@@ -252,6 +253,67 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   Future<void> _blockPostAuthor() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return;
+
+    if (_currentPost.isAnonymous) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text(isKo ? '익명 게시글 차단' : 'Block anonymous post'),
+              content: Text(
+                isKo
+                    ? '이 익명 게시글을 차단하시겠습니까?\n차단 목록에서 언제든 해제할 수 있습니다.'
+                    : 'Do you want to block this anonymous post?\nYou can unblock it anytime from Block List.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text(isKo ? '취소' : 'Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(isKo ? '차단' : 'Block'),
+                ),
+              ],
+            ),
+          ) ??
+          false;
+      if (!confirmed || !mounted) return;
+
+      final split = _splitHeadlineAndBody(_getUnifiedBodyText(_currentPost));
+      final success = await ReportService.blockAnonymousPost(
+        postId: _currentPost.id,
+        titleSnapshot: split.headline,
+        previewSnapshot: split.body.isNotEmpty ? split.body : split.headline,
+      );
+      if (!mounted) return;
+      if (success) {
+        // 포스트 상세 화면을 닫고 이전 화면(포스트 목록)으로 돌아가기
+        Navigator.of(context).pop();
+        
+        // 성공 메시지 표시
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isKo ? '익명 게시글을 차단했습니다.' : 'Anonymous post blocked.',
+            ),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isKo
+                  ? '익명 게시글 차단에 실패했습니다.'
+                  : 'Failed to block anonymous post.',
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
 
     final targetUserId = _currentPost.userId.trim();
     if (targetUserId.isEmpty || targetUserId == 'deleted' || targetUserId == currentUser.uid) {
@@ -2343,6 +2405,33 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       // 댓글을 계층적으로 구조화
                       // (topLevelComments는 위에서 raw 기준으로 계산)
                       
+                      // 댓글 위젯을 재귀적으로 빌드하는 헬퍼 함수
+                      Widget buildCommentWidget(Comment comment, String parentTopId) {
+                        return EnhancedCommentWidget(
+                          comment: comment,
+                          replies: const [],
+                          postId: _currentPost.id,
+                          onDeleteComment: _deleteCommentWithReplies,
+                          onBlockApplied: () {
+                            if (!mounted) return;
+                            setState(() {});
+                          },
+                          isAnonymousPost: _currentPost.isAnonymous,
+                          getDisplayName: (comment) => getCommentAuthorName(comment, currentUser?.uid),
+                          isReplyTarget: _replyTargetCommentId == comment.id,
+                          onReplyTap: () {
+                            // 해당 댓글에 답글 달기
+                            _enterReplyMode(
+                              parentTopId: parentTopId,
+                              replyToUserId: comment.userId,
+                              replyToUserName: getCommentAuthorName(comment, currentUser?.uid),
+                              targetCommentId: comment.id,
+                            );
+                          },
+                          parentTopLevelCommentId: parentTopId,
+                        );
+                      }
+                      
                       return ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -2374,6 +2463,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 targetCommentId: comment.id,
                               );
                             },
+                            parentTopLevelCommentId: comment.id,
+                            // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
+                            replyWidgetBuilder: (reply) => buildCommentWidget(reply, comment.id),
                           );
                         },
                       );

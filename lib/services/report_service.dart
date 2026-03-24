@@ -126,6 +126,160 @@ class ReportService {
     }
   }
 
+  // 익명 게시글 차단(게시글 단위)
+  static Future<bool> blockAnonymousPost({
+    required String postId,
+    String? titleSnapshot,
+    String? previewSnapshot,
+  }) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return false;
+
+      final callable = _functions.httpsCallable('blockAnonymousPost');
+      final result = await callable.call({
+        'postId': postId,
+        'titleSnapshot': titleSnapshot ?? '',
+        'previewSnapshot': previewSnapshot ?? '',
+      });
+
+      if (result.data['success'] == true) {
+        ContentFilterService.addBlockedAnonymousPostId(postId);
+        ContentHideService.hideAnonymousPost(postId);
+        PostService.instance.requestReemitWithCurrentFilters();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Logger.error('❌ 익명 게시글 차단 실패: $e');
+      return false;
+    }
+  }
+
+  // 익명 게시글 차단 해제
+  static Future<bool> unblockAnonymousPost(String postId) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return false;
+
+      final callable = _functions.httpsCallable('unblockAnonymousPost');
+      final result = await callable.call({'postId': postId});
+
+      if (result.data['success'] == true) {
+        ContentFilterService.removeBlockedAnonymousPostId(postId);
+        ContentHideService.unhideAnonymousPost(postId);
+        PostService.instance.requestReemitWithCurrentFilters();
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Logger.error('❌ 익명 게시글 차단 해제 실패: $e');
+      return false;
+    }
+  }
+
+  // 익명 게시글 차단 목록 조회
+  static Future<List<AnonymousBlockedPost>> getBlockedAnonymousPosts() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return [];
+
+      final querySnapshot = await _firestore
+          .collection('anonymous_post_blocks')
+          .where('blockerUid', isEqualTo: currentUser.uid)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      final posts = querySnapshot.docs
+          .map((doc) => AnonymousBlockedPost.fromFirestore(doc.id, doc.data()))
+          .toList();
+
+      final ids = posts
+          .map((e) => e.postId.trim())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+      ContentFilterService.setBlockedAnonymousPostIds(ids);
+      ContentHideService.addHiddenAnonymousPostIds(ids);
+      return posts;
+    } catch (e) {
+      Logger.error('❌ 익명 게시글 차단 목록 조회 실패: $e');
+      return [];
+    }
+  }
+
+  // 익명 댓글 숨김
+  static Future<bool> hideAnonymousComment({
+    required String commentId,
+    required String postId,
+  }) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return false;
+
+      final callable = _functions.httpsCallable('hideAnonymousComment');
+      final result = await callable.call({
+        'commentId': commentId,
+        'postId': postId,
+      });
+
+      if (result.data['success'] == true) {
+        ContentHideService.hideAnonymousComment(commentId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Logger.error('❌ 익명 댓글 숨김 실패: $e');
+      return false;
+    }
+  }
+
+  // 익명 댓글 숨김 해제
+  static Future<bool> unhideAnonymousComment(String commentId) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return false;
+
+      final callable = _functions.httpsCallable('unhideAnonymousComment');
+      final result = await callable.call({'commentId': commentId});
+
+      if (result.data['success'] == true) {
+        ContentHideService.unhideAnonymousComment(commentId);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      Logger.error('❌ 익명 댓글 숨김 해제 실패: $e');
+      return false;
+    }
+  }
+
+  // 게시글 내 익명 댓글 숨김 목록 조회
+  static Future<Set<String>> getHiddenAnonymousCommentIdsForPost(
+    String postId,
+  ) async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return <String>{};
+
+      final querySnapshot = await _firestore
+          .collection('hidden_comments')
+          .where('blockerUid', isEqualTo: currentUser.uid)
+          .where('postId', isEqualTo: postId)
+          .get();
+
+      final ids = querySnapshot.docs
+          .map((doc) => (doc.data()['commentId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      ContentHideService.addHiddenAnonymousCommentIds(ids);
+      return ids;
+    } catch (e) {
+      Logger.error('❌ 익명 댓글 숨김 목록 조회 실패: $e');
+      return <String>{};
+    }
+  }
+
   // 차단한 사용자 목록 가져오기
   static Future<List<BlockedUser>> getBlockedUsers() async {
     try {

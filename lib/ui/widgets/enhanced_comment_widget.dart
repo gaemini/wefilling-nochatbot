@@ -31,6 +31,7 @@ class EnhancedCommentWidget extends StatefulWidget {
   final String Function(Comment)? getDisplayName; // 댓글 작성자 표시명 함수
   final bool isReplyTarget; // 현재 하이라이트 대상인지
   final String? parentTopLevelCommentId; // 최상위 댓글 ID (대댓글 작성용)
+  final Widget Function(Comment)? replyWidgetBuilder; // 대댓글 위젯 빌더
 
   const EnhancedCommentWidget({
     super.key,
@@ -45,6 +46,7 @@ class EnhancedCommentWidget extends StatefulWidget {
     this.getDisplayName,
     this.isReplyTarget = false,
     this.parentTopLevelCommentId,
+    this.replyWidgetBuilder,
   });
 
   @override
@@ -92,9 +94,15 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     final l10n = AppLocalizations.of(context)!;
 
     final canReport = !isMyComment;
+    final canReply = !isMyComment && widget.isAnonymousPost && widget.onReplyTap != null;
     final canDelete = isMyComment;
     final canBlock = !isMyComment &&
         !widget.isAnonymousPost &&
+        widget.comment.userId.isNotEmpty &&
+        widget.comment.userId != 'deleted';
+    final canHideAnonymousComment = !isMyComment &&
+        widget.isAnonymousPost &&
+        widget.comment.id.isNotEmpty &&
         widget.comment.userId.isNotEmpty &&
         widget.comment.userId != 'deleted';
     final targetName = widget.comment.authorNickname;
@@ -115,6 +123,17 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (canReply)
+                    _ActionRow(
+                      icon: Icons.reply_rounded,
+                      label: l10n.writeReply,
+                      onTap: () {
+                        Navigator.pop(sheetContext);
+                        widget.onReplyTap?.call();
+                      },
+                    ),
+                  if (canReply && (canReport || canBlock || canHideAnonymousComment))
+                    const _ActionDivider(),
                   if (canReport)
                     _ActionRow(
                       icon: Icons.report_gmailerrorred_outlined,
@@ -124,7 +143,8 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         await _showReportDialog();
                       },
                     ),
-                  if (canReport && canBlock) const _ActionDivider(),
+                  if (canReport && (canBlock || canHideAnonymousComment))
+                    const _ActionDivider(),
                   if (canBlock)
                     _ActionRow(
                       icon: Icons.block,
@@ -148,7 +168,46 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                         }
                       },
                     ),
-                  if ((canReport || canBlock) && canDelete) const _ActionDivider(),
+                  if (canHideAnonymousComment)
+                    _ActionRow(
+                      icon: Icons.block,
+                      label: _localizedText(
+                        ko: '댓글 차단',
+                        en: 'Block comment',
+                      ),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        if (!mounted) return;
+                        final success = await ReportService.hideAnonymousComment(
+                          commentId: widget.comment.id,
+                          postId: widget.postId,
+                        );
+                        if (!mounted) return;
+                        if (success) {
+                          setState(() {});
+                          AppSnackBar.show(
+                            context,
+                            message: _localizedText(
+                              ko: '댓글을 차단했습니다.',
+                              en: 'Comment blocked.',
+                            ),
+                            type: AppSnackBarType.success,
+                          );
+                        } else {
+                          AppSnackBar.show(
+                            context,
+                            message: _localizedText(
+                              ko: '댓글 차단에 실패했습니다.',
+                              en: 'Failed to block comment.',
+                            ),
+                            type: AppSnackBarType.error,
+                          );
+                        }
+                      },
+                    ),
+                  if ((canReport || canBlock || canHideAnonymousComment) &&
+                      canDelete)
+                    const _ActionDivider(),
                   if (canDelete)
                     _ActionRow(
                       icon: Icons.delete_outline,
@@ -493,6 +552,194 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
     }
   }
 
+  String _localizedText({required String ko, required String en}) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return isKo ? ko : en;
+  }
+
+  Widget _buildHiddenCommentPlaceholder() {
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onLongPress: _confirmUnhideAnonymousComment,
+      child: Container(
+        margin: EdgeInsets.only(
+          left: 16.0 + (widget.comment.depth * 20.0),
+          right: widget.comment.depth == 0 ? 16.0 : 0.0,
+          bottom: 16,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _localizedText(
+                ko: '차단한 댓글입니다.',
+                en: 'Blocked comment.',
+              ),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _localizedText(
+                ko: '길게 눌러 차단을 해제할 수 있어요.',
+                en: 'Long press to unblock.',
+              ),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF9CA3AF),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmUnhideAnonymousComment() async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          barrierDismissible: true,
+          builder: (context) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            backgroundColor: Colors.white,
+            elevation: 8,
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+            title: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF6366F1).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.block,
+                    color: Color(0xFF6366F1),
+                    size: 18,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  _localizedText(ko: '댓글 차단 해제', en: 'Unblock comment'),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ],
+            ),
+            content: Padding(
+              padding: const EdgeInsets.only(top: 8, bottom: 16),
+              child: Text(
+                _localizedText(
+                  ko: '이 댓글 차단을 해제하시겠습니까?',
+                  en: 'Do you want to unblock this comment?',
+                ),
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF6B7280),
+                  height: 1.5,
+                ),
+              ),
+            ),
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(color: Colors.grey.shade300, width: 1),
+                        ),
+                        backgroundColor: Colors.white,
+                      ),
+                      child: Text(
+                        _localizedText(ko: '취소', en: 'Cancel'),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF6B7280),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        backgroundColor: const Color(0xFF6366F1),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        _localizedText(ko: '해제', en: 'Unblock'),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed || !mounted) return;
+    final success = await ReportService.unhideAnonymousComment(widget.comment.id);
+    if (!mounted) return;
+    if (success) {
+      setState(() {});
+      AppSnackBar.show(
+        context,
+        message: _localizedText(
+          ko: '댓글 차단을 해제했습니다.',
+          en: 'Comment unblocked.',
+        ),
+        type: AppSnackBarType.success,
+      );
+      return;
+    }
+    AppSnackBar.show(
+      context,
+      message: _localizedText(
+        ko: '댓글 차단 해제에 실패했습니다.',
+        en: 'Failed to unblock comment.',
+      ),
+      type: AppSnackBarType.error,
+    );
+  }
+
   void _openCommentAuthorProfile() {
     // 익명 게시글에서는 프로필 접근 불가
     if (widget.isAnonymousPost) return;
@@ -575,6 +822,9 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
         )) {
       return const SizedBox.shrink();
     }
+    if (ContentHideService.isHiddenAnonymousComment(widget.comment.id)) {
+      return _buildHiddenCommentPlaceholder();
+    }
 
     final currentUser = FirebaseAuth.instance.currentUser;
     final isMyComment = currentUser?.uid == widget.comment.userId;
@@ -619,9 +869,29 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
       required String displayName,
       required String photoUrl,
     }) {
+      // 최상위 댓글 ID 결정: 현재 댓글이 최상위면 자기 자신, 아니면 부모 ID
+      final String parentTopId = widget.comment.depth == 0 
+          ? widget.comment.id 
+          : (widget.parentTopLevelCommentId ?? widget.comment.parentCommentId ?? widget.comment.id);
+
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
-        onLongPress: () => _showCommentActionsSheet(isMyComment: isMyComment),
+        onLongPress: () {
+          // 길게 누르면:
+          // - 내 댓글: 액션 시트
+          // - 익명 게시글의 타인 댓글: 신고/댓글차단 액션 시트
+          // - 그 외 타인 댓글: 답글 모드
+          if (isMyComment) {
+            _showCommentActionsSheet(isMyComment: true);
+          } else if (widget.isAnonymousPost) {
+            _showCommentActionsSheet(isMyComment: false);
+          } else {
+            // 답글 모드로 진입
+            if (widget.onReplyTap != null) {
+              widget.onReplyTap!();
+            }
+          }
+        },
         child: Container(
         margin: EdgeInsets.only(
           left: 16.0 + (widget.comment.depth * 20.0),
@@ -736,26 +1006,6 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
                       ),
 
                       const SizedBox(height: 8),
-
-                      // 액션 버튼 (답글 달기만 유지)
-                      if (widget.comment.depth == 0)
-                        Row(
-                          children: [
-                            InkWell(
-                              onTap: widget.onReplyTap,
-                              borderRadius: BorderRadius.circular(4),
-                              child: const Text(
-                                '답글 달기',
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF6B7280),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
                     ],
                   ),
                 ),
@@ -837,17 +1087,26 @@ class _EnhancedCommentWidgetState extends State<EnhancedCommentWidget> {
               if (_showReplies) ...[
                 const SizedBox(height: 12),
                 ...widget.replies.map(
-                  (reply) => EnhancedCommentWidget(
-                    comment: reply,
-                    replies: const [], // 대댓글의 대댓글은 지원하지 않음
-                    postId: widget.postId,
-                    onDeleteComment: widget.onDeleteComment,
-                    isAnonymousPost: widget.isAnonymousPost,
-                    getDisplayName: widget.getDisplayName,
-                    isReplyTarget: widget.parentTopLevelCommentId != null,
-                    parentTopLevelCommentId: widget.comment.id,
-                    onReplyTap: widget.onReplyTap, // 대댓글에는 답글 버튼 미표시
-                  ),
+                  (reply) {
+                    // replyWidgetBuilder가 제공되면 사용, 아니면 기본 위젯 생성
+                    if (widget.replyWidgetBuilder != null) {
+                      return widget.replyWidgetBuilder!(reply);
+                    }
+                    
+                    // 기본 대댓글 위젯 (backward compatibility)
+                    final parentTopId = widget.comment.id;
+                    return EnhancedCommentWidget(
+                      comment: reply,
+                      replies: const [],
+                      postId: widget.postId,
+                      onDeleteComment: widget.onDeleteComment,
+                      isAnonymousPost: widget.isAnonymousPost,
+                      getDisplayName: widget.getDisplayName,
+                      isReplyTarget: false,
+                      parentTopLevelCommentId: parentTopId,
+                      onReplyTap: widget.onReplyTap,
+                    );
+                  },
                 ),
               ],
             ],

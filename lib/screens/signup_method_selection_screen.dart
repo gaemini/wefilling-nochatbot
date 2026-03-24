@@ -11,17 +11,20 @@ import 'package:provider/provider.dart';
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
+import 'email_login_screen.dart';
 import 'email_signup_screen.dart';
 import 'nickname_setup_screen.dart';
 import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
 
 class SignUpMethodSelectionScreen extends StatefulWidget {
-  final String verifiedHanyangEmail;
+  final String? verifiedHanyangEmail;
+  final bool skipHanyangVerification;
 
   const SignUpMethodSelectionScreen({
     Key? key,
-    required this.verifiedHanyangEmail,
+    this.verifiedHanyangEmail,
+    this.skipHanyangVerification = false,
   }) : super(key: key);
 
   @override
@@ -34,6 +37,10 @@ class _SignUpMethodSelectionScreenState
   bool _isLoading = false;
   String? _errorMessage;
   bool _agreedTerms = false;
+
+  bool get _isEnglishBypassMode => widget.skipHanyangVerification;
+
+  String get _verifiedHanyangEmail => widget.verifiedHanyangEmail?.trim() ?? '';
 
   Future<bool> _blockIfExistingAccount({
     required String providerLabel,
@@ -88,8 +95,21 @@ class _SignUpMethodSelectionScreenState
 
       bool completed = false;
       try {
-        completed = await authProvider
-            .completeEmailVerification(widget.verifiedHanyangEmail.trim());
+        if (_isEnglishBypassMode) {
+          completed = await authProvider.finalizeEnglishSocialSignup(
+            signupLanguage: 'en',
+          );
+        } else {
+          final verifiedEmail = _verifiedHanyangEmail;
+          if (verifiedEmail.isEmpty) {
+            setState(() {
+              _errorMessage = l10n.signupProcessError;
+              _isLoading = false;
+            });
+            return;
+          }
+          completed = await authProvider.completeEmailVerification(verifiedEmail);
+        }
       } on FirebaseFunctionsException catch (e) {
         setState(() {
           _errorMessage = e.code == 'already-exists'
@@ -160,8 +180,21 @@ class _SignUpMethodSelectionScreenState
 
       bool completed = false;
       try {
-        completed = await authProvider
-            .completeEmailVerification(widget.verifiedHanyangEmail.trim());
+        if (_isEnglishBypassMode) {
+          completed = await authProvider.finalizeEnglishSocialSignup(
+            signupLanguage: 'en',
+          );
+        } else {
+          final verifiedEmail = _verifiedHanyangEmail;
+          if (verifiedEmail.isEmpty) {
+            setState(() {
+              _errorMessage = l10n.signupProcessError;
+              _isLoading = false;
+            });
+            return;
+          }
+          completed = await authProvider.completeEmailVerification(verifiedEmail);
+        }
       } on FirebaseFunctionsException catch (e) {
         setState(() {
           _errorMessage = e.code == 'already-exists'
@@ -196,11 +229,19 @@ class _SignUpMethodSelectionScreenState
   }
 
   void _signUpWithId() {
+    if (_isEnglishBypassMode) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) =>
-            EmailSignUpScreen(verifiedHanyangEmail: widget.verifiedHanyangEmail),
+            EmailSignUpScreen(verifiedHanyangEmail: _verifiedHanyangEmail),
       ),
     );
   }
@@ -209,6 +250,7 @@ class _SignUpMethodSelectionScreenState
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isAppleSupported = Platform.isIOS || Platform.isMacOS;
+    final isEnglishLocale = Localizations.localeOf(context).languageCode == 'en';
 
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
@@ -304,58 +346,60 @@ class _SignUpMethodSelectionScreenState
 
             const SizedBox(height: 24),
 
-            // 인증된 한양메일 표시
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: const Color(0xFFBBF7D0),
-                  width: 1,
+            // 인증된 한양메일 표시 (한양메일 인증 경로에서만 노출)
+            if (!_isEnglishBypassMode && _verifiedHanyangEmail.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFBBF7D0),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.verified_user,
+                      color: Color(0xFF10B981),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            l10n.verifiedHanyangEmailLabel,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF065F46),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _verifiedHanyangEmail,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF065F46),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.verified_user,
-                    color: Color(0xFF10B981),
-                    size: 24,
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.verifiedHanyangEmailLabel,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF065F46),
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          widget.verifiedHanyangEmail,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF065F46),
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 28),
+              const SizedBox(height: 28),
+            ] else
+              const SizedBox(height: 24),
 
             Container(
               padding: const EdgeInsets.all(12),
@@ -481,34 +525,36 @@ class _SignUpMethodSelectionScreenState
               ),
             ),
 
-            const SizedBox(height: 12),
+            if (!isEnglishLocale) ...[
+              const SizedBox(height: 12),
 
-            // 아이디(이메일/비밀번호)
-            SizedBox(
-              height: 56,
-              child: ElevatedButton.icon(
-                onPressed: _isLoading || !_agreedTerms ? null : _signUpWithId,
-                icon: const Icon(Icons.email_outlined, size: 20),
-                label: Text(
-                  l10n.signUpWithId,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.2,
+              // 아이디(이메일/비밀번호)
+              SizedBox(
+                height: 56,
+                child: ElevatedButton.icon(
+                  onPressed: _isLoading || !_agreedTerms ? null : _signUpWithId,
+                  icon: const Icon(Icons.email_outlined, size: 20),
+                  label: Text(
+                    l10n.signUpWithId,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: -0.2,
+                    ),
                   ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.pointColor,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  disabledBackgroundColor: const Color(0xFFE2E8F0),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.pointColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    disabledBackgroundColor: const Color(0xFFE2E8F0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
 
             const SizedBox(height: 16),
 

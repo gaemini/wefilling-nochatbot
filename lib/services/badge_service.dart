@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 
+import '../models/app_notification.dart';
+import 'content_filter_service.dart';
 import '../utils/logger.dart';
 
 /// iOS/Android 앱 아이콘 배지 동기화 서비스 (이벤트 기반)
@@ -82,28 +84,9 @@ class BadgeService {
     // 최대 3번 재시도
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        // 실제 안 읽은 알림 수 계산 (dm_received 제외)
-        final results = await Future.wait([
-          _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: userId)
-              .where('isRead', isEqualTo: false)
-              .count()
-              .get()
-              .timeout(const Duration(seconds: 10)),
-          _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: userId)
-              .where('isRead', isEqualTo: false)
-              .where('type', isEqualTo: 'dm_received')
-              .count()
-              .get()
-              .timeout(const Duration(seconds: 10)),
-        ]);
-
-        final unreadAll = results[0].count ?? 0;
-        final unreadDmNotif = results[1].count ?? 0;
-        final actualNotificationCount = (unreadAll - unreadDmNotif) <= 0 ? 0 : (unreadAll - unreadDmNotif);
+        final actualNotificationCount = await _getVisibleUnreadNotificationCount(
+          userId: userId,
+        );
 
         // DM 안 읽은 수 계산 (✅ "카운터 신뢰"가 아니라 실제 메시지 기반으로 재계산)
         final actualDmUnreadCount = await _recountAndRepairDmUnread(userId: userId);
@@ -283,29 +266,9 @@ class BadgeService {
     // 최대 3번 재시도
     for (int attempt = 0; attempt < 3; attempt++) {
       try {
-        // 1) 일반 알림 읽지 않은 수 (dm_received 제외)
-        final results = await Future.wait([
-          _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: user.uid)
-              .where('isRead', isEqualTo: false)
-              .count()
-              .get()
-              .timeout(const Duration(seconds: 10)),
-          _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: user.uid)
-              .where('isRead', isEqualTo: false)
-              .where('type', isEqualTo: 'dm_received')
-              .count()
-              .get()
-              .timeout(const Duration(seconds: 10)),
-        ]);
-
-        final unreadAll = results[0].count ?? 0;
-        final unreadDmNotif = results[1].count ?? 0;
-        final notificationCount =
-            (unreadAll - unreadDmNotif) <= 0 ? 0 : (unreadAll - unreadDmNotif);
+        final notificationCount = await _getVisibleUnreadNotificationCount(
+          userId: user.uid,
+        );
 
         // 2) DM 안 읽은 수 (users.dmUnreadTotal 우선)
         final dmUnreadCount = await _getDmUnreadCount(userId: user.uid);
@@ -414,6 +377,44 @@ class BadgeService {
     // 모든 시도 실패 시 0 반환
     Logger.error('❌ DM 안 읽은 수 계산 완전 실패 - 0 반환');
     return 0;
+  }
+
+  static Future<int> _getVisibleUnreadNotificationCount({
+    required String userId,
+  }) async {
+    final snapshot =
+        await _firestore
+            .collection('notifications')
+            .where('userId', isEqualTo: userId)
+            .where('isRead', isEqualTo: false)
+            .get()
+            .timeout(const Duration(seconds: 10));
+
+    final notifications =
+        snapshot.docs
+            .map((doc) => AppNotification.fromFirestore(doc))
+            .where((notification) => notification.type != 'dm_received')
+            .toList();
+
+    if (notifications.isEmpty) return 0;
+
+    final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+    final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+
+    final visibleCount =
+        notifications.where((notification) {
+          final actorId = ContentFilterService.extractNotificationActorId({
+            'actorId': notification.actorId,
+            'data': notification.data,
+          });
+          return !ContentFilterService.isUserIdExcluded(
+            actorId,
+            blockedUserIds: blockedUserIds,
+            blockedByUserIds: blockedByUserIds,
+          );
+        }).length;
+
+    return visibleCount < 0 ? 0 : visibleCount;
   }
 
   /// 수동 배지 동기화 (레거시 호환용, 실시간 리스너가 없을 때 대비)

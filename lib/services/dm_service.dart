@@ -691,7 +691,7 @@ class DMService {
         .orderBy('lastMessageTime', descending: true)
         .limit(50)
         .snapshots(includeMetadataChanges: true)
-        .map((snapshot) {
+        .asyncMap((snapshot) async {
       final hasPendingWrites = snapshot.metadata.hasPendingWrites ||
           snapshot.docs.any((d) => d.metadata.hasPendingWrites);
       final isFromCache = snapshot.metadata.isFromCache;
@@ -710,7 +710,7 @@ class DMService {
       }
 
       
-      final conversations = snapshot.docs
+      var conversations = snapshot.docs
           .map((doc) => Conversation.fromFirestore(doc))
           .where((conv) {
             final userLeftTime = conv.userLeftAt[currentUser.uid];
@@ -756,6 +756,24 @@ class DMService {
             return show;
           })
           .toList();
+
+      var excludedUserIds = ContentFilterService.getExcludedUserIdsCached();
+      if (excludedUserIds.isEmpty) {
+        try {
+          excludedUserIds = await ContentFilterService.getExcludedUserIds();
+        } catch (_) {
+          excludedUserIds = const <String>{};
+        }
+      }
+
+      if (excludedUserIds.isNotEmpty) {
+        conversations =
+            conversations.where((conv) {
+              final otherParticipants =
+                  conv.participants.where((id) => id != currentUser.uid);
+              return !otherParticipants.any(excludedUserIds.contains);
+            }).toList();
+      }
 
       // 캐시 업데이트
       for (var conv in conversations) {
@@ -1437,22 +1455,13 @@ class DMService {
       return Stream.value(0);
     }
 
-    // ✅ 단일 소스: users/{uid}.dmUnreadTotal
-    //
-    // 왜?
-    // - 하단 네비 배지는 "총합"만 정확하면 된다.
-    // - conversations 전체를 스캔/합산하는 방식은 비용이 크고,
-    //   unreadCount 드리프트 시 목록(실제 메시지 기반)과 불일치가 발생할 수 있다.
-    // - 앱 아이콘 배지(BadgeService) 정책과 일치시키면 시스템이 단순해지고 일관성이 올라간다.
-    return _firestore
-        .collection('users')
-        .doc(currentUser.uid)
-        .snapshots(includeMetadataChanges: true)
-        .map((doc) {
-          final data = doc.data();
-          final v = data?['dmUnreadTotal'];
-          final n = (v is int) ? v : (v is num ? v.toInt() : 0);
-          return n < 0 ? 0 : n;
+    return getMyConversationsWithMeta()
+        .map((result) {
+          var total = 0;
+          for (final conversation in result.conversations) {
+            total += conversation.getMyUnreadCount(currentUser.uid);
+          }
+          return total < 0 ? 0 : total;
         })
         .distinct();
   }

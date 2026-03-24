@@ -1633,6 +1633,34 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
+  // 영어 소셜 회원가입 승인(서버 Callable)
+  Future<bool> finalizeEnglishSocialSignup({String signupLanguage = 'en'}) async {
+    if (_user == null) return false;
+
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      final callable = _functions.httpsCallable('finalizeEnglishSocialSignup');
+      await callable.call({
+        'signupLanguage': signupLanguage,
+      });
+
+      await _loadUserData();
+      return true;
+    } on FirebaseFunctionsException catch (e) {
+      Logger.error('finalizeEnglishSocialSignup 함수 오류: ${e.code} ${e.message}');
+      _isLoading = false;
+      notifyListeners();
+      rethrow;
+    } catch (e) {
+      Logger.error('영어 소셜 회원가입 승인 처리 오류: $e');
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
     // 이미 초기화되었거나 사용자가 없으면 스킵

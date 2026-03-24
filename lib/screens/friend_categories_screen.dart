@@ -115,17 +115,40 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen> {
 
                 // 안드로이드 하단 네비게이션 바 높이 감지
                 final bottomPadding = MediaQuery.of(context).padding.bottom;
+                final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
-                return ListView.builder(
-                  padding: EdgeInsets.only(
-                    top: 8,
-                    bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
-                  ),
-                  itemCount: categories.length,
-                  itemBuilder: (context, index) {
-                    final category = categories[index];
-                    return _buildCategoryCard(category);
-                  },
+                return Column(
+                  children: [
+                    // 상단 안내 문구
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Text(
+                        isKo 
+                          ? '그룹을 통해 공개범위를 설정하세요.'
+                          : 'Set visibility through groups.',
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280), // 더 진한 회색
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: EdgeInsets.only(
+                          top: 8,
+                          bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+                        ),
+                        itemCount: categories.length,
+                        itemBuilder: (context, index) {
+                          final category = categories[index];
+                          return _buildCategoryCard(category);
+                        },
+                      ),
+                    ),
+                  ],
                 );
               },
             ),

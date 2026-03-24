@@ -50,6 +50,9 @@ class _MainScreenState extends State<MainScreen> {
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
   AuthProvider? _authProvider;
   late final List<Widget?> _screenCache;
+  
+  // BoardScreen 스크롤 제어를 위한 GlobalKey
+  final GlobalKey<BoardScreenState> _boardScreenKey = GlobalKey<BoardScreenState>();
 
   @override
   void initState() {
@@ -113,7 +116,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget _buildScreenForIndex(int index) {
     switch (index) {
       case 0:
-        return const BoardScreen();
+        return BoardScreen(key: _boardScreenKey);
       case 1:
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
         return MeetupHomePage(initialMeetupId: _pendingMeetupId);
@@ -136,6 +139,12 @@ class _MainScreenState extends State<MainScreen> {
   // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
   void _onItemTapped(int index) {
+    // 이미 선택된 Board 탭(index 0)을 다시 탭하면 맨 위로 스크롤
+    if (index == 0 && _selectedIndex == 0) {
+      _boardScreenKey.currentState?.scrollToTop();
+      return;
+    }
+    
     setState(() {
       _selectedIndex = index;
       _ensureScreenBuilt(index);

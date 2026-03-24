@@ -73,12 +73,19 @@ class PostService {
     // 1) blocked filter using cached sets (sync, immediate)
     final blocked = ContentFilterService.getBlockedUserIdsCached();
     final blockedBy = ContentFilterService.getBlockedByUserIdsCached();
+    final blockedAnonymousPosts =
+        ContentFilterService.getBlockedAnonymousPostIdsCached();
     final List<Post> fastFiltered;
-    if (blocked.isEmpty && blockedBy.isEmpty) {
+    if (blocked.isEmpty &&
+        blockedBy.isEmpty &&
+        blockedAnonymousPosts.isEmpty) {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered);
     } else {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered)
-          .where((p) => !blocked.contains(p.userId) && !blockedBy.contains(p.userId))
+          .where((p) =>
+              !blocked.contains(p.userId) &&
+              !blockedBy.contains(p.userId) &&
+              !blockedAnonymousPosts.contains(p.id))
           .toList();
     }
 
@@ -1231,7 +1238,13 @@ class PostService {
         }
       }
 
-      return savedPosts;
+      final visiblePosts = savedPosts.where((post) {
+        return _canUserReadPost(post, user) &&
+            !ContentHideService.isHiddenPost(post.id) &&
+            !ContentHideService.isHiddenUser(post.userId);
+      }).toList();
+
+      return await ContentFilterService.filterPosts(visiblePosts);
     });
   }
 

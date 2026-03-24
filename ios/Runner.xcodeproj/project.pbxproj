@@ -210,9 +210,10 @@
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 				75463A370D860C867A90A36C /* FlutterFire: "flutterfire upload-crashlytics-symbols" */,
-				F1B2C3D4E5A60718293A4B5C /* Strip Extended Attributes */,
+				C2D3E4F5A6B70819293C4D5E /* Pre-Embed xattr Strip */,
 				A6256BCB4CB3E5778E3506C1 /* [CP] Embed Pods Frameworks */,
 				06378A67554BF1F71AAF54B3 /* [CP] Copy Pods Resources */,
+				F1B2C3D4E5A60718293A4B5C /* Strip Extended Attributes */,
 			);
 			buildRules = (
 			);
@@ -396,6 +397,25 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Runner/Pods-Runner-frameworks.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
+		C2D3E4F5A6B70819293C4D5E /* Pre-Embed xattr Strip */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Pre-Embed xattr Strip";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Strip iCloud/Finder extended attributes from build products BEFORE pod framework embedding.\n# Required when project lives in iCloud Drive synced folder (Desktop/Documents).\nif [[ -n \"${BUILT_PRODUCTS_DIR}\" ]] && [[ -d \"${BUILT_PRODUCTS_DIR}\" ]]; then\n  /usr/bin/xattr -cr \"${BUILT_PRODUCTS_DIR}\" 2>/dev/null || true\n  find \"${BUILT_PRODUCTS_DIR}\" -name '._*' -delete 2>/dev/null || true\nfi\n";
+			showEnvVarsInLog = 0;
+		};
 		F1B2C3D4E5A60718293A4B5C /* Strip Extended Attributes */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -412,7 +432,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "if [[ \"${PLATFORM_NAME}\" == *simulator* ]] && [[ -d \"${CODESIGNING_FOLDER_PATH}\" ]]; then\n  /usr/bin/xattr -cr \"${CODESIGNING_FOLDER_PATH}\" 2>/dev/null || true\nfi\n";
+			shellScript = "# Final xattr strip pass - after all frameworks are embedded, before CodeSign.\n# Cleans iCloud/Finder detritus that causes 'resource fork not allowed' codesign errors.\nif [[ -n \"${CODESIGNING_FOLDER_PATH}\" ]] && [[ -d \"${CODESIGNING_FOLDER_PATH}\" ]]; then\n  /usr/bin/xattr -cr \"${CODESIGNING_FOLDER_PATH}\" 2>/dev/null || true\n  find \"${CODESIGNING_FOLDER_PATH}\" -name '._*' -delete 2>/dev/null || true\n  find \"${CODESIGNING_FOLDER_PATH}\" -name '.DS_Store' -delete 2>/dev/null || true\nfi\nif [[ -n \"${BUILT_PRODUCTS_DIR}\" ]] && [[ -d \"${BUILT_PRODUCTS_DIR}\" ]]; then\n  /usr/bin/xattr -cr \"${BUILT_PRODUCTS_DIR}\" 2>/dev/null || true\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 		FF0DB2F77587E2BAC1C8BA49 /* [CP] Check Pods Manifest.lock */ = {
@@ -550,7 +570,8 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/RunnerProfile.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_IDENTITY = "";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -584,6 +605,7 @@
 			baseConfigurationReference = 429EBE8F88A94407BC7D5026 /* Pods-RunnerTests.debug.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = ULTS66B6QD;
@@ -591,6 +613,7 @@
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.wefilling.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -608,6 +631,7 @@
 			baseConfigurationReference = 0710DCC27004C5E90B41690B /* Pods-RunnerTests.release.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -616,6 +640,7 @@
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.wefilling.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -631,6 +656,7 @@
 			baseConfigurationReference = 5D8992ECCD03A0E92EF1D287 /* Pods-RunnerTests.profile.xcconfig */;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
 				DEVELOPMENT_TEAM = ULTS66B6QD;
@@ -638,6 +664,7 @@
 				MARKETING_VERSION = "$(FLUTTER_BUILD_NAME)";
 				PRODUCT_BUNDLE_IDENTIFIER = com.wefilling.app.RunnerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -772,7 +799,8 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_IDENTITY = "";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";
@@ -811,7 +839,8 @@
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION = YES;
 				CODE_SIGN_ENTITLEMENTS = Runner/RunnerRelease.entitlements;
-				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_IDENTITY = "";
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = "$(FLUTTER_BUILD_NUMBER)";

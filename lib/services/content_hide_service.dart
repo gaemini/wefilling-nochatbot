@@ -11,6 +11,8 @@ class ContentHideService {
   static final Set<String> _hiddenCommentIds = <String>{};
   static final Set<String> _hiddenMeetupIds = <String>{};
   static final Set<String> _hiddenUserIds = <String>{};
+  static final Set<String> _hiddenAnonymousPostIds = <String>{};
+  static final Set<String> _hiddenAnonymousCommentIds = <String>{};
 
   static void hideReportedTarget({
     required String targetType,
@@ -42,11 +44,64 @@ class ContentHideService {
   static bool isHiddenComment(String commentId) => _hiddenCommentIds.contains(commentId.trim());
   static bool isHiddenMeetup(String meetupId) => _hiddenMeetupIds.contains(meetupId.trim());
   static bool isHiddenUser(String userId) => _hiddenUserIds.contains(userId.trim());
+  static bool isHiddenAnonymousPost(String postId) =>
+      _hiddenAnonymousPostIds.contains(postId.trim());
+  static bool isHiddenAnonymousComment(String commentId) =>
+      _hiddenAnonymousCommentIds.contains(commentId.trim());
+
+  static void hideAnonymousPost(String postId) {
+    final id = postId.trim();
+    if (id.isEmpty) return;
+    _hiddenAnonymousPostIds.add(id);
+  }
+
+  static void unhideAnonymousPost(String postId) {
+    final id = postId.trim();
+    if (id.isEmpty) return;
+    _hiddenAnonymousPostIds.remove(id);
+  }
+
+  static void addHiddenAnonymousPostIds(Iterable<String> postIds) {
+    for (final postId in postIds) {
+      final id = postId.trim();
+      if (id.isNotEmpty) {
+        _hiddenAnonymousPostIds.add(id);
+      }
+    }
+  }
+
+  static void hideAnonymousComment(String commentId) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+    _hiddenAnonymousCommentIds.add(id);
+  }
+
+  static void unhideAnonymousComment(String commentId) {
+    final id = commentId.trim();
+    if (id.isEmpty) return;
+    _hiddenAnonymousCommentIds.remove(id);
+  }
+
+  static void addHiddenAnonymousCommentIds(Iterable<String> commentIds) {
+    for (final commentId in commentIds) {
+      final id = commentId.trim();
+      if (id.isNotEmpty) {
+        _hiddenAnonymousCommentIds.add(id);
+      }
+    }
+  }
 
   static List<Post> filterPostsSync(List<Post> posts) {
-    if (_hiddenPostIds.isEmpty && _hiddenUserIds.isEmpty) return posts;
+    if (_hiddenPostIds.isEmpty &&
+        _hiddenUserIds.isEmpty &&
+        _hiddenAnonymousPostIds.isEmpty) {
+      return posts;
+    }
     return posts
-        .where((p) => !_hiddenPostIds.contains(p.id) && !_hiddenUserIds.contains(p.userId))
+        .where((p) =>
+            !_hiddenPostIds.contains(p.id) &&
+            !_hiddenAnonymousPostIds.contains(p.id) &&
+            !_hiddenUserIds.contains(p.userId))
         .toList();
   }
 
@@ -61,6 +116,7 @@ class ContentHideService {
     required String commentId,
     required String userId,
   }) {
+    // 익명 댓글 숨김은 플레이스홀더로 대체되어야 하므로 여기서 제외
     return _hiddenCommentIds.contains(commentId) || _hiddenUserIds.contains(userId);
   }
 
@@ -69,5 +125,7 @@ class ContentHideService {
     _hiddenCommentIds.clear();
     _hiddenMeetupIds.clear();
     _hiddenUserIds.clear();
+    _hiddenAnonymousPostIds.clear();
+    _hiddenAnonymousCommentIds.clear();
   }
 }

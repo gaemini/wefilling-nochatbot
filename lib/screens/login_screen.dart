@@ -10,8 +10,7 @@ import '../screens/nickname_setup_screen.dart';
 import '../screens/main_screen.dart';
 import '../screens/hanyang_email_verification_screen.dart';
 import '../screens/email_login_screen.dart';
-import '../screens/terms_screen.dart';
-import '../screens/privacy_policy_screen.dart';
+import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -492,12 +491,7 @@ class _LoginScreenState extends State<LoginScreen>
                                         onPressed: authProvider.isLoading
                                             ? null
                                             : () {
-                                                Navigator.push(
-                                                  context,
-                                                  MaterialPageRoute(
-                                                    builder: (_) => const HanyangEmailVerificationScreen(),
-                                                  ),
-                                                );
+                                                _navigateToSignUpFlow(context);
                                               },
                                         child: Row(
                                           mainAxisAlignment: MainAxisAlignment.center,
@@ -609,11 +603,11 @@ class _LoginScreenState extends State<LoginScreen>
                             const SizedBox(width: 8),
                             Text(
                               Localizations.localeOf(context).languageCode == 'ko' 
-                                  ? '한국어' 
-                                  : 'English',
+                                  ? 'KOR' 
+                                  : 'ENG',
                               style: TextStyle(
                                 fontSize: 14,
-                                fontWeight: FontWeight.w500,
+                                fontWeight: FontWeight.w700,
                                 color: Colors.blue.shade700,
                               ),
                             ),
@@ -706,6 +700,22 @@ class _LoginScreenState extends State<LoginScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _isEnglishLocale(BuildContext context) {
+    return Localizations.localeOf(context).languageCode == 'en';
+  }
+
+  void _navigateToSignUpFlow(BuildContext context) {
+    final isEnglishSignUp = _isEnglishLocale(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => isEnglishSignUp
+            ? const SignUpMethodSelectionScreen(skipHanyangVerification: true)
+            : const HanyangEmailVerificationScreen(),
       ),
     );
   }
@@ -870,12 +880,7 @@ class _LoginScreenState extends State<LoginScreen>
                             child: ElevatedButton(
                               onPressed: () {
                                 Navigator.of(dialogContext).pop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const HanyangEmailVerificationScreen(),
-                                  ),
-                                );
+                                _navigateToSignUpFlow(context);
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue.shade600,
@@ -1082,12 +1087,7 @@ class _LoginScreenState extends State<LoginScreen>
                             child: ElevatedButton(
                               onPressed: () {
                                 Navigator.of(dialogContext).pop();
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const HanyangEmailVerificationScreen(),
-                                  ),
-                                );
+                                _navigateToSignUpFlow(context);
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.blue.shade600,

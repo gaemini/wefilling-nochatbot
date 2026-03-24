@@ -10,6 +10,7 @@ import '../models/comment.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'content_hide_service.dart';
+import 'report_service.dart';
 import 'cache/comment_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'meetup_service.dart';
@@ -304,6 +305,7 @@ class CommentService {
             }
 
             // 신고/숨김 처리된 댓글/사용자 즉시 제외
+            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
             comments = comments.where((comment) {
               return !ContentHideService.shouldHideComment(
                 commentId: comment.id,
@@ -463,6 +465,7 @@ class CommentService {
             allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
             // 신고/숨김 처리된 댓글/사용자 즉시 제외
+            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
             allComments = allComments.where((comment) {
               return !ContentHideService.shouldHideComment(
                 commentId: comment.id,

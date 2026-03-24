@@ -20,6 +20,7 @@ class BlockedUsersScreen extends StatefulWidget {
 
 class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
   List<BlockedUser> _blockedUsers = [];
+  List<AnonymousBlockedPost> _blockedAnonymousPosts = [];
   Map<String, Map<String, dynamic>> _userProfiles = {};
   bool _isLoading = true;
   bool _hasError = false;
@@ -40,7 +41,12 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     });
 
     try {
-      final blockedUsers = await ReportService.getBlockedUsers();
+      final results = await Future.wait([
+        ReportService.getBlockedUsers(),
+        ReportService.getBlockedAnonymousPosts(),
+      ]);
+      final blockedUsers = results[0] as List<BlockedUser>;
+      final blockedAnonymousPosts = results[1] as List<AnonymousBlockedPost>;
       
       // 사용자 프로필 정보 가져오기
       Map<String, Map<String, dynamic>> profiles = {};
@@ -62,6 +68,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
 
       setState(() {
         _blockedUsers = blockedUsers;
+        _blockedAnonymousPosts = blockedAnonymousPosts;
         _userProfiles = profiles;
         _isLoading = false;
         _hasError = false;
@@ -78,6 +85,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
         _isLoading = false;
         _hasError = true;
         _errorMessage = errorMsg;
+        _blockedAnonymousPosts = [];
       });
     }
   }
@@ -133,6 +141,63 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _unblockAnonymousPost(AnonymousBlockedPost blockedPost) async {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text(isKo ? '익명 게시글 차단 해제' : 'Unblock anonymous post'),
+            content: Text(
+              isKo
+                  ? '이 익명 게시글 차단을 해제하시겠습니까?'
+                  : 'Do you want to unblock this anonymous post?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(isKo ? '취소' : 'Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                child: Text(isKo ? '해제' : 'Unblock'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+
+    final success = await ReportService.unblockAnonymousPost(blockedPost.postId);
+    if (!mounted) return;
+
+    if (success) {
+      setState(() {
+        _blockedAnonymousPosts.removeWhere((e) => e.id == blockedPost.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo
+                ? '익명 게시글 차단을 해제했습니다.'
+                : 'Anonymous post unblocked.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo
+                ? '익명 게시글 차단 해제에 실패했습니다.'
+                : 'Failed to unblock anonymous post.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -243,7 +308,7 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _hasError
               ? _buildErrorState()
-              : _blockedUsers.isEmpty
+              : (_blockedUsers.isEmpty && _blockedAnonymousPosts.isEmpty)
                   ? _buildEmptyState()
                   : _buildBlockedUsersList(),
     );
@@ -308,28 +373,49 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     return Center(
       child: AppEmptyState(
         icon: Icons.block,
-        title: isKo ? '차단한 사용자가 없습니다' : 'No blocked users',
-        description: isKo ? '차단한 사용자가 있으면 여기에 표시됩니다.' : 'Blocked users will appear here.',
+        title: isKo ? '차단한 항목이 없습니다' : 'No blocked items',
+        description: isKo
+            ? '차단한 사용자 또는 익명 게시글이 있으면 여기에 표시됩니다.'
+            : 'Blocked users or anonymous posts will appear here.',
       ),
     );
   }
 
   Widget _buildBlockedUsersList() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final hasUsers = _blockedUsers.isNotEmpty;
+    final hasAnonymousPosts = _blockedAnonymousPosts.isNotEmpty;
+
     return RefreshIndicator(
       onRefresh: _loadBlockedUsers,
-      child: ListView.separated(
+      child: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: _blockedUsers.length,
-        separatorBuilder: (context, index) => const Divider(
-          height: 1,
-          thickness: 1,
-          color: Color(0xFFF3F4F6),
-          indent: 56,
+        children: [
+          if (hasUsers) ...[
+            _buildSectionTitle(isKo ? '사용자 차단' : 'Blocked users'),
+            ..._blockedUsers.map(_buildBlockedUserCard),
+            const SizedBox(height: 8),
+          ],
+          if (hasAnonymousPosts) ...[
+            _buildSectionTitle(isKo ? '익명 게시글 차단' : 'Blocked anonymous posts'),
+            ..._blockedAnonymousPosts.map(_buildBlockedAnonymousPostCard),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF6B7280),
         ),
-        itemBuilder: (context, index) {
-          final blockedUser = _blockedUsers[index];
-          return _buildBlockedUserCard(blockedUser);
-        },
       ),
     );
   }
@@ -338,99 +424,189 @@ class _BlockedUsersScreenState extends State<BlockedUsersScreen> {
     final userName = _getUserName(blockedUser.blockedUserId);
     final profile = _userProfiles[blockedUser.blockedUserId];
     
-    return InkWell(
-      onTap: null,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 16),
-        child: Row(
-          children: [
-            // 사용자 아바타
-            Container(
-              width: 48,
-              height: 48,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF3F4F6),
-                shape: BoxShape.circle,
-              ),
-              child: profile?['photoURL'] != null
-                  ? ClipOval(
-                      child: Image.network(
-                        profile!['photoURL'],
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.person,
-                            size: 24,
-                            color: Color(0xFF6B7280),
-                          );
-                        },
-                      ),
-                    )
-                  : const Icon(
-                      Icons.person,
-                      size: 24,
-                      color: Color(0xFF6B7280),
-                    ),
-            ),
-            
-            const SizedBox(width: 12),
-            
-            // 사용자 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    userName,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF111827),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    () {
-                      final isKo = Localizations.localeOf(context).languageCode == 'ko';
-                      final timeAgo = _getFormattedDate(blockedUser.createdAt);
-                      return isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo';
-                    }(),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            
-            // 차단 해제 버튼
-            TextButton(
-              onPressed: () => _unblockUser(blockedUser),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF6366F1),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              child: Text(
-                () {
-                  final isKo = Localizations.localeOf(context).languageCode == 'ko';
-                  return isKo ? '차단 해제' : 'Unblock';
-                }(),
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1),
         ),
+      ),
+      child: Row(
+        children: [
+          // 사용자 아바타
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3F4F6),
+              shape: BoxShape.circle,
+            ),
+            child: profile?['photoURL'] != null
+                ? ClipOval(
+                    child: Image.network(
+                      profile!['photoURL'],
+                      width: 48,
+                      height: 48,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.person,
+                          size: 24,
+                          color: Color(0xFF6B7280),
+                        );
+                      },
+                    ),
+                  )
+                : const Icon(
+                    Icons.person,
+                    size: 24,
+                    color: Color(0xFF6B7280),
+                  ),
+          ),
+          
+          const SizedBox(width: 12),
+          
+          // 사용자 정보
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  userName,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF111827),
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  () {
+                    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+                    final timeAgo = _getFormattedDate(blockedUser.createdAt);
+                    return isKo ? '$timeAgo에 차단' : 'Blocked $timeAgo';
+                  }(),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // 차단 해제 버튼
+          TextButton(
+            onPressed: () => _unblockUser(blockedUser),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF6366F1),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            child: Text(
+              () {
+                final isKo = Localizations.localeOf(context).languageCode == 'ko';
+                return isKo ? '차단 해제' : 'Unblock';
+              }(),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBlockedAnonymousPostCard(AnonymousBlockedPost blockedPost) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final title = (blockedPost.titleSnapshot ?? '').trim();
+    final preview = (blockedPost.previewSnapshot ?? '').trim();
+    final subtitle = title.isNotEmpty
+        ? title
+        : (preview.isNotEmpty
+            ? preview
+            : (isKo ? '익명 게시글' : 'Anonymous post'));
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFF3F4F6), width: 1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3F4F6),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.visibility_off_outlined,
+              color: Color(0xFF6B7280),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isKo ? '익명 게시글' : 'Anonymous post',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  isKo
+                      ? '${_getFormattedDate(blockedPost.createdAt)}에 차단'
+                      : 'Blocked ${_getFormattedDate(blockedPost.createdAt)}',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: () => _unblockAnonymousPost(blockedPost),
+            child: Text(
+              isKo ? '차단 해제' : 'Unblock',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -275,12 +275,8 @@ class UsersRepository {
       if (currentUid == null) return RelationshipStatus.none;
       if (currentUid == otherUserId) return RelationshipStatus.none;
 
-      // 차단 관계 확인
-      final isBlocked = await _isUserBlocked(currentUid, otherUserId);
-      if (isBlocked) return RelationshipStatus.blocked;
-
-      final isBlockedBy = await _isUserBlocked(otherUserId, currentUid);
-      if (isBlockedBy) return RelationshipStatus.blockedBy;
+      final blockStatus = await _getBlockRelationshipStatus(currentUid, otherUserId);
+      if (blockStatus != null) return blockStatus;
 
       // 친구 관계 확인
       final isFriends = await _areUsersFriends(currentUid, otherUserId);
@@ -312,6 +308,42 @@ class UsersRepository {
     } catch (e) {
       Logger.error('차단 상태 확인 오류: $e');
       return false;
+    }
+  }
+
+  /// 양방향 차단 문서를 함께 확인해서 실제 관계를 판별합니다.
+  Future<RelationshipStatus?> _getBlockRelationshipStatus(
+    String currentUid,
+    String otherUid,
+  ) async {
+    try {
+      final currentToOtherId = '${currentUid}_$otherUid';
+      final otherToCurrentId = '${otherUid}_$currentUid';
+
+      final results = await Future.wait([
+        _firestore.collection(_blocksCollection).doc(currentToOtherId).get(),
+        _firestore.collection(_blocksCollection).doc(otherToCurrentId).get(),
+      ]);
+
+      final currentToOther = results[0];
+      final otherToCurrent = results[1];
+
+      if (currentToOther.exists) {
+        final data = currentToOther.data();
+        final isImplicit = data?['isImplicit'] == true;
+        return isImplicit
+            ? RelationshipStatus.blockedBy
+            : RelationshipStatus.blocked;
+      }
+
+      if (otherToCurrent.exists) {
+        return RelationshipStatus.blockedBy;
+      }
+
+      return null;
+    } catch (e) {
+      Logger.error('차단 관계 상태 확인 오류: $e');
+      return null;
     }
   }
 

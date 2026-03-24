@@ -19,10 +19,8 @@ import '../utils/logger.dart';
 import 'dart:io';
 
 // 백그라운드 메시지 핸들러 (최상위 함수여야 함)
-// iOS에서 앱이 백그라운드/종료 상태일 때 메시지를 처리
-// ⚠️ 중요: 이 핸들러에서는 배지를 직접 설정하지 않음
-//    iOS는 APNs payload의 badge 값을 자동으로 처리함
-//    Android만 필요 시 여기서 배지 설정 가능
+// iOS: APNs payload의 badge 값을 자동으로 처리하므로 별도 처리 불필요
+// Android: 백그라운드에서도 알림을 명시적으로 표시해야 함
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   Logger.log('📱 백그라운드 메시지 수신: ${message.messageId}');
@@ -30,8 +28,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   Logger.log('📱 내용: ${message.notification?.body}');
   Logger.log('📱 데이터: ${message.data}');
   
-  // iOS: APNs payload의 badge가 자동으로 적용됨 (여기서 처리 불필요)
-  // Android: 필요 시 여기서 배지 설정 가능
+  // Android: 백그라운드에서 로컬 알림 표시
+  // (Firebase가 자동으로 표시하지만, 커스텀 처리가 필요한 경우 여기서 수동 표시)
+  // iOS: APNs가 자동으로 처리하므로 여기서는 스킵
 }
 
 class FCMService {

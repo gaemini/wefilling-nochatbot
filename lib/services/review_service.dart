@@ -6,11 +6,37 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../utils/profile_photo_policy.dart';
 import '../models/review_post.dart';
+import 'content_filter_service.dart';
 import '../utils/logger.dart';
 
 class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  Future<List<ReviewPost>> _filterBlockedReviews(
+    List<ReviewPost> reviews,
+  ) async {
+    if (reviews.isEmpty) return reviews;
+
+    final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+    final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
+    if (blockedUserIds.isEmpty && blockedByUserIds.isEmpty) {
+      return reviews;
+    }
+
+    return reviews.where((review) {
+      return !ContentFilterService.isUserIdExcluded(
+        review.authorId,
+        blockedUserIds: blockedUserIds,
+        blockedByUserIds: blockedByUserIds,
+      );
+    }).toList();
+  }
+
+  Future<bool> _isAuthorExcluded(String userId) async {
+    if (userId.trim().isEmpty) return false;
+    return await ContentFilterService.isUserExcluded(userId);
+  }
 
   /// 후기 검색 (Future 버전)
   /// - 컬렉션 `reviews`를 최신순으로 가져온 뒤 클라이언트에서 필터링합니다.
@@ -42,7 +68,7 @@ class ReviewService {
         }
       }
 
-      return results;
+      return await _filterBlockedReviews(results);
     } catch (e) {
       Logger.error('후기 검색 오류: $e');
       return [];
@@ -255,14 +281,16 @@ class ReviewService {
         .collection('reviews')
         .orderBy('createdAt', descending: true)
         .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-        return ReviewPost.fromMap({
-          'id': doc.id,
-          ...data,
-        });
-      }).toList();
+          .asyncMap((snapshot) async {
+      final reviews =
+          snapshot.docs.map((doc) {
+            final data = doc.data();
+            return ReviewPost.fromMap({
+              'id': doc.id,
+              ...data,
+            });
+          }).toList();
+      return await _filterBlockedReviews(reviews);
     });
   }
 
@@ -290,7 +318,14 @@ class ReviewService {
           .collection('posts')
           .where('type', isEqualTo: 'meetup_review')
           .snapshots()
-          .map((snapshot) {
+          .asyncMap((snapshot) async {
+        final currentUserId = _auth.currentUser?.uid;
+        if (currentUserId != null &&
+            currentUserId != userId &&
+            await _isAuthorExcluded(userId)) {
+          return <ReviewPost>[];
+        }
+
         final reviews = <ReviewPost>[];
         
         for (var doc in snapshot.docs) {
@@ -335,7 +370,7 @@ class ReviewService {
         // 메모리에서 정렬
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
-        return reviews;
+        return await _filterBlockedReviews(reviews);
       });
     } catch (e) {
       Logger.error('❌ 후기 스트림 오류: $e');
@@ -461,6 +496,13 @@ class ReviewService {
           return null;
         }
 
+        final currentUserId = _auth.currentUser?.uid;
+        if (currentUserId != null &&
+            currentUserId != userId &&
+            await _isAuthorExcluded(userId)) {
+          return null;
+        }
+
         final data = snapshot.data()!;
         
         // 실제 사용자 정보 가져오기
@@ -482,7 +524,7 @@ class ReviewService {
           Logger.error('⚠️ 사용자 정보 조회 실패: $e');
         }
         
-        return ReviewPost(
+        final review = ReviewPost(
           id: snapshot.id,
           authorId: userId,
           authorName: authorName,
@@ -503,6 +545,9 @@ class ReviewService {
           sourceReviewId: data['reviewId'],
           hidden: data['isHidden'] == true,
         );
+
+        final filtered = await _filterBlockedReviews([review]);
+        return filtered.isEmpty ? null : filtered.first;
       });
     } catch (e) {
       Logger.error('❌ 후기 스트림 오류: $e');

@@ -103,6 +103,69 @@ class BlockedUser {
   }
 }
 
+// 익명 게시글 차단 데이터 모델
+class AnonymousBlockedPost {
+  final String id;
+  final String blockerUid;
+  final String postId;
+  final DateTime createdAt;
+  final String? titleSnapshot;
+  final String? previewSnapshot;
+
+  const AnonymousBlockedPost({
+    required this.id,
+    required this.blockerUid,
+    required this.postId,
+    required this.createdAt,
+    this.titleSnapshot,
+    this.previewSnapshot,
+  });
+
+  factory AnonymousBlockedPost.fromFirestore(
+    String docId,
+    Map<String, dynamic> data,
+  ) {
+    return AnonymousBlockedPost(
+      id: docId,
+      blockerUid: (data['blockerUid'] ?? '').toString(),
+      postId: (data['postId'] ?? '').toString(),
+      createdAt: data['createdAt']?.toDate() ?? DateTime.now(),
+      titleSnapshot: data['titleSnapshot']?.toString(),
+      previewSnapshot: data['previewSnapshot']?.toString(),
+    );
+  }
+}
+
+// 익명 댓글 숨김 데이터 모델 (차단 목록에는 노출하지 않음)
+class HiddenCommentEntry {
+  final String id;
+  final String blockerUid;
+  final String commentId;
+  final String postId;
+  final DateTime createdAt;
+
+  const HiddenCommentEntry({
+    required this.id,
+    required this.blockerUid,
+    required this.commentId,
+    required this.postId,
+    required this.createdAt,
+  });
+
+  factory HiddenCommentEntry.fromFirestore(
+    String docId,
+    Map<String, dynamic> data,
+  ) {
+    return HiddenCommentEntry(
+      id: docId,
+      blockerUid: (data['blockerUid'] ?? '').toString(),
+      commentId: (data['commentId'] ?? '').toString(),
+      postId: (data['postId'] ?? '').toString(),
+      createdAt: data['createdAt']?.toDate() ?? DateTime.now(),
+    );
+  }
+}
+
 // 신고 사유 상수
 class ReportReasons {
   // 한국어(기존 호환)

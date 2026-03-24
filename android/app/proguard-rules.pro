@@ -6,6 +6,17 @@
 -keep class com.google.android.gms.auth.api.signin.** { *; }
 -keep class com.google.android.gms.auth.api.signin.internal.** { *; }
 
+# Firebase Cloud Messaging (FCM) - 알림 필수
+-keep class com.google.firebase.messaging.** { *; }
+-keep class com.google.firebase.iid.** { *; }
+-dontwarn com.google.firebase.messaging.**
+-dontwarn com.google.firebase.iid.**
+
+# Flutter Local Notifications - 로컬 알림 필수
+-keep class com.dexterous.** { *; }
+-keep class io.flutter.plugins.firebase.messaging.** { *; }
+-keep class io.flutter.plugins.pathprovider.** { *; }
+
 # Flutter Wrapper
 -keep class io.flutter.app.** { *; }
 -keep class io.flutter.plugin.** { *; }

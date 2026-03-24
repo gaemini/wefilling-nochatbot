@@ -33,6 +33,8 @@ service cloud.firestore {
     match /users/{userId} {
       // 본인만 민감한 필드 수정 가능
       allow read: if request.auth != null; // 인증된 사용자만 프로필 읽기 가능
+      // 참고: 영어 소셜 회원가입(en bypass)은 Cloud Functions(Admin SDK)에서 users 문서를 생성/보정한다.
+      // 클라이언트 직접 create 정책은 기존 한양메일 인증 조건을 유지한다.
       allow create: if request.auth != null 
         && request.auth.uid == userId
         && request.resource.data.emailVerified == true
@@ -803,6 +805,40 @@ service cloud.firestore {
       
       // 읽기/수정/삭제: 관리자만 가능 (일반 사용자는 본인 신고도 수정/삭제 불가)
       allow read, update, delete: if false; 
+    }
+
+    // ===== 익명 게시글 차단 컬렉션 =====
+    match /anonymous_post_blocks/{blockId} {
+      // 읽기: 본인이 차단한 항목만 읽기 가능
+      // blockId 형식: {blockerUid}_{postId}
+      allow read: if 
+        request.auth != null &&
+        (
+          // 문서가 존재하는 경우: 차단자 본인만
+          (resource != null && request.auth.uid == resource.data.blockerUid) ||
+          // 문서가 존재하지 않는 경우: blockId 패턴에 자신의 ID 포함 시
+          (resource == null && blockId.matches(request.auth.uid + '_.*'))
+        );
+      
+      // 생성/삭제: Cloud Functions만 가능 (보안 강화)
+      allow write: if false;
+    }
+
+    // ===== 익명 댓글 숨김 컬렉션 =====
+    match /hidden_comments/{hideId} {
+      // 읽기: 본인이 숨긴 항목만 읽기 가능
+      // hideId 형식: {blockerUid}_{commentId}
+      allow read: if 
+        request.auth != null &&
+        (
+          // 문서가 존재하는 경우: 숨김 처리자 본인만
+          (resource != null && request.auth.uid == resource.data.blockerUid) ||
+          // 문서가 존재하지 않는 경우: hideId 패턴에 자신의 ID 포함 시
+          (resource == null && hideId.matches(request.auth.uid + '_.*'))
+        );
+      
+      // 생성/삭제: Cloud Functions만 가능 (보안 강화)
+      allow write: if false;
     }
   }
 }

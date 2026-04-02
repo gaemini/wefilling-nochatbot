@@ -1,0 +1,608 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
+import '../models/snack_chat.dart';
+import '../models/snack_chat_message.dart';
+import '../services/cache/app_image_cache_manager.dart';
+import '../services/snack_chat_service.dart';
+import '../services/storage_service.dart';
+import '../services/user_info_cache_service.dart';
+import 'snack_chat_info_screen.dart';
+
+class SnackChatScreen extends StatefulWidget {
+  final String snackChatId;
+
+  const SnackChatScreen({super.key, required this.snackChatId});
+
+  @override
+  State<SnackChatScreen> createState() => _SnackChatScreenState();
+}
+
+class _SnackChatScreenState extends State<SnackChatScreen> {
+  final SnackChatService _snackChatService = SnackChatService();
+  final StorageService _storageService = StorageService();
+  final UserInfoCacheService _userInfoCache = UserInfoCacheService();
+  final TextEditingController _messageController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final ImagePicker _imagePicker = ImagePicker();
+
+  bool _isSending = false;
+  bool _isUploadingImage = false;
+  final Map<String, String> _senderNameCache = {};
+  String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  // ─── 페이지네이션 상태 ───────────────────────────────────────────
+  StreamSubscription<List<SnackChatMessage>>? _msgSub;
+  final List<SnackChatMessage> _messages = [];
+  final Set<String> _messageIds = {};
+  DateTime? _oldestMessageTime; // 가장 오래된 메시지 시간 (페이지네이션 커서)
+  bool _hasMore = true;
+  bool _isLoadingMore = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+    _subscribeToMessages();
+  }
+
+  void _subscribeToMessages() {
+    _msgSub = _snackChatService
+        .watchMessages(widget.snackChatId)
+        .listen((incoming) {
+      if (!mounted) return;
+      setState(() {
+        for (final m in incoming) {
+          if (!_messageIds.contains(m.id)) {
+            _messageIds.add(m.id);
+            _messages.add(m);
+          }
+        }
+        // 최신순 정렬 유지 (reverse: true이므로 index 0이 가장 최신)
+        _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+        // 가장 오래된 메시지 시간을 커서로 보관
+        if (_messages.isNotEmpty) {
+          _oldestMessageTime = _messages.last.createdAt;
+        }
+      });
+    });
+  }
+
+  void _onScroll() {
+    // 리스트가 끝(오래된 메시지 방향)에 다가오면 추가 로드
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 300 &&
+        !_isLoadingMore &&
+        _hasMore) {
+      _loadMoreMessages();
+    }
+  }
+
+  Future<void> _loadMoreMessages() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+    try {
+      final older = await _snackChatService.fetchMessagesPage(
+        widget.snackChatId,
+        before: _oldestMessageTime,
+      );
+      if (!mounted) return;
+      setState(() {
+        for (final m in older) {
+          if (!_messageIds.contains(m.id)) {
+            _messageIds.add(m.id);
+            _messages.add(m);
+          }
+        }
+        if (older.isEmpty || older.length < 30) _hasMore = false;
+        if (_messages.isNotEmpty) {
+          _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          _oldestMessageTime = _messages.last.createdAt;
+        }
+      });
+    } finally {
+      if (mounted) setState(() => _isLoadingMore = false);
+    }
+  }
+
+  Future<String> _getSenderName(String senderId, String? senderName) async {
+    if (senderName != null && senderName.isNotEmpty) return senderName;
+    if (_senderNameCache.containsKey(senderId)) {
+      return _senderNameCache[senderId]!;
+    }
+    final userInfo = await _userInfoCache.getUserInfo(senderId);
+    final name = (userInfo?.nickname.isNotEmpty == true)
+        ? userInfo!.nickname
+        : senderId;
+    _senderNameCache[senderId] = name;
+    return name;
+  }
+
+  @override
+  void dispose() {
+    _msgSub?.cancel();
+    _messageController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _send() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _isSending) return;
+    setState(() => _isSending = true);
+    try {
+      final ok = await _snackChatService.sendMessage(widget.snackChatId, text);
+      if (ok && mounted) {
+        _messageController.clear();
+      }
+    } finally {
+      if (mounted) setState(() => _isSending = false);
+    }
+  }
+
+  Future<void> _pickAndSendImage() async {
+    if (_isUploadingImage || _isSending) return;
+    final uid = _uid;
+    if (uid == null) return;
+
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1800,
+        maxHeight: 1800,
+        imageQuality: 88,
+      );
+      if (picked == null) return;
+
+      setState(() => _isUploadingImage = true);
+      final imageUrl = await _storageService.uploadDmImage(
+        File(picked.path),
+        userId: uid,
+        conversationId: widget.snackChatId,
+      );
+      if (imageUrl == null || imageUrl.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이미지 업로드에 실패했습니다.')),
+        );
+        return;
+      }
+
+      final ok = await _snackChatService.sendImageMessage(
+        widget.snackChatId,
+        imageUrl: imageUrl,
+      );
+      if (!ok && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('이미지 전송에 실패했습니다.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return StreamBuilder<SnackChat?>(
+      stream: _snackChatService.watchSnackChat(widget.snackChatId),
+      builder: (context, roomSnap) {
+        final room = roomSnap.data;
+        if (room == null) {
+          return Scaffold(
+            appBar: AppBar(),
+            body: const Center(child: Text('대화방을 찾을 수 없습니다.')),
+          );
+        }
+
+        // 진입 시 읽음 처리 (참여자일 때만)
+        if (_uid != null && room.participantIds.contains(_uid)) {
+          _snackChatService.markAsRead(room.id);
+        }
+
+        return Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            centerTitle: true,
+            titleSpacing: 0,
+            title: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  room.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  isKo
+                      ? '${room.participantCount}명 참여'
+                      : '${room.participantCount} Participants',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SnackChatInfoScreen(snackChatId: room.id),
+                    ),
+                  );
+                },
+                icon: const Icon(
+                  Icons.menu,
+                  color: AppColors.pointColor,
+                ),
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              Expanded(
+                child: _messages.isEmpty
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView.builder(
+                        controller: _scrollController,
+                        reverse: true,
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                        itemCount: _messages.length + (_hasMore ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          // 맨 아래(오래된 쪽)에 로딩 인디케이터
+                          if (index == _messages.length) {
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: _isLoadingMore
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ),
+                            );
+                          }
+                          final msg = _messages[index];
+                          final isMe = msg.senderId == _uid;
+                          final String timeText = _formatTime(msg.createdAt);
+                          final String? prevTimeText = index > 0
+                              ? _formatTime(_messages[index - 1].createdAt)
+                              : null;
+                          final bool showTimeText =
+                              prevTimeText == null || timeText != prevTimeText;
+                          return _buildMessageBubble(
+                            message: msg,
+                            isMe: isMe,
+                            timeText: timeText,
+                            showTimeText: showTimeText,
+                          );
+                        },
+                      ),
+              ),
+              SafeArea(
+                top: false,
+                child: Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                  color: Colors.white,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: _isUploadingImage ? null : _pickAndSendImage,
+                        icon: _isUploadingImage
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.add_circle, size: 30),
+                        color: AppColors.pointColor,
+                        tooltip: isKo ? '이미지 첨부' : 'Attach image',
+                      ),
+                      Expanded(
+                        child: TextField(
+                          controller: _messageController,
+                          maxLines: 4,
+                          minLines: 1,
+                          textInputAction: TextInputAction.send,
+                          onSubmitted: (_) => _send(),
+                          decoration: InputDecoration(
+                            hintText:
+                                isKo ? '메시지를 입력하세요...' : 'Type a message...',
+                            filled: true,
+                            fillColor: const Color(0xFFF3F4F6),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FloatingActionButton.small(
+                        onPressed: _isSending ? null : _send,
+                        backgroundColor: AppColors.pointColor,
+                        child: _isSending
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.send_rounded,
+                                color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMessageBubble({
+    required SnackChatMessage message,
+    required bool isMe,
+    required String timeText,
+    required bool showTimeText,
+  }) {
+    final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
+    final hasText = message.text.trim().isNotEmpty;
+
+    if (isMe) {
+      // 내 메시지: 시간이 왼쪽에 표시
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10, left: 60, right: 12),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // 시간 표시 (왼쪽)
+            Visibility(
+              visible: showTimeText,
+              maintainAnimation: true,
+              maintainSize: true,
+              maintainState: true,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 6, bottom: 2),
+                child: Text(
+                  timeText,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF9CA3AF),
+                  ),
+                ),
+              ),
+            ),
+            // 메시지 버블
+            Flexible(
+              child: Container(
+                padding: EdgeInsets.fromLTRB(
+                  hasImage ? 8 : 12,
+                  hasImage ? 8 : 10,
+                  hasImage ? 8 : 12,
+                  hasImage ? 8 : 10,
+                ),
+                constraints: const BoxConstraints(maxWidth: 290),
+                decoration: BoxDecoration(
+                  color: AppColors.pointColor,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 6,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (hasImage)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: message.imageUrl!,
+                          cacheManager: AppImageCacheManager.instance,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            height: 140,
+                            width: 240,
+                            color: Colors.black12,
+                            alignment: Alignment.center,
+                            child: const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            height: 140,
+                            width: 240,
+                            color: Colors.black12,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.broken_image_outlined),
+                          ),
+                        ),
+                      ),
+                    if (hasImage && hasText) const SizedBox(height: 8),
+                    if (hasText)
+                      Text(
+                        message.text,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 상대방 메시지: 이름 위에, 시간이 오른쪽에 표시
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10, left: 12, right: 60),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 이름 표시 (senderName 우선, 없으면 캐시 조회)
+            FutureBuilder<String>(
+              future: _getSenderName(message.senderId, message.senderName),
+              initialData: message.senderName ?? message.senderId,
+              builder: (context, snap) => Text(
+                snap.data ?? message.senderId,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF4B5563),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                // 메시지 버블
+                Flexible(
+                  child: Container(
+                    padding: EdgeInsets.fromLTRB(
+                      hasImage ? 8 : 12,
+                      hasImage ? 8 : 10,
+                      hasImage ? 8 : 12,
+                      hasImage ? 8 : 10,
+                    ),
+                    constraints: const BoxConstraints(maxWidth: 290),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 6,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (hasImage)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: CachedNetworkImage(
+                              imageUrl: message.imageUrl!,
+                              cacheManager: AppImageCacheManager.instance,
+                              fit: BoxFit.cover,
+                              placeholder: (_, __) => Container(
+                                height: 140,
+                                width: 240,
+                                color: Colors.black12,
+                                alignment: Alignment.center,
+                                child: const SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                              errorWidget: (_, __, ___) => Container(
+                                height: 140,
+                                width: 240,
+                                color: Colors.black12,
+                                alignment: Alignment.center,
+                                child: const Icon(Icons.broken_image_outlined),
+                              ),
+                            ),
+                          ),
+                        if (hasImage && hasText) const SizedBox(height: 8),
+                        if (hasText)
+                          Text(
+                            message.text,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                // 시간 표시 (오른쪽)
+                Visibility(
+                  visible: showTimeText,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  maintainState: true,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 2),
+                    child: Text(
+                      timeText,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  String _formatTime(DateTime t) {
+    final local = t.toLocal();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final period =
+        local.hour < 12 ? (isKo ? '오전' : 'AM') : (isKo ? '오후' : 'PM');
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '$period $hour:$minute';
+  }
+}

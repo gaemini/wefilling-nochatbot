@@ -42,7 +42,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   final GlobalKey _imagesSectionKey = GlobalKey();
   final GlobalKey _pollOptionsSectionKey = GlobalKey();
   late final TabController _tabController;
-  
+
   // 친구 카테고리 관련
   final _friendCategoryService = FriendCategoryService();
   List<FriendCategory> _friendCategories = [];
@@ -54,13 +54,14 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   int _stepIndex = 0; // 0: Content, 1: Visibility (UI/PopScope 상태용)
   bool _didDismissKeyboardOnTabDrag = false; // 가로 스와이프 시작 시 1회만 키보드 내림
   bool _isResolvingSelectedImages = false; // Asset -> File 변환 중 (업로드/용량 체크용)
-  
+
   // 공개 범위 설정
-  String _visibility = 'category'; // 'public' 또는 'category' (기본: 그룹별 공개 - 내부 값은 레거시 유지)
+  String _visibility =
+      'category'; // 'public' 또는 'category' (기본: 그룹별 공개 - 내부 값은 레거시 유지)
   bool _isAnonymous = false; // 익명 여부
   List<String> _selectedCategoryIds = []; // 선택된 그룹(친구 카테고리) ID 목록
   bool _showCategoryRequiredHint = false; // 그룹 선택 필수 강조 표시
-  
+
   // 게시글 타입 (일반/투표)
   String _postType = 'text'; // 'text' | 'poll'
 
@@ -74,7 +75,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     _contentFocusNode.addListener(() {
       setState(() {}); // 포커스 상태가 변경되면 화면 갱신
     });
-    
+
     // 친구 카테고리 로드
     _loadFriendCategories();
 
@@ -122,7 +123,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   // 친구 카테고리 로드
   void _loadFriendCategories() {
     _categoriesSubscription?.cancel();
-    _categoriesSubscription = _friendCategoryService.getCategoriesStream().listen((categories) {
+    _categoriesSubscription =
+        _friendCategoryService.getCategoriesStream().listen((categories) {
       if (mounted) {
         setState(() {
           _friendCategories = categories;
@@ -137,15 +139,14 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     final pollOptions = _getCleanedPollOptions();
 
     setState(() {
-      final categoryOk = _visibility != 'category' || _selectedCategoryIds.isNotEmpty;
       if (_postType == 'poll') {
         // 투표: 질문(본문) + 선택지 2개(고정) 필수, 이미지 첨부는 선택
         _canProceed = contentNotEmpty && pollOptions.length == 2;
-        _canSubmit = _canProceed && categoryOk;
+        _canSubmit = _canProceed;
       } else {
         // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
         _canProceed = (contentNotEmpty || _selectedAssets.isNotEmpty);
-        _canSubmit = _canProceed && categoryOk;
+        _canSubmit = _canProceed;
       }
     });
   }
@@ -191,9 +192,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
 
   Widget _buildPostTypeSegmentedControl() {
     final l10n = AppLocalizations.of(context)!;
-    
+
     const selectedBg = Color(0xFF6CCFF6);
-    const selectedText = Colors.white;
+    const selectedText = Color(0xFF111827);
     const unselectedText = Color(0xFF111827);
     const dividerColor = Color(0xFFD1D5DB);
 
@@ -202,7 +203,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       required String label,
     }) {
       final isSelected = _postType == value;
-      
+
       return Expanded(
         child: Material(
           color: Colors.transparent,
@@ -264,9 +265,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
 
   Widget _buildVisibilitySegmentedControl() {
     final l10n = AppLocalizations.of(context)!;
-    
+
     const selectedBg = Color(0xFF6CCFF6);
-    const selectedText = Colors.white;
+    const selectedText = Color(0xFF111827);
     const unselectedText = Color(0xFF111827);
     const dividerColor = Color(0xFFD1D5DB);
 
@@ -275,7 +276,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       required String label,
     }) {
       final isSelected = _visibility == value;
-      
+
       return Expanded(
         child: Material(
           color: Colors.transparent,
@@ -419,7 +420,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              AppLocalizations.of(context)!.totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
+              AppLocalizations.of(context)!
+                  .totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
             ),
             backgroundColor: Colors.orange,
             duration: const Duration(seconds: 5),
@@ -463,7 +465,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.white,
           elevation: 8,
           contentPadding: const EdgeInsets.fromLTRB(24, 26, 24, 8),
@@ -586,7 +589,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       );
       return;
     }
-    
+
     if (_formKey.currentState!.validate()) {
       if (_isResolvingSelectedImages) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -607,7 +610,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       if (!confirmed) return;
 
       // 업로드 직전에는 파일 리스트가 반드시 필요하므로 최종 동기화
-      if (_selectedAssets.isNotEmpty && _selectedImages.length != _selectedAssets.length) {
+      if (_selectedAssets.isNotEmpty &&
+          _selectedImages.length != _selectedAssets.length) {
         await _syncSelectedImagesFromAssets();
       }
       if (!mounted) return;
@@ -643,7 +647,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           isAnonymous: _isAnonymous,
           visibleToCategoryIds: _selectedCategoryIds,
           type: _postType,
-          pollOptions: _postType == 'poll' ? _getCleanedPollOptions() : const [],
+          pollOptions:
+              _postType == 'poll' ? _getCleanedPollOptions() : const [],
         );
 
         if (success) {
@@ -654,7 +659,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           if (mounted) {
             Navigator.of(context).pop();
             ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(AppLocalizations.of(context)!.postCreated)),
+              SnackBar(
+                  content: Text(AppLocalizations.of(context)!.postCreated)),
             );
           }
         } else {
@@ -668,7 +674,8 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           });
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(AppLocalizations.of(context)!.postCreateFailed ?? ""),
+              content:
+                  Text(AppLocalizations.of(context)!.postCreateFailed ?? ""),
               backgroundColor: Colors.red,
             ),
           );
@@ -720,118 +727,120 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       child: Scaffold(
         backgroundColor: Colors.white,
         appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () async {
-            if (_stepIndex == 1) {
-              await _goToStep(0);
-              return;
-            }
-            Navigator.pop(context);
-          },
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.newPostCreation ?? "",
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
+          backgroundColor: Colors.white,
+          elevation: 0,
+          centerTitle: false,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+            onPressed: () async {
+              if (_stepIndex == 1) {
+                await _goToStep(0);
+                return;
+              }
+              Navigator.pop(context);
+            },
           ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(54), // 높이 조정 (48 → 54)
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            alignment: Alignment.center,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 360),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6), // gray-100
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE5E7EB)), // gray-200
-                  ),
-                  padding: const EdgeInsets.all(4),
-                  child: TabBar(
-                    controller: _tabController,
-                    isScrollable: false,
-                    dividerColor: Colors.transparent,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: const Color(0xFF6CCFF6), // 하늘색으로 변경
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.06),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
+          title: Text(
+            AppLocalizations.of(context)!.newPostCreation ?? "",
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(54), // 높이 조정 (48 → 54)
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              alignment: Alignment.center,
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 360),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6), // gray-100
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: const Color(0xFFE5E7EB)), // gray-200
+                    ),
+                    padding: const EdgeInsets.all(4),
+                    child: TabBar(
+                      controller: _tabController,
+                      isScrollable: false,
+                      dividerColor: Colors.transparent,
+                      indicatorSize: TabBarIndicatorSize.tab,
+                      indicator: BoxDecoration(
+                        color: const Color(0xFF6CCFF6), // 하늘색으로 변경
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      labelStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                      unselectedLabelStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      labelColor: const Color(0xFF111827),
+                      unselectedLabelColor: const Color(0xFF6B7280),
+                      splashBorderRadius: BorderRadius.circular(10),
+                      onTap: (_) => _dismissKeyboard(),
+                      tabs: [
+                        Tab(
+                          height: 38, // 탭 높이를 38로 명시
+                          child: Center(
+                            child: Text(AppLocalizations.of(context)!.content),
+                          ),
+                        ),
+                        Tab(
+                          height: 38, // 탭 높이를 38로 명시
+                          child: Center(
+                            child: Text(
+                                AppLocalizations.of(context)!.visibilityScope),
+                          ),
                         ),
                       ],
                     ),
-                    labelStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w800,
-                    ),
-                    unselectedLabelStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                    labelColor: Colors.white, // 선택된 탭 텍스트 흰색
-                    unselectedLabelColor: const Color(0xFF6B7280),
-                    splashBorderRadius: BorderRadius.circular(10),
-                    onTap: (_) => _dismissKeyboard(),
-                    tabs: const [
-                      Tab(
-                        height: 38, // 탭 높이를 38로 명시
-                        child: Center(
-                          child: Text('Content'),
-                        ),
-                      ),
-                      Tab(
-                        height: 38, // 탭 높이를 38로 명시
-                        child: Center(
-                          child: Text('Visibility'),
-                        ),
-                      ),
-                    ],
                   ),
                 ),
               ),
             ),
           ),
-        ),
-        actions: [
-          TextButton.icon(
-            onPressed: (_canSubmit && !_isSubmitting) ? _submitPost : null,
-            icon: _isSubmitting
-                ? const SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check_rounded),
-            label: Text(
-              AppLocalizations.of(context)!.registration,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontWeight: FontWeight.w700,
+          actions: [
+            TextButton.icon(
+              onPressed: (_canSubmit && !_isSubmitting) ? _submitPost : null,
+              icon: _isSubmitting
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.check_rounded),
+              label: Text(
+                AppLocalizations.of(context)!.registration,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.pointColor,
               ),
             ),
-            style: TextButton.styleFrom(
-              foregroundColor: AppColors.pointColor,
-            ),
-          ),
-          const SizedBox(width: 6),
-        ],
-      ),
-      resizeToAvoidBottomInset: true,
+            const SizedBox(width: 6),
+          ],
+        ),
+        resizeToAvoidBottomInset: true,
         bottomNavigationBar: null,
         body: Form(
           key: _formKey,
@@ -839,8 +848,10 @@ class _CreatePostScreenState extends State<CreatePostScreen>
             onNotification: (notification) {
               // TabBarView(PageView) 가로 스와이프 시작 시점에 키보드를 즉시 내린다.
               if (notification.metrics.axis == Axis.horizontal) {
-                final isUserDragStart = notification is ScrollStartNotification ||
-                    (notification is ScrollUpdateNotification && notification.dragDetails != null);
+                final isUserDragStart =
+                    notification is ScrollStartNotification ||
+                        (notification is ScrollUpdateNotification &&
+                            notification.dragDetails != null);
                 if (isUserDragStart && !_didDismissKeyboardOnTabDrag) {
                   _didDismissKeyboardOnTabDrag = true;
                   _dismissKeyboard();
@@ -854,619 +865,733 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               controller: _tabController,
               physics: const BouncingScrollPhysics(),
               children: [
-            SingleChildScrollView(
-              controller: _step1ScrollController,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.only(
-                left: 16.0,
-                right: 16.0,
-                top: 12.0,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 작성 타입 선택 (일반/투표)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    margin: const EdgeInsets.only(bottom: 12.0),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.postTypeSectionTitle,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF111827),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        _buildPostTypeSegmentedControl(),
-                      ],
-                    ),
+                SingleChildScrollView(
+                  controller: _step1ScrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.only(
+                    left: 16.0,
+                    right: 16.0,
+                    top: 12.0,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
                   ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 작성 타입 선택 (일반/투표)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 6),
+                        margin: const EdgeInsets.only(bottom: 12.0),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              AppLocalizations.of(context)!
+                                  .postTypeSectionTitle,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            _buildPostTypeSegmentedControl(),
+                          ],
+                        ),
+                      ),
 
-                  // 이미지
-                  Container(
-                    key: _imagesSectionKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 이미지 첨부 버튼: 바깥 카드(테두리) 제거해서 이중 테두리 방지
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 12.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
+                      // 이미지
+                      Container(
+                        key: _imagesSectionKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 이미지 첨부 버튼: 바깥 카드(테두리) 제거해서 이중 테두리 방지
+                            Container(
+                              margin: const EdgeInsets.only(bottom: 12.0),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Expanded(
-                                    child: Semantics(
-                                      button: true,
-                                      label: AppLocalizations.of(context)!.imageAttachment ?? "",
-                                      child: AnimatedContainer(
-                                        duration: const Duration(milliseconds: 160),
-                                        curve: Curves.easeOut,
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: _selectedAssets.isNotEmpty
-                                                ? AppColors.pointColor
-                                                : const Color(0xFFE5E7EB),
-                                            width: _selectedAssets.isNotEmpty ? 1.4 : 1,
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Semantics(
+                                          button: true,
+                                          label: AppLocalizations.of(context)!
+                                                  .imageAttachment ??
+                                              "",
+                                          child: AnimatedContainer(
+                                            duration: const Duration(
+                                                milliseconds: 160),
+                                            curve: Curves.easeOut,
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: _selectedAssets
+                                                        .isNotEmpty
+                                                    ? AppColors.pointColor
+                                                    : const Color(0xFFE5E7EB),
+                                                width:
+                                                    _selectedAssets.isNotEmpty
+                                                        ? 1.4
+                                                        : 1,
+                                              ),
+                                            ),
+                                            child: Material(
+                                              color: Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: InkWell(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                onTap: _selectImages,
+                                                child: Padding(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 12,
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        width: 34,
+                                                        height: 34,
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: AppColors
+                                                              .pointColor
+                                                              .withValues(
+                                                                  alpha: 0.12),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(10),
+                                                        ),
+                                                        child: Icon(
+                                                          Icons.image_outlined,
+                                                          size: 18,
+                                                          color: AppColors
+                                                              .pointColor,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 10),
+                                                      Expanded(
+                                                        child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                              AppLocalizations.of(
+                                                                          context)!
+                                                                      .imageAttachment ??
+                                                                  "",
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontFamily:
+                                                                    'Pretendard',
+                                                                fontSize: 14,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800,
+                                                                color: Color(
+                                                                    0xFF111827),
+                                                              ),
+                                                            ),
+                                                            const SizedBox(
+                                                                height: 2),
+                                                            Text(
+                                                              _selectedAssets
+                                                                      .isNotEmpty
+                                                                  ? (Localizations.localeOf(context)
+                                                                              .languageCode ==
+                                                                          'ko'
+                                                                      ? '${_selectedAssets.length}/15장 선택됨'
+                                                                      : '${_selectedAssets.length}/15 selected')
+                                                                  : (Localizations.localeOf(context)
+                                                                              .languageCode ==
+                                                                          'ko'
+                                                                      ? '최대 15장까지 선택할 수 있어요'
+                                                                      : 'You can select up to 15 images'),
+                                                              style:
+                                                                  const TextStyle(
+                                                                fontFamily:
+                                                                    'Pretendard',
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w600,
+                                                                color: Color(
+                                                                    0xFF6B7280),
+                                                              ),
+                                                            ),
+                                                          ],
+                                                        ),
+                                                      ),
+                                                      const Icon(
+                                                        Icons
+                                                            .chevron_right_rounded,
+                                                        color:
+                                                            Color(0xFF9CA3AF),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
                                           ),
                                         ),
-                                        child: Material(
-                                          color: Colors.transparent,
-                                          borderRadius: BorderRadius.circular(12),
-                                          child: InkWell(
-                                            borderRadius: BorderRadius.circular(12),
-                                            onTap: _selectImages,
-                                            child: Padding(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 12,
-                                                vertical: 12,
+                                      ),
+                                      if (_selectedAssets.isNotEmpty) ...[
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 6),
+                                          decoration: BoxDecoration(
+                                            color: AppColors.pointColor
+                                                .withValues(alpha: 0.10),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                              color: AppColors.pointColor
+                                                  .withValues(alpha: 0.35),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '${_selectedAssets.length}/10',
+                                            style: const TextStyle(
+                                              fontFamily: 'Pretendard',
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF111827),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                  if (_selectedAssets.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    SizedBox(
+                                      height: 112,
+                                      child: ListView.builder(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: _selectedAssets.length,
+                                        itemBuilder: (context, index) {
+                                          final asset = _selectedAssets[index];
+                                          return GestureDetector(
+                                            onTap: () => _previewSelectedImages(
+                                                initialIndex: index),
+                                            child: Container(
+                                              margin: const EdgeInsets.only(
+                                                  right: 8.0),
+                                              width: 96,
+                                              height: 96,
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                    color: const Color(
+                                                        0xFFE5E7EB)),
                                               ),
-                                              child: Row(
+                                              child: Stack(
                                                 children: [
-                                                  Container(
-                                                    width: 34,
-                                                    height: 34,
-                                                    decoration: BoxDecoration(
-                                                      color: AppColors.pointColor.withValues(alpha: 0.12),
-                                                      borderRadius: BorderRadius.circular(10),
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.image_outlined,
-                                                      size: 18,
-                                                      color: AppColors.pointColor,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(width: 10),
-                                                  Expanded(
-                                                    child: Column(
-                                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                                      children: [
-                                                        Text(
-                                                          AppLocalizations.of(context)!.imageAttachment ?? "",
-                                                          style: const TextStyle(
-                                                            fontFamily: 'Pretendard',
-                                                            fontSize: 14,
-                                                            fontWeight: FontWeight.w800,
-                                                            color: Color(0xFF111827),
-                                                          ),
-                                                        ),
-                                                        const SizedBox(height: 2),
-                                                        Text(
-                                                          _selectedAssets.isNotEmpty
-                                                              ? (Localizations.localeOf(context).languageCode ==
-                                                                      'ko'
-                                                                  ? '${_selectedAssets.length}/15장 선택됨'
-                                                                  : '${_selectedAssets.length}/15 selected')
-                                                              : (Localizations.localeOf(context).languageCode ==
-                                                                      'ko'
-                                                                  ? '최대 15장까지 선택할 수 있어요'
-                                                                  : 'You can select up to 15 images'),
-                                                          style: const TextStyle(
-                                                            fontFamily: 'Pretendard',
-                                                            fontSize: 12,
-                                                            fontWeight: FontWeight.w600,
-                                                            color: Color(0xFF6B7280),
-                                                          ),
-                                                        ),
-                                                      ],
+                                                  ClipRRect(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                    child: Image(
+                                                      image:
+                                                          AssetEntityImageProvider(
+                                                        asset,
+                                                        isOriginal: false,
+                                                        thumbnailSize:
+                                                            const ThumbnailSize
+                                                                .square(256),
+                                                      ),
+                                                      width: 96,
+                                                      height: 96,
+                                                      fit: BoxFit.cover,
                                                     ),
                                                   ),
-                                                  const Icon(
-                                                    Icons.chevron_right_rounded,
-                                                    color: Color(0xFF9CA3AF),
+                                                  Positioned(
+                                                    top: 6,
+                                                    right: 6,
+                                                    child: GestureDetector(
+                                                      behavior: HitTestBehavior
+                                                          .opaque,
+                                                      onTap: () =>
+                                                          _removeImage(index),
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .all(5),
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          color: Color(
+                                                              0xCC111827), // gray-900 80%
+                                                          shape:
+                                                              BoxShape.circle,
+                                                        ),
+                                                        child: const Icon(
+                                                          Icons.close_rounded,
+                                                          color: Colors.white,
+                                                          size: 16,
+                                                        ),
+                                                      ),
+                                                    ),
                                                   ),
                                                 ],
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  if (_selectedAssets.isNotEmpty) ...[
-                                    const SizedBox(width: 10),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.pointColor.withValues(alpha: 0.10),
-                                        borderRadius: BorderRadius.circular(999),
-                                        border: Border.all(
-                                          color: AppColors.pointColor.withValues(alpha: 0.35),
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '${_selectedAssets.length}/10',
-                                        style: const TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFF111827),
-                                        ),
+                                          );
+                                        },
                                       ),
                                     ),
                                   ],
                                 ],
                               ),
-                              if (_selectedAssets.isNotEmpty) ...[
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  height: 112,
-                                  child: ListView.builder(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: _selectedAssets.length,
-                                    itemBuilder: (context, index) {
-                                      final asset = _selectedAssets[index];
-                                      return GestureDetector(
-                                        onTap: () => _previewSelectedImages(initialIndex: index),
-                                        child: Container(
-                                          margin: const EdgeInsets.only(right: 8.0),
-                                          width: 96,
-                                          height: 96,
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                                          ),
-                                          child: Stack(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius: BorderRadius.circular(10),
-                                                child: Image(
-                                                  image: AssetEntityImageProvider(
-                                                    asset,
-                                                    isOriginal: false,
-                                                    thumbnailSize: const ThumbnailSize.square(256),
-                                                  ),
-                                                  width: 96,
-                                                  height: 96,
-                                                  fit: BoxFit.cover,
-                                                ),
-                                              ),
-                                              Positioned(
-                                                top: 6,
-                                                right: 6,
-                                                child: GestureDetector(
-                                                  behavior: HitTestBehavior.opaque,
-                                                  onTap: () => _removeImage(index),
-                                                  child: Container(
-                                                    padding: const EdgeInsets.all(5),
-                                                    decoration: const BoxDecoration(
-                                                      color: Color(0xCC111827), // gray-900 80%
-                                                      shape: BoxShape.circle,
-                                                    ),
-                                                    child: const Icon(
-                                                      Icons.close_rounded,
-                                                      color: Colors.white,
-                                                      size: 16,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
-
-                  if (_postType == 'poll') ...[
-                    Container(
-                      key: _pollOptionsSectionKey,
-                      padding: const EdgeInsets.all(16),
-                      margin: const EdgeInsets.only(bottom: 12.0),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            AppLocalizations.of(context)!.pollOptionsTitle,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF111827),
-                            ),
+
+                      if (_postType == 'poll') ...[
+                        Container(
+                          key: _pollOptionsSectionKey,
+                          padding: const EdgeInsets.all(16),
+                          margin: const EdgeInsets.only(bottom: 12.0),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
                           ),
-                          const SizedBox(height: 12),
-                          ...List.generate(_pollOptionControllers.length, (index) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _pollOptionControllers[index],
-                                      decoration: InputDecoration(
-                                        hintText: AppLocalizations.of(context)!.pollOptionHint(index + 1),
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(10),
-                                          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                                        ),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          }),
-                          const SizedBox(height: 2),
-                          Text(
-                            AppLocalizations.of(context)!.postTypePollHelper,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF6B7280),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-
-                  Container(
-                    key: _contentSectionKey,
-                    height: 200,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _contentFocusNode.hasFocus
-                            ? AppColors.pointColor
-                            : const Color(0xFFE5E7EB),
-                        width: _contentFocusNode.hasFocus ? 2 : 1,
-                      ),
-                      color: Colors.white,
-                    ),
-                    child: TextField(
-                      controller: _contentController,
-                      focusNode: _contentFocusNode,
-                      decoration: InputDecoration(
-                        hintText: _postType == 'poll'
-                            ? AppLocalizations.of(context)!.pollQuestionHint
-                            : AppLocalizations.of(context)!.enterContent,
-                        hintStyle: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w400,
-                          color: Color(0xFF9CA3AF),
-                        ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.all(16),
-                        fillColor: Colors.transparent,
-                        filled: true,
-                      ),
-                      maxLines: null,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF111827),
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            SingleChildScrollView(
-              controller: _scrollController,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding: EdgeInsets.only(
-                left: 16.0,
-                right: 16.0,
-                top: 12.0,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 공개 범위 선택
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    margin: const EdgeInsets.only(bottom: 16.0),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
-                        _buildVisibilitySegmentedControl(),
-
-                        if (_visibility == 'public') ...[
-                          const SizedBox(height: 8),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              // 카테고리 안내 박스와 톤/규격 통일 (amber)
-                              color: const Color(0xFFFFFBEB), // amber-50
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFFDE68A)), // amber-200
-                            ),
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.info_outline,
-                                  size: 18,
-                                  color: Color(0xFFB45309), // amber-700
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    _isAnonymous
-                                        ? (AppLocalizations.of(context)!.postAnonymously ?? "")
-                                        : AppLocalizations.of(context)!.authorAndCommenterInfo,
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF92400E), // amber-800
-                                      height: 1.25,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
-                          Container(
-                            margin: const EdgeInsets.only(top: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: Semantics(
-                              container: true,
-                              button: true,
-                              checked: _isAnonymous,
-                              label: AppLocalizations.of(context)!.postAnonymously,
-                              child: Material(
-                                color: Colors.transparent,
-                                borderRadius: BorderRadius.circular(12),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap: () {
-                                    setState(() {
-                                      _isAnonymous = !_isAnonymous;
-                                    });
-                                  },
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                    child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Padding(
-                                          padding: const EdgeInsets.only(top: 2),
-                                          child: IgnorePointer(
-                                            ignoring: true,
-                                            child: Checkbox(
-                                              value: _isAnonymous,
-                                              onChanged: (_) {},
-                                              activeColor: AppColors.pointColor,
-                                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                              visualDensity: const VisualDensity(horizontal: -4, vertical: -4),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                AppLocalizations.of(context)!.postAnonymously,
-                                                style: const TextStyle(
-                                                  fontFamily: 'Pretendard',
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Color(0xFF111827),
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                AppLocalizations.of(context)!.idWillBeShown,
-                                                style: const TextStyle(
-                                                  fontFamily: 'Pretendard',
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w600,
-                                                  color: Color(0xFF6B7280),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                AppLocalizations.of(context)!.pollOptionsTitle,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF111827),
                                 ),
                               ),
-                            ),
-                          ),
-                        ],
-
-                        if (_visibility == 'category')
-                          Container(
-                            key: _categorySectionKey,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Text(
-                                      AppLocalizations.of(context)!.selectGroupRequired,
-                                      style: TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                                            ? const Color(0xFFB91C1C)
-                                            : const Color(0xFF111827),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                      decoration: BoxDecoration(
-                                        color: (_selectedCategoryIds.isEmpty)
-                                            ? const Color(0xFFFEE2E2)
-                                            : const Color(0xFFDCFCE7),
-                                        borderRadius: BorderRadius.circular(999),
-                                      ),
-                                      child: Text(
-                                        '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
-                                        style: TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: (_selectedCategoryIds.isEmpty)
-                                              ? const Color(0xFF991B1B)
-                                              : const Color(0xFF166534),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 10),
-                                Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFFBEB),
-                                    borderRadius: BorderRadius.circular(10),
-                                    border: Border.all(color: const Color(0xFFFDE68A)),
-                                  ),
+                              const SizedBox(height: 12),
+                              ...List.generate(_pollOptionControllers.length,
+                                  (index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
                                   child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(
-                                        Icons.info_outline,
-                                        size: 18,
-                                        color: Color(0xFFB45309),
-                                      ),
-                                      const SizedBox(width: 8),
                                       Expanded(
-                                        child: Text(
-                                          AppLocalizations.of(context)!.selectedGroupOnlyPost,
-                                          style: const TextStyle(
-                                            fontFamily: 'Pretendard',
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: Color(0xFF92400E),
-                                            height: 1.25,
+                                        child: TextField(
+                                          controller:
+                                              _pollOptionControllers[index],
+                                          decoration: InputDecoration(
+                                            hintText:
+                                                AppLocalizations.of(context)!
+                                                    .pollOptionHint(index + 1),
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                              borderSide: const BorderSide(
+                                                  color: Color(0xFFE5E7EB)),
+                                            ),
+                                            contentPadding:
+                                                const EdgeInsets.symmetric(
+                                                    horizontal: 12,
+                                                    vertical: 10),
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
+                                );
+                              }),
+                              const SizedBox(height: 2),
+                              Text(
+                                AppLocalizations.of(context)!
+                                    .postTypePollHelper,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF6B7280),
                                 ),
-                                const SizedBox(height: 12),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 220),
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                                        ? const Color(0xFFFFF1F2)
-                                        : Colors.transparent,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      Container(
+                        key: _contentSectionKey,
+                        height: 200,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _contentFocusNode.hasFocus
+                                ? AppColors.pointColor
+                                : const Color(0xFFE5E7EB),
+                            width: _contentFocusNode.hasFocus ? 2 : 1,
+                          ),
+                          color: Colors.white,
+                        ),
+                        child: TextField(
+                          controller: _contentController,
+                          focusNode: _contentFocusNode,
+                          decoration: InputDecoration(
+                            hintText: _postType == 'poll'
+                                ? AppLocalizations.of(context)!.pollQuestionHint
+                                : AppLocalizations.of(context)!.enterContent,
+                            hintStyle: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w400,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(16),
+                            fillColor: Colors.transparent,
+                            filled: true,
+                          ),
+                          maxLines: null,
+                          textAlignVertical: TextAlignVertical.top,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF111827),
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                SingleChildScrollView(
+                  controller: _scrollController,
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.only(
+                    left: 16.0,
+                    right: 16.0,
+                    top: 12.0,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 공개 범위 선택
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 6),
+                        margin: const EdgeInsets.only(bottom: 16.0),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
+                            _buildVisibilitySegmentedControl(),
+
+                            if (_visibility == 'public') ...[
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  // 카테고리 안내 박스와 톤/규격 통일 (amber)
+                                  color: const Color(0xFFFFFBEB), // amber-50
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                      color:
+                                          const Color(0xFFFDE68A)), // amber-200
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(
+                                      Icons.info_outline,
+                                      size: 18,
+                                      color: Color(0xFFB45309), // amber-700
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _isAnonymous
+                                            ? (AppLocalizations.of(context)!
+                                                    .postAnonymously ??
+                                                "")
+                                            : AppLocalizations.of(context)!
+                                                .authorAndCommenterInfo,
+                                        style: const TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF92400E), // amber-800
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
+                              Container(
+                                margin: const EdgeInsets.only(top: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                      color: const Color(0xFFE5E7EB)),
+                                ),
+                                child: Semantics(
+                                  container: true,
+                                  button: true,
+                                  checked: _isAnonymous,
+                                  label: AppLocalizations.of(context)!
+                                      .postAnonymously,
+                                  child: Material(
+                                    color: Colors.transparent,
                                     borderRadius: BorderRadius.circular(12),
-                                    // 카테고리 목록을 감싸는 "안쪽 선" 제거:
-                                    // - 평상시에는 border 자체를 없애고
-                                    // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
-                                    border: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                                        ? Border.all(
-                                            color: const Color(0xFFFCA5A5),
-                                            width: 1.5,
-                                          )
-                                        : null,
-                                  ),
-                                  child: FriendCategorySelector(
-                                    categories: _friendCategories,
-                                    selectedCategoryIds: _selectedCategoryIds,
-                                    selectedColor: AppColors.pointColor,
-                                    style: FriendCategorySelectorStyle.list,
-                                    onSelectionChanged: (newSelection) {
-                                      setState(() {
-                                        _selectedCategoryIds = newSelection;
-                                        if (newSelection.isNotEmpty) {
-                                          _showCategoryRequiredHint = false;
-                                        }
-                                      });
-                                      _checkCanSubmit();
-                                    },
-                                  ),
-                                ),
-                                if (_selectedCategoryIds.isEmpty && _friendCategories.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 8.0),
-                                    child: Text(
-                                      AppLocalizations.of(context)!.groupSelectAtLeastOne,
-                                      style: const TextStyle(
-                                        color: Color(0xFFB91C1C),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        fontFamily: 'Pretendard',
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () {
+                                        setState(() {
+                                          _isAnonymous = !_isAnonymous;
+                                        });
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 10),
+                                        child: Row(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.only(top: 2),
+                                              child: IgnorePointer(
+                                                ignoring: true,
+                                                child: Checkbox(
+                                                  value: _isAnonymous,
+                                                  onChanged: (_) {},
+                                                  activeColor:
+                                                      AppColors.pointColor,
+                                                  materialTapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                  visualDensity:
+                                                      const VisualDensity(
+                                                          horizontal: -4,
+                                                          vertical: -4),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    AppLocalizations.of(
+                                                            context)!
+                                                        .postAnonymously,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Pretendard',
+                                                      fontSize: 14,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: Color(0xFF111827),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 4),
+                                                  Text(
+                                                    AppLocalizations.of(
+                                                            context)!
+                                                        .idWillBeShown,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Pretendard',
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                      color: Color(0xFF6B7280),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
                                     ),
                                   ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
+                                ),
+                              ),
+                            ],
+
+                            if (_visibility == 'category')
+                              Container(
+                                key: _categorySectionKey,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Text(
+                                          AppLocalizations.of(context)!
+                                              .selectGroupRequired,
+                                          style: TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
+                                            color: (_showCategoryRequiredHint &&
+                                                    _selectedCategoryIds
+                                                        .isEmpty)
+                                                ? const Color(0xFFB91C1C)
+                                                : const Color(0xFF111827),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                (_selectedCategoryIds.isEmpty)
+                                                    ? const Color(0xFFFEE2E2)
+                                                    : const Color(0xFFDCFCE7),
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                          ),
+                                          child: Text(
+                                            '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
+                                            style: TextStyle(
+                                              fontFamily: 'Pretendard',
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color:
+                                                  (_selectedCategoryIds.isEmpty)
+                                                      ? const Color(0xFF991B1B)
+                                                      : const Color(0xFF166534),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    Container(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFFBEB),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(
+                                            color: const Color(0xFFFDE68A)),
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          const Icon(
+                                            Icons.info_outline,
+                                            size: 18,
+                                            color: Color(0xFFB45309),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              AppLocalizations.of(context)!
+                                                  .selectedGroupOnlyPost,
+                                              style: const TextStyle(
+                                                fontFamily: 'Pretendard',
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF92400E),
+                                                height: 1.25,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    AnimatedContainer(
+                                      duration:
+                                          const Duration(milliseconds: 220),
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: (_showCategoryRequiredHint &&
+                                                _selectedCategoryIds.isEmpty)
+                                            ? const Color(0xFFFFF1F2)
+                                            : Colors.transparent,
+                                        borderRadius: BorderRadius.circular(12),
+                                        // 카테고리 목록을 감싸는 "안쪽 선" 제거:
+                                        // - 평상시에는 border 자체를 없애고
+                                        // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
+                                        border: (_showCategoryRequiredHint &&
+                                                _selectedCategoryIds.isEmpty)
+                                            ? Border.all(
+                                                color: const Color(0xFFFCA5A5),
+                                                width: 1.5,
+                                              )
+                                            : null,
+                                      ),
+                                      child: FriendCategorySelector(
+                                        categories: _friendCategories,
+                                        selectedCategoryIds:
+                                            _selectedCategoryIds,
+                                        selectedColor: AppColors.pointColor,
+                                        style: FriendCategorySelectorStyle.list,
+                                        onSelectionChanged: (newSelection) {
+                                          setState(() {
+                                            _selectedCategoryIds = newSelection;
+                                            if (newSelection.isNotEmpty) {
+                                              _showCategoryRequiredHint = false;
+                                            }
+                                          });
+                                          _checkCanSubmit();
+                                        },
+                                      ),
+                                    ),
+                                    if (_selectedCategoryIds.isEmpty &&
+                                        _friendCategories.isNotEmpty)
+                                      Padding(
+                                        padding:
+                                            const EdgeInsets.only(top: 8.0),
+                                        child: Text(
+                                          AppLocalizations.of(context)!
+                                              .groupSelectAtLeastOne,
+                                          style: const TextStyle(
+                                            color: Color(0xFFB91C1C),
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            fontFamily: 'Pretendard',
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
+                ),
               ],
             ),
           ),
@@ -1474,7 +1599,6 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       ),
     );
   }
-
 }
 
 // Draft 요약 UI는 Visibility 탭에서 제거함

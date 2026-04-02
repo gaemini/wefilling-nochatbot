@@ -2217,6 +2217,46 @@ export const cleanupExpiredEmailVerifications = functions.pubsub
     return null;
   });
 
+/**
+ * Snack Chat 만료 처리
+ * - 즐겨찾기하지 않은 채팅방이 만료되면 movedToAllAt 타임스탬프를 기록합니다.
+ * - 클라이언트는 expiresAt 기준으로 Today/All을 나누지만, 관리용 필드로 이동 시점을 남깁니다.
+ */
+export const expireSnackChats = functions.pubsub
+  .schedule('every 1 hours')
+  .timeZone('Asia/Seoul')
+  .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const col = db.collection('snack_chats');
+    let updated = 0;
+
+    while (true) {
+      const snap = await col
+        .where('expiresAt', '<=', now)
+        .where('isFavorited', '==', false)
+        .where('movedToAllAt', '==', null)
+        .limit(300)
+        .get();
+
+      if (snap.empty) break;
+
+      const batch = db.batch();
+      snap.docs.forEach((doc) => {
+        batch.update(doc.ref, {
+          movedToAllAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+      await batch.commit();
+      updated += snap.size;
+
+      if (snap.size < 300) break;
+    }
+
+    console.log(`expireSnackChats: updated=${updated}`);
+    return null;
+  });
+
 // 친구요청 보내기
 export const sendFriendRequest = functions.https.onCall(async (data, context) => {
   try {
@@ -3931,6 +3971,19 @@ function buildLocalizedNotificationText(params: {
       }
       return { title: 'New like', body: `${liker} liked "${reviewTitle}".` };
     }
+    case 'snack_chat_invite': {
+      const rawInviter = safeStringLoose(data?.creatorName ?? actorName, name);
+      const inviter = rawInviter.split('|')[0].replace(/\s+님$/, '').trim() || (lang === 'ko' ? '친구' : 'User');
+      const snackChatName = safeStringLoose(data?.snackChatName ?? data?.title, '');
+      if (lang === 'ko') {
+        return snackChatName
+          ? { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 "${snackChatName}"에 초대했어요.` }
+          : { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 새 Snack Chat에 초대했어요.` };
+      }
+      return snackChatName
+        ? { title: 'Snack Chat invite', body: `${inviter} invited you to "${snackChatName}".` }
+        : { title: 'Snack Chat invite', body: `${inviter} invited you to a new Snack Chat.` };
+    }
     default: {
       const t = safeStringLoose(titleFallback, lang === 'ko' ? '새 알림' : 'New notification');
       const b = safeStringLoose(bodyFallback, lang === 'ko' ? '새 알림이 있어요.' : 'You have a new notification.');
@@ -4117,21 +4170,21 @@ export const onNotificationCreated = functions.firestore
         console.warn('⚠️ fcm_tokens 조회 실패: 레거시 토큰으로 fallback', e);
       }
 
-      if (tokenSeen.size === 0) {
-        const legacyToken = userData?.fcmToken;
-        if (typeof legacyToken === 'string' && legacyToken.length > 0) {
-          tokenGroups[fallbackUserLang].push(legacyToken);
-          tokenSeen.add(legacyToken);
-        }
-        const tokenArray = userData?.fcmTokens;
-        if (Array.isArray(tokenArray)) {
-          tokenArray.forEach((t) => {
-            if (typeof t === 'string' && t.length > 0 && !tokenSeen.has(t)) {
-              tokenGroups[fallbackUserLang].push(t);
-              tokenSeen.add(t);
-            }
-          });
-        }
+      // fcm_tokens 레지스트리에 없는 토큰(App Check 실패 등으로 fallback 저장된 토큰)도
+      // 항상 포함하여 Android 기기가 누락되지 않도록 legacy 경로를 항상 병합한다.
+      const legacyToken = userData?.fcmToken;
+      if (typeof legacyToken === 'string' && legacyToken.length > 0 && !tokenSeen.has(legacyToken)) {
+        tokenGroups[fallbackUserLang].push(legacyToken);
+        tokenSeen.add(legacyToken);
+      }
+      const tokenArray = userData?.fcmTokens;
+      if (Array.isArray(tokenArray)) {
+        tokenArray.forEach((t) => {
+          if (typeof t === 'string' && t.length > 0 && !tokenSeen.has(t)) {
+            tokenGroups[fallbackUserLang].push(t);
+            tokenSeen.add(t);
+          }
+        });
       }
 
       // 안전장치:

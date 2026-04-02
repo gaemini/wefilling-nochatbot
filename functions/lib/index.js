@@ -3,7 +3,7 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
+exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.expireSnackChats = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -2031,6 +2031,42 @@ exports.cleanupExpiredEmailVerifications = functions.pubsub
     console.log(`cleanupExpiredEmailVerifications: deleted=${deleted}`);
     return null;
 });
+/**
+ * Snack Chat 만료 처리
+ * - 즐겨찾기하지 않은 채팅방이 만료되면 movedToAllAt 타임스탬프를 기록합니다.
+ * - 클라이언트는 expiresAt 기준으로 Today/All을 나누지만, 관리용 필드로 이동 시점을 남깁니다.
+ */
+exports.expireSnackChats = functions.pubsub
+    .schedule('every 1 hours')
+    .timeZone('Asia/Seoul')
+    .onRun(async () => {
+    const now = admin.firestore.Timestamp.now();
+    const col = db.collection('snack_chats');
+    let updated = 0;
+    while (true) {
+        const snap = await col
+            .where('expiresAt', '<=', now)
+            .where('isFavorited', '==', false)
+            .where('movedToAllAt', '==', null)
+            .limit(300)
+            .get();
+        if (snap.empty)
+            break;
+        const batch = db.batch();
+        snap.docs.forEach((doc) => {
+            batch.update(doc.ref, {
+                movedToAllAt: admin.firestore.FieldValue.serverTimestamp(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        });
+        await batch.commit();
+        updated += snap.size;
+        if (snap.size < 300)
+            break;
+    }
+    console.log(`expireSnackChats: updated=${updated}`);
+    return null;
+});
 // 친구요청 보내기
 exports.sendFriendRequest = functions.https.onCall(async (data, context) => {
     try {
@@ -3234,7 +3270,7 @@ function toBool(v) {
     return s === 'true' || s === '1' || s === 'yes';
 }
 function buildLocalizedNotificationText(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
     const { lang, type, titleFallback, bodyFallback, actorName, data } = params;
     const name = safeStringLoose((_b = (_a = actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.actorName) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.fromName) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.senderName, lang === 'ko' ? '익명' : 'User');
     const meetupTitle = safeStringLoose((_c = data === null || data === void 0 ? void 0 : data.meetupTitle) !== null && _c !== void 0 ? _c : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '모임' : 'Meetup');
@@ -3363,6 +3399,19 @@ function buildLocalizedNotificationText(params) {
                 return { title: '좋아요가 추가되었습니다', body: `${liker}님이 "${reviewTitle}"을 좋아해요.` };
             }
             return { title: 'New like', body: `${liker} liked "${reviewTitle}".` };
+        }
+        case 'snack_chat_invite': {
+            const rawInviter = safeStringLoose((_u = data === null || data === void 0 ? void 0 : data.creatorName) !== null && _u !== void 0 ? _u : actorName, name);
+            const inviter = rawInviter.split('|')[0].replace(/\s+님$/, '').trim() || (lang === 'ko' ? '친구' : 'User');
+            const snackChatName = safeStringLoose((_v = data === null || data === void 0 ? void 0 : data.snackChatName) !== null && _v !== void 0 ? _v : data === null || data === void 0 ? void 0 : data.title, '');
+            if (lang === 'ko') {
+                return snackChatName
+                    ? { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 "${snackChatName}"에 초대했어요.` }
+                    : { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 새 Snack Chat에 초대했어요.` };
+            }
+            return snackChatName
+                ? { title: 'Snack Chat invite', body: `${inviter} invited you to "${snackChatName}".` }
+                : { title: 'Snack Chat invite', body: `${inviter} invited you to a new Snack Chat.` };
         }
         default: {
             const t = safeStringLoose(titleFallback, lang === 'ko' ? '새 알림' : 'New notification');
@@ -3529,21 +3578,21 @@ exports.onNotificationCreated = functions.firestore
         catch (e) {
             console.warn('⚠️ fcm_tokens 조회 실패: 레거시 토큰으로 fallback', e);
         }
-        if (tokenSeen.size === 0) {
-            const legacyToken = userData === null || userData === void 0 ? void 0 : userData.fcmToken;
-            if (typeof legacyToken === 'string' && legacyToken.length > 0) {
-                tokenGroups[fallbackUserLang].push(legacyToken);
-                tokenSeen.add(legacyToken);
-            }
-            const tokenArray = userData === null || userData === void 0 ? void 0 : userData.fcmTokens;
-            if (Array.isArray(tokenArray)) {
-                tokenArray.forEach((t) => {
-                    if (typeof t === 'string' && t.length > 0 && !tokenSeen.has(t)) {
-                        tokenGroups[fallbackUserLang].push(t);
-                        tokenSeen.add(t);
-                    }
-                });
-            }
+        // fcm_tokens 레지스트리에 없는 토큰(App Check 실패 등으로 fallback 저장된 토큰)도
+        // 항상 포함하여 Android 기기가 누락되지 않도록 legacy 경로를 항상 병합한다.
+        const legacyToken = userData === null || userData === void 0 ? void 0 : userData.fcmToken;
+        if (typeof legacyToken === 'string' && legacyToken.length > 0 && !tokenSeen.has(legacyToken)) {
+            tokenGroups[fallbackUserLang].push(legacyToken);
+            tokenSeen.add(legacyToken);
+        }
+        const tokenArray = userData === null || userData === void 0 ? void 0 : userData.fcmTokens;
+        if (Array.isArray(tokenArray)) {
+            tokenArray.forEach((t) => {
+                if (typeof t === 'string' && t.length > 0 && !tokenSeen.has(t)) {
+                    tokenGroups[fallbackUserLang].push(t);
+                    tokenSeen.add(t);
+                }
+            });
         }
         // 안전장치:
         // - 레거시 토큰(또는 잘못된 상태)에서 "다른 사용자 소유"로 등록된 토큰은 제외

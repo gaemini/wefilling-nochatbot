@@ -17,6 +17,7 @@ import 'review_detail_screen.dart';
 import '../services/review_service.dart';
 import '../utils/logger.dart';
 import 'dm_chat_screen.dart';
+import 'snack_chat_screen.dart';
 import '../widgets/notification_list_item.dart';
 import '../services/user_info_cache_service.dart';
 
@@ -135,6 +136,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'ad_updates':
         await _navigateToAdShowcase();
         break;
+      case 'snack_chat_invite':
+        await _navigateToSnackChat(notification);
+        break;
       case 'review_approval_request':
         await _navigateToReviewApproval(notification);
         break;
@@ -142,6 +146,25 @@ class _NotificationScreenState extends State<NotificationScreen> {
         // 기타 알림은 특별한 동작 없음
         break;
     }
+  }
+
+  Future<void> _navigateToSnackChat(AppNotification notification) async {
+    final snackChatId = notification.data?['snackChatId']?.toString();
+    if (snackChatId == null || snackChatId.isEmpty) {
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SnackChatScreen(snackChatId: snackChatId),
+      ),
+    );
   }
 
   // 모임 상세 화면으로 이동 (모임 게시판 경유)
@@ -479,6 +502,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     return notification.actorName ?? '';
   }
 
+  String _normalizeSnackChatInviterName(String raw) {
+    final base = raw.trim();
+    if (base.isEmpty) return '';
+    final first = base.split('|').first.trim();
+    return first.replaceAll(RegExp(r'\s+님$'), '').trim();
+  }
+
   // 알림 타입과 데이터를 기반으로 현재 언어로 번역된 메시지 반환
   String _getLocalizedMessage(AppNotification notification) {
     final l10n = AppLocalizations.of(context);
@@ -599,6 +629,24 @@ class _NotificationScreenState extends State<NotificationScreen> {
           return lang == 'ko'
               ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
               : '$name posted a $badge post: $postTitle';
+        }
+        case 'snack_chat_invite': {
+          final creatorName = _normalizeSnackChatInviterName(
+            (data['creatorName'] ?? _getActorName(notification)).toString(),
+          );
+          final chatName = (data['snackChatName'] ?? '').toString().trim();
+          final lang = Localizations.localeOf(context).languageCode;
+          final creator = creatorName.isEmpty
+              ? (lang == 'ko' ? '친구' : 'User')
+              : creatorName;
+          if (chatName.isEmpty) {
+            return lang == 'ko'
+                ? '$creator님이 새 Snack Chat에 초대했어요.'
+                : '$creator invited you to a new Snack Chat.';
+          }
+          return lang == 'ko'
+              ? '$creator님이 "$chatName"에 초대했어요.'
+              : '$creator invited you to "$chatName".';
         }
         default:
           return notification.message;

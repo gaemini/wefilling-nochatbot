@@ -270,6 +270,65 @@ class AppLocalizationsKo extends AppLocalizations {
   String get newPostCreation => '새 포스트 작성';
 
   @override
+  String get createSnackChat => 'Snack Chat 만들기';
+
+  @override
+  String get snackChatRoomTitle => '방 제목';
+
+  @override
+  String get snackChatRoomTitleHint => '대화의 주제를 입력해주세요';
+
+  @override
+  String get snackChatSelectParticipants => '참여자 선택';
+
+  @override
+  String get snackChatParticipantLimit => '최대 6명까지 친구를 초대할 수 있습니다';
+
+  @override
+  String get snackChatMe => '나';
+
+  @override
+  String get snackChatInvite => '초대하기';
+
+  @override
+  String get snackChatInviteFriends => '친구 초대';
+
+  @override
+  String snackChatSelectionComplete(int count) {
+    return '$count명 선택 완료';
+  }
+
+  @override
+  String get snackChatNoFriendsToInvite => '초대 가능한 친구가 없습니다.';
+
+  @override
+  String get snackChatMaxParticipants => '참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.';
+
+  @override
+  String get snackChatEnterTitle => 'Snack Chat 제목을 입력해주세요.';
+
+  @override
+  String get snackChatSelectGroup => '공개할 그룹을 선택해주세요.';
+
+  @override
+  String get snackChatSelectFriend => '최소 1명의 친구를 선택해주세요.';
+
+  @override
+  String get snackChatCreateFailed => 'Snack Chat 생성에 실패했습니다.';
+
+  @override
+  String get snackChatCreating => '생성 중...';
+
+  @override
+  String get snackChatCreate => 'Snack Chat 생성';
+
+  @override
+  String get snackChatGuideTitle => '즐거운 스낵 챗을\n시작해보세요';
+
+  @override
+  String get snackChatGuideDesc => '최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.';
+
+  @override
   String get editPost => '포스트 수정';
 
   @override

@@ -50,7 +50,7 @@ class OptimizedPostCard extends StatefulWidget {
     this.externalCommentCountOverride,
     this.preloadImage = false,
     this.useGlassmorphism = false,
-    this.margin = const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    this.margin = const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
     // 상/좌/우는 유지하고, 하단만 살짝 줄여 카드 하단이 과하게 두꺼워 보이지 않도록
     this.contentPadding = const EdgeInsets.fromLTRB(12, 12, 12, 8),
   });

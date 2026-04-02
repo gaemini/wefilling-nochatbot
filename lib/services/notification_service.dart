@@ -145,6 +145,54 @@ class NotificationService {
     );
   }
 
+  Future<bool> sendSnackChatInviteNotification({
+    required List<String> participantIds,
+    required String snackChatId,
+    required String snackChatName,
+    required String creatorId,
+    required String creatorName,
+  }) async {
+    try {
+      final inviterLabel = _normalizeSnackChatInviterLabel(
+        creatorName,
+        fallback: creatorId,
+      );
+      bool allSuccess = true;
+      for (final userId in participantIds) {
+        // 생성자 본인은 제외
+        if (userId == creatorId) continue;
+        final success = await createNotification(
+          userId: userId,
+          title: 'Snack Chat invite',
+          message: '$inviterLabel invited you to "$snackChatName".',
+          type: NotificationSettingKeys.snackChatInvite,
+          actorId: creatorId,
+          actorName: inviterLabel,
+          data: {
+            'snackChatId': snackChatId,
+            'snackChatName': snackChatName,
+            'creatorName': inviterLabel,
+          },
+        );
+        allSuccess = allSuccess && success;
+      }
+      return allSuccess;
+    } catch (e) {
+      Logger.error('Snack Chat 초대 알림 오류: $e');
+      return false;
+    }
+  }
+
+  String _normalizeSnackChatInviterLabel(String raw, {required String fallback}) {
+    final base = raw.trim().isNotEmpty ? raw.trim() : fallback.trim();
+    if (base.isEmpty) return 'User';
+
+    // Legacy display strings can contain profile metadata split by "|".
+    final first = base.split('|').first.trim();
+    final cleaned = first.replaceAll(RegExp(r'\s+님$'), '').trim();
+    return cleaned.isEmpty ? 'User' : cleaned;
+  }
+
   // 모임이 취소되었을 때 참가자들에게 알림 보내기
   Future<bool> sendMeetupCancelledNotification(
     Meetup meetup,

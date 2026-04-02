@@ -85,12 +85,16 @@ void main() {
       // - Android 로그의 "No AppCheckProvider installed"를 방지하고,
       // - 콘솔에서 App Check enforcement를 켠 경우에도 정상 동작하도록 준비.
       // - 설정/키가 아직 없더라도 앱 부팅을 막지 않도록 실패는 무시한다.
+      // ⚠️ AndroidPlayIntegrityProvider는 Play Store 배포된 앱에서만 정상 동작한다.
+      //    직접 APK 배포(테스트 등) 시 Play Integrity 검증이 실패하므로 Debug provider를 사용한다.
       try {
         await FirebaseAppCheck.instance.activate(
-          providerAndroid:
-              kDebugMode ? const AndroidDebugProvider() : const AndroidPlayIntegrityProvider(),
+          providerAndroid: const AndroidDebugProvider(),
           providerApple:
-              kDebugMode ? const AppleDebugProvider() : const AppleDeviceCheckProvider(),
+              // iOS debug에서 Debug provider 토큰이 콘솔에 등록되지 않으면
+              // exchangeDebugToken 403(App attestation failed)이 반복될 수 있다.
+              // 개발 환경 안정성을 위해 iOS는 debug/release 모두 DeviceCheck를 사용한다.
+              const AppleDeviceCheckProvider(),
         );
         if (kDebugMode) {
           debugPrint('🛡️ App Check 활성화 완료');
@@ -388,16 +392,20 @@ class _MeetupAppState extends State<MeetupApp> {
         Locale('ko'), // 한국어
         Locale('en'), // 영어
       ],
-      // 전역 탭-투-디스미스(빈 공간 탭 시 키보드 닫힘)
+      // 전역 탭-투-디스미스: 빈 공간 탭 시 키보드 닫힘 + SnackBar 닫힘
       builder: (context, child) {
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onTap: () {
+            // 키보드 닫기
             final currentFocus = FocusScope.of(context);
             if (!currentFocus.hasPrimaryFocus &&
                 currentFocus.focusedChild != null) {
               FocusManager.instance.primaryFocus?.unfocus();
             }
+            // SnackBar 닫기 (전역 ScaffoldMessenger 키 사용)
+            AppMessenger.scaffoldMessengerKey.currentState
+                ?.hideCurrentSnackBar();
           },
           child: child,
         );

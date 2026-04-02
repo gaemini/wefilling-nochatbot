@@ -122,6 +122,22 @@
           }
         },
         {
+          "client_id": "700373659727-dm476p9eth2e14999mk7eosf3g0r7qjp.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wefilling.app",
+            "certificate_hash": "0e92ec8d45f8ba6f2ee5ee83485f397579f1d92f"
+          }
+        },
+        {
+          "client_id": "700373659727-et6b2f95rcf2g0b3pnib6bmhgouv8s3a.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.wefilling.app",
+            "certificate_hash": "260e1ddc24546ac876c86a26bc1c87cca35c8dfc"
+          }
+        },
+        {
           "client_id": "700373659727-gob3vavnv95m51eemm9mut3jb48p4c6p.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {

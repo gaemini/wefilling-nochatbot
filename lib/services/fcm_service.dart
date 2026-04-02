@@ -129,6 +129,9 @@ class FCMService {
     }
   }
 
+  // 로그아웃 시 호출 (현재는 no-op, 리스너 정리 불필요)
+  Future<void> reset() async {}
+
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
@@ -282,9 +285,9 @@ class FCMService {
     Logger.log('❌ FCM 토큰 동기화 실패 - 다음 실행에서 재시도됩니다');
   }
 
-  // 로컬 알림 표시 (현재 미사용)
+  // 포그라운드 로컬 알림 표시
   // iOS: 포그라운드에서 자동 배너를 끈 뒤, 필요한 경우만 로컬 알림을 표시한다.
-  // Android: 기존 정책 유지(중복 표시 위험 방지) - 현재는 iOS에서만 호출
+  // Android: 포그라운드에서 FCM notification을 자동 표시하지 않으므로 여기서 처리.
   Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
       final notification = message.notification;
@@ -498,5 +501,3 @@ class FCMService {
     }
   }
 }
-
-

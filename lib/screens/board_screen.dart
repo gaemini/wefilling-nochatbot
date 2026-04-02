@@ -7,20 +7,25 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../models/snack_chat.dart';
 import '../constants/app_constants.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
 import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
+import '../services/snack_chat_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/board_meetup_card.dart';
+import '../ui/widgets/snack_chat_card.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'create_post_screen.dart';
+import 'create_snack_chat_screen.dart';
 import 'post_detail_screen.dart';
 import 'meetup_detail_screen.dart';
+import 'snack_chat_screen.dart';
 import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -37,9 +42,12 @@ class BoardScreenState extends State<BoardScreen>
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
+  final SnackChatService _snackChatService = SnackChatService();
   late TabController _tabController;
   Timer? _midnightTimer;
   late final Stream<List<Meetup>> _todayMeetupsStream;
+  late final Stream<List<SnackChat>> _todaySnackChatsStream;
+  late final Stream<List<SnackChat>> _allSnackChatsStream;
 
   List<Meetup>? _cachedTodayMeetups;
   DateTime? _lastNonEmptyMeetupsAt;
@@ -51,7 +59,7 @@ class BoardScreenState extends State<BoardScreen>
 
   // 게시글 카드 외부 여백(첨부 이미지처럼 좌우 여백을 더 주고, 카드 간 간격도 안정적으로)
   static const EdgeInsets _boardPostCardMargin =
-      EdgeInsets.symmetric(horizontal: 12, vertical: 2);
+      EdgeInsets.symmetric(horizontal: 6, vertical: 2);
   // 카드 내부 패딩(기본 12 유지, 필요 시 여기서만 조정)
   static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
   
@@ -105,6 +113,8 @@ class BoardScreenState extends State<BoardScreen>
     // - 약속 날짜가 오늘인 모임
     // 만 노출한다. (필터링은 MeetupService.getTodayTabMeetups에서 강제)
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
+    _todaySnackChatsStream = _snackChatService.getTodaySnackChats();
+    _allSnackChatsStream = _snackChatService.getAllSnackChats();
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
@@ -438,20 +448,7 @@ class BoardScreenState extends State<BoardScreen>
         ],
       ),
       floatingActionButton: AppFab.write(
-        onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (context) => CreatePostScreen(
-                    onPostCreated: () {
-                      // 게시글이 작성되면 화면 새로고침 (스트림이므로 자동으로 업데이트됨)
-                      setState(() {});
-                    },
-                  ),
-            ),
-          );
-        },
+        onPressed: _openCreateEntrySheet,
         heroTag: 'board_write_fab',
       ),
     );
@@ -501,7 +498,7 @@ class BoardScreenState extends State<BoardScreen>
       child: ListView(
         controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.only(top: 4, bottom: 90),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_today'),
@@ -528,7 +525,7 @@ class BoardScreenState extends State<BoardScreen>
       child: ListView(
         controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.only(top: 4, bottom: 90),
         children: [
           AdBannerWidget(
             key: ValueKey('board_banner_today'),
@@ -605,7 +602,7 @@ class BoardScreenState extends State<BoardScreen>
             controller: _todayScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
             cacheExtent: 1000,
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            padding: const EdgeInsets.only(top: 4, bottom: 90),
         itemCount:
             1 + // AdBanner
             1 + // meetups header
@@ -839,107 +836,120 @@ class BoardScreenState extends State<BoardScreen>
 
   /// 전체 게시글 탭 (posts 스트림은 build()에서 1회 구독)
   Widget _buildAllPostsTab(AsyncSnapshot<List<Post>> snapshot) {
-    final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
-        !snapshot.hasData &&
-        _cachedAllPosts == null;
+    return StreamBuilder<List<SnackChat>>(
+      stream: _allSnackChatsStream,
+      builder: (context, snackSnapshot) {
+        final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData &&
+            _cachedAllPosts == null;
 
-    final bool isError =
-        snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
+        final bool isError =
+            snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
 
-    final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
-    final posts = sourcePosts.where(_isPostInAllTab).toList();
+        final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
+        final posts = sourcePosts.where(_isPostInAllTab).toList();
 
-    if (snapshot.hasData) {
-      _cachedAllPosts = posts;
-    }
-
-    if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
-      _didAutoRefreshAllCommentCounts = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _refreshCommentCountsForPosts(posts, silent: true);
-      });
-    }
-
-    // ✅ 상태와 무관하게 ScrollView는 1개만 유지
-    final groupedPosts = (!isLoading && !isError && posts.isNotEmpty)
-        ? _groupPostsByDate(posts)
-        : const <Map<String, dynamic>>[];
-
-    final int bodyCount;
-    if (isLoading) {
-      bodyCount = 5;
-    } else if (isError) {
-      bodyCount = 1;
-    } else if (posts.isEmpty) {
-      bodyCount = 1;
-    } else {
-      bodyCount = _calculateAllItemCount(groupedPosts) - 1; // minus banner
-    }
-
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        if (!isLoading && !isError) {
-          await _refreshCommentCountsForPosts(posts);
-        } else {
-          await Future.delayed(const Duration(milliseconds: 500));
-          if (mounted) setState(() {});
+        if (snapshot.hasData) {
+          _cachedAllPosts = posts;
         }
+
+        if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
+          _didAutoRefreshAllCommentCounts = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _refreshCommentCountsForPosts(posts, silent: true);
+          });
+        }
+
+        final allSnackChats = snackSnapshot.data ?? const <SnackChat>[];
+
+        // Posts와 SnackChats를 합쳐서 날짜 기준으로 정렬
+        final List<dynamic> allItems = <dynamic>[
+          ...posts,
+          ...allSnackChats,
+        ]..sort((a, b) =>
+            _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
+
+        final grouped = (!isLoading && !isError && allItems.isNotEmpty)
+            ? _groupItemsByDate(allItems)
+            : const <Map<String, dynamic>>[];
+
+        final int bodyCount;
+        if (isLoading) {
+          bodyCount = 5;
+        } else if (isError) {
+          bodyCount = 1;
+        } else if (allItems.isEmpty) {
+          bodyCount = 1;
+        } else {
+          bodyCount = _calculateAllItemCount(grouped) - 1; // minus banner
+        }
+
+        return RefreshIndicator(
+          color: AppColors.pointColor,
+          backgroundColor: Colors.white,
+          onRefresh: () async {
+            if (!isLoading && !isError) {
+              await _refreshCommentCountsForPosts(posts);
+            } else {
+              await Future.delayed(const Duration(milliseconds: 500));
+              if (mounted) setState(() {});
+            }
+          },
+          child: ListView.builder(
+            key: const PageStorageKey('board_all_list_unified'),
+            controller: _allScrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            cacheExtent: 1000,
+            padding: const EdgeInsets.only(top: 4, bottom: 90),
+            itemCount: 1 + bodyCount,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return AdBannerWidget(
+                  key: const ValueKey('board_banner_all'),
+                  widgetId: 'board_banner_all',
+                );
+              }
+
+              if (isLoading) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  child: _buildPostSkeleton(),
+                );
+              }
+
+              if (isError) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+                );
+              }
+
+              if (allItems.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
+                  child: AppEmptyState.noPosts(
+                    onCreatePost: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CreatePostScreen(
+                            onPostCreated: () {
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              }
+
+              return _buildAllGroupedItem(grouped, index - 1);
+            },
+          ),
+        );
       },
-      child: ListView.builder(
-        key: const PageStorageKey('board_all_list_unified'),
-        controller: _allScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        cacheExtent: 1000,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: 1 + bodyCount,
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return AdBannerWidget(
-              key: const ValueKey('board_banner_all'),
-              widgetId: 'board_banner_all',
-            );
-          }
-
-          if (isLoading) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: _buildPostSkeleton(),
-            );
-          }
-
-          if (isError) {
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-            );
-          }
-
-          if (posts.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-              child: AppEmptyState.noPosts(
-                onCreatePost: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CreatePostScreen(
-                        onPostCreated: () {
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          }
-
-          return _buildAllGroupedItem(groupedPosts, index - 1);
-        },
-      ),
     );
   }
 
@@ -995,37 +1005,51 @@ class BoardScreenState extends State<BoardScreen>
             ? 2
             : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
 
-        final postsCount = isPostsLoading
-            ? 3
-            : (isPostsError ? 1 : (todayPosts.isNotEmpty ? todayPosts.length : 1));
+        return StreamBuilder<List<SnackChat>>(
+          stream: _todaySnackChatsStream,
+          builder: (context, snackSnapshot) {
+            final isSnackLoading =
+                snackSnapshot.connectionState == ConnectionState.waiting &&
+                    !snackSnapshot.hasData;
+            final todaySnackChats = snackSnapshot.data ?? const <SnackChat>[];
 
-        final itemCount =
-            1 + // banner
-            1 + // meetups header
-            meetupsCount +
-            1 + // posts header
-            postsCount;
+            final List<dynamic> todayCombined = <dynamic>[
+              ...todayPosts,
+              ...todaySnackChats,
+            ]..sort((a, b) =>
+                _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
 
-        return RefreshIndicator(
-          color: AppColors.pointColor,
-          backgroundColor: Colors.white,
-          onRefresh: () async {
-            if (!isPostsLoading && !isPostsError) {
-              await _refreshCommentCountsForPosts(todayPosts);
-            } else {
-              await Future.delayed(const Duration(milliseconds: 500));
-              if (mounted) setState(() {});
-            }
-          },
-          child: ListView.builder(
-            key: const PageStorageKey('board_today_list_unified'),
-            controller: _todayScrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: 1000,
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            itemCount: itemCount,
-            itemBuilder: (context, index) {
-              var i = index;
+            final postsCount = (isPostsLoading || isSnackLoading)
+                ? 3
+                : (isPostsError ? 1 : (todayCombined.isNotEmpty ? todayCombined.length : 1));
+
+            final itemCount =
+                1 + // banner
+                1 + // meetups header
+                meetupsCount +
+                1 + // posts header
+                postsCount;
+
+            return RefreshIndicator(
+              color: AppColors.pointColor,
+              backgroundColor: Colors.white,
+              onRefresh: () async {
+                if (!isPostsLoading && !isPostsError) {
+                  await _refreshCommentCountsForPosts(todayPosts);
+                } else {
+                  await Future.delayed(const Duration(milliseconds: 500));
+                  if (mounted) setState(() {});
+                }
+              },
+              child: ListView.builder(
+                key: const PageStorageKey('board_today_list_unified'),
+                controller: _todayScrollController,
+                physics: const AlwaysScrollableScrollPhysics(),
+                cacheExtent: 1000,
+                padding: const EdgeInsets.only(top: 4, bottom: 90),
+                itemCount: itemCount,
+                itemBuilder: (context, index) {
+                  var i = index;
 
               // 0) banner
               if (i == 0) {
@@ -1146,8 +1170,8 @@ class BoardScreenState extends State<BoardScreen>
               }
               i -= 1;
 
-              // 4) posts list/skeleton/error/empty
-              if (isPostsLoading) {
+                  // 4) posts list/skeleton/error/empty
+                  if (isPostsLoading || isSnackLoading) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: _buildPostSkeleton(),
@@ -1161,7 +1185,7 @@ class BoardScreenState extends State<BoardScreen>
                 );
               }
 
-              if (todayPosts.isEmpty) {
+                  if (todayCombined.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                   child: Text(
@@ -1176,20 +1200,36 @@ class BoardScreenState extends State<BoardScreen>
                 );
               }
 
-              final postIndex = i;
-              final post = todayPosts[postIndex];
-              return OptimizedPostCard(
-                key: ValueKey(post.id),
-                post: post,
-                index: postIndex,
-                onTap: () => _navigateToPostDetail(post),
-                externalCommentCountOverride: _commentCountOverrides[post.id],
-                preloadImage: postIndex < 3,
-                margin: _boardPostCardMargin,
-                contentPadding: _boardPostCardContentPadding,
-              );
-            },
-          ),
+                  final itemIndex = i;
+                  final item = todayCombined[itemIndex];
+                  if (item is Post) {
+                    return OptimizedPostCard(
+                      key: ValueKey(item.id),
+                      post: item,
+                      index: itemIndex,
+                      onTap: () => _navigateToPostDetail(item),
+                      externalCommentCountOverride: _commentCountOverrides[item.id],
+                      preloadImage: itemIndex < 3,
+                      margin: _boardPostCardMargin,
+                      contentPadding: _boardPostCardContentPadding,
+                    );
+                  }
+                  if (item is SnackChat) {
+                    return SnackChatCard(
+                      key: ValueKey(item.id),
+                      snackChat: item,
+                      currentUserId: FirebaseAuth.instance.currentUser?.uid,
+                      onTap: () => _navigateToSnackChat(item),
+                      onToggleFavorite: () {
+                        _snackChatService.toggleFavorite(item.id, !item.isFavorited);
+                      },
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            );
+          },
         );
       },
     );
@@ -1289,23 +1329,23 @@ class BoardScreenState extends State<BoardScreen>
             );
           }
   
-  // 전체 탭 - 게시글 목록 뷰
+  // 전체 탭 - 게시글 목록 뷰 (레거시, 현재 미사용)
   Widget _buildAllPostsView(List<Post> posts) {
-    final groupedPosts = _groupPostsByDate(posts);
+    final grouped = _groupItemsByDate(posts);
 
-        return RefreshIndicator(
+    return RefreshIndicator(
       color: AppColors.pointColor,
       backgroundColor: Colors.white,
-          onRefresh: () async {
+      onRefresh: () async {
         await _refreshCommentCountsForPosts(posts);
-          },
+      },
       child: ListView.builder(
         key: const PageStorageKey('board_all_list'),
         controller: _allScrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         cacheExtent: 1000,
         padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: _calculateAllItemCount(groupedPosts),
+        itemCount: _calculateAllItemCount(grouped),
         itemBuilder: (context, index) {
           if (index == 0) {
             return AdBannerWidget(
@@ -1313,28 +1353,28 @@ class BoardScreenState extends State<BoardScreen>
               widgetId: 'board_banner_all',
             );
           }
-          return _buildAllGroupedItem(groupedPosts, index - 1);
+          return _buildAllGroupedItem(grouped, index - 1);
         },
       ),
     );
   }
   
-  int _calculateAllItemCount(List<Map<String, dynamic>> groupedPosts) {
+  int _calculateAllItemCount(List<Map<String, dynamic>> grouped) {
     int totalItems = 1; // AdBanner
-    for (var group in groupedPosts) {
+    for (var group in grouped) {
       totalItems += 1; // 날짜 헤더
-      final groupPosts = group['posts'] as List<Post>;
-      totalItems += groupPosts.length; // 게시글들
+      final groupItems = group['items'] as List<dynamic>;
+      totalItems += groupItems.length;
     }
     return totalItems;
   }
   
-  Widget _buildAllGroupedItem(List<Map<String, dynamic>> groupedPosts, int adjustedIndex) {
+  Widget _buildAllGroupedItem(List<Map<String, dynamic>> grouped, int adjustedIndex) {
     int currentIndex = 0;
     
-    for (var group in groupedPosts) {
+    for (var group in grouped) {
       final dateLabel = group['dateLabel'] as String;
-      final groupPosts = group['posts'] as List<Post>;
+      final groupItems = group['items'] as List<dynamic>;
       
       // 날짜 헤더
       if (currentIndex == adjustedIndex) {
@@ -1342,19 +1382,28 @@ class BoardScreenState extends State<BoardScreen>
       }
       currentIndex++;
       
-      // 게시글들
-      for (int i = 0; i < groupPosts.length; i++) {
+      // 아이템들 (Post 또는 SnackChat)
+      for (int i = 0; i < groupItems.length; i++) {
         if (currentIndex == adjustedIndex) {
-          return OptimizedPostCard(
-            key: ValueKey(groupPosts[i].id),
-            post: groupPosts[i],
-            index: i,
-            onTap: () => _navigateToPostDetail(groupPosts[i]),
-            externalCommentCountOverride: _commentCountOverrides[groupPosts[i].id],
-            preloadImage: i < 3,
-            margin: _boardPostCardMargin,
-            contentPadding: _boardPostCardContentPadding,
-          );
+          final item = groupItems[i];
+          if (item is Post) {
+            return OptimizedPostCard(
+              key: ValueKey(item.id),
+              post: item,
+              index: i,
+              onTap: () => _navigateToPostDetail(item),
+              externalCommentCountOverride: _commentCountOverrides[item.id],
+              preloadImage: i < 3,
+              margin: _boardPostCardMargin,
+              contentPadding: _boardPostCardContentPadding,
+            );
+          } else if (item is SnackChat) {
+            return SnackChatCard(
+              key: ValueKey('snack_${item.id}'),
+              snackChat: item,
+              onTap: () => _navigateToSnackChat(item),
+            );
+          }
         }
         currentIndex++;
       }
@@ -1373,6 +1422,71 @@ class BoardScreenState extends State<BoardScreen>
 
     // StreamBuilder가 자동으로 갱신하므로 setState 불필요
     // setState를 호출하면 로딩 화면이 다시 보여 스크롤이 초기화될 수 있음
+  }
+
+  DateTime _getTodayCombinedCreatedAt(dynamic item) {
+    if (item is Post) return item.createdAt;
+    if (item is SnackChat) return item.createdAt;
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  void _navigateToSnackChat(SnackChat snackChat) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SnackChatScreen(snackChatId: snackChat.id),
+      ),
+    );
+  }
+
+  void _openCreateEntrySheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.article_outlined),
+                title: Text(AppLocalizations.of(context)!.createPost),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => CreatePostScreen(
+                        onPostCreated: () {
+                          setState(() {});
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: Text(AppLocalizations.of(context)!.createSnackChat),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const CreateSnackChatScreen(),
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   /// 에러 위젯 빌드
@@ -1409,6 +1523,45 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
+
+  /// 날짜별로 Post+SnackChat 혼합 아이템 그룹화 (All 탭용)
+  List<Map<String, dynamic>> _groupItemsByDate(List<dynamic> items) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
+
+    final Map<String, List<dynamic>> groups = {
+      'today': [],
+      'yesterday': [],
+      'thisWeek': [],
+      'previous': [],
+    };
+
+    for (final item in items) {
+      final createdAt = _getTodayCombinedCreatedAt(item).toLocal();
+      final itemDate = DateTime(createdAt.year, createdAt.month, createdAt.day);
+
+      if (itemDate.isAtSameMomentAs(today)) {
+        groups['today']!.add(item);
+      } else if (itemDate.isAtSameMomentAs(yesterday)) {
+        groups['yesterday']!.add(item);
+      } else if (itemDate.isAfter(thisWeekStart.subtract(const Duration(days: 1))) &&
+                 itemDate.isBefore(yesterday)) {
+        groups['thisWeek']!.add(item);
+      } else {
+        groups['previous']!.add(item);
+      }
+    }
+
+    return groups.entries
+        .where((entry) => entry.value.isNotEmpty)
+        .map((entry) => {
+              'dateLabel': entry.key,
+              'items': entry.value,
+            })
+        .toList();
+  }
 
   /// 날짜별로 게시글 그룹화
   List<Map<String, dynamic>> _groupPostsByDate(List<Post> posts) {

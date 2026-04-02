@@ -274,6 +274,67 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newPostCreation => 'New Post';
 
   @override
+  String get createSnackChat => 'Create Snack Chat';
+
+  @override
+  String get snackChatRoomTitle => 'Room Title';
+
+  @override
+  String get snackChatRoomTitleHint => 'Enter a topic for the chat';
+
+  @override
+  String get snackChatSelectParticipants => 'Select Participants';
+
+  @override
+  String get snackChatParticipantLimit => 'You can invite up to 6 people';
+
+  @override
+  String get snackChatMe => 'Me';
+
+  @override
+  String get snackChatInvite => 'Invite';
+
+  @override
+  String get snackChatInviteFriends => 'Invite Friends';
+
+  @override
+  String snackChatSelectionComplete(int count) {
+    return '$count selected';
+  }
+
+  @override
+  String get snackChatNoFriendsToInvite => 'No friends available to invite.';
+
+  @override
+  String get snackChatMaxParticipants =>
+      'You can select up to 6 participants (including yourself).';
+
+  @override
+  String get snackChatEnterTitle => 'Please enter a Snack Chat title.';
+
+  @override
+  String get snackChatSelectGroup => 'Please select a group to share with.';
+
+  @override
+  String get snackChatSelectFriend => 'Please select at least 1 friend.';
+
+  @override
+  String get snackChatCreateFailed => 'Failed to create Snack Chat.';
+
+  @override
+  String get snackChatCreating => 'Creating...';
+
+  @override
+  String get snackChatCreate => 'Create Snack Chat';
+
+  @override
+  String get snackChatGuideTitle => 'Start a fun\nSnack Chat';
+
+  @override
+  String get snackChatGuideDesc =>
+      'A casual social chat space\nfor up to 6 people.';
+
+  @override
   String get editPost => 'Edit Post';
 
   @override

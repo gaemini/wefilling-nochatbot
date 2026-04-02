@@ -20,6 +20,7 @@ class NotificationSettingKeys {
   
   // 레거시 키 (기존 코드 호환성을 위해 유지, 내부적으로 통합 키로 매핑)
   static const String dmReceived = 'dm_received';
+  static const String snackChatInvite = 'snack_chat_invite';
   static const String meetupFull = 'meetup_full';
   static const String meetupCancelled = 'meetup_cancelled';
   static const String meetupParticipantJoined = 'meetup_participant_joined';
@@ -48,6 +49,7 @@ class NotificationSettingKeys {
         return postInteractions;
       
       case dmReceived:
+      case snackChatInvite:
         return dmMessages;
       
       case adUpdates:

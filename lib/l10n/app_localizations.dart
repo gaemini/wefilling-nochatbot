@@ -620,6 +620,120 @@ abstract class AppLocalizations {
   /// **'새 포스트 작성'**
   String get newPostCreation;
 
+  /// No description provided for @createSnackChat.
+  ///
+  /// In ko, this message translates to:
+  /// **'Snack Chat 만들기'**
+  String get createSnackChat;
+
+  /// No description provided for @snackChatRoomTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'방 제목'**
+  String get snackChatRoomTitle;
+
+  /// No description provided for @snackChatRoomTitleHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'대화의 주제를 입력해주세요'**
+  String get snackChatRoomTitleHint;
+
+  /// No description provided for @snackChatSelectParticipants.
+  ///
+  /// In ko, this message translates to:
+  /// **'참여자 선택'**
+  String get snackChatSelectParticipants;
+
+  /// No description provided for @snackChatParticipantLimit.
+  ///
+  /// In ko, this message translates to:
+  /// **'최대 6명까지 친구를 초대할 수 있습니다'**
+  String get snackChatParticipantLimit;
+
+  /// No description provided for @snackChatMe.
+  ///
+  /// In ko, this message translates to:
+  /// **'나'**
+  String get snackChatMe;
+
+  /// No description provided for @snackChatInvite.
+  ///
+  /// In ko, this message translates to:
+  /// **'초대하기'**
+  String get snackChatInvite;
+
+  /// No description provided for @snackChatInviteFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 초대'**
+  String get snackChatInviteFriends;
+
+  /// No description provided for @snackChatSelectionComplete.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명 선택 완료'**
+  String snackChatSelectionComplete(int count);
+
+  /// No description provided for @snackChatNoFriendsToInvite.
+  ///
+  /// In ko, this message translates to:
+  /// **'초대 가능한 친구가 없습니다.'**
+  String get snackChatNoFriendsToInvite;
+
+  /// No description provided for @snackChatMaxParticipants.
+  ///
+  /// In ko, this message translates to:
+  /// **'참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.'**
+  String get snackChatMaxParticipants;
+
+  /// No description provided for @snackChatEnterTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'Snack Chat 제목을 입력해주세요.'**
+  String get snackChatEnterTitle;
+
+  /// No description provided for @snackChatSelectGroup.
+  ///
+  /// In ko, this message translates to:
+  /// **'공개할 그룹을 선택해주세요.'**
+  String get snackChatSelectGroup;
+
+  /// No description provided for @snackChatSelectFriend.
+  ///
+  /// In ko, this message translates to:
+  /// **'최소 1명의 친구를 선택해주세요.'**
+  String get snackChatSelectFriend;
+
+  /// No description provided for @snackChatCreateFailed.
+  ///
+  /// In ko, this message translates to:
+  /// **'Snack Chat 생성에 실패했습니다.'**
+  String get snackChatCreateFailed;
+
+  /// No description provided for @snackChatCreating.
+  ///
+  /// In ko, this message translates to:
+  /// **'생성 중...'**
+  String get snackChatCreating;
+
+  /// No description provided for @snackChatCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'Snack Chat 생성'**
+  String get snackChatCreate;
+
+  /// No description provided for @snackChatGuideTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'즐거운 스낵 챗을\n시작해보세요'**
+  String get snackChatGuideTitle;
+
+  /// No description provided for @snackChatGuideDesc.
+  ///
+  /// In ko, this message translates to:
+  /// **'최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.'**
+  String get snackChatGuideDesc;
+
   /// No description provided for @editPost.
   ///
   /// In ko, this message translates to:

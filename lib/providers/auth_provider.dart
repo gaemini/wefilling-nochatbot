@@ -1732,7 +1732,7 @@ class AuthProvider with ChangeNotifier {
     // 앱 아이콘 배지는 로그아웃 즉시 0으로 내려 이전 계정 흔적이 남지 않게 한다.
     await BadgeService.clearBadgeOnSignOut();
     
-    // FCM 토큰 삭제 (3초 타임아웃) - UI 메시지 표시 안 함
+    // FCM 토큰 삭제 및 상태 초기화 (3초 타임아웃) - UI 메시지 표시 안 함
     if (_user != null) {
       try {
         await FCMService().deleteFCMToken(_user!.uid).timeout(
@@ -1745,6 +1745,12 @@ class AuthProvider with ChangeNotifier {
       } catch (e) {
         Logger.error('⚠️ FCM 토큰 삭제 실패 (계속 진행): $e');
       }
+    }
+    // FCM 싱글톤 상태 초기화 (다음 로그인 시 재초기화 허용)
+    try {
+      await FCMService().reset();
+    } catch (e) {
+      Logger.error('⚠️ FCM 리셋 실패 (계속 진행): $e');
     }
     
     // 먼저 모든 스트림 정리 - UI 메시지 표시 안 함

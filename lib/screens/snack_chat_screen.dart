@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -11,15 +12,23 @@ import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../services/cache/app_image_cache_manager.dart';
+import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
+import 'friend_categories_screen.dart';
+import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
 
 class SnackChatScreen extends StatefulWidget {
   final String snackChatId;
+  final bool fromPush;
 
-  const SnackChatScreen({super.key, required this.snackChatId});
+  const SnackChatScreen({
+    super.key,
+    required this.snackChatId,
+    this.fromPush = false,
+  });
 
   @override
   State<SnackChatScreen> createState() => _SnackChatScreenState();
@@ -35,22 +44,47 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   bool _isSending = false;
   bool _isUploadingImage = false;
+  Timer? _autoMarkReadDebounce;
+  bool _autoMarkReadInFlight = false;
   final Map<String, String> _senderNameCache = {};
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   // ─── 페이지네이션 상태 ───────────────────────────────────────────
   StreamSubscription<List<SnackChatMessage>>? _msgSub;
+  StreamSubscription<DocumentSnapshot>? _roomSub;
   final List<SnackChatMessage> _messages = [];
   final Set<String> _messageIds = {};
-  DateTime? _oldestMessageTime; // 가장 오래된 메시지 시간 (페이지네이션 커서)
+  DateTime? _oldestMessageTime;
   bool _hasMore = true;
   bool _isLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
+    SnackChatActiveConversation.setActive(widget.snackChatId);
     _scrollController.addListener(_onScroll);
+    _scheduleMarkAsRead();
     _subscribeToMessages();
+    _subscribeToRoom();
+  }
+
+  /// DM의 _scheduleAutoMarkAsRead와 동일한 패턴 (250ms debounce)
+  void _scheduleMarkAsRead() {
+    if (!mounted) return;
+    if (_autoMarkReadInFlight) return;
+    _autoMarkReadDebounce?.cancel();
+    _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
+      if (!mounted) return;
+      if (_autoMarkReadInFlight) return;
+      _autoMarkReadInFlight = true;
+      try {
+        await _snackChatService.markAsRead(widget.snackChatId);
+      } catch (_) {
+        // best-effort
+      } finally {
+        _autoMarkReadInFlight = false;
+      }
+    });
   }
 
   void _subscribeToMessages() {
@@ -58,6 +92,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
         .watchMessages(widget.snackChatId)
         .listen((incoming) {
       if (!mounted) return;
+      _scheduleMarkAsRead();
       setState(() {
         for (final m in incoming) {
           if (!_messageIds.contains(m.id)) {
@@ -65,13 +100,32 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
             _messages.add(m);
           }
         }
-        // 최신순 정렬 유지 (reverse: true이므로 index 0이 가장 최신)
         _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        // 가장 오래된 메시지 시간을 커서로 보관
         if (_messages.isNotEmpty) {
           _oldestMessageTime = _messages.last.createdAt;
         }
       });
+    });
+  }
+
+  /// 방 문서 실시간 감시: CF의 increment를 감지하면 즉시 다시 markAsRead 실행
+  void _subscribeToRoom() {
+    final uid = _uid;
+    if (uid == null) return;
+    _roomSub = FirebaseFirestore.instance
+        .collection('snack_chats')
+        .doc(widget.snackChatId)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final data = snap.data();
+      if (data == null) return;
+      final unreadMap = data['unreadCount'] as Map<String, dynamic>? ?? {};
+      final myUnread = unreadMap[uid];
+      final v = myUnread is int ? myUnread : (myUnread is num ? myUnread.toInt() : 0);
+      if (v > 0) {
+        _scheduleMarkAsRead();
+      }
     });
   }
 
@@ -127,6 +181,11 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   @override
   void dispose() {
+    _autoMarkReadDebounce?.cancel();
+    _roomSub?.cancel();
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
     _msgSub?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
@@ -203,12 +262,14 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
           );
         }
 
-        // 진입 시 읽음 처리 (참여자일 때만)
-        if (_uid != null && room.participantIds.contains(_uid)) {
-          _snackChatService.markAsRead(room.id);
-        }
-
-        return Scaffold(
+        return PopScope(
+          canPop: !widget.fromPush,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && widget.fromPush) {
+              _handlePushBackNavigation(room);
+            }
+          },
+          child: Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
             centerTitle: true,
@@ -366,7 +427,8 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
               ),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }
@@ -604,5 +666,21 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     return '$period $hour:$minute';
+  }
+
+  void _handlePushBackNavigation(SnackChat room) {
+    if (room.isFavorited) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => MainScreen(initialGroupTabIndex: 1),
+        ),
+        (route) => false,
+      );
+    } else {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainScreen()),
+        (route) => false,
+      );
+    }
   }
 }

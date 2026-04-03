@@ -89,6 +89,17 @@ class NavigationService {
           await nav.push(MaterialPageRoute(builder: (_) => const AdShowcaseScreen()));
           return;
         }
+        case 'snack_chat_message': {
+          final snackChatId = data['snackChatId'] as String?;
+          if (snackChatId == null || snackChatId.isEmpty) break;
+          await nav.push(MaterialPageRoute(
+            builder: (_) => SnackChatScreen(
+              snackChatId: snackChatId,
+              fromPush: true,
+            ),
+          ));
+          return;
+        }
         case 'snack_chat_invite': {
           final snackChatId = data['snackChatId'] as String?;
           if (snackChatId == null || snackChatId.isEmpty) break;

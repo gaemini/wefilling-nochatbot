@@ -4,28 +4,26 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../models/app_notification.dart';
 import 'content_filter_service.dart';
+import 'snack_chat_active_conversation.dart';
 import '../utils/logger.dart';
 
 /// iOS/Android 앱 아이콘 배지 동기화 서비스 (이벤트 기반)
 ///
-/// 정책 (업데이트): "배지 숫자 = 읽지 않은 알림 개수 + 안 읽은 DM 수"
-/// - 일반 알림: `dm_received` 타입 제외 (Notifications 탭 기준)
-/// - DM: users/{uid}.dmUnreadTotal 실시간 리스닝
+/// 정책: "배지 숫자 = 읽지 않은 알림 개수 + 안 읽은 DM 수 + 안 읽은 스냅챗 수"
 class BadgeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   
-  // 스트림 구독 관리
   static StreamSubscription<DocumentSnapshot>? _userDocSubscription;
   static StreamSubscription<QuerySnapshot>? _notificationsSubscription;
+  static StreamSubscription<QuerySnapshot>? _snackChatsSubscription;
   
-  // 현재 배지 상태 캐싱 (불필요한 업데이트 방지)
   static int? _currentBadgeCount;
   
-  // 디바운싱을 위한 타이머
   static Timer? _updateDebounceTimer;
   static int _debugBadgeUpdateLogs = 0;
   
@@ -71,6 +69,16 @@ class BadgeService {
           .listen(
             (snapshot) => _onDataChanged(),
             onError: (e) => Logger.error('알림 컬렉션 리스닝 실패', e),
+          );
+
+      // 3) snack_chats 컬렉션 리스닝 (SC 미읽음 변경 감지)
+      _snackChatsSubscription = _firestore
+          .collection('snack_chats')
+          .where('participantIds', arrayContains: user.uid)
+          .snapshots()
+          .listen(
+            (snapshot) => _onDataChanged(),
+            onError: (e) => Logger.error('snack_chats 리스닝 실패', e),
           );
     } catch (e) {
       Logger.error('실시간 배지 동기화 시작 실패', e);
@@ -227,8 +235,10 @@ class BadgeService {
   static Future<void> stopRealtimeBadgeSync() async {
     await _userDocSubscription?.cancel();
     await _notificationsSubscription?.cancel();
+    await _snackChatsSubscription?.cancel();
     _userDocSubscription = null;
     _notificationsSubscription = null;
+    _snackChatsSubscription = null;
     _updateDebounceTimer?.cancel();
     _updateDebounceTimer = null;
   }
@@ -273,16 +283,17 @@ class BadgeService {
         // 2) DM 안 읽은 수 (users.dmUnreadTotal 우선)
         final dmUnreadCount = await _getDmUnreadCount(userId: user.uid);
 
-        final totalBadge = notificationCount + dmUnreadCount;
+        // 3) SnackChat 안 읽은 수 (활성 대화방 제외)
+        final scUnreadCount = await _getSnackChatUnreadCount(userId: user.uid);
 
-        // 3) 배지가 실제로 변경되었을 때만 업데이트
-        // 중요: 0일 때도 반드시 업데이트 (잘못된 배지 제거)
+        final totalBadge = notificationCount + dmUnreadCount + scUnreadCount;
+
         if (_currentBadgeCount != totalBadge) {
           await _setBadge(totalBadge);
           _currentBadgeCount = totalBadge;
           if (_debugBadgeUpdateLogs < 10) {
             _debugBadgeUpdateLogs++;
-            Logger.log('✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount)');
+            Logger.log('✅ 배지 업데이트: $totalBadge (알림: $notificationCount, DM: $dmUnreadCount, SC: $scUnreadCount)');
           }
         }
         
@@ -432,9 +443,62 @@ class BadgeService {
     try {
       final safeCount = count < 0 ? 0 : count;
       await AppBadgePlus.updateBadge(safeCount);
+      if (Platform.isAndroid && safeCount == 0) {
+        await _clearAndroidNotificationTray();
+      }
     } catch (e) {
       Logger.error('배지 적용 실패', e);
     }
+  }
+
+  static Future<void> _clearAndroidNotificationTray() async {
+    if (!Platform.isAndroid) return;
+    try {
+      final plugin = FlutterLocalNotificationsPlugin();
+      await plugin.cancelAll();
+    } catch (e) {
+      Logger.error('Android 알림 트레이 정리 실패', e);
+    }
+  }
+
+  /// SnackChat 안 읽은 수 (활성 대화방 제외)
+  static Future<int> _getSnackChatUnreadCount({required String userId}) async {
+    try {
+      final snap = await _firestore
+          .collection('snack_chats')
+          .where('participantIds', arrayContains: userId)
+          .get()
+          .timeout(const Duration(seconds: 10));
+
+      final activeId = SnackChatActiveConversation.activeSnackChatId;
+      int total = 0;
+      for (final doc in snap.docs) {
+        if (doc.id == activeId) continue;
+        final data = doc.data();
+        final unreadMap = (data['unreadCount'] as Map?) ?? const {};
+        final raw = unreadMap[userId];
+        final v = raw is int ? raw : (raw is num ? raw.toInt() : 0);
+        if (v > 0) total += v;
+      }
+      return total;
+    } catch (e) {
+      Logger.error('SnackChat 안 읽은 수 조회 실패', e);
+      return 0;
+    }
+  }
+
+  /// FCM push 수신 시 payload의 badge 값을 즉시 적용
+  static Future<void> applyBadgeFromPush(int count) async {
+    final safeCount = count < 0 ? 0 : count;
+    if (_currentBadgeCount == safeCount) return;
+    _currentBadgeCount = safeCount;
+    await _setBadge(safeCount);
+  }
+
+  /// 앱 포그라운드 진입 시 Android 배지를 실제 값으로 강제 동기화
+  static Future<void> syncAndroidBadgeOnResume() async {
+    if (!Platform.isAndroid) return;
+    await _updateBadge();
   }
 }
 

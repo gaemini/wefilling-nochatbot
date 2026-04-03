@@ -1071,7 +1071,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return ClipRRect(
         borderRadius: BorderRadius.circular(_imageRadius),
         child: AspectRatio(
-          aspectRatio: 1 / 1,
+          aspectRatio: 4 / 5,
           child: CachedNetworkImage(
             imageUrl: imageUrls.first,
             cacheManager: AppImageCacheManager.instance,
@@ -1713,7 +1713,7 @@ class _ImageSliderState extends State<_ImageSlider> {
       child: Stack(
         children: [
           AspectRatio(
-            aspectRatio: 1 / 1,
+            aspectRatio: 4 / 5,
             child: PageView.builder(
               controller: _pageController,
               itemCount: widget.imageUrls.length,

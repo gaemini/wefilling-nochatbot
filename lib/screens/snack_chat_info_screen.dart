@@ -26,9 +26,27 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
 
   bool _isInviting = false;
   bool _isLeaving = false;
+  bool _isMuted = false;
   Future<List<UserProfile>>? _participantsFuture;
   String _participantsSignature = '';
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMuteState();
+  }
+
+  Future<void> _loadMuteState() async {
+    final muted = await _snackChatService.isSnackChatMuted(widget.snackChatId);
+    if (mounted) setState(() => _isMuted = muted);
+  }
+
+  Future<void> _toggleMute() async {
+    final newVal = !_isMuted;
+    setState(() => _isMuted = newVal);
+    await _snackChatService.toggleMuteSnackChat(widget.snackChatId, newVal);
+  }
 
   Future<List<UserProfile>> _loadParticipants(SnackChat room) async {
     if (room.participantIds.isEmpty) return const <UserProfile>[];
@@ -562,6 +580,30 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         Switch(
                           value: room.isFavorited,
                           onChanged: (_) => _toggleFavorite(room),
+                          activeColor: AppColors.pointColor,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            isKo ? '알림' : 'Notifications',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ),
+                        Switch(
+                          value: !_isMuted,
+                          onChanged: (_) => _toggleMute(),
                           activeColor: AppColors.pointColor,
                         ),
                       ],

@@ -15,22 +15,21 @@ import 'dart:ui' as ui;
 import 'badge_service.dart';
 import 'navigation_service.dart';
 import 'dm_active_conversation.dart';
+import 'snack_chat_active_conversation.dart';
 import '../utils/logger.dart';
 import 'dart:io';
 
-// 백그라운드 메시지 핸들러 (최상위 함수여야 함)
-// iOS: APNs payload의 badge 값을 자동으로 처리하므로 별도 처리 불필요
-// Android: 백그라운드에서도 알림을 명시적으로 표시해야 함
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  Logger.log('📱 백그라운드 메시지 수신: ${message.messageId}');
-  Logger.log('📱 제목: ${message.notification?.title}');
-  Logger.log('📱 내용: ${message.notification?.body}');
-  Logger.log('📱 데이터: ${message.data}');
-  
-  // Android: 백그라운드에서 로컬 알림 표시
-  // (Firebase가 자동으로 표시하지만, 커스텀 처리가 필요한 경우 여기서 수동 표시)
-  // iOS: APNs가 자동으로 처리하므로 여기서는 스킵
+  final badgeStr = message.data['badge'];
+  if (badgeStr != null) {
+    final badge = int.tryParse(badgeStr.toString());
+    if (badge != null && badge >= 0) {
+      try {
+        await AppBadgePlus.updateBadge(badge);
+      } catch (_) {}
+    }
+  }
 }
 
 class FCMService {
@@ -172,7 +171,7 @@ class FCMService {
       if (!kIsWeb && Platform.isIOS) {
         await _messaging.setForegroundNotificationPresentationOptions(
           alert: false,
-          badge: true,
+          badge: false,
           sound: true,
         );
       }
@@ -198,14 +197,25 @@ class FCMService {
         // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
         final type = (message.data['type'] ?? '').toString();
         final conversationId = (message.data['conversationId'] ?? '').toString();
+        final snackChatId = (message.data['snackChatId'] ?? '').toString();
         final isDm = type == 'dm_received' && conversationId.isNotEmpty;
+        final isSnackChat = type == 'snack_chat_message' && snackChatId.isNotEmpty;
 
         if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-          // 채팅방을 보고 있으면: 알림 스킵 (미읽음일 때만 알림)
-          if (isDm && DMActiveConversation.isActive(conversationId)) {
+          final isActiveConversation =
+              (isDm && DMActiveConversation.isActive(conversationId)) ||
+              (isSnackChat && SnackChatActiveConversation.isActive(snackChatId));
+
+          if (isActiveConversation) {
             return;
           }
-          // 그 외: 로컬 알림 표시 (기존 포그라운드 배너 UX 유지)
+
+          final badgeStr = (message.data['badge'] ?? '').toString();
+          final badge = int.tryParse(badgeStr);
+          if (badge != null && badge >= 0) {
+            unawaited(BadgeService.applyBadgeFromPush(badge));
+          }
+
           unawaited(_showLocalNotification(message));
         }
       });

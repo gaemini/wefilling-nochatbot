@@ -23,7 +23,8 @@ import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 
 class FriendCategoriesScreen extends StatefulWidget {
-  const FriendCategoriesScreen({super.key});
+  final int initialTabIndex;
+  const FriendCategoriesScreen({super.key, this.initialTabIndex = 0});
 
   @override
   State<FriendCategoriesScreen> createState() => _FriendCategoriesScreenState();
@@ -50,7 +51,11 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTabIndex.clamp(0, 1),
+    );
     _tabController.addListener(() {
       if (mounted) setState(() {});
     });

@@ -52,14 +52,19 @@ class BoardScreenState extends State<BoardScreen>
   List<Meetup>? _cachedTodayMeetups;
   DateTime? _lastNonEmptyMeetupsAt;
 
+  List<SnackChat>? _cachedTodaySnackChats;
+
+  Set<String> _mutedSnackChatIds = {};
+  StreamSubscription<Set<String>>? _mutedSnackChatSub;
+
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
   bool _didAutoRefreshTodayCommentCounts = false;
   bool _didAutoRefreshAllCommentCounts = false;
 
-  // 게시글 카드 외부 여백(첨부 이미지처럼 좌우 여백을 더 주고, 카드 간 간격도 안정적으로)
+  // 게시글 카드 외부 여백: 좌우 없음, 카드 간 위아래 구분을 위한 작은 여백만
   static const EdgeInsets _boardPostCardMargin =
-      EdgeInsets.symmetric(horizontal: 6, vertical: 2);
+      EdgeInsets.symmetric(horizontal: 0, vertical: 4);
   // 카드 내부 패딩(기본 12 유지, 필요 시 여기서만 조정)
   static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
   
@@ -115,6 +120,9 @@ class BoardScreenState extends State<BoardScreen>
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
     _todaySnackChatsStream = _snackChatService.getTodaySnackChats();
     _allSnackChatsStream = _snackChatService.getAllSnackChats();
+    _mutedSnackChatSub = _snackChatService.watchMutedSnackChatIds().listen((ids) {
+      if (mounted) setState(() => _mutedSnackChatIds = ids);
+    });
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
@@ -260,6 +268,7 @@ class BoardScreenState extends State<BoardScreen>
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
+    _mutedSnackChatSub?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -1008,10 +1017,13 @@ class BoardScreenState extends State<BoardScreen>
         return StreamBuilder<List<SnackChat>>(
           stream: _todaySnackChatsStream,
           builder: (context, snackSnapshot) {
+            if (snackSnapshot.hasData) {
+              _cachedTodaySnackChats = snackSnapshot.data;
+            }
             final isSnackLoading =
                 snackSnapshot.connectionState == ConnectionState.waiting &&
-                    !snackSnapshot.hasData;
-            final todaySnackChats = snackSnapshot.data ?? const <SnackChat>[];
+                    _cachedTodaySnackChats == null;
+            final todaySnackChats = _cachedTodaySnackChats ?? const <SnackChat>[];
 
             final List<dynamic> todayCombined = <dynamic>[
               ...todayPosts,
@@ -1219,7 +1231,9 @@ class BoardScreenState extends State<BoardScreen>
                       key: ValueKey(item.id),
                       snackChat: item,
                       currentUserId: FirebaseAuth.instance.currentUser?.uid,
+                      isMuted: _mutedSnackChatIds.contains(item.id),
                       onTap: () => _navigateToSnackChat(item),
+                      onLongPress: () => _showSnackChatMuteSheet(item),
                       onToggleFavorite: () {
                         _snackChatService.toggleFavorite(item.id, !item.isFavorited);
                       },
@@ -1401,7 +1415,13 @@ class BoardScreenState extends State<BoardScreen>
             return SnackChatCard(
               key: ValueKey('snack_${item.id}'),
               snackChat: item,
+              currentUserId: FirebaseAuth.instance.currentUser?.uid,
+              isMuted: _mutedSnackChatIds.contains(item.id),
               onTap: () => _navigateToSnackChat(item),
+              onLongPress: () => _showSnackChatMuteSheet(item),
+              onToggleFavorite: () {
+                _snackChatService.toggleFavorite(item.id, !item.isFavorited);
+              },
             );
           }
         }
@@ -1436,6 +1456,54 @@ class BoardScreenState extends State<BoardScreen>
       MaterialPageRoute(
         builder: (_) => SnackChatScreen(snackChatId: snackChat.id),
       ),
+    );
+  }
+
+  void _showSnackChatMuteSheet(SnackChat snackChat) {
+    final isMuted = _mutedSnackChatIds.contains(snackChat.id);
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD1D5DB),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+              const SizedBox(height: 16),
+              ListTile(
+                leading: Icon(
+                  isMuted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
+                  color: isMuted ? const Color(0xFF3B82F6) : const Color(0xFF6B7280),
+                ),
+                title: Text(
+                  isMuted
+                      ? (isKo ? '알림 켜기' : 'Unmute notifications')
+                      : (isKo ? '알림 끄기' : 'Mute notifications'),
+                  style: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _snackChatService.toggleMuteSnackChat(snackChat.id, !isMuted);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 

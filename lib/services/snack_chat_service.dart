@@ -301,26 +301,24 @@ class SnackChatService {
         'readBy': <String>[uid],
       });
 
-      final nextUnread = Map<String, int>.from(room.unreadCount);
-      for (final id in room.participantIds) {
-        if (id == uid) {
-          nextUnread[id] = 0;
-        } else {
-          nextUnread[id] = (nextUnread[id] ?? 0) + 1;
-        }
-      }
-
       final previewText = imageUrl != null && imageUrl.isNotEmpty
           ? (text.isNotEmpty ? text : '[이미지]')
           : text;
 
-      await roomRef.update({
+      final updateFields = <String, dynamic>{
         'lastMessage': previewText,
         'lastMessageTime': Timestamp.fromDate(now),
         'lastMessageSenderId': uid,
-        'unreadCount': nextUnread,
+        'unreadCount.$uid': 0,
         'updatedAt': Timestamp.fromDate(now),
-      });
+      };
+      for (final id in room.participantIds) {
+        if (id != uid) {
+          updateFields['unreadCount.$id'] = FieldValue.increment(1);
+        }
+      }
+
+      await roomRef.update(updateFields);
       return true;
     } catch (e) {
       Logger.error('Snack Chat 메시지 전송 실패: $e');
@@ -328,39 +326,15 @@ class SnackChatService {
     }
   }
 
+  /// dot notation으로 원자적 쓰기 (CF의 increment와 충돌 방지)
   Future<void> markAsRead(String snackChatId) async {
     final uid = _uid;
     if (uid == null) return;
 
     try {
-      final roomRef = _collection.doc(snackChatId);
-      final roomDoc = await roomRef.get();
-      if (!roomDoc.exists) return;
-
-      final room = SnackChat.fromFirestore(roomDoc);
-      if (!room.participantIds.contains(uid)) return;
-
-      final now = DateTime.now();
-      final unread = Map<String, int>.from(room.unreadCount);
-      unread[uid] = 0;
-
-      final unreadSnap = await roomRef
-          .collection('messages')
-          .where('readBy', arrayContains: uid)
-          .limit(1)
-          .get();
-      // readBy array-contains-not 쿼리가 없어 메시지 readBy 업데이트는 단순화한다.
-      if (unreadSnap.docs.isNotEmpty) {
-        await roomRef.update({
-          'unreadCount': unread,
-          'updatedAt': Timestamp.fromDate(now),
-        });
-      } else {
-        await roomRef.update({
-          'unreadCount': unread,
-          'updatedAt': Timestamp.fromDate(now),
-        });
-      }
+      await _collection.doc(snackChatId).update({
+        'unreadCount.$uid': 0,
+      });
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
     }
@@ -371,6 +345,63 @@ class SnackChatService {
       'isFavorited': value,
       'updatedAt': FieldValue.serverTimestamp(),
     });
+  }
+
+  /// 스냅챗 알림 뮤트 토글
+  Future<void> toggleMuteSnackChat(String snackChatId, bool mute) async {
+    final uid = _uid;
+    if (uid == null) return;
+    final userRef = _firestore.collection('users').doc(uid);
+    if (mute) {
+      await userRef.update({
+        'mutedSnackChatIds': FieldValue.arrayUnion([snackChatId]),
+      });
+    } else {
+      await userRef.update({
+        'mutedSnackChatIds': FieldValue.arrayRemove([snackChatId]),
+      });
+    }
+  }
+
+  /// 뮤트된 snackChatId 목록을 실시간 스트리밍
+  Stream<Set<String>> watchMutedSnackChatIds() {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <String>{});
+    return _firestore.collection('users').doc(uid).snapshots().map((snap) {
+      final data = snap.data();
+      if (data == null) return const <String>{};
+      final list = data['mutedSnackChatIds'];
+      if (list is List) return list.map((e) => e.toString()).toSet();
+      return const <String>{};
+    });
+  }
+
+  /// 특정 스냅챗 뮤트 여부 (1회 조회)
+  Future<bool> isSnackChatMuted(String snackChatId) async {
+    final uid = _uid;
+    if (uid == null) return false;
+    try {
+      final doc = await _firestore.collection('users').doc(uid).get();
+      final list = doc.data()?['mutedSnackChatIds'];
+      if (list is List) return list.any((e) => e.toString() == snackChatId);
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// 즐겨찾기 스냅챗의 총 안 읽은 수 (Groups탭 배지용)
+  Stream<int> getTotalUnreadCount() {
+    final uid = _uid;
+    if (uid == null) return Stream.value(0);
+    return _watchMySnackChats().map((chats) {
+      int total = 0;
+      for (final chat in chats) {
+        final v = chat.unreadCount[uid];
+        if (v != null && v > 0) total += v;
+      }
+      return total < 0 ? 0 : total;
+    }).distinct();
   }
 
   Future<Set<String>> _getMyFriendIdSet(String uid) async {

@@ -7,14 +7,18 @@ class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
   final VoidCallback onTap;
   final VoidCallback? onToggleFavorite;
+  final VoidCallback? onLongPress;
   final String? currentUserId;
+  final bool isMuted;
 
   const SnackChatCard({
     super.key,
     required this.snackChat,
     required this.onTap,
     this.onToggleFavorite,
+    this.onLongPress,
     this.currentUserId,
+    this.isMuted = false,
   });
 
   @override
@@ -42,6 +46,7 @@ class SnackChatCard extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: onTap,
+          onLongPress: onLongPress,
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             decoration: BoxDecoration(
@@ -110,6 +115,15 @@ class SnackChatCard extends StatelessWidget {
                               ),
                             ),
                           if (hasUnread) const SizedBox(width: 6),
+                          if (isMuted)
+                            const Padding(
+                              padding: EdgeInsets.only(right: 4),
+                              child: Icon(
+                                Icons.notifications_off_outlined,
+                                size: 16,
+                                color: Color(0xFF9CA3AF),
+                              ),
+                            ),
                           InkWell(
                             onTap: onToggleFavorite,
                             borderRadius: BorderRadius.circular(12),

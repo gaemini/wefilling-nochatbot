@@ -13,6 +13,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
 import '../services/notification_service.dart';
+import '../services/snack_chat_service.dart';
 import '../services/badge_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../utils/logger.dart';
@@ -30,11 +31,13 @@ import 'my_meetup_calendar_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
-  final String? initialMeetupId; // 알림에서 전달받을 모임 ID
+  final int initialGroupTabIndex;
+  final String? initialMeetupId;
 
   const MainScreen({
     Key? key,
     this.initialTabIndex = 0,
+    this.initialGroupTabIndex = 0,
     this.initialMeetupId,
   }) : super(key: key);
 
@@ -42,10 +45,11 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
-  late int _selectedIndex; // 초기값은 initState에서 설정
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  late int _selectedIndex;
   final NotificationService _notificationService = NotificationService();
   final DMService _dmService = DMService();
+  final SnackChatService _snackChatService = SnackChatService();
   late VoidCallback _cleanupCallback;
   String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
   AuthProvider? _authProvider;
@@ -57,6 +61,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     // 초기 탭 인덱스 설정
     _selectedIndex = widget.initialTabIndex;
@@ -100,8 +105,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
-    // AuthProvider에서 콜백 제거
-    // dispose에서는 context로 ancestor lookup을 하지 않는다.
+    WidgetsBinding.instance.removeObserver(this);
     _authProvider?.unregisterStreamCleanup(_cleanupCallback);
 
     // 서비스 정리
@@ -113,6 +117,13 @@ class _MainScreenState extends State<MainScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      BadgeService.syncAndroidBadgeOnResume();
+    }
+  }
+
   Widget _buildScreenForIndex(int index) {
     switch (index) {
       case 0:
@@ -121,7 +132,9 @@ class _MainScreenState extends State<MainScreen> {
         // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
         return MeetupHomePage(initialMeetupId: _pendingMeetupId);
       case 2:
-        return const FriendCategoriesScreen();
+        return FriendCategoriesScreen(
+          initialTabIndex: widget.initialGroupTabIndex,
+        );
       case 3:
         return const MyPageScreen();
       case 4:
@@ -391,14 +404,18 @@ class _MainScreenState extends State<MainScreen> {
       // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
       bottomNavigationBar: StreamBuilder<int>(
         stream: _dmService.getTotalUnreadCount(),
-        builder: (context, snapshot) {
+        builder: (context, dmSnapshot) {
+          return StreamBuilder<int>(
+            stream: _snackChatService.getTotalUnreadCount(),
+            builder: (context, scSnapshot) {
           final l10n = AppLocalizations.of(context)!;
           
-          if (snapshot.hasError) {
-            Logger.error('DM 배지 스트림 오류', snapshot.error);
+          if (dmSnapshot.hasError) {
+            Logger.error('DM 배지 스트림 오류', dmSnapshot.error);
           }
 
-          final unreadDMCount = snapshot.data ?? 0;
+          final unreadDMCount = dmSnapshot.data ?? 0;
+          final unreadSCCount = scSnapshot.data ?? 0;
 
           return AdaptiveBottomNavigation(
             selectedIndex: _selectedIndex,
@@ -418,6 +435,7 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icons.change_history_outlined,
                 selectedIcon: Icons.change_history,
                 label: l10n.groups,
+                badgeCount: unreadSCCount,
               ),
               BottomNavigationItem(
                 icon: Icons.person_outline,
@@ -428,9 +446,11 @@ class _MainScreenState extends State<MainScreen> {
                 icon: Icons.send_outlined,
                 selectedIcon: Icons.send_rounded,
                 label: l10n.dm,
-                badgeCount: unreadDMCount, // DM 읽지 않은 메시지 수 배지
+                badgeCount: unreadDMCount,
               ),
             ],
+          );
+            },
           );
         },
       ),

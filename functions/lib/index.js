@@ -4,6 +4,7 @@
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.expireSnackChats = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
+exports.onSnackChatMessageCreated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -4742,6 +4743,194 @@ exports.onDMMessageCreated = functions.firestore
     }
     catch (error) {
         console.error('❌ onDMMessageCreated 오류:', error);
+        return null;
+    }
+});
+// SnackChat 메시지 생성 시 푸시 알림 전송
+exports.onSnackChatMessageCreated = functions.firestore
+    .document('snack_chats/{snackChatId}/messages/{messageId}')
+    .onCreate(async (snapshot, context) => {
+    try {
+        const messageData = snapshot.data();
+        const snackChatId = context.params.snackChatId;
+        const messageId = context.params.messageId;
+        const senderId = messageData.senderId;
+        const text = messageData.text || '';
+        const imageUrl = messageData.imageUrl;
+        console.log(`📨 새 SnackChat 메시지 감지: ${snackChatId}/${messageId}`);
+        console.log(`  - 발신자: ${senderId}`);
+        // 스냅챗 방 정보 조회
+        const roomRef = db.collection('snack_chats').doc(snackChatId);
+        const roomDoc = await roomRef.get();
+        if (!roomDoc.exists) {
+            console.log('❌ 스냅챗 방을 찾을 수 없음');
+            return null;
+        }
+        const roomData = roomDoc.data();
+        const participantIds = Array.isArray(roomData.participantIds) ? roomData.participantIds : [];
+        const participants = Array.from(new Set(participantIds.filter((id) => typeof id === 'string' && id.length > 0)));
+        const recipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
+        if (recipients.length === 0) {
+            console.log('⚠️ 수신자를 찾을 수 없음');
+            return null;
+        }
+        console.log(`  - 수신자: ${recipients.length}명`);
+        // 발신자 정보 조회
+        const senderDoc = await db.collection('users').doc(senderId).get();
+        const senderData = senderDoc.data();
+        const senderName = (senderData === null || senderData === void 0 ? void 0 : senderData.nickname) || (senderData === null || senderData === void 0 ? void 0 : senderData.name) || '익명';
+        const roomTitle = roomData.title || 'Snack Chat';
+        // FieldValue.increment로 unreadCount 원자적 증분
+        const updateFields = {
+            'updatedAt': admin.firestore.FieldValue.serverTimestamp(),
+        };
+        for (const rid of recipients) {
+            updateFields[`unreadCount.${rid}`] = admin.firestore.FieldValue.increment(1);
+        }
+        await roomRef.update(updateFields);
+        console.log(`  ✅ unreadCount 증분 완료 (수신자 ${recipients.length}명)`);
+        // 각 수신자별로 개별 배지 계산 + FCM 푸시 전송
+        for (const recipientId of recipients) {
+            try {
+                // 수신자 정보 및 토큰 조회
+                const recipientRef = db.collection('users').doc(recipientId);
+                const recipientDoc = await recipientRef.get();
+                if (!recipientDoc.exists) {
+                    console.log(`  ⚠️ 수신자 ${recipientId} 문서 없음`);
+                    continue;
+                }
+                const recipientData = recipientDoc.data();
+                // 뮤트 체크: mutedSnackChatIds에 현재 snackChatId가 포함되어 있으면 푸시 건너뜀
+                const mutedSnackChatIds = Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.mutedSnackChatIds)
+                    ? recipientData.mutedSnackChatIds
+                    : [];
+                if (mutedSnackChatIds.includes(snackChatId)) {
+                    console.log(`  ⏭️ 수신자 ${recipientId}는 이 SnackChat을 뮤트함 - 푸시 건너뜀`);
+                    continue;
+                }
+                const tokenSet = new Set();
+                if (typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) === 'string' && recipientData.fcmToken.length > 0) {
+                    tokenSet.add(recipientData.fcmToken);
+                }
+                if (Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens)) {
+                    recipientData.fcmTokens.forEach((t) => {
+                        if (typeof t === 'string' && t.length > 0)
+                            tokenSet.add(t);
+                    });
+                }
+                const tokens = Array.from(tokenSet);
+                if (tokens.length === 0) {
+                    console.log(`  ⚠️ 수신자 ${recipientId} FCM 토큰 없음`);
+                    continue;
+                }
+                // 배지 계산: 알림 + DM + SnackChat
+                let badgeCount = null;
+                try {
+                    const notificationCount = typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.notificationUnreadTotal) === 'number'
+                        ? Math.max(0, Math.trunc(recipientData.notificationUnreadTotal))
+                        : 0;
+                    const dmUnreadTotal = typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.dmUnreadTotal) === 'number'
+                        ? Math.max(0, Math.trunc(recipientData.dmUnreadTotal))
+                        : 0;
+                    // SnackChat 안 읽은 수: 모든 참여 중인 방의 unreadCount[recipientId] 합산
+                    const scSnap = await db.collection('snack_chats')
+                        .where('participantIds', 'array-contains', recipientId)
+                        .get();
+                    let scUnreadTotal = 0;
+                    for (const doc of scSnap.docs) {
+                        const data = doc.data();
+                        const unreadMap = (data === null || data === void 0 ? void 0 : data.unreadCount) || {};
+                        const val = unreadMap[recipientId];
+                        const v = typeof val === 'number' ? val : 0;
+                        if (v > 0)
+                            scUnreadTotal += v;
+                    }
+                    badgeCount = notificationCount + dmUnreadTotal + scUnreadTotal;
+                    console.log(`  📊 배지 계산 (${recipientId}): 알림=${notificationCount}, DM=${dmUnreadTotal}, SC=${scUnreadTotal} → ${badgeCount}`);
+                }
+                catch (e) {
+                    console.warn(`  ⚠️ 배지 계산 실패 (${recipientId}):`, e);
+                    badgeCount = null;
+                }
+                // 메시지 프리뷰
+                let messagePreview = '';
+                if (text && text.trim().length > 0) {
+                    messagePreview = text.trim().substring(0, 100);
+                }
+                else if (imageUrl) {
+                    messagePreview = '📷 사진';
+                }
+                else {
+                    messagePreview = '메시지';
+                }
+                const hasBadge = badgeCount !== null;
+                const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
+                // 수신자 언어 설정
+                const recipientLang = (recipientData === null || recipientData === void 0 ? void 0 : recipientData.language) || 'ko';
+                const notificationTitle = recipientLang === 'ko'
+                    ? `${roomTitle}`
+                    : `${roomTitle}`;
+                const notificationBody = recipientLang === 'ko'
+                    ? `${senderName}: ${messagePreview}`
+                    : `${senderName}: ${messagePreview}`;
+                // FCM 메시지 구성
+                const pushMessage = {
+                    tokens,
+                    notification: {
+                        title: notificationTitle,
+                        body: notificationBody,
+                    },
+                    data: Object.assign({ type: 'snack_chat_message', snackChatId: snackChatId, senderId: senderId, senderName: senderName, roomTitle: roomTitle }, (hasBadge && { badge: String(finalBadge) })),
+                    apns: {
+                        headers: {
+                            'apns-push-type': 'alert',
+                            'apns-priority': '10',
+                        },
+                        payload: {
+                            aps: Object.assign({ sound: 'default' }, (hasBadge && { badge: finalBadge })),
+                        },
+                    },
+                    android: {
+                        priority: 'high',
+                        notification: Object.assign({ sound: 'default', channelId: 'high_importance_channel' }, (hasBadge && { notificationCount: finalBadge })),
+                    },
+                };
+                // 푸시 전송
+                const response = await admin.messaging().sendEachForMulticast(pushMessage);
+                console.log(`  ✅ SnackChat 푸시 전송 (${recipientId}): ${response.successCount}/${tokens.length}`);
+                // 실패 토큰 정리
+                if (response.failureCount > 0) {
+                    const invalidTokens = [];
+                    response.responses.forEach((resp, idx) => {
+                        var _a;
+                        if (resp.success)
+                            return;
+                        const code = (_a = resp.error) === null || _a === void 0 ? void 0 : _a.code;
+                        if (code === 'messaging/registration-token-not-registered' ||
+                            code === 'messaging/invalid-registration-token') {
+                            invalidTokens.push(tokens[idx]);
+                        }
+                    });
+                    if (invalidTokens.length > 0) {
+                        const chunkSize = 10;
+                        for (let i = 0; i < invalidTokens.length; i += chunkSize) {
+                            const chunk = invalidTokens.slice(i, i + chunkSize);
+                            await recipientRef.set({
+                                fcmTokens: admin.firestore.FieldValue.arrayRemove(...chunk),
+                            }, { merge: true });
+                        }
+                        console.log(`    🧹 무효 FCM 토큰 정리: ${invalidTokens.length}개`);
+                    }
+                }
+            }
+            catch (error) {
+                console.error(`  ❌ 수신자 ${recipientId} 푸시 실패:`, error);
+            }
+        }
+        return null;
+    }
+    catch (error) {
+        console.error('❌ onSnackChatMessageCreated 오류:', error);
         return null;
     }
 });

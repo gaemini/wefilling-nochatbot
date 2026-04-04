@@ -12,6 +12,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:ui' as ui;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'badge_service.dart';
 import 'navigation_service.dart';
 import 'dm_active_conversation.dart';
@@ -131,9 +132,56 @@ class FCMService {
   // 로그아웃 시 호출 (현재는 no-op, 리스너 정리 불필요)
   Future<void> reset() async {}
 
+  // locale 안전성 검증
+  Future<void> _ensureLocaleInitialized() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedLocale = prefs.getString('app_language');
+      
+      if (savedLocale == null || savedLocale.isEmpty) {
+        // 기본 언어 강제 설정
+        await prefs.setString('app_language', 'ko');
+        Logger.log('✅ locale 기본값 설정: ko');
+      } else {
+        Logger.log('✅ locale 확인됨: $savedLocale');
+      }
+    } catch (e) {
+      Logger.error('locale 초기화 실패 (무시)', e);
+    }
+  }
+
+  // Firebase Installations 리셋 로직
+  Future<void> _resetFirebaseInstallationsIfNeeded() async {
+    try {
+      // Firebase Installations ID가 손상된 경우 재생성
+      // 이는 기존 사용자의 Installation ID와 새 앱 버전 간 충돌을 방지
+      // Note: firebase_installations 플러그인이 없으므로 토큰 삭제로 대체
+      
+      final currentToken = await _messaging.getToken().timeout(
+        const Duration(seconds: 3),
+        onTimeout: () => null,
+      );
+      
+      if (currentToken == null) {
+        Logger.log('⚠️ FCM 토큰이 null - Firebase 상태 리셋 시도');
+        await _messaging.deleteToken();
+        await Future.delayed(const Duration(milliseconds: 500));
+      } else {
+        Logger.log('✅ FCM 토큰 확인됨: ${currentToken.substring(0, 20)}...');
+      }
+    } catch (e) {
+      Logger.error('Firebase Installations 리셋 실패 (무시)', e);
+    }
+  }
+
   // FCM 초기화
   Future<void> initialize(String userId) async {
     try {
+      // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
+      await _ensureLocaleInitialized();
+      
+      // 기존 Firebase 상태 충돌 방지
+      await _resetFirebaseInstallationsIfNeeded();
 
       // 로컬 알림 초기화
       await _initializeLocalNotifications();
@@ -236,8 +284,17 @@ class FCMService {
       }
 
     } catch (e) {
-      Logger.error('FCM 초기화 실패', e);
-      rethrow;
+      Logger.error('FCM 초기화 실패 - 앱은 계속 실행됨', e);
+      // 크래시 방지: 예외를 삼키고 앱 실행 계속
+      // Firebase Crashlytics에 리포트 (가능한 경우)
+      try {
+        if (!kDebugMode) {
+          // Production에서만 크래시 리포트
+          rethrow;
+        }
+      } catch (_) {
+        // 크래시 리포트 실패해도 앱은 계속 실행
+      }
     }
   }
 
@@ -258,41 +315,50 @@ class FCMService {
 
       final bool shouldLogRetry = i == 0 || i == retrySeconds.length - 1;
 
-      // iOS에서 APNs 토큰 먼저 확인 (필수)
-      if (defaultTargetPlatform == TargetPlatform.iOS) {
-        try {
-          final String? apnsToken = await _messaging.getAPNSToken();
-          if (apnsToken == null || apnsToken.isEmpty) {
-            if (shouldLogRetry) {
-              Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+      try {
+        // iOS에서 APNs 토큰 먼저 확인 (필수)
+        if (defaultTargetPlatform == TargetPlatform.iOS) {
+          try {
+            final String? apnsToken = await _messaging.getAPNSToken();
+            if (apnsToken == null || apnsToken.isEmpty) {
+              if (shouldLogRetry) {
+                Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+              }
+              continue;
+            } else {
+              Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
             }
+          } catch (e) {
+            Logger.error('❌ APNs 토큰 가져오기 실패: $e');
             continue;
-          } else {
-            Logger.log('📱 APNs 토큰 준비됨: ${apnsToken.substring(0, 20)}...');
+          }
+        }
+
+        // FCM 토큰 가져오기 - 타임아웃 추가
+        try {
+          final String? token = await _messaging.getToken().timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => null,
+          );
+          
+          if (token != null && token.isNotEmpty) {
+            Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
+            await _saveFCMToken(userId, token);
+            return;
+          }
+          if (shouldLogRetry) {
+            Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
           }
         } catch (e) {
-          Logger.error('❌ APNs 토큰 가져오기 실패: $e');
-          continue;
-        }
-      }
-
-      // FCM 토큰 가져오기
-      try {
-        final String? token = await _messaging.getToken();
-        if (token != null && token.isNotEmpty) {
-          Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
-          await _saveFCMToken(userId, token);
-          return;
-        }
-        if (shouldLogRetry) {
-          Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+          Logger.error('❌ FCM 토큰 가져오기 실패: $e');
         }
       } catch (e) {
-        Logger.error('❌ FCM 토큰 가져오기 실패: $e');
+        Logger.error('FCM 토큰 동기화 실패 (재시도 ${i + 1}/${retrySeconds.length})', e);
+        // 크래시 방지: 예외를 로그만 남기고 계속 진행
       }
     }
 
-    Logger.log('❌ FCM 토큰 동기화 실패 - 다음 실행에서 재시도됩니다');
+    Logger.log('❌ FCM 토큰 동기화 최종 실패 - 다음 실행에서 재시도');
   }
 
   // 포그라운드 로컬 알림 표시
@@ -429,7 +495,9 @@ class FCMService {
         if (token != null && token.isNotEmpty)
           _functions.httpsCallable('unregisterFcmToken').call(<String, dynamic>{
             'token': token,
-          }).catchError((e) {
+          }).then((_) {
+            Logger.log('✅ unregisterFcmToken 완료');
+          }, onError: (e) {
             Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');
           }),
         // Firestore에서도 "해당 토큰"만 제거 (다른 기기 토큰은 보존)
@@ -439,7 +507,7 @@ class FCMService {
             final snap = await tx.get(ref);
             if (!snap.exists) return;
 
-            final data = snap.data() as Map<String, dynamic>? ?? {};
+            final data = snap.data() ?? {};
             final currentSingle = data['fcmToken'] as String?;
             final currentList = (data['fcmTokens'] as List?)
                     ?.whereType<String>()

@@ -26,15 +26,27 @@ class LanguageService {
   Future<String> getLanguage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final language = prefs.getString(_key) ?? _defaultLanguage;
+      String? language = prefs.getString(_key);
+      
+      // locale이 없거나 비정상인 경우 기본값 저장
+      if (language == null || language.isEmpty || 
+          (language != 'ko' && language != 'en')) {
+        language = _defaultLanguage;
+        await prefs.setString(_key, language);
+        if (kDebugMode) {
+          debugPrint('✅ 기본 언어 강제 설정: $language');
+        }
+      }
+      
       if (kDebugMode) {
         debugPrint('📖 저장된 언어: $language');
       }
       return language;
     } catch (e) {
       if (kDebugMode) {
-        debugPrint('❌ 언어 불러오기 실패, 기본값 사용: $e');
+        debugPrint('❌ 언어 불러오기 실패, 기본값 반환: $e');
       }
+      // 실패해도 유효한 기본값 반환
       return _defaultLanguage;
     }
   }

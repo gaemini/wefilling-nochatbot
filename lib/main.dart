@@ -62,10 +62,11 @@ void main() {
         DeviceOrientation.portraitDown,
       ]);
 
-      // Firebase 중복 초기화 방지
+      // 1. Firebase 기본 초기화 (중복 초기화 방지)
       try {
         await Firebase.initializeApp(
-            options: DefaultFirebaseOptions.currentPlatform);
+          options: DefaultFirebaseOptions.currentPlatform
+        );
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 완료');
         }
@@ -76,12 +77,41 @@ void main() {
           }
         } else {
           if (kDebugMode) {
-            debugPrint('🔥 Firebase 초기화 중 오류: $e');
+            debugPrint('🔥 Firebase 초기화 실패: $e');
           }
-          rethrow;
+          // 크래시 방지: 로그만 남기고 계속 진행
         }
       }
 
+      // 2. locale 강제 초기화 (Firebase Messaging보다 먼저 - 중요!)
+      try {
+        final languageService = LanguageService();
+        await languageService.initializeLanguage();
+        final lang = await languageService.getLanguage();
+        if (kDebugMode) {
+          debugPrint('🌐 locale 초기화 완료: $lang');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ locale 초기화 실패 - 기본값 사용: $e');
+        }
+      }
+
+      // 3. Firebase Messaging 안전 대기
+      try {
+        // locale 설정 후 Firebase Messaging이 안정화되도록 대기
+        await Future.delayed(const Duration(milliseconds: 500));
+        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+        if (kDebugMode) {
+          debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          debugPrint('⚠️ FCM 핸들러 등록 실패: $e');
+        }
+      }
+
+      // 4. App Check 초기화
       try {
         if (Platform.isIOS && kDebugMode) {
           if (kDebugMode) debugPrint('🛡️ App Check: iOS debug 빌드 건너뜀');
@@ -98,7 +128,7 @@ void main() {
         }
       }
 
-      // Crashlytics 설정
+      // 5. Crashlytics 설정
       try {
         await FirebaseCrashlytics.instance
             .setCrashlyticsCollectionEnabled(!kDebugMode);
@@ -120,7 +150,7 @@ void main() {
         }
       }
 
-      // 캐시 시스템 초기화
+      // 6. 캐시 시스템 초기화
       try {
         await CacheManager.initialize();
         if (kDebugMode) {
@@ -132,14 +162,11 @@ void main() {
         }
       }
 
-      // FCM 백그라운드 메시지 핸들러 등록
-      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
-      // Firebase Storage 이미지 접근을 위한 Firebase Auth 초기화
-      // 앱 시작 시 Firebase SDK가 완전히 활성화되도록 함
+      // 7. Firebase Auth 및 Firestore 설정
+      // 7. Firebase Auth 및 Firestore 설정
       try {
         if (kDebugMode) {
-          debugPrint('🔥 Firebase 초기화 시작: ${DateTime.now()}');
+          debugPrint('🔥 Firebase 추가 초기화 시작: ${DateTime.now()}');
           debugPrint(
               '🔥 Firebase 프로젝트 ID: ${Firebase.app().options.projectId}');
           debugPrint(
@@ -210,7 +237,7 @@ void main() {
           //  앱 시작 플로우 디버깅을 방해할 수 있음)
         } catch (firestoreError) {
           if (kDebugMode) {
-            debugPrint('❌ Firestore 설정 중 오류: $firestoreError');
+            debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
           }
         }
 
@@ -226,7 +253,7 @@ void main() {
           }
         } catch (storageError) {
           if (kDebugMode) {
-            debugPrint('❌ Firebase Storage 접근 테스트 실패: $storageError');
+            debugPrint('⚠️ Firebase Storage 접근 테스트 실패: $storageError');
             if (storageError.toString().contains('403')) {
               debugPrint('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
               debugPrint('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
@@ -235,11 +262,11 @@ void main() {
         }
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('❌ Firebase 초기화 중 오류: $e');
+          debugPrint('⚠️ Firebase 추가 초기화 중 오류: $e');
         }
       }
 
-      // FeatureFlagService 초기화
+      // 8. FeatureFlagService 초기화
       try {
         await FeatureFlagService().init();
         if (kDebugMode) {
@@ -262,7 +289,15 @@ void main() {
       );
     },
     (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      // 크래시 리포트 (최선을 다하되 크래시는 방지)
+      try {
+        FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      } catch (_) {
+        // Crashlytics 리포트 실패해도 앱 실행은 계속
+        if (kDebugMode) {
+          debugPrint('⚠️ Crashlytics 리포트 실패: $error');
+        }
+      }
     },
   );
 }

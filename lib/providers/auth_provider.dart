@@ -407,6 +407,9 @@ class AuthProvider with ChangeNotifier {
         
         // FCM 초기화 (알림 기능)
         try {
+          if (kDebugMode) {
+            debugPrint('📱 FCM 초기화 시작 (Google 로그인)');
+          }
           await FCMService().initialize(_user!.uid);
           Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
@@ -546,6 +549,9 @@ class AuthProvider with ChangeNotifier {
         
         // FCM 초기화 (알림 기능)
         try {
+          if (kDebugMode) {
+            debugPrint('📱 FCM 초기화 시작 (Apple 로그인)');
+          }
           await FCMService().initialize(_user!.uid);
           Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
@@ -1734,6 +1740,9 @@ class AuthProvider with ChangeNotifier {
 
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
+    // ✅ v1.0.32: Firebase 초기화 순서 문제 해결 후 iOS FCM 재활성화
+    // iOS 크래시가 여전히 발생하면 다시 비활성화 필요
+    
     // 이미 초기화되었거나 사용자가 없으면 스킵
     if (_fcmInitialized || _user == null || _userData == null) {
       return;
@@ -1747,8 +1756,14 @@ class AuthProvider with ChangeNotifier {
     }
     
     try {
+      if (kDebugMode) {
+        debugPrint('📱 FCM 초기화 시작 (iOS 포함)');
+      }
       await FCMService().initialize(_user!.uid);
       _fcmInitialized = true;
+      if (kDebugMode) {
+        debugPrint('✅ FCM 초기화 완료');
+      }
     } catch (e) {
       Logger.error('⚠️ FCM 자동 초기화 실패 (계속 진행): $e');
       // 실패해도 앱 사용에는 지장 없음 (best-effort)

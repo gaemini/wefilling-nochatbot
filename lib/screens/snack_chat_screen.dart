@@ -57,6 +57,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   DateTime? _oldestMessageTime;
   bool _hasMore = true;
   bool _isLoadingMore = false;
+  bool _isInitialLoading = true;  // 초기 로딩 상태 추가
 
   @override
   void initState() {
@@ -94,6 +95,9 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       if (!mounted) return;
       _scheduleMarkAsRead();
       setState(() {
+        // 초기 로딩 완료
+        _isInitialLoading = false;
+        
         for (final m in incoming) {
           if (!_messageIds.contains(m.id)) {
             _messageIds.add(m.id);
@@ -322,47 +326,73 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
           body: Column(
             children: [
               Expanded(
-                child: _messages.isEmpty
+                child: _isInitialLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : ListView.builder(
-                        controller: _scrollController,
-                        reverse: true,
-                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                        itemCount: _messages.length + (_hasMore ? 1 : 0),
-                        itemBuilder: (context, index) {
-                          // 맨 아래(오래된 쪽)에 로딩 인디케이터
-                          if (index == _messages.length) {
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 12),
-                              child: Center(
-                                child: _isLoadingMore
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2),
-                                      )
-                                    : const SizedBox.shrink(),
-                              ),
-                            );
-                          }
-                          final msg = _messages[index];
-                          final isMe = msg.senderId == _uid;
-                          final String timeText = _formatTime(msg.createdAt);
-                          final String? prevTimeText = index > 0
-                              ? _formatTime(_messages[index - 1].createdAt)
-                              : null;
-                          final bool showTimeText =
-                              prevTimeText == null || timeText != prevTimeText;
-                          return _buildMessageBubble(
-                            message: msg,
-                            isMe: isMe,
-                            timeText: timeText,
-                            showTimeText: showTimeText,
-                          );
-                        },
-                      ),
+                    : _messages.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 64,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isKo
+                                      ? '아직 메시지가 없습니다.\n첫 메시지를 보내보세요!'
+                                      : 'No messages yet.\nSend the first message!',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 14,
+                                    color: Colors.grey.shade500,
+                                    height: 1.5,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: _scrollController,
+                            reverse: true,
+                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                            itemCount: _messages.length + (_hasMore ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              // 맨 아래(오래된 쪽)에 로딩 인디케이터
+                              if (index == _messages.length) {
+                                return Padding(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 12),
+                                  child: Center(
+                                    child: _isLoadingMore
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                                strokeWidth: 2),
+                                          )
+                                        : const SizedBox.shrink(),
+                                  ),
+                                );
+                              }
+                              final msg = _messages[index];
+                              final isMe = msg.senderId == _uid;
+                              final String timeText = _formatTime(msg.createdAt);
+                              final String? prevTimeText = index > 0
+                                  ? _formatTime(_messages[index - 1].createdAt)
+                                  : null;
+                              final bool showTimeText =
+                                  prevTimeText == null || timeText != prevTimeText;
+                              return _buildMessageBubble(
+                                message: msg,
+                                isMe: isMe,
+                                timeText: timeText,
+                                showTimeText: showTimeText,
+                              );
+                            },
+                          ),
               ),
               SafeArea(
                 top: false,

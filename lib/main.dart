@@ -18,6 +18,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
@@ -70,6 +71,13 @@ void main() {
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 완료');
         }
+        
+        // ✅ CRITICAL FIX: Firebase 완전 초기화 대기 (iOS 필수)
+        // Firebase.initializeApp()이 완료되어도 내부적으로 모든 서비스가 준비되지 않을 수 있음
+        await Future.delayed(const Duration(seconds: 2));
+        if (kDebugMode) {
+          debugPrint('✅ Firebase 안정화 대기 완료');
+        }
       } catch (e) {
         if (e.toString().contains('duplicate-app')) {
           if (kDebugMode) {
@@ -80,6 +88,68 @@ void main() {
             debugPrint('🔥 Firebase 초기화 실패: $e');
           }
           // 크래시 방지: 로그만 남기고 계속 진행
+        }
+      }
+
+      // 1-A. 버전 기반 마이그레이션 (Firebase Messaging 캐시 정리)
+      // ✅ iOS에서만 실행하고, Firebase 완전 초기화 후에만 실행
+      if (!kIsWeb && Platform.isIOS) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          final lastVersion = prefs.getString('last_app_version') ?? '';
+          const currentVersion = '1.0.33'; // pubspec.yaml과 동기화 필요
+          
+          if (kDebugMode) {
+            debugPrint('📌 버전 체크: "$lastVersion" → "$currentVersion"');
+          }
+          
+          // 문제가 있던 버전에서 업데이트한 경우
+          if (lastVersion.isNotEmpty && lastVersion != currentVersion) {
+            const problematicVersions = [
+              '1.0.19', '1.0.20', '1.0.21', '1.0.22', 
+              '1.0.23', '1.0.24', '1.0.25', '1.0.26', 
+              '1.0.27', '1.0.28', '1.0.29', '1.0.30', '1.0.31', '1.0.32'
+            ];
+            
+            if (problematicVersions.contains(lastVersion)) {
+              if (kDebugMode) {
+                debugPrint('🔄 문제 버전 감지: $lastVersion');
+                debugPrint('   FCM 토큰 강제 재생성 시작...');
+              }
+              
+              try {
+                // Firebase Messaging이 완전히 준비될 때까지 추가 대기
+                await Future.delayed(const Duration(milliseconds: 1000));
+                
+                await FirebaseMessaging.instance.deleteToken().timeout(
+                  const Duration(seconds: 5),
+                  onTimeout: () {
+                    if (kDebugMode) {
+                      debugPrint('⏱️ FCM 토큰 삭제 타임아웃');
+                    }
+                  },
+                );
+                await Future.delayed(const Duration(milliseconds: 1500));
+                
+                if (kDebugMode) {
+                  debugPrint('✅ FCM 토큰 삭제 완료 (재생성 대기)');
+                }
+              } catch (tokenError) {
+                if (kDebugMode) {
+                  debugPrint('⚠️ FCM 토큰 삭제 실패 (무시): $tokenError');
+                }
+              }
+            }
+          }
+          
+          await prefs.setString('last_app_version', currentVersion);
+          if (kDebugMode) {
+            debugPrint('✅ 버전 기록 완료: $currentVersion');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ 버전 마이그레이션 실패(무시): $e');
+          }
         }
       }
 
@@ -107,11 +177,11 @@ void main() {
         // locale 완전 안정화 후 Firebase Messaging 초기화
         await Future.delayed(const Duration(milliseconds: 500));
         
-        // 백그라운드 핸들러 등록을 try-catch로 감싸기
+        // ✅ v1.0.33: iOS FCM 백그라운드 핸들러 재활성화
         try {
           FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
           if (kDebugMode) {
-            debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
+            debugPrint('📱 FCM 백그라운드 핸들러 등록 완료 (iOS 포함)');
           }
         } catch (handlerError) {
           if (kDebugMode) {

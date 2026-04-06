@@ -178,6 +178,24 @@ class FCMService {
   Future<void> initialize(String userId) async {
     // 전체 초기화를 try-catch로 래핑 (최상위 보호)
     try {
+      // ✅ PHASE 3: iOS 추가 안전 장치 - getToken 전에 한 번 더 확인
+      if (!kIsWeb && Platform.isIOS) {
+        try {
+          Logger.log('🔄 FCM 초기화 전 토큰 정리 시작...');
+          // 이전에 정리가 안 됐을 가능성 대비
+          await _messaging.deleteToken().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {
+              Logger.log('⏱️ FCM 초기화 전 토큰 삭제 타임아웃');
+            },
+          );
+          await Future.delayed(const Duration(milliseconds: 500));
+          Logger.log('✅ FCM 초기화 전 토큰 정리 완료');
+        } catch (e) {
+          Logger.error('FCM 초기화 전 정리 실패(무시)', e);
+        }
+      }
+      
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
       try {
         await _ensureLocaleInitialized();

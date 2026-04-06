@@ -153,22 +153,22 @@ class FCMService {
   // Firebase Installations 리셋 로직
   Future<void> _resetFirebaseInstallationsIfNeeded() async {
     try {
-      // Firebase Installations ID가 손상된 경우 재생성
-      // 이는 기존 사용자의 Installation ID와 새 앱 버전 간 충돌을 방지
-      // Note: firebase_installations 플러그인이 없으므로 토큰 삭제로 대체
+      // iOS에서 기존 사용자의 손상된 Installation ID/토큰 강제 초기화
+      // 이 작업은 getToken()을 호출하지 않고 바로 삭제를 시도
+      Logger.log('🔄 Firebase 상태 초기화 시작...');
       
-      final currentToken = await _messaging.getToken().timeout(
-        const Duration(seconds: 3),
-        onTimeout: () => null,
+      // 토큰 삭제 시도 (이미 없어도 오류 발생하지 않음)
+      await _messaging.deleteToken().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () {
+          Logger.log('⏱️ 토큰 삭제 타임아웃');
+        },
       );
       
-      if (currentToken == null) {
-        Logger.log('⚠️ FCM 토큰이 null - Firebase 상태 리셋 시도');
-        await _messaging.deleteToken();
-        await Future.delayed(const Duration(milliseconds: 500));
-      } else {
-        Logger.log('✅ FCM 토큰 확인됨: ${currentToken.substring(0, 20)}...');
-      }
+      Logger.log('✅ Firebase 토큰 초기화 완료');
+      
+      // 초기화 후 안정화 대기
+      await Future.delayed(const Duration(milliseconds: 1000));
     } catch (e) {
       Logger.error('Firebase Installations 리셋 실패 (무시)', e);
     }
@@ -176,111 +176,176 @@ class FCMService {
 
   // FCM 초기화
   Future<void> initialize(String userId) async {
+    // 전체 초기화를 try-catch로 래핑 (최상위 보호)
     try {
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
-      await _ensureLocaleInitialized();
+      try {
+        await _ensureLocaleInitialized();
+      } catch (e) {
+        Logger.error('locale 초기화 실패 - 계속 진행', e);
+      }
       
       // 기존 Firebase 상태 충돌 방지
-      await _resetFirebaseInstallationsIfNeeded();
+      try {
+        await _resetFirebaseInstallationsIfNeeded();
+      } catch (e) {
+        Logger.error('Firebase 상태 리셋 실패 - 계속 진행', e);
+      }
 
       // 로컬 알림 초기화
-      await _initializeLocalNotifications();
+      try {
+        await _initializeLocalNotifications();
+      } catch (e) {
+        Logger.error('로컬 알림 초기화 실패 - 계속 진행', e);
+      }
 
       // ✅ Android 13+: POST_NOTIFICATIONS 런타임 권한을 명시적으로 요청
       if (!kIsWeb && Platform.isAndroid) {
-        await _ensureAndroidPostNotificationsPermission();
+        try {
+          await _ensureAndroidPostNotificationsPermission();
+        } catch (e) {
+          Logger.error('Android 알림 권한 요청 실패 - 계속 진행', e);
+        }
       }
 
       // iOS: 알림 권한 요청 (Android는 의미가 약하므로 best-effort로만 호출)
-      final settings = await _messaging.requestPermission(
-        alert: true,
-        announcement: false,
-        badge: true,
-        carPlay: false,
-        criticalAlert: false,
-        provisional: false,
-        sound: true,
-      );
+      try {
+        final settings = await _messaging.requestPermission(
+          alert: true,
+          announcement: false,
+          badge: true,
+          carPlay: false,
+          criticalAlert: false,
+          provisional: false,
+          sound: true,
+        );
 
-      if (!kIsWeb && Platform.isIOS) {
-        if (settings.authorizationStatus == AuthorizationStatus.authorized) {
-          // ok
-        } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
-          // ok (quiet)
-        } else {
-          Logger.log('❌ iOS 알림 권한 거부됨');
-          return;
+        if (!kIsWeb && Platform.isIOS) {
+          if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+            Logger.log('✅ iOS 알림 권한 승인됨');
+          } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+            Logger.log('✅ iOS 알림 권한 Provisional');
+          } else {
+            Logger.log('❌ iOS 알림 권한 거부됨 - FCM 초기화 중단');
+            return; // 권한 없으면 FCM 초기화 중단
+          }
         }
+      } catch (e) {
+        Logger.error('권한 요청 실패 - 계속 진행', e);
+        // 권한 요청 실패해도 앱은 계속 실행 (FCM 기능만 제한)
       }
 
       // ✅ iOS(포그라운드): 시스템 자동 배너를 끄고(전역),
       //    Flutter에서 "원할 때만" 로컬 알림을 표시한다.
       // - 목적: DM 채팅 중에는 DM 알림을 띄우지 않기 위함(대화방 활성 시)
       if (!kIsWeb && Platform.isIOS) {
-        await _messaging.setForegroundNotificationPresentationOptions(
-          alert: false,
-          badge: false,
-          sound: true,
-        );
+        try {
+          await _messaging.setForegroundNotificationPresentationOptions(
+            alert: false,
+            badge: false,
+            sound: true,
+          ).timeout(
+            const Duration(seconds: 3),
+            onTimeout: () {
+              Logger.log('⏱️ 포그라운드 설정 타임아웃');
+            },
+          );
+        } catch (e) {
+          Logger.error('포그라운드 설정 실패 - 계속 진행', e);
+        }
       }
 
       // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
-      _startTokenSync(userId);
+      try {
+        _startTokenSync(userId);
+      } catch (e) {
+        Logger.error('토큰 동기화 시작 실패 - 계속 진행', e);
+      }
 
       // 토큰 갱신 리스너 등록
-      _messaging.onTokenRefresh.listen((newToken) {
-        Logger.log('📱 FCM 토큰 갱신: $newToken');
-        _saveFCMToken(userId, newToken);
-      });
+      try {
+        _messaging.onTokenRefresh.listen((newToken) {
+          Logger.log('📱 FCM 토큰 갱신: $newToken');
+          _saveFCMToken(userId, newToken);
+        });
+      } catch (e) {
+        Logger.error('토큰 갱신 리스너 등록 실패 - 계속 진행', e);
+      }
 
       // 포어그라운드 메시지 리스너 등록
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
-        Logger.log('📱 제목: ${message.notification?.title}');
-        Logger.log('📱 내용: ${message.notification?.body}');
-        Logger.log('📱 데이터: ${message.data}');
+      try {
+        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+          try {
+            Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
+            Logger.log('📱 제목: ${message.notification?.title}');
+            Logger.log('📱 내용: ${message.notification?.body}');
+            Logger.log('📱 데이터: ${message.data}');
 
-        // ✅ 포그라운드 알림 정책:
-        // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
-        // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
-        final type = (message.data['type'] ?? '').toString();
-        final conversationId = (message.data['conversationId'] ?? '').toString();
-        final snackChatId = (message.data['snackChatId'] ?? '').toString();
-        final isDm = type == 'dm_received' && conversationId.isNotEmpty;
-        final isSnackChat = type == 'snack_chat_message' && snackChatId.isNotEmpty;
+            // ✅ 포그라운드 알림 정책:
+            // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
+            // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
+            final type = (message.data['type'] ?? '').toString();
+            final conversationId = (message.data['conversationId'] ?? '').toString();
+            final snackChatId = (message.data['snackChatId'] ?? '').toString();
+            final isDm = type == 'dm_received' && conversationId.isNotEmpty;
+            final isSnackChat = type == 'snack_chat_message' && snackChatId.isNotEmpty;
 
-        if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
-          final isActiveConversation =
-              (isDm && DMActiveConversation.isActive(conversationId)) ||
-              (isSnackChat && SnackChatActiveConversation.isActive(snackChatId));
+            if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
+              final isActiveConversation =
+                  (isDm && DMActiveConversation.isActive(conversationId)) ||
+                  (isSnackChat && SnackChatActiveConversation.isActive(snackChatId));
 
-          if (isActiveConversation) {
-            return;
+              if (isActiveConversation) {
+                return;
+              }
+
+              final badgeStr = (message.data['badge'] ?? '').toString();
+              final badge = int.tryParse(badgeStr);
+              if (badge != null && badge >= 0) {
+                unawaited(BadgeService.applyBadgeFromPush(badge));
+              }
+
+              unawaited(_showLocalNotification(message));
+            }
+          } catch (e) {
+            Logger.error('포어그라운드 메시지 처리 실패', e);
           }
-
-          final badgeStr = (message.data['badge'] ?? '').toString();
-          final badge = int.tryParse(badgeStr);
-          if (badge != null && badge >= 0) {
-            unawaited(BadgeService.applyBadgeFromPush(badge));
-          }
-
-          unawaited(_showLocalNotification(message));
-        }
-      });
+        });
+      } catch (e) {
+        Logger.error('포어그라운드 메시지 리스너 등록 실패 - 계속 진행', e);
+      }
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-        Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
-        Logger.log('📱 데이터: ${message.data}');
-        await NavigationService.handlePushNavigation(message.data);
-      });
+      try {
+        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+          try {
+            Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
+            Logger.log('📱 데이터: ${message.data}');
+            await NavigationService.handlePushNavigation(message.data);
+          } catch (e) {
+            Logger.error('백그라운드 메시지 처리 실패', e);
+          }
+        });
+      } catch (e) {
+        Logger.error('백그라운드 메시지 리스너 등록 실패 - 계속 진행', e);
+      }
 
       // 앱이 종료된 상태에서 알림을 통해 열렸을 때
-      RemoteMessage? initialMessage = await _messaging.getInitialMessage();
-      if (initialMessage != null) {
-        Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
-        Logger.log('📱 데이터: ${initialMessage.data}');
-        await NavigationService.handlePushNavigation(initialMessage.data);
+      try {
+        RemoteMessage? initialMessage = await _messaging.getInitialMessage().timeout(
+          const Duration(seconds: 3),
+          onTimeout: () {
+            Logger.log('⏱️ getInitialMessage 타임아웃');
+            return null;
+          },
+        );
+        if (initialMessage != null) {
+          Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
+          Logger.log('📱 데이터: ${initialMessage.data}');
+          await NavigationService.handlePushNavigation(initialMessage.data);
+        }
+      } catch (e) {
+        Logger.error('초기 메시지 처리 실패 - 계속 진행', e);
       }
 
     } catch (e) {

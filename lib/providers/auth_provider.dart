@@ -5,6 +5,7 @@
 
 import 'dart:io' show Platform;
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -80,41 +81,83 @@ class AuthProvider with ChangeNotifier {
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
   AuthProvider() {
-    _initializeAuth();
+    if (kDebugMode) {
+      debugPrint('🔐 AuthProvider 생성자 시작: ${DateTime.now()}');
+    }
+    
+    // 초기화를 Future.microtask로 지연 - 크래시 방지
+    Future.microtask(() async {
+      try {
+        if (kDebugMode) {
+          debugPrint('🔐 AuthProvider microtask 시작: ${DateTime.now()}');
+        }
+        await _initializeAuth();
+        if (kDebugMode) {
+          debugPrint('🔐 AuthProvider 초기화 완료: ${DateTime.now()}');
+        }
+      } catch (e) {
+        Logger.error('AuthProvider 초기화 실패 - 앱은 계속 실행', e);
+        _isLoading = false;
+        notifyListeners();
+        if (kDebugMode) {
+          debugPrint('⚠️ AuthProvider 초기화 실패했지만 앱 계속 실행: ${DateTime.now()}');
+        }
+      }
+    });
   }
 
   // 초기화 함수 분리
   Future<void> _initializeAuth() async {
-    // Google Sign-In 7.x 초기화 (플랫폼별 분기)
     try {
-      // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
-      final clientId = AppConfig.getGoogleClientId();
-      
-      await _googleSignIn.initialize(clientId: clientId);
-    } catch (e) {
-      Logger.error('Google Sign-In 초기화 실패: $e');
-    }
+      // Google Sign-In 7.x 초기화 (플랫폼별 분기)
+      try {
+        // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
+        final clientId = AppConfig.getGoogleClientId();
+        
+        await _googleSignIn.initialize(clientId: clientId);
+      } catch (e) {
+        Logger.error('Google Sign-In 초기화 실패: $e');
+      }
 
-    // 먼저 현재 사용자 확인
-    _user = _auth.currentUser;
+      // 먼저 현재 사용자 확인
+      _user = _auth.currentUser;
 
-    // 사용자 인증 상태 변화 감지
-    _auth.authStateChanges().listen((User? user) async {
-      _user = user;
-      if (user != null) {
-        // 사용자 데이터 가져오기
-        await _loadUserData();
+      // 사용자 인증 상태 변화 감지
+      _auth.authStateChanges().listen((User? user) async {
+        _user = user;
+        if (user != null) {
+          // 사용자 데이터 가져오기 - 크래시 방지
+          try {
+            await _loadUserData();
+          } catch (e) {
+            Logger.error('authStateChanges 내 _loadUserData 실패', e);
+            _userData = null;
+            _isLoading = false;
+            notifyListeners();
+          }
+        } else {
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+        }
+      });
+
+      // 이미 로그인되어 있다면 데이터 로드
+      if (_user != null) {
+        try {
+          await _loadUserData();
+        } catch (e) {
+          Logger.error('초기 _loadUserData 실패', e);
+          _userData = null;
+          _isLoading = false;
+          notifyListeners();
+        }
       } else {
-        _userData = null;
         _isLoading = false;
         notifyListeners();
       }
-    });
-
-    // 이미 로그인되어 있다면 데이터 로드
-    if (_user != null) {
-      await _loadUserData();
-    } else {
+    } catch (e) {
+      Logger.error('_initializeAuth 전체 실패', e);
       _isLoading = false;
       notifyListeners();
     }
@@ -167,6 +210,12 @@ class AuthProvider with ChangeNotifier {
         final docRef = _firestore.collection('users').doc(_user!.uid);
         final doc = await docRef.get(
           const GetOptions(source: Source.serverAndCache),
+        ).timeout(
+          const Duration(seconds: 30),  // 10초 → 30초로 증가
+          onTimeout: () {
+            Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
+            throw TimeoutException('사용자 데이터 로드 타임아웃');
+          },
         );
             
         if (doc.exists) {
@@ -174,10 +223,32 @@ class AuthProvider with ChangeNotifier {
 
           // ✅ 가입 경로(구글/애플/이메일)와 무관하게 users/{uid} 스키마가 동일하도록 보정
           // - 서버 함수/레거시 코드로 "부분 필드만 있는 문서"가 남아있는 경우를 수습
+          // - 크래시 방지: 스키마 보정 실패해도 앱은 계속 실행
           try {
             await _ensureUserDocSchema(docRef: docRef, existingData: _userData);
+            
+            // ✅ 스키마 보정 후 문서 다시 읽기 (보정된 필드 반영)
+            if (kDebugMode) {
+              debugPrint('🔄 스키마 보정 완료 - 문서 재로드');
+            }
+            final updatedDoc = await docRef.get(
+              const GetOptions(source: Source.serverAndCache),
+            ).timeout(
+              const Duration(seconds: 10),  // 5초 → 10초로 증가
+              onTimeout: () {
+                Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
+                throw TimeoutException('재로드 타임아웃');
+              },
+            );
+            if (updatedDoc.exists) {
+              _userData = updatedDoc.data();
+              if (kDebugMode) {
+                debugPrint('✅ 스키마 보정 후 문서 재로드 완료');
+              }
+            }
           } catch (e) {
             Logger.error('⚠️ users 문서 스키마 보정 실패(무시): $e');
+            // 스키마 보정 실패해도 기존 데이터로 계속 진행
           }
           break; // 성공시 루프 종료
         } else {
@@ -1869,7 +1940,19 @@ class AuthProvider with ChangeNotifier {
     final updates = _computeMissingUserSchemaFields(existingData: data, user: user);
     if (updates.isEmpty) return;
 
-    await docRef.set(updates, SetOptions(merge: true));
+    try {
+      await docRef.set(updates, SetOptions(merge: true)).timeout(
+        const Duration(seconds: 10),  // 5초 → 10초로 증가
+        onTimeout: () {
+          Logger.log('⏱️ 스키마 보정 타임아웃');
+          throw TimeoutException('스키마 보정 타임아웃');
+        },
+      );
+    } catch (e) {
+      Logger.error('스키마 보정 실패 - 기존 데이터로 계속', e);
+      // 스키마 보정 실패해도 크래시하지 않고 계속 진행
+      rethrow;
+    }
   }
 
   /// 누락 필드 계산: "키 자체가 없거나 null"이면 기본값을 넣는다.
@@ -1916,6 +1999,9 @@ class AuthProvider with ChangeNotifier {
     if (missing('fcmToken')) updates['fcmToken'] = '';
     if (missing('fcmTokens')) updates['fcmTokens'] = <String>[];
     if (missing('fcmTokenUpdatedAt')) updates['fcmTokenUpdatedAt'] = null;
+
+    // 스냅챗 뮤트 목록
+    if (missing('mutedSnackChatIds')) updates['mutedSnackChatIds'] = <String>[];
 
     // 언어
     if (missing('preferredLanguage')) updates['preferredLanguage'] = 'ko';
@@ -1966,6 +2052,7 @@ class AuthProvider with ChangeNotifier {
       'fcmToken': '',
       'fcmTokens': <String>[],
       'fcmTokenUpdatedAt': null,
+      'mutedSnackChatIds': <String>[],
       'preferredLanguage': 'ko',
       'preferredLanguageUpdatedAt': null,
       'termsAccepted': true,

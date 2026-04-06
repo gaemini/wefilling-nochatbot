@@ -352,14 +352,32 @@ class SnackChatService {
     final uid = _uid;
     if (uid == null) return;
     final userRef = _firestore.collection('users').doc(uid);
-    if (mute) {
-      await userRef.update({
-        'mutedSnackChatIds': FieldValue.arrayUnion([snackChatId]),
-      });
-    } else {
-      await userRef.update({
-        'mutedSnackChatIds': FieldValue.arrayRemove([snackChatId]),
-      });
+    
+    try {
+      if (mute) {
+        await userRef.update({
+          'mutedSnackChatIds': FieldValue.arrayUnion([snackChatId]),
+        });
+      } else {
+        await userRef.update({
+          'mutedSnackChatIds': FieldValue.arrayRemove([snackChatId]),
+        });
+      }
+    } catch (e) {
+      Logger.error('SnackChat 뮤트 토글 실패', e);
+      // 필드가 없는 경우 생성 후 재시도
+      if (e.toString().contains('NOT_FOUND') || e.toString().contains('does not exist')) {
+        try {
+          await userRef.set({
+            'mutedSnackChatIds': mute ? [snackChatId] : <String>[],
+          }, SetOptions(merge: true));
+        } catch (retryError) {
+          Logger.error('SnackChat 뮤트 필드 생성 실패', retryError);
+          rethrow;
+        }
+      } else {
+        rethrow;
+      }
     }
   }
 
@@ -371,7 +389,12 @@ class SnackChatService {
       final data = snap.data();
       if (data == null) return const <String>{};
       final list = data['mutedSnackChatIds'];
-      if (list is List) return list.map((e) => e.toString()).toSet();
+      if (list is List) {
+        return list.map((e) => e.toString()).toSet();
+      }
+      return const <String>{};
+    }).handleError((error) {
+      Logger.error('뮤트 목록 스트리밍 에러', error);
       return const <String>{};
     });
   }
@@ -382,10 +405,15 @@ class SnackChatService {
     if (uid == null) return false;
     try {
       final doc = await _firestore.collection('users').doc(uid).get();
-      final list = doc.data()?['mutedSnackChatIds'];
-      if (list is List) return list.any((e) => e.toString() == snackChatId);
+      final data = doc.data();
+      if (data == null) return false;
+      final list = data['mutedSnackChatIds'];
+      if (list is List) {
+        return list.any((e) => e.toString() == snackChatId);
+      }
       return false;
-    } catch (_) {
+    } catch (e) {
+      Logger.error('뮤트 상태 확인 실패', e);
       return false;
     }
   }

@@ -91,30 +91,48 @@ void main() {
         if (kDebugMode) {
           debugPrint('🌐 locale 초기화 완료: $lang');
         }
+        
+        // locale 설정 후 추가 안정화 대기 (iOS 중요)
+        await Future.delayed(const Duration(milliseconds: 1000));
       } catch (e) {
         if (kDebugMode) {
           debugPrint('⚠️ locale 초기화 실패 - 기본값 사용: $e');
         }
+        // 실패해도 기본 locale으로 계속 진행
+        await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      // 3. Firebase Messaging 안전 대기
+      // 3. Firebase Messaging 안전 대기 및 백그라운드 핸들러 등록
       try {
-        // locale 설정 후 Firebase Messaging이 안정화되도록 대기
+        // locale 완전 안정화 후 Firebase Messaging 초기화
         await Future.delayed(const Duration(milliseconds: 500));
-        FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-        if (kDebugMode) {
-          debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
+        
+        // 백그라운드 핸들러 등록을 try-catch로 감싸기
+        try {
+          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+          if (kDebugMode) {
+            debugPrint('📱 FCM 백그라운드 핸들러 등록 완료');
+          }
+        } catch (handlerError) {
+          if (kDebugMode) {
+            debugPrint('⚠️ FCM 핸들러 등록 실패 (무시): $handlerError');
+          }
+          // 핸들러 등록 실패해도 앱은 계속 실행
         }
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('⚠️ FCM 핸들러 등록 실패: $e');
+          debugPrint('⚠️ Firebase Messaging 초기화 실패: $e');
         }
       }
 
       // 4. App Check 초기화
       try {
-        if (Platform.isIOS && kDebugMode) {
-          if (kDebugMode) debugPrint('🛡️ App Check: iOS debug 빌드 건너뜀');
+        // ⚠️ 임시: iOS에서 App Check 완전 비활성화 (TestFlight 크래시 방지)
+        // TODO: 나중에 제대로 된 App Check 설정 필요
+        if (Platform.isIOS) {
+          if (kDebugMode) {
+            debugPrint('🛡️ App Check: iOS 전체 비활성화 (임시)');
+          }
         } else {
           await FirebaseAppCheck.instance.activate(
             providerAndroid: const AndroidDebugProvider(),
@@ -133,11 +151,16 @@ void main() {
         await FirebaseCrashlytics.instance
             .setCrashlyticsCollectionEnabled(!kDebugMode);
 
-        FlutterError.onError =
-            FirebaseCrashlytics.instance.recordFlutterFatalError;
+        FlutterError.onError = (FlutterErrorDetails details) {
+          try {
+            FirebaseCrashlytics.instance.recordFlutterError(details);
+          } catch (_) {}
+        };
 
         PlatformDispatcher.instance.onError = (error, stack) {
-          FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+          try {
+            FirebaseCrashlytics.instance.recordError(error, stack, fatal: false);
+          } catch (_) {}
           return true;
         };
 
@@ -172,6 +195,33 @@ void main() {
           debugPrint(
               '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
         }
+
+        // Firestore 설정 개선 (연결 안정성 향상) - Auth 전에 설정
+        try {
+          if (kDebugMode) {
+            debugPrint('🗃️ Firestore 설정 시작');
+          }
+          final firestore = FirebaseFirestore.instance;
+
+          // 🔥 하이브리드 동기화: Firestore 설정 조정
+          // Android 캐시 문제 해결을 위해 무제한 → 100MB 제한
+          firestore.settings = const Settings(
+            persistenceEnabled: true,
+            cacheSizeBytes:
+                100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
+          );
+
+          if (kDebugMode) {
+            debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
+          }
+        } catch (firestoreError) {
+          if (kDebugMode) {
+            debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
+          }
+        }
+
+        // Firebase Auth 안정화 대기 (중요!)
+        await Future.delayed(const Duration(milliseconds: 1000));
 
         // Firebase Auth 상태 변화 로깅
         FirebaseAuth.instance.authStateChanges().listen((User? user) {
@@ -211,36 +261,6 @@ void main() {
           debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
         }
 
-        // Firestore 설정 개선 (연결 안정성 향상)
-        try {
-          if (kDebugMode) {
-            debugPrint('🗃️ Firestore 설정 시작');
-          }
-          final firestore = FirebaseFirestore.instance;
-
-          // 오프라인 지속성은 Settings를 통해 설정됩니다 (아래 firestore.settings 참고)
-
-          // 🔥 하이브리드 동기화: Firestore 설정 조정
-          // Android 캐시 문제 해결을 위해 무제한 → 100MB 제한
-          firestore.settings = const Settings(
-            persistenceEnabled: true,
-            cacheSizeBytes:
-                100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
-          );
-
-          if (kDebugMode) {
-            debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
-          }
-
-          // 광고 배너는 클라이언트에서 "샘플 생성/덮어쓰기"를 시도하지 않습니다.
-          // (FireStore rules에서 write가 금지되어 permission-denied 로그가 발생하고,
-          //  앱 시작 플로우 디버깅을 방해할 수 있음)
-        } catch (firestoreError) {
-          if (kDebugMode) {
-            debugPrint('⚠️ Firestore 설정 중 오류: $firestoreError');
-          }
-        }
-
         // Firebase Storage 접근 테스트
         try {
           if (kDebugMode) {
@@ -278,26 +298,56 @@ void main() {
         }
       }
 
+      // 9. 최종 안정화 대기 (AuthProvider 초기화 전 중요!)
+      if (kDebugMode) {
+        debugPrint('⏳ 최종 안정화 대기 시작: ${DateTime.now()}');
+      }
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (kDebugMode) {
+        debugPrint('✅ 최종 안정화 완료 - runApp 시작: ${DateTime.now()}');
+      }
+
+      if (kDebugMode) {
+        debugPrint('🚀 runApp 호출: ${DateTime.now()}');
+      }
+
       runApp(
         MultiProvider(
           providers: [
-            ChangeNotifierProvider(create: (_) => app_auth.AuthProvider()),
+            ChangeNotifierProvider(create: (_) {
+              if (kDebugMode) {
+                debugPrint('🔐 AuthProvider 생성 요청: ${DateTime.now()}');
+              }
+              return app_auth.AuthProvider();
+            }),
             ChangeNotifierProvider(create: (_) => RelationshipProvider()),
           ],
           child: const MeetupApp(),
         ),
       );
+
+      if (kDebugMode) {
+        debugPrint('🎉 runApp 완료: ${DateTime.now()}');
+      }
     },
     (error, stack) {
       // 크래시 리포트 (최선을 다하되 크래시는 방지)
+      if (kDebugMode) {
+        debugPrint('❌ runZonedGuarded 에러 캐치: $error');
+        debugPrint('스택: $stack');
+      }
+      
       try {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
-      } catch (_) {
+      } catch (crashlyticsError) {
         // Crashlytics 리포트 실패해도 앱 실행은 계속
         if (kDebugMode) {
-          debugPrint('⚠️ Crashlytics 리포트 실패: $error');
+          debugPrint('⚠️ Crashlytics 리포트 실패: $crashlyticsError');
         }
       }
+      
+      // ❌ 절대 rethrow 하지 않음 - 앱이 종료됨!
+      // production에서도 앱 계속 실행
     },
   );
 }

@@ -274,8 +274,10 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
             }
           },
           child: Scaffold(
-          backgroundColor: Colors.white,
+          backgroundColor: const Color(0xFFFF9A47),
           appBar: AppBar(
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
             centerTitle: true,
             titleSpacing: 0,
             title: Column(
@@ -379,27 +381,45 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                               }
                               final msg = _messages[index];
                               final isMe = msg.senderId == _uid;
+                              
+                              // 시간 표시 로직
                               final String timeText = _formatTime(msg.createdAt);
-                              final String? prevTimeText = index > 0
-                                  ? _formatTime(_messages[index - 1].createdAt)
-                                  : null;
-                              final bool showTimeText =
-                                  prevTimeText == null || timeText != prevTimeText;
+                              
+                              // ✅ 내 메시지: 항상 시간 표시
+                              // ✅ 상대방 메시지: 시간이 바뀔 때만 표시
+                              bool showTimeText;
+                              if (isMe) {
+                                showTimeText = true; // 내 메시지는 항상 표시
+                              } else {
+                                final String? prevTimeText = index > 0
+                                    ? _formatTime(_messages[index - 1].createdAt)
+                                    : null;
+                                showTimeText = prevTimeText == null || timeText != prevTimeText;
+                              }
+                              
+                              // ✅ 이름 표시 로직: 이전 메시지와 발신자가 다르면 이름 표시
+                              final bool showSenderName = index == _messages.length - 1 || // 맨 처음 메시지
+                                  _messages[index + 1].senderId != msg.senderId; // 이전 메시지가 다른 사용자
+                              
                               return _buildMessageBubble(
                                 message: msg,
                                 isMe: isMe,
                                 timeText: timeText,
                                 showTimeText: showTimeText,
+                                showSenderName: showSenderName,
                               );
                             },
                           ),
               ),
-              SafeArea(
-                top: false,
-                child: Container(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                  color: Colors.white,
-                  child: Row(
+              // 하단 입력창 영역 (흰색 배경)
+              Container(
+                color: Colors.white,
+                child: SafeArea(
+                  top: false,
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                    color: Colors.white,
+                    child: Row(
                     children: [
                       IconButton(
                         onPressed: _isUploadingImage ? null : _pickAndSendImage,
@@ -455,6 +475,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                   ),
                 ),
               ),
+              ),
             ],
           ),
         ),
@@ -468,6 +489,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     required bool isMe,
     required String timeText,
     required bool showTimeText,
+    required bool showSenderName,
   }) {
     final hasImage = message.imageUrl != null && message.imageUrl!.isNotEmpty;
     final hasText = message.text.trim().isNotEmpty;
@@ -494,7 +516,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                     fontFamily: 'Pretendard',
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF9CA3AF),
+                    color: Colors.white,
                   ),
                 ),
               ),
@@ -557,7 +579,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 14,
-                          fontWeight: FontWeight.w600,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
@@ -575,21 +597,24 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 이름 표시 (senderName 우선, 없으면 캐시 조회)
-            FutureBuilder<String>(
-              future: _getSenderName(message.senderId, message.senderName),
-              initialData: message.senderName ?? message.senderId,
-              builder: (context, snap) => Text(
-                snap.data ?? message.senderId,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF4B5563),
+            // ✅ 이름 표시 (연속된 메시지면 첫 번째에만 표시)
+            if (showSenderName)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: FutureBuilder<String>(
+                  future: _getSenderName(message.senderId, message.senderName),
+                  initialData: message.senderName ?? message.senderId,
+                  builder: (context, snap) => Text(
+                    snap.data ?? message.senderId,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.black,
+                    ),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 4),
             Row(
               mainAxisAlignment: MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -653,7 +678,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 14,
-                              fontWeight: FontWeight.w600,
+                              fontWeight: FontWeight.w700,
                               color: Color(0xFF111827),
                             ),
                           ),
@@ -675,7 +700,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                         fontFamily: 'Pretendard',
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF9CA3AF),
+                        color: Colors.white,
                       ),
                     ),
                   ),

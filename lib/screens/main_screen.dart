@@ -406,7 +406,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, dmSnapshot) {
           return StreamBuilder<int>(
-            stream: _snackChatService.getTotalUnreadCount(),
+            // ✅ 즐겨찾기 스냅챗만 카운트
+            stream: _snackChatService.getFavoritedUnreadCount(),
             builder: (context, scSnapshot) {
           final l10n = AppLocalizations.of(context)!;
           

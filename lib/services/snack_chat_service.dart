@@ -432,6 +432,23 @@ class SnackChatService {
     }).distinct();
   }
 
+  /// 즐겨찾기된 스냅챗의 안 읽은 메시지 총 개수 스트림
+  Stream<int> getFavoritedUnreadCount() {
+    final uid = _uid;
+    if (uid == null) return Stream.value(0);
+    return _watchMySnackChats().map((chats) {
+      int total = 0;
+      for (final chat in chats) {
+        // 즐겨찾기된 스냅챗만 카운트
+        if (chat.isFavorited) {
+          final v = chat.unreadCount[uid];
+          if (v != null && v > 0) total += v;
+        }
+      }
+      return total < 0 ? 0 : total;
+    }).distinct();
+  }
+
   Future<Set<String>> _getMyFriendIdSet(String uid) async {
     final friends = await _usersRepository.getUserFriends(uid);
     return friends.map((e) => e.uid).toSet();

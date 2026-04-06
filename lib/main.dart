@@ -97,7 +97,7 @@ void main() {
         try {
           final prefs = await SharedPreferences.getInstance();
           final lastVersion = prefs.getString('last_app_version') ?? '';
-          const currentVersion = '1.0.33'; // pubspec.yaml과 동기화 필요
+          const currentVersion = '1.0.34'; // pubspec.yaml과 동기화 필요
           
           if (kDebugMode) {
             debugPrint('📌 버전 체크: "$lastVersion" → "$currentVersion"');
@@ -108,7 +108,8 @@ void main() {
             const problematicVersions = [
               '1.0.19', '1.0.20', '1.0.21', '1.0.22', 
               '1.0.23', '1.0.24', '1.0.25', '1.0.26', 
-              '1.0.27', '1.0.28', '1.0.29', '1.0.30', '1.0.31', '1.0.32'
+              '1.0.27', '1.0.28', '1.0.29', '1.0.30', 
+              '1.0.31', '1.0.32', '1.0.33'
             ];
             
             if (problematicVersions.contains(lastVersion)) {

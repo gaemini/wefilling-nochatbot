@@ -137,7 +137,7 @@ class FCMService {
     try {
       final prefs = await SharedPreferences.getInstance();
       final savedLocale = prefs.getString('app_language');
-      
+
       if (savedLocale == null || savedLocale.isEmpty) {
         // 기본 언어 강제 설정
         await prefs.setString('app_language', 'ko');
@@ -150,27 +150,61 @@ class FCMService {
     }
   }
 
-  // Firebase Installations 리셋 로직
-  Future<void> _resetFirebaseInstallationsIfNeeded() async {
+  Future<bool> _consumeIosRecoveryFlag() async {
+    if (kIsWeb || !Platform.isIOS) return false;
+
     try {
-      // iOS에서 기존 사용자의 손상된 Installation ID/토큰 강제 초기화
-      // 이 작업은 getToken()을 호출하지 않고 바로 삭제를 시도
-      Logger.log('🔄 Firebase 상태 초기화 시작...');
-      
-      // 토큰 삭제 시도 (이미 없어도 오류 발생하지 않음)
+      final prefs = await SharedPreferences.getInstance();
+      final required = prefs.getBool('ios_fcm_recovery_required') ?? false;
+      if (!required) {
+        return false;
+      }
+
+      await prefs.setBool('ios_fcm_recovery_required', false);
+      Logger.log('🛟 iOS FCM 복구 플래그 감지');
+      return true;
+    } catch (e) {
+      Logger.error('iOS FCM 복구 플래그 확인 실패', e);
+      return false;
+    }
+  }
+
+  Future<void> _performDeferredIosTokenRecoveryIfNeeded() async {
+    if (kIsWeb || !Platform.isIOS) return;
+
+    final shouldRecover = await _consumeIosRecoveryFlag();
+    if (!shouldRecover) {
+      return;
+    }
+
+    try {
+      final String? apnsToken = await _messaging.getAPNSToken().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () => null,
+      );
+
+      if (apnsToken == null || apnsToken.isEmpty) {
+        Logger.log('⚠️ iOS FCM 복구 연기: APNs 토큰 미준비');
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('ios_fcm_recovery_required', true);
+        return;
+      }
+
+      Logger.log('🛟 iOS FCM 안전 복구 시작');
       await _messaging.deleteToken().timeout(
-        const Duration(seconds: 2),
+        const Duration(seconds: 5),
         onTimeout: () {
-          Logger.log('⏱️ 토큰 삭제 타임아웃');
+          Logger.log('⏱️ iOS FCM 안전 복구 토큰 삭제 타임아웃');
         },
       );
-      
-      Logger.log('✅ Firebase 토큰 초기화 완료');
-      
-      // 초기화 후 안정화 대기
-      await Future.delayed(const Duration(milliseconds: 1000));
+      await Future.delayed(const Duration(seconds: 1));
+      Logger.log('✅ iOS FCM 안전 복구 완료');
     } catch (e) {
-      Logger.error('Firebase Installations 리셋 실패 (무시)', e);
+      Logger.error('iOS FCM 안전 복구 실패', e);
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('ios_fcm_recovery_required', true);
+      } catch (_) {}
     }
   }
 
@@ -178,36 +212,11 @@ class FCMService {
   Future<void> initialize(String userId) async {
     // 전체 초기화를 try-catch로 래핑 (최상위 보호)
     try {
-      // ✅ PHASE 3: iOS 추가 안전 장치 - getToken 전에 한 번 더 확인
-      if (!kIsWeb && Platform.isIOS) {
-        try {
-          Logger.log('🔄 FCM 초기화 전 토큰 정리 시작...');
-          // 이전에 정리가 안 됐을 가능성 대비
-          await _messaging.deleteToken().timeout(
-            const Duration(seconds: 3),
-            onTimeout: () {
-              Logger.log('⏱️ FCM 초기화 전 토큰 삭제 타임아웃');
-            },
-          );
-          await Future.delayed(const Duration(milliseconds: 500));
-          Logger.log('✅ FCM 초기화 전 토큰 정리 완료');
-        } catch (e) {
-          Logger.error('FCM 초기화 전 정리 실패(무시)', e);
-        }
-      }
-      
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
       try {
         await _ensureLocaleInitialized();
       } catch (e) {
         Logger.error('locale 초기화 실패 - 계속 진행', e);
-      }
-      
-      // 기존 Firebase 상태 충돌 방지
-      try {
-        await _resetFirebaseInstallationsIfNeeded();
-      } catch (e) {
-        Logger.error('Firebase 상태 리셋 실패 - 계속 진행', e);
       }
 
       // 로컬 알림 초기화
@@ -270,6 +279,12 @@ class FCMService {
           );
         } catch (e) {
           Logger.error('포그라운드 설정 실패 - 계속 진행', e);
+        }
+
+        try {
+          await _performDeferredIosTokenRecoveryIfNeeded();
+        } catch (e) {
+          Logger.error('iOS 지연 복구 처리 실패 - 계속 진행', e);
         }
       }
 

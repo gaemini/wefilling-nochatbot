@@ -91,65 +91,34 @@ void main() {
         }
       }
 
-      // 1-A. 버전 기반 마이그레이션 (Firebase Messaging 캐시 정리)
-      // ✅ iOS에서만 실행하고, Firebase 완전 초기화 후에만 실행
+      // 1-A. iOS 버전 마이그레이션
+      // 중요: v1.0.35부터는 iOS 시작 구간에서 FirebaseMessaging.deleteToken()을 호출하지 않습니다.
+      // Crashlytics 스택상 FIRMessagingCurrentLocale / Swift Concurrency 크래시가
+      // 초기 토큰 정리와 겹칠 가능성이 높아, 앱 안정성을 우선합니다.
       if (!kIsWeb && Platform.isIOS) {
         try {
           final prefs = await SharedPreferences.getInstance();
           final lastVersion = prefs.getString('last_app_version') ?? '';
-          const currentVersion = '1.0.34'; // pubspec.yaml과 동기화 필요
-          
+          const currentVersion = '1.0.35'; // pubspec.yaml과 동기화 필요
+
           if (kDebugMode) {
-            debugPrint('📌 버전 체크: "$lastVersion" → "$currentVersion"');
+            debugPrint('📌 iOS 안전 마이그레이션: "$lastVersion" → "$currentVersion"');
           }
-          
-          // 문제가 있던 버전에서 업데이트한 경우
+
           if (lastVersion.isNotEmpty && lastVersion != currentVersion) {
-            const problematicVersions = [
-              '1.0.19', '1.0.20', '1.0.21', '1.0.22', 
-              '1.0.23', '1.0.24', '1.0.25', '1.0.26', 
-              '1.0.27', '1.0.28', '1.0.29', '1.0.30', 
-              '1.0.31', '1.0.32', '1.0.33'
-            ];
-            
-            if (problematicVersions.contains(lastVersion)) {
-              if (kDebugMode) {
-                debugPrint('🔄 문제 버전 감지: $lastVersion');
-                debugPrint('   FCM 토큰 강제 재생성 시작...');
-              }
-              
-              try {
-                // Firebase Messaging이 완전히 준비될 때까지 추가 대기
-                await Future.delayed(const Duration(milliseconds: 1000));
-                
-                await FirebaseMessaging.instance.deleteToken().timeout(
-                  const Duration(seconds: 5),
-                  onTimeout: () {
-                    if (kDebugMode) {
-                      debugPrint('⏱️ FCM 토큰 삭제 타임아웃');
-                    }
-                  },
-                );
-                await Future.delayed(const Duration(milliseconds: 1500));
-                
-                if (kDebugMode) {
-                  debugPrint('✅ FCM 토큰 삭제 완료 (재생성 대기)');
-                }
-              } catch (tokenError) {
-                if (kDebugMode) {
-                  debugPrint('⚠️ FCM 토큰 삭제 실패 (무시): $tokenError');
-                }
-              }
+            await prefs.setBool('ios_fcm_recovery_required', true);
+            if (kDebugMode) {
+              debugPrint('🛟 iOS FCM 복구 플래그 설정 완료');
             }
           }
-          
+
           await prefs.setString('last_app_version', currentVersion);
           if (kDebugMode) {
             debugPrint('✅ 버전 기록 완료: $currentVersion');
           }
         } catch (e) {
           if (kDebugMode) {
-            debugPrint('⚠️ 버전 마이그레이션 실패(무시): $e');
+            debugPrint('⚠️ iOS 버전 마이그레이션 실패(무시): $e');
           }
         }
       }
@@ -173,26 +142,23 @@ void main() {
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      // 3. Firebase Messaging 안전 대기 및 백그라운드 핸들러 등록
+      // 3. Firebase Messaging 백그라운드 핸들러 등록
       try {
-        // locale 완전 안정화 후 Firebase Messaging 초기화
         await Future.delayed(const Duration(milliseconds: 500));
-        
-        // ✅ v1.0.33: iOS FCM 백그라운드 핸들러 재활성화
-        try {
+
+        // iOS는 시작 직후 Messaging에 과도하게 접근하지 않도록 지연 초기화만 사용한다.
+        // 백그라운드 핸들러는 Android에만 등록해도 핵심 푸시 기능에는 영향이 없다.
+        if (!kIsWeb && Platform.isAndroid) {
           FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
           if (kDebugMode) {
-            debugPrint('📱 FCM 백그라운드 핸들러 등록 완료 (iOS 포함)');
+            debugPrint('📱 Android FCM 백그라운드 핸들러 등록 완료');
           }
-        } catch (handlerError) {
-          if (kDebugMode) {
-            debugPrint('⚠️ FCM 핸들러 등록 실패 (무시): $handlerError');
-          }
-          // 핸들러 등록 실패해도 앱은 계속 실행
+        } else if (!kIsWeb && Platform.isIOS && kDebugMode) {
+          debugPrint('📱 iOS는 안전 모드로 지연 초기화 - 백그라운드 핸들러 등록 생략');
         }
       } catch (e) {
         if (kDebugMode) {
-          debugPrint('⚠️ Firebase Messaging 초기화 실패: $e');
+          debugPrint('⚠️ Firebase Messaging 핸들러 등록 실패: $e');
         }
       }
 

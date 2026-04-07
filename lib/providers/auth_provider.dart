@@ -411,6 +411,7 @@ class AuthProvider with ChangeNotifier {
             debugPrint('📱 FCM 초기화 시작 (Google 로그인)');
           }
           await FCMService().initialize(_user!.uid);
+          _fcmInitialized = true;
           Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
           Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
@@ -553,6 +554,7 @@ class AuthProvider with ChangeNotifier {
             debugPrint('📱 FCM 초기화 시작 (Apple 로그인)');
           }
           await FCMService().initialize(_user!.uid);
+          _fcmInitialized = true;
           Logger.log('✅ FCM 초기화 완료');
         } catch (e) {
           Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
@@ -768,6 +770,7 @@ class AuthProvider with ChangeNotifier {
       // FCM 초기화
       try {
         await FCMService().initialize(_user!.uid);
+        _fcmInitialized = true;
         Logger.log('✅ FCM 초기화 완료');
       } catch (e) {
         Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');

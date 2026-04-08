@@ -17,6 +17,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../services/fcm_service.dart';
 import '../services/badge_service.dart';
 import '../services/auth_service.dart';
+import '../services/language_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../services/avatar_cache_service.dart';
 import '../config/app_config.dart';
@@ -28,7 +29,8 @@ class AuthProvider with ChangeNotifier {
   static const Duration _profileNicknameCooldown = Duration(days: 3);
   static const Duration _profileNationalityCooldown = Duration(days: 3);
 
-  String _profilePhotoPathForUid(String uid) => '$_profilePhotoPathPrefix$uid/profile.jpg';
+  String _profilePhotoPathForUid(String uid) =>
+      '$_profilePhotoPathPrefix$uid/profile.jpg';
 
   String _extractStorageDownloadToken(String url) {
     try {
@@ -58,6 +60,7 @@ class AuthProvider with ChangeNotifier {
     }
     return 0;
   }
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -67,16 +70,20 @@ class AuthProvider with ChangeNotifier {
   User? _user;
   bool _isLoading = true;
   Map<String, dynamic>? _userData;
-  
+
   // 최근 로그인 시도에서 회원가입 필요 여부를 저장 (UI 알림 용도)
   bool _signupRequired = false;
-  
+
   // 로그아웃 진행 상태 추적
   String? _logoutStatus;
-  
+
   // FCM 초기화 완료 플래그 (세션 내 중복 방지)
   bool _fcmInitialized = false;
-  
+  bool _fcmInitializing = false;
+  String? _fcmInitializedUserId;
+  final LanguageService _languageService = LanguageService();
+  final FCMService _fcmService = FCMService();
+
   // 스트림 정리를 위한 콜백 리스트
   final List<VoidCallback> _streamCleanupCallbacks = [];
 
@@ -84,7 +91,7 @@ class AuthProvider with ChangeNotifier {
     if (kDebugMode) {
       debugPrint('🔐 AuthProvider 생성자 시작: ${DateTime.now()}');
     }
-    
+
     // 초기화를 Future.microtask로 지연 - 크래시 방지
     Future.microtask(() async {
       try {
@@ -113,7 +120,7 @@ class AuthProvider with ChangeNotifier {
       try {
         // iOS/macOS만 clientId 전달, Android는 google-services.json 사용
         final clientId = AppConfig.getGoogleClientId();
-        
+
         await _googleSignIn.initialize(clientId: clientId);
       } catch (e) {
         Logger.error('Google Sign-In 초기화 실패: $e');
@@ -186,10 +193,10 @@ class AuthProvider with ChangeNotifier {
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
-  
+
   // 로그아웃 진행 상태
   String? get logoutStatus => _logoutStatus;
-  
+
   // 최근 로그인 시도에서 회원가입 필요 플래그를 소모하고 반환
   bool consumeSignupRequiredFlag() {
     final wasRequired = _signupRequired;
@@ -208,16 +215,18 @@ class AuthProvider with ChangeNotifier {
     while (retryCount < maxRetries) {
       try {
         final docRef = _firestore.collection('users').doc(_user!.uid);
-        final doc = await docRef.get(
+        final doc = await docRef
+            .get(
           const GetOptions(source: Source.serverAndCache),
-        ).timeout(
-          const Duration(seconds: 30),  // 10초 → 30초로 증가
+        )
+            .timeout(
+          const Duration(seconds: 30), // 10초 → 30초로 증가
           onTimeout: () {
             Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
             throw TimeoutException('사용자 데이터 로드 타임아웃');
           },
         );
-            
+
         if (doc.exists) {
           _userData = doc.data();
 
@@ -226,15 +235,17 @@ class AuthProvider with ChangeNotifier {
           // - 크래시 방지: 스키마 보정 실패해도 앱은 계속 실행
           try {
             await _ensureUserDocSchema(docRef: docRef, existingData: _userData);
-            
+
             // ✅ 스키마 보정 후 문서 다시 읽기 (보정된 필드 반영)
             if (kDebugMode) {
               debugPrint('🔄 스키마 보정 완료 - 문서 재로드');
             }
-            final updatedDoc = await docRef.get(
+            final updatedDoc = await docRef
+                .get(
               const GetOptions(source: Source.serverAndCache),
-            ).timeout(
-              const Duration(seconds: 10),  // 5초 → 10초로 증가
+            )
+                .timeout(
+              const Duration(seconds: 10), // 5초 → 10초로 증가
               onTimeout: () {
                 Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
                 throw TimeoutException('재로드 타임아웃');
@@ -259,7 +270,7 @@ class AuthProvider with ChangeNotifier {
       } catch (e) {
         retryCount++;
         Logger.error('사용자 데이터 로드 오류 (시도 $retryCount/$maxRetries): $e');
-        
+
         if (retryCount >= maxRetries) {
           Logger.log('최대 재시도 횟수 도달. 캐시에서 데이터 로드 시도');
           try {
@@ -275,7 +286,7 @@ class AuthProvider with ChangeNotifier {
           }
           break;
         }
-        
+
         // 재시도 전 대기
         await Future.delayed(retryDelay);
       }
@@ -283,7 +294,7 @@ class AuthProvider with ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
-    
+
     // FCM 초기화 (자동 로그인/앱 재시작 시에도 토큰 등록 보장)
     await _initializeFCMIfNeeded();
   }
@@ -318,10 +329,8 @@ class AuthProvider with ChangeNotifier {
       // 사용자 정보 Firebase 확인 (자동 생성 없이)
       if (_user != null) {
         // Firestore에서 사용자 문서 존재 여부 확인
-        final docSnapshot = await _firestore
-            .collection('users')
-            .doc(_user!.uid)
-            .get();
+        final docSnapshot =
+            await _firestore.collection('users').doc(_user!.uid).get();
 
         if (!docSnapshot.exists) {
           // 신규 사용자 또는 탈퇴한 사용자 - 회원가입 필요
@@ -332,9 +341,9 @@ class AuthProvider with ChangeNotifier {
             notifyListeners();
             return true; // 로그인 허용 (completeEmailVerification 실행 예정)
           }
-          
+
           Logger.log('❌ 사용자 문서 없음: 신규 사용자이거나 탈퇴한 계정입니다. 회원가입이 필요합니다.');
-          
+
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
 
@@ -358,7 +367,7 @@ class AuthProvider with ChangeNotifier {
           _userData = null;
           _isLoading = false;
           notifyListeners();
-          
+
           return false; // 로그인 거부
         }
 
@@ -369,65 +378,58 @@ class AuthProvider with ChangeNotifier {
         if (!emailVerified && !skipEmailVerifiedCheck) {
           // 한양메일 인증 미완료
           Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
-          
+
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
-          
+
           // Google 로그인은 유지하고 Firebase만 로그아웃
           await _auth.signOut();
           _user = null;
           _userData = null;
           _isLoading = false;
           notifyListeners();
-          
+
           return false; // 로그인 거부
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
         final docExists = await _updateExistingUserDocument();
-        
+
         // 🔥 문서가 없으면 탈퇴한 계정으로 간주
         if (!docExists) {
           Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
-          
+
           // 회원가입 필요 플래그 설정
           _signupRequired = true;
-          
+
           // Firebase 로그아웃
           await _auth.signOut();
           _user = null;
           _userData = null;
           _isLoading = false;
           notifyListeners();
-          
+
           return false; // 로그인 거부
         }
-        
+
         await _loadUserData();
-        
-        // FCM 초기화 (알림 기능)
-        try {
-          if (kDebugMode) {
-            debugPrint('📱 FCM 초기화 시작 (Google 로그인)');
-          }
-          await FCMService().initialize(_user!.uid);
-          _fcmInitialized = true;
-          Logger.log('✅ FCM 초기화 완료');
-        } catch (e) {
-          Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
-          // FCM 실패해도 로그인은 계속 진행
-        }
+
+        // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
+        await _initializeFCMIfNeeded();
       }
 
       return _user != null;
     } on Exception catch (e) {
       // Google Sign-In 관련 예외 처리
       final errorMessage = e.toString();
-      if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
+      if (errorMessage.contains('canceled') ||
+          errorMessage.contains('cancelled')) {
         Logger.log('사용자가 Google 로그인을 취소했습니다: $e');
         // 취소는 오류가 아니므로 조용히 처리
-      } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
-                 errorMessage.contains('connection') || errorMessage.contains('Connection')) {
+      } else if (errorMessage.contains('network') ||
+          errorMessage.contains('Network') ||
+          errorMessage.contains('connection') ||
+          errorMessage.contains('Connection')) {
         Logger.error('네트워크 연결 오류: $e');
         // 네트워크 오류 시 재시도 가능하도록 상태 초기화
       } else {
@@ -451,7 +453,7 @@ class AuthProvider with ChangeNotifier {
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.log('🍎 Apple Sign In 시작');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
+
       // 플랫폼 체크
       if (!Platform.isIOS && !Platform.isMacOS) {
         Logger.log('❌ Apple Sign In은 iOS/macOS에서만 사용 가능합니다');
@@ -460,7 +462,7 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         return false;
       }
-      
+
       _isLoading = true;
       notifyListeners();
 
@@ -470,10 +472,10 @@ class AuthProvider with ChangeNotifier {
       appleProvider.addScope('email');
       appleProvider.addScope('name');
       Logger.log('🍎 AppleAuthProvider 생성 완료 (scopes: email, name)');
-      
+
       Logger.log('🍎 Firebase Auth signInWithProvider 호출 중...');
       final userCredential = await _auth.signInWithProvider(appleProvider);
-      
+
       Logger.log('🍎 Apple Sign In 성공!');
       Logger.log('   User ID: ${userCredential.user?.uid}');
       Logger.log('   Email: ${userCredential.user?.email ?? "비공개"}');
@@ -485,10 +487,8 @@ class AuthProvider with ChangeNotifier {
       // 사용자 정보 Firebase 확인 (자동 생성 없이)
       if (_user != null) {
         // Firestore에서 사용자 문서 존재 여부 확인
-        final docSnapshot = await _firestore
-            .collection('users')
-            .doc(_user!.uid)
-            .get();
+        final docSnapshot =
+            await _firestore.collection('users').doc(_user!.uid).get();
 
         if (!docSnapshot.exists) {
           // 신규 사용자 - 회원가입 필요
@@ -499,9 +499,9 @@ class AuthProvider with ChangeNotifier {
             notifyListeners();
             return true; // 로그인 허용 (completeEmailVerification 실행 예정)
           }
-          
+
           Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
-          
+
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
 
@@ -519,7 +519,7 @@ class AuthProvider with ChangeNotifier {
           _userData = null;
           _isLoading = false;
           notifyListeners();
-          
+
           return false; // 로그인 거부
         }
 
@@ -530,36 +530,26 @@ class AuthProvider with ChangeNotifier {
         if (!emailVerified && !skipEmailVerifiedCheck) {
           // 한양메일 인증 미완료
           Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
-          
+
           // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
-          
+
           // Firebase 로그아웃
           await _auth.signOut();
           _user = null;
           _userData = null;
           _isLoading = false;
           notifyListeners();
-          
+
           return false; // 로그인 거부
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
         await _updateExistingUserDocument();
         await _loadUserData();
-        
-        // FCM 초기화 (알림 기능)
-        try {
-          if (kDebugMode) {
-            debugPrint('📱 FCM 초기화 시작 (Apple 로그인)');
-          }
-          await FCMService().initialize(_user!.uid);
-          _fcmInitialized = true;
-          Logger.log('✅ FCM 초기화 완료');
-        } catch (e) {
-          Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
-          // FCM 실패해도 로그인은 계속 진행
-        }
+
+        // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
+        await _initializeFCMIfNeeded();
       }
 
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -572,14 +562,14 @@ class AuthProvider with ChangeNotifier {
       Logger.error('   에러 메시지: ${e.message}');
       Logger.log('   상세 정보: ${e.toString()}');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
+
       if (e.code == 'unknown') {
         Logger.log('💡 해결 방법:');
         Logger.log('   1. Xcode에서 "Sign in with Apple" Capability 추가 확인');
         Logger.log('   2. 시뮬레이터의 경우 설정에서 Apple ID 로그인 확인');
         Logger.log('   3. 실제 iOS 기기에서 테스트 권장');
       }
-      
+
       _isLoading = false;
       notifyListeners();
       return false;
@@ -588,10 +578,13 @@ class AuthProvider with ChangeNotifier {
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.error('🍎 Apple Sign In 실패 (Exception)');
       final errorMessage = e.toString();
-      if (errorMessage.contains('canceled') || errorMessage.contains('cancelled')) {
+      if (errorMessage.contains('canceled') ||
+          errorMessage.contains('cancelled')) {
         Logger.log('   사용자가 Apple 로그인을 취소했습니다');
-      } else if (errorMessage.contains('network') || errorMessage.contains('Network') || 
-                 errorMessage.contains('connection') || errorMessage.contains('Connection')) {
+      } else if (errorMessage.contains('network') ||
+          errorMessage.contains('Network') ||
+          errorMessage.contains('connection') ||
+          errorMessage.contains('Connection')) {
         Logger.error('   네트워크 연결 오류');
       } else {
         Logger.error('   에러: $e');
@@ -625,7 +618,8 @@ class AuthProvider with ChangeNotifier {
       Logger.log('📧 이메일 회원가입 시작: $email');
 
       // AuthService를 통해 Firebase Auth 계정 생성
-      final userCredential = await _authService.signUpWithEmail(email, password);
+      final userCredential =
+          await _authService.signUpWithEmail(email, password);
 
       if (userCredential == null || userCredential.user == null) {
         Logger.error('이메일 회원가입 실패: userCredential이 null입니다');
@@ -643,7 +637,8 @@ class AuthProvider with ChangeNotifier {
       // - Google/Apple 플로우는 completeEmailVerification에서 처리하지만,
       //   이메일/비밀번호 회원가입 플로우는 여기서 반드시 처리해야 "메일 1개=계정 1개"가 보장됨
       try {
-        final callable = _functions.httpsCallable('finalizeHanyangEmailVerification');
+        final callable =
+            _functions.httpsCallable('finalizeHanyangEmailVerification');
         await callable.call({
           'email': hanyangEmail.trim(),
         });
@@ -651,7 +646,7 @@ class AuthProvider with ChangeNotifier {
         Logger.log('✅ 한양메일 claim 점유 완료: $hanyangEmail');
       } on FirebaseFunctionsException catch (e) {
         Logger.error('❌ 한양메일 claim 점유 실패: ${e.code} - ${e.message}');
-        
+
         // 이미 사용 중인 한양메일이면 방금 만든 Auth 계정을 롤백
         try {
           await _user?.delete();
@@ -661,7 +656,7 @@ class AuthProvider with ChangeNotifier {
         try {
           await _auth.signOut();
         } catch (_) {}
-        
+
         _user = null;
         _userData = null;
         _isLoading = false;
@@ -724,7 +719,8 @@ class AuthProvider with ChangeNotifier {
       Logger.log('📧 이메일 로그인 시작: $email');
 
       // AuthService를 통해 Firebase Auth 로그인
-      final userCredential = await _authService.signInWithEmail(email, password);
+      final userCredential =
+          await _authService.signInWithEmail(email, password);
 
       if (userCredential == null || userCredential.user == null) {
         Logger.error('이메일 로그인 실패: userCredential이 null입니다');
@@ -737,10 +733,8 @@ class AuthProvider with ChangeNotifier {
       Logger.log('✅ Firebase Auth 로그인 완료: ${_user!.uid}');
 
       // Firestore에서 사용자 문서 확인
-      final docSnapshot = await _firestore
-          .collection('users')
-          .doc(_user!.uid)
-          .get();
+      final docSnapshot =
+          await _firestore.collection('users').doc(_user!.uid).get();
 
       if (!docSnapshot.exists) {
         Logger.error('❌ 사용자 문서가 존재하지 않습니다. 탈퇴한 계정일 수 있습니다.');
@@ -754,7 +748,7 @@ class AuthProvider with ChangeNotifier {
 
       // 기존 사용자 정보 업데이트
       final docExists = await _updateExistingUserDocument();
-      
+
       if (!docExists) {
         Logger.error('❌ 탈퇴한 계정: 사용자 문서가 존재하지 않습니다.');
         await _auth.signOut();
@@ -764,17 +758,11 @@ class AuthProvider with ChangeNotifier {
         notifyListeners();
         return false;
       }
-      
+
       await _loadUserData();
-      
-      // FCM 초기화
-      try {
-        await FCMService().initialize(_user!.uid);
-        _fcmInitialized = true;
-        Logger.log('✅ FCM 초기화 완료');
-      } catch (e) {
-        Logger.error('⚠️ FCM 초기화 실패 (계속 진행): $e');
-      }
+
+      // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
+      await _initializeFCMIfNeeded();
 
       return _user != null;
     } on FirebaseAuthException catch (e) {
@@ -819,7 +807,8 @@ class AuthProvider with ChangeNotifier {
               ? firestorePhoto
               : '';
           final targetPhoto = allowedFirestorePhoto;
-          if (targetPhoto.isNotEmpty && (_user!.photoURL ?? '') != targetPhoto) {
+          if (targetPhoto.isNotEmpty &&
+              (_user!.photoURL ?? '') != targetPhoto) {
             await _user!.updatePhotoURL(targetPhoto);
           }
           await _user!.reload();
@@ -882,12 +871,13 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      Logger.log("Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality, photoURL=${photoURL != null ? '변경됨' : '없음'}");
+      Logger.log(
+          "Auth Provider - 프로필 업데이트: 닉네임=$nickname, 국적=$nationality, photoURL=${photoURL != null ? '변경됨' : '없음'}");
 
       // 기존 닉네임 및 사진 확인 (로깅용)
       final oldNickname = _userData?['nickname'];
       final oldPhotoURL = _userData?['photoURL'];
-      
+
       Logger.log("기존 프로필 정보:");
       Logger.log("  - 기존 닉네임: '$oldNickname'");
       Logger.log("  - 기존 photoURL: '${oldPhotoURL ?? '없음'}'");
@@ -904,15 +894,22 @@ class AuthProvider with ChangeNotifier {
           // - 상태메시지(bio) 및 사진 등 다른 필드는 제한 없이 업데이트 가능
           // -----------------------------------------------------------------
           final now = DateTime.now();
-          final currentNickname = (docData?['nickname'] ?? _userData?['nickname'] ?? '').toString().trim();
-          final currentNationality = (docData?['nationality'] ?? _userData?['nationality'] ?? '').toString().trim();
+          final currentNickname =
+              (docData?['nickname'] ?? _userData?['nickname'] ?? '')
+                  .toString()
+                  .trim();
+          final currentNationality =
+              (docData?['nationality'] ?? _userData?['nationality'] ?? '')
+                  .toString()
+                  .trim();
           final requestedNickname = nickname.trim();
           final requestedNationality = nationality.trim();
 
-          final lastNicknameChangedAt =
-              _timestampToDateTime(docData?['nicknameUpdatedAt'] ?? _userData?['nicknameUpdatedAt']);
-          final lastNationalityChangedAt =
-              _timestampToDateTime(docData?['nationalityUpdatedAt'] ?? _userData?['nationalityUpdatedAt']);
+          final lastNicknameChangedAt = _timestampToDateTime(
+              docData?['nicknameUpdatedAt'] ?? _userData?['nicknameUpdatedAt']);
+          final lastNationalityChangedAt = _timestampToDateTime(
+              docData?['nationalityUpdatedAt'] ??
+                  _userData?['nationalityUpdatedAt']);
 
           final nicknameChanged = requestedNickname != currentNickname;
           final nationalityChanged = requestedNationality != currentNationality;
@@ -942,16 +939,19 @@ class AuthProvider with ChangeNotifier {
             if (!nationalityAllowed) nationalityDaysRemaining = rem;
           }
 
-          final nicknameToWrite = nicknameAllowed ? requestedNickname : currentNickname;
-          final nationalityToWrite = nationalityAllowed ? requestedNationality : currentNationality;
+          final nicknameToWrite =
+              nicknameAllowed ? requestedNickname : currentNickname;
+          final nationalityToWrite =
+              nationalityAllowed ? requestedNationality : currentNationality;
           final nicknameApplied = !nicknameChanged || nicknameAllowed;
           final nationalityApplied = !nationalityChanged || nationalityAllowed;
 
           // photoVersion: 프로필 사진 변경 시에만 증가 (로컬 캐시/DM 전환을 안정화)
-          final currentPhotoVersion =
-              (docData?['photoVersion'] is int)
-                  ? (docData?['photoVersion'] as int)
-                  : int.tryParse('${docData?['photoVersion'] ?? _userData?['photoVersion'] ?? 0}') ?? 0;
+          final currentPhotoVersion = (docData?['photoVersion'] is int)
+              ? (docData?['photoVersion'] as int)
+              : int.tryParse(
+                      '${docData?['photoVersion'] ?? _userData?['photoVersion'] ?? 0}') ??
+                  0;
           final oldPhotoUrlStr = (oldPhotoURL ?? '').toString();
           String newPhotoUrlStr = (photoURL ?? oldPhotoUrlStr).toString();
 
@@ -965,8 +965,9 @@ class AuthProvider with ChangeNotifier {
           // ✅ Storage 경로를 고정하면 URL이 같아도 실제 파일이 바뀔 수 있다.
           // 따라서 "제공 여부" 자체를 변경 의도로 본다.
           final bool photoChanged = photoURL != null;
-          final int nextPhotoVersion = photoChanged ? (currentPhotoVersion + 1) : currentPhotoVersion;
-          
+          final int nextPhotoVersion =
+              photoChanged ? (currentPhotoVersion + 1) : currentPhotoVersion;
+
           // Firestore users 컬렉션 업데이트 데이터 준비
           final updateData = {
             'nickname': nicknameToWrite,
@@ -983,21 +984,22 @@ class AuthProvider with ChangeNotifier {
           if (bio != null) {
             updateData['bio'] = bio;
           }
-          
+
           // photoURL이 제공된 경우 추가
           if (photoURL != null) {
             updateData['photoURL'] = newPhotoUrlStr;
             // ✅ 액세스 토큰/경로도 함께 저장 (정책 강제)
             updateData['photoPath'] = (photoPath ?? '').toString();
-            updateData['photoAccessToken'] = _extractStorageDownloadToken(newPhotoUrlStr);
+            updateData['photoAccessToken'] =
+                _extractStorageDownloadToken(newPhotoUrlStr);
           }
           if (photoChanged) {
             updateData['photoVersion'] = nextPhotoVersion;
             updateData['photoUpdatedAt'] = FieldValue.serverTimestamp();
           }
-          
+
           Logger.log("📝 Firestore 업데이트 시작...");
-          
+
           // 🔥 문서가 없으면 생성, 있으면 업데이트
           if (!docSnapshot.exists) {
             Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
@@ -1012,8 +1014,10 @@ class AuthProvider with ChangeNotifier {
               bio: bio ?? '',
             );
             full['photoPath'] = (photoPath ?? '').toString();
-            full['photoAccessToken'] = _extractStorageDownloadToken(newPhotoUrlStr);
-            full['photoVersion'] = photoChanged ? nextPhotoVersion : currentPhotoVersion;
+            full['photoAccessToken'] =
+                _extractStorageDownloadToken(newPhotoUrlStr);
+            full['photoVersion'] =
+                photoChanged ? nextPhotoVersion : currentPhotoVersion;
             if (photoChanged) {
               full['photoUpdatedAt'] = FieldValue.serverTimestamp();
             } else {
@@ -1023,9 +1027,10 @@ class AuthProvider with ChangeNotifier {
             full['nicknameUpdatedAt'] = (nicknameToWrite.trim().isNotEmpty)
                 ? FieldValue.serverTimestamp()
                 : null;
-            full['nationalityUpdatedAt'] = (nationalityToWrite.trim().isNotEmpty)
-                ? FieldValue.serverTimestamp()
-                : null;
+            full['nationalityUpdatedAt'] =
+                (nationalityToWrite.trim().isNotEmpty)
+                    ? FieldValue.serverTimestamp()
+                    : null;
             await docRef.set(full);
             Logger.log("✅ 사용자 문서 생성 완료");
           } else {
@@ -1033,22 +1038,24 @@ class AuthProvider with ChangeNotifier {
             await docRef.update(updateData);
             Logger.log("✅ Firestore 업데이트 완료 (nickname)");
           }
-          
+
           // photoURL이 제공된 경우 Firebase Auth도 업데이트
           if (photoURL != null) {
             try {
               // 빈 문자열이면 null로 변환 (기본 이미지로 변경)
-              final authPhotoURL = newPhotoUrlStr.isEmpty ? null : newPhotoUrlStr;
+              final authPhotoURL =
+                  newPhotoUrlStr.isEmpty ? null : newPhotoUrlStr;
               await _user!.updatePhotoURL(authPhotoURL);
               await _user!.reload();
               _user = _auth.currentUser;
-              Logger.log("✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
+              Logger.log(
+                  "✅ Firebase Auth photoURL 업데이트 완료 (${authPhotoURL == null ? '기본 이미지' : '새 이미지'})");
             } catch (authError) {
               Logger.error('⚠️ Firebase Auth photoURL 업데이트 오류: $authError');
               // Auth 업데이트 실패해도 계속 진행
             }
           }
-          
+
           // ✅ 성능 최적화:
           // - 과거 게시글/댓글/DM 메타(작성자 닉네임/사진 등) 전파는 클라이언트에서 동기 처리하지 않는다.
           // - `users/{uid}` 변경을 감지하는 Cloud Function이 백그라운드에서 배치 갱신한다.
@@ -1096,7 +1103,7 @@ class AuthProvider with ChangeNotifier {
           } catch (e) {
             Logger.error('⚠️ UserInfoCache invalidate 실패(무시): $e');
           }
-          
+
           await _loadUserData();
           return ProfileUpdateResult.success(
             nicknameApplied: nicknameApplied,
@@ -1107,16 +1114,16 @@ class AuthProvider with ChangeNotifier {
         } catch (e) {
           retryCount++;
           Logger.error('프로필 업데이트 오류 (시도 $retryCount/$maxRetries): $e');
-          
+
           if (retryCount >= maxRetries) {
             throw e; // 마지막 시도에서 실패하면 예외 발생
           }
-          
+
           // 재시도 전 대기
           await Future.delayed(retryDelay);
         }
       }
-      
+
       return const ProfileUpdateResult.failure();
     } catch (e) {
       Logger.error('프로필 업데이트 최종 실패: $e');
@@ -1138,12 +1145,12 @@ class AuthProvider with ChangeNotifier {
       final nickname = _userData?['nickname'] ?? '익명';
       final photoURL = _userData?['photoURL'];
       final nationality = _userData?['nationality'] ?? '';
-      
+
       Logger.log('🔧 수동 콘텐츠 업데이트 시작');
       Logger.log('   - 현재 닉네임: $nickname');
       Logger.log('   - 현재 photoURL: ${photoURL ?? '없음'}');
       Logger.log('   - 현재 nationality: $nationality');
-      
+
       await _updateAllUserContent(nickname, photoURL, nationality);
       return true;
     } catch (e) {
@@ -1214,14 +1221,14 @@ class AuthProvider with ChangeNotifier {
 
       // 5. 사용자 데이터 다시 로드
       await _loadUserData();
-      
+
       _isLoading = false;
       notifyListeners();
 
       Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       Logger.log("✅ 프로필 이미지 초기화 완료!");
       Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      
+
       return true;
     } catch (e) {
       Logger.error('❌ 프로필 이미지 초기화 실패: $e');
@@ -1232,7 +1239,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 사용자가 작성한 모든 게시글 및 모임글의 작성자 정보 업데이트
-  Future<void> _updateAllUserContent(String newNickname, String? newPhotoURL, String newNationality) async {
+  Future<void> _updateAllUserContent(
+      String newNickname, String? newPhotoURL, String newNationality) async {
     if (_user == null) {
       Logger.log('❌ _updateAllUserContent: 사용자가 null입니다');
       return;
@@ -1240,8 +1248,9 @@ class AuthProvider with ChangeNotifier {
 
     try {
       final userId = _user!.uid;
-      Logger.log('🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
-      
+      Logger.log(
+          '🔄 콘텐츠 업데이트 시작: userId=$userId, nickname=$newNickname, photoURL=${newPhotoURL != null ? '있음' : '없음'}, nationality=$newNationality');
+
       // Firestore의 배치는 최대 500개 작업만 가능
       // 따라서 큰 데이터셋의 경우 여러 배치로 나눠서 처리
       final List<WriteBatch> batches = [_firestore.batch()];
@@ -1270,14 +1279,14 @@ class AuthProvider with ChangeNotifier {
           operationCount = 0;
           Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
-        
+
         final updateData = <String, dynamic>{
           'authorNickname': newNickname,
           'authorPhotoURL': newPhotoURL ?? '', // null이면 빈 문자열로 설정
           'authorNationality': newNationality,
           'updatedAt': FieldValue.serverTimestamp(),
         };
-        
+
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
@@ -1304,14 +1313,14 @@ class AuthProvider with ChangeNotifier {
           operationCount = 0;
           Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
         }
-        
+
         final updateData = <String, dynamic>{
           'hostNickname': newNickname,
           'hostPhotoURL': newPhotoURL ?? '', // null이면 빈 문자열로 설정
           'hostNationality': newNationality,
           'updatedAt': FieldValue.serverTimestamp(),
         };
-        
+
         batches[currentBatchIndex].update(doc.reference, updateData);
         operationCount++;
       }
@@ -1329,7 +1338,7 @@ class AuthProvider with ChangeNotifier {
               .collection('comments')
               .where('userId', isEqualTo: userId)
               .get();
-          
+
           for (var commentDoc in commentsSnapshot.docs) {
             if (operationCount >= maxOperationsPerBatch) {
               batches.add(_firestore.batch());
@@ -1337,12 +1346,12 @@ class AuthProvider with ChangeNotifier {
               operationCount = 0;
               Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
-            
+
             final updateData = <String, dynamic>{
               'authorNickname': newNickname,
               'authorPhotoUrl': newPhotoURL ?? '', // null이면 빈 문자열로 설정
             };
-            
+
             batches[currentBatchIndex].update(commentDoc.reference, updateData);
             operationCount++;
             postCommentsCount++;
@@ -1366,7 +1375,7 @@ class AuthProvider with ChangeNotifier {
               .collection('comments')
               .where('userId', isEqualTo: userId)
               .get();
-          
+
           for (var commentDoc in commentsSnapshot.docs) {
             if (operationCount >= maxOperationsPerBatch) {
               batches.add(_firestore.batch());
@@ -1374,12 +1383,12 @@ class AuthProvider with ChangeNotifier {
               operationCount = 0;
               Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
             }
-            
+
             final updateData = <String, dynamic>{
               'authorNickname': newNickname,
               'authorPhotoUrl': newPhotoURL ?? '', // null이면 빈 문자열로 설정
             };
-            
+
             batches[currentBatchIndex].update(commentDoc.reference, updateData);
             operationCount++;
             meetupCommentsCount++;
@@ -1390,7 +1399,7 @@ class AuthProvider with ChangeNotifier {
         Logger.error("❌ 모임 댓글 조회 실패: $e");
         Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
-      
+
       // 5. 최상위 comments 컬렉션 업데이트
       Logger.log("💬 최상위 댓글 작성자 정보 업데이트 시작...");
       int topLevelCommentsCount = 0;
@@ -1400,7 +1409,7 @@ class AuthProvider with ChangeNotifier {
             .where('userId', isEqualTo: userId)
             .get();
         Logger.log("   → 찾은 최상위 댓글: ${topLevelCommentsQuery.docs.length}개");
-        
+
         for (var commentDoc in topLevelCommentsQuery.docs) {
           if (operationCount >= maxOperationsPerBatch) {
             batches.add(_firestore.batch());
@@ -1408,12 +1417,12 @@ class AuthProvider with ChangeNotifier {
             operationCount = 0;
             Logger.log("   → 새 배치 생성 (배치 ${currentBatchIndex + 1})");
           }
-          
+
           final updateData = <String, dynamic>{
             'authorNickname': newNickname,
             'authorPhotoUrl': newPhotoURL ?? '', // null이면 빈 문자열로 설정
           };
-          
+
           batches[currentBatchIndex].update(commentDoc.reference, updateData);
           operationCount++;
           topLevelCommentsCount++;
@@ -1423,17 +1432,19 @@ class AuthProvider with ChangeNotifier {
         Logger.error("❌ 최상위 댓글 조회 실패: $e");
         Logger.log("   스택 트레이스: ${StackTrace.current}");
       }
-      
-      final totalCommentsCount = postCommentsCount + meetupCommentsCount + topLevelCommentsCount;
+
+      final totalCommentsCount =
+          postCommentsCount + meetupCommentsCount + topLevelCommentsCount;
       Logger.log("✅ 총 댓글 ${totalCommentsCount}개 배치에 추가 완료");
 
       // 모든 배치 커밋
       Logger.log("💾 총 ${batches.length}개의 배치 커밋 시작...");
-      Logger.log("   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
+      Logger.log(
+          "   총 작업 수: ${postsQuery.docs.length + meetupsQuery.docs.length + totalCommentsCount}");
       int successCount = 0;
       int failCount = 0;
       List<String> failedBatches = [];
-      
+
       for (int i = 0; i < batches.length; i++) {
         try {
           await batches[i].commit();
@@ -1442,22 +1453,25 @@ class AuthProvider with ChangeNotifier {
         } catch (e, stackTrace) {
           failCount++;
           failedBatches.add('배치 ${i + 1}');
-          Logger.error("   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패", e, stackTrace);
-          
+          Logger.error(
+              "   ❌ 배치 ${i + 1}/${batches.length} 커밋 실패", e, stackTrace);
+
           // Crashlytics에 에러 기록
           await FirebaseCrashlytics.instance.recordError(
             e,
             stackTrace,
-            reason: 'Profile update batch commit failed (batch ${i + 1}/${batches.length})',
+            reason:
+                'Profile update batch commit failed (batch ${i + 1}/${batches.length})',
             fatal: false,
           );
         }
       }
-      
+
       Logger.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       Logger.log("🎉 콘텐츠 업데이트 완료!");
       Logger.log("   - 닉네임: '$newNickname'");
-      Logger.log("   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
+      Logger.log(
+          "   - 프로필 사진: ${newPhotoURL != null ? '업데이트됨' : '기본 이미지로 설정됨'}");
       Logger.log("   - 국가: '$newNationality'");
       Logger.log("   - 업데이트 대상:");
       Logger.log("      게시글: ${postsQuery.docs.length}개");
@@ -1470,7 +1484,7 @@ class AuthProvider with ChangeNotifier {
       if (failCount > 0) {
         Logger.error("   ⚠️  실패한 배치: $failCount/${batches.length}");
         Logger.error("   실패한 배치 목록: ${failedBatches.join(", ")}");
-        
+
         // 실패가 있으면 예외 발생
         throw Exception('일부 데이터 업데이트 실패: ${failedBatches.join(", ")}');
       }
@@ -1487,30 +1501,31 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 🔥 하이브리드 동기화: 사용자의 모든 대화방에서 participantNames 업데이트
-  Future<void> _updateAllConversationsForUser(String nickname, String? photoURL) async {
+  Future<void> _updateAllConversationsForUser(
+      String nickname, String? photoURL) async {
     if (_user == null) return;
-    
+
     try {
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.log('🔄 대화방 participantNames 업데이트 시작');
       Logger.log('  - 사용자: ${_user!.uid}');
       Logger.log('  - 새 닉네임: $nickname');
       Logger.log('  - 새 photoURL: ${photoURL ?? "없음"}');
-      
+
       // 내가 참여한 모든 대화방 조회
       final conversations = await _firestore
           .collection('conversations')
           .where('participants', arrayContains: _user!.uid)
           .get();
-      
+
       Logger.log('  - 대상 대화방: ${conversations.docs.length}개');
-      
+
       if (conversations.docs.isEmpty) {
         Logger.log('  - 업데이트할 대화방 없음');
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       }
-      
+
       // ✅ 배치 커밋은 500 제한/재사용 불가이므로, 청크로 나누어 처리한다.
       const int chunkSize = 450; // 여유 있게
       int updated = 0;
@@ -1526,7 +1541,8 @@ class AuthProvider with ChangeNotifier {
         for (final doc in chunk) {
           try {
             final data = doc.data();
-            final participants = List<String>.from(data['participants'] ?? const []);
+            final participants =
+                List<String>.from(data['participants'] ?? const []);
 
             // displayTitle은 1:1 대화방에서만 갱신 (그 외는 유지)
             String? newDisplayTitle;
@@ -1536,7 +1552,8 @@ class AuthProvider with ChangeNotifier {
                 orElse: () => '',
               );
               if (otherUserId.isNotEmpty) {
-                final otherUserName = data['participantNames']?[otherUserId] ?? 'User';
+                final otherUserName =
+                    data['participantNames']?[otherUserId] ?? 'User';
                 newDisplayTitle = '$nickname ↔ $otherUserName';
               }
             }
@@ -1562,13 +1579,13 @@ class AuthProvider with ChangeNotifier {
 
         if (ops > 0) {
           await batch.commit();
-          Logger.log('  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
+          Logger.log(
+              '  - 청크 커밋: ${end.clamp(0, docs.length)}/${docs.length} (누적 업데이트 $updated개)');
         }
       }
 
       Logger.log('✅ 대화방 업데이트 완료: $updated개');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      
     } catch (e) {
       Logger.error('❌ 대화방 업데이트 실패: $e');
       // 실패해도 프로필 업데이트는 완료된 상태이므로 계속 진행
@@ -1583,10 +1600,10 @@ class AuthProvider with ChangeNotifier {
       // Firebase Auth 사용자 정보 새로고침
       await _user!.reload();
       _user = _auth.currentUser;
-      
+
       // Firestore 사용자 데이터 다시 로드
       await _loadUserData();
-      
+
       Logger.log('사용자 정보 새로고침 완료');
     } catch (e) {
       Logger.error('사용자 정보 새로고침 오류: $e');
@@ -1618,7 +1635,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 이메일 인증번호 전송
-  Future<Map<String, dynamic>> sendEmailVerificationCode(String email, {Locale? locale}) async {
+  Future<Map<String, dynamic>> sendEmailVerificationCode(String email,
+      {Locale? locale}) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -1632,16 +1650,19 @@ class AuthProvider with ChangeNotifier {
       final callable = _functions.httpsCallable('sendEmailVerificationCode');
       final result = await callable.call({
         'email': email,
-        if (locale != null) 'locale': '${locale.languageCode}${locale.countryCode != null ? '-${locale.countryCode}' : ''}',
+        if (locale != null)
+          'locale':
+              '${locale.languageCode}${locale.countryCode != null ? '-${locale.countryCode}' : ''}',
       });
-      
+
       return {
         'success': result.data['success'] == true,
         'message': result.data['message'] ?? '',
       };
     } on FirebaseFunctionsException catch (e) {
       // 서버가 already-exists(이미 사용중) 에러를 반환한 경우
-      Logger.error('이메일 인증번호 전송 오류 (FirebaseFunctionsException): ${e.code} - ${e.message}');
+      Logger.error(
+          '이메일 인증번호 전송 오류 (FirebaseFunctionsException): ${e.code} - ${e.message}');
       _isLoading = false;
       notifyListeners();
       rethrow; // UI에서 구체적으로 처리하도록 다시 던짐
@@ -1671,7 +1692,7 @@ class AuthProvider with ChangeNotifier {
         'email': email,
         'code': code,
       });
-      
+
       return result.data['success'] == true;
     } on FirebaseFunctionsException catch (e) {
       // 서버가 already-exists(이미 사용중) 등을 반환한 경우 상위에서 구체 처리
@@ -1695,8 +1716,9 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      final callable = _functions.httpsCallable('finalizeHanyangEmailVerification');
-      await callable.call({ 'email': hanyangEmail });
+      final callable =
+          _functions.httpsCallable('finalizeHanyangEmailVerification');
+      await callable.call({'email': hanyangEmail});
 
       await _loadUserData();
       return true;
@@ -1714,7 +1736,8 @@ class AuthProvider with ChangeNotifier {
   }
 
   // 영어 소셜 회원가입 승인(서버 Callable)
-  Future<bool> finalizeEnglishSocialSignup({String signupLanguage = 'en'}) async {
+  Future<bool> finalizeEnglishSocialSignup(
+      {String signupLanguage = 'en'}) async {
     if (_user == null) return false;
 
     try {
@@ -1743,33 +1766,52 @@ class AuthProvider with ChangeNotifier {
 
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
-    // ✅ v1.0.32: Firebase 초기화 순서 문제 해결 후 iOS FCM 재활성화
-    // iOS 크래시가 여전히 발생하면 다시 비활성화 필요
-    
-    // 이미 초기화되었거나 사용자가 없으면 스킵
-    if (_fcmInitialized || _user == null || _userData == null) {
+    if (_user == null || _userData == null) {
       return;
     }
-    
+
+    final uid = _user!.uid;
+    if (_fcmInitializing) {
+      Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
+      return;
+    }
+
+    // 세션 내 동일 사용자 재초기화 차단
+    if (_fcmInitialized && _fcmInitializedUserId == uid) {
+      return;
+    }
+
     // 이메일 인증이 완료된 사용자만 FCM 초기화
     final emailVerified = _userData!['emailVerified'] == true;
     if (!emailVerified) {
       Logger.log('📱 FCM 초기화 스킵: 이메일 인증 미완료');
       return;
     }
-    
+
+    _fcmInitializing = true;
     try {
-      if (kDebugMode) {
-        debugPrint('📱 FCM 초기화 시작 (iOS 포함)');
+      // locale 상태를 먼저 확정
+      await _languageService.initializeLanguage();
+
+      // iOS는 자동 로그인 직후 경쟁 상태를 피하기 위해 지연 후 초기화
+      if (!kIsWeb && Platform.isIOS) {
+        await Future.delayed(const Duration(seconds: 2));
       }
-      await FCMService().initialize(_user!.uid);
+
+      if (kDebugMode) {
+        debugPrint('📱 FCM 초기화 시작: uid=$uid');
+      }
+      await _fcmService.initialize(uid);
       _fcmInitialized = true;
+      _fcmInitializedUserId = uid;
       if (kDebugMode) {
         debugPrint('✅ FCM 초기화 완료');
       }
     } catch (e) {
       Logger.error('⚠️ FCM 자동 초기화 실패 (계속 진행): $e');
       // 실패해도 앱 사용에는 지장 없음 (best-effort)
+    } finally {
+      _fcmInitializing = false;
     }
   }
 
@@ -1777,11 +1819,11 @@ class AuthProvider with ChangeNotifier {
   Future<void> signOut() async {
     try {
       Logger.log('로그아웃 시작...');
-      
+
       // 로딩 상태 설정
       _isLoading = true;
       notifyListeners();
-      
+
       // 전체 로그아웃 프로세스에 10초 타임아웃 설정
       try {
         await Future.any([
@@ -1799,7 +1841,6 @@ class AuthProvider with ChangeNotifier {
           Logger.error('⚠️ 로그아웃 중 오류 발생: $e - 로컬 로그아웃 진행');
         }
       }
-      
     } catch (e) {
       Logger.error('로그아웃 전체 오류: $e');
     } finally {
@@ -1809,6 +1850,8 @@ class AuthProvider with ChangeNotifier {
       _isLoading = false;
       _logoutStatus = null;
       _fcmInitialized = false; // FCM 플래그 리셋
+      _fcmInitializing = false;
+      _fcmInitializedUserId = null;
       Logger.log('✅ 로그아웃 상태 초기화 완료');
       notifyListeners();
     }
@@ -1820,11 +1863,11 @@ class AuthProvider with ChangeNotifier {
 
     // 앱 아이콘 배지는 로그아웃 즉시 0으로 내려 이전 계정 흔적이 남지 않게 한다.
     await BadgeService.clearBadgeOnSignOut();
-    
+
     // FCM 토큰 삭제 및 상태 초기화 (3초 타임아웃) - UI 메시지 표시 안 함
     if (_user != null) {
       try {
-        await FCMService().deleteFCMToken(_user!.uid).timeout(
+        await _fcmService.deleteFCMToken(_user!.uid).timeout(
           const Duration(seconds: 3),
           onTimeout: () {
             Logger.log('⚠️ FCM 토큰 삭제 타임아웃 (3초) - 계속 진행');
@@ -1837,11 +1880,11 @@ class AuthProvider with ChangeNotifier {
     }
     // FCM 싱글톤 상태 초기화 (다음 로그인 시 재초기화 허용)
     try {
-      await FCMService().reset();
+      await _fcmService.reset();
     } catch (e) {
       Logger.error('⚠️ FCM 리셋 실패 (계속 진행): $e');
     }
-    
+
     // 먼저 모든 스트림 정리 - UI 메시지 표시 안 함
     try {
       _cleanupAllStreams();
@@ -1849,7 +1892,7 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       Logger.error('⚠️ 스트림 정리 실패 (계속 진행): $e');
     }
-    
+
     // Google Sign-In에서 로그아웃 (3초 타임아웃) - UI 메시지 표시 안 함
     try {
       await _googleSignIn.signOut().timeout(
@@ -1862,7 +1905,7 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       Logger.error('⚠️ Google Sign-In 로그아웃 오류 (계속 진행): $e');
     }
-    
+
     // Firebase Auth에서 로그아웃 (3초 타임아웃) - UI 메시지 표시 안 함
     try {
       await _auth.signOut().timeout(
@@ -1875,7 +1918,7 @@ class AuthProvider with ChangeNotifier {
     } catch (e) {
       Logger.error('⚠️ Firebase Auth 로그아웃 오류 (계속 진행): $e');
     }
-    
+
     Logger.log('🔄 로그아웃 작업 완료');
   }
 
@@ -1898,19 +1941,22 @@ class AuthProvider with ChangeNotifier {
     await _firestore.runTransaction((tx) async {
       final snap = await tx.get(docRef);
       if (!snap.exists) {
-        tx.set(docRef, _buildFullUserDoc(
-          user: user,
-          hanyangEmail: hanyangEmail,
-          emailVerified: emailVerified,
-          nickname: nickname,
-          nationality: nationality,
-          photoURL: photoURL,
-          bio: bio,
-        ));
+        tx.set(
+            docRef,
+            _buildFullUserDoc(
+              user: user,
+              hanyangEmail: hanyangEmail,
+              emailVerified: emailVerified,
+              nickname: nickname,
+              nationality: nationality,
+              photoURL: photoURL,
+              bio: bio,
+            ));
         return;
       }
 
-      final data = (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
+      final data =
+          (snap.data() as Map<String, dynamic>?) ?? <String, dynamic>{};
       final updates = _computeMissingUserSchemaFields(
         existingData: data,
         user: user,
@@ -1933,7 +1979,8 @@ class AuthProvider with ChangeNotifier {
       }
       if (photoURL.isNotEmpty) {
         updates['photoURL'] = photoURL;
-      } else if (!data.containsKey('photoURL') || (data['photoURL']?.toString() ?? '').isEmpty) {
+      } else if (!data.containsKey('photoURL') ||
+          (data['photoURL']?.toString() ?? '').isEmpty) {
         updates['photoURL'] = '';
       }
       if (bio.isNotEmpty) {
@@ -1955,12 +2002,13 @@ class AuthProvider with ChangeNotifier {
     if (user == null) return;
     final data = existingData ?? <String, dynamic>{};
 
-    final updates = _computeMissingUserSchemaFields(existingData: data, user: user);
+    final updates =
+        _computeMissingUserSchemaFields(existingData: data, user: user);
     if (updates.isEmpty) return;
 
     try {
       await docRef.set(updates, SetOptions(merge: true)).timeout(
-        const Duration(seconds: 10),  // 5초 → 10초로 증가
+        const Duration(seconds: 10), // 5초 → 10초로 증가
         onTimeout: () {
           Logger.log('⏱️ 스키마 보정 타임아웃');
           throw TimeoutException('스키마 보정 타임아웃');
@@ -1978,7 +2026,8 @@ class AuthProvider with ChangeNotifier {
     required Map<String, dynamic> existingData,
     required User user,
   }) {
-    bool missing(String key) => !existingData.containsKey(key) || existingData[key] == null;
+    bool missing(String key) =>
+        !existingData.containsKey(key) || existingData[key] == null;
 
     final String authEmail = user.email ?? '';
     final updates = <String, dynamic>{};
@@ -1992,7 +2041,8 @@ class AuthProvider with ChangeNotifier {
     // 표시 이름: nickname 단일 소스
     if (missing('nickname')) updates['nickname'] = '';
     // displayName 필드는 더 이상 사용하지 않음 (점진 삭제)
-    if (existingData.containsKey('displayName')) updates['displayName'] = FieldValue.delete();
+    if (existingData.containsKey('displayName'))
+      updates['displayName'] = FieldValue.delete();
 
     // 프로필
     // ✅ 정책: 외부(Auth 제공) 프로필 사진은 절대 사용하지 않는다. (버킷에 저장된 것만 허용)
@@ -2011,7 +2061,8 @@ class AuthProvider with ChangeNotifier {
     if (missing('incomingCount')) updates['incomingCount'] = 0;
     if (missing('outgoingCount')) updates['outgoingCount'] = 0;
     if (missing('dmUnreadTotal')) updates['dmUnreadTotal'] = 0;
-    if (missing('notificationUnreadTotal')) updates['notificationUnreadTotal'] = 0;
+    if (missing('notificationUnreadTotal'))
+      updates['notificationUnreadTotal'] = 0;
 
     // FCM
     if (missing('fcmToken')) updates['fcmToken'] = '';
@@ -2023,16 +2074,21 @@ class AuthProvider with ChangeNotifier {
 
     // 언어
     if (missing('preferredLanguage')) updates['preferredLanguage'] = 'ko';
-    if (missing('preferredLanguageUpdatedAt')) updates['preferredLanguageUpdatedAt'] = null;
+    if (missing('preferredLanguageUpdatedAt'))
+      updates['preferredLanguageUpdatedAt'] = null;
 
     // 약관 동의 (레거시 계정 자동 마이그레이션)
     if (missing('termsAccepted')) updates['termsAccepted'] = true;
-    if (missing('termsAcceptedAt')) updates['termsAcceptedAt'] = FieldValue.serverTimestamp();
+    if (missing('termsAcceptedAt'))
+      updates['termsAcceptedAt'] = FieldValue.serverTimestamp();
 
     // 타임스탬프
-    if (missing('createdAt')) updates['createdAt'] = FieldValue.serverTimestamp();
-    if (missing('updatedAt')) updates['updatedAt'] = FieldValue.serverTimestamp();
-    if (missing('lastLogin')) updates['lastLogin'] = FieldValue.serverTimestamp();
+    if (missing('createdAt'))
+      updates['createdAt'] = FieldValue.serverTimestamp();
+    if (missing('updatedAt'))
+      updates['updatedAt'] = FieldValue.serverTimestamp();
+    if (missing('lastLogin'))
+      updates['lastLogin'] = FieldValue.serverTimestamp();
 
     return updates;
   }
@@ -2058,7 +2114,8 @@ class AuthProvider with ChangeNotifier {
       'nationalityUpdatedAt': null,
       'photoURL': photoURL,
       'photoPath': photoURL.isNotEmpty ? _profilePhotoPathForUid(user.uid) : '',
-      'photoAccessToken': photoURL.isNotEmpty ? _extractStorageDownloadToken(photoURL) : '',
+      'photoAccessToken':
+          photoURL.isNotEmpty ? _extractStorageDownloadToken(photoURL) : '',
       'photoVersion': 0,
       'photoUpdatedAt': null,
       'bio': bio,

@@ -3447,23 +3447,55 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
     const lang = (_e = normalizeSupportedLang(localeRaw)) !== null && _e !== void 0 ? _e : 'ko';
     const locale = (localeRaw !== null && localeRaw !== void 0 ? localeRaw : '').toString().trim();
     const platform = normalizePlatform(data === null || data === void 0 ? void 0 : data.platform);
-    // 1) 다른 사용자 문서에 붙어있는 동일 토큰 제거 (중복 알림의 가장 흔한 원인)
+    const tokenRef = db.collection('fcm_tokens').doc(token);
+    const userRef = db.collection('users').doc(uid);
+    let previousOwnerUid = '';
+    // 1) 토큰 레지스트리를 우선 갱신하고 이전 소유자를 확인 (idempotent)
+    await db.runTransaction(async (tx) => {
+        const tokenSnap = await tx.get(tokenRef);
+        const tokenData = tokenSnap.exists ? tokenSnap.data() : {};
+        previousOwnerUid = typeof (tokenData === null || tokenData === void 0 ? void 0 : tokenData.userId) === 'string' ? tokenData.userId : '';
+        const updates = {
+            userId: uid,
+            lang,
+            locale,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        };
+        if (platform) {
+            updates.platform = platform;
+        }
+        else if (tokenSnap.exists && Object.prototype.hasOwnProperty.call(tokenData, 'platform')) {
+            updates.platform = admin.firestore.FieldValue.delete();
+        }
+        tx.set(tokenRef, updates, { merge: true });
+        // 현재 사용자 문서 업데이트 (레거시 호환 유지)
+        tx.set(userRef, {
+            fcmToken: token,
+            fcmTokens: admin.firestore.FieldValue.arrayUnion(token),
+            fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+    // 2) 이전 소유자 단일 정리 + 레거시 잔존 정리(보수적)
     const cleanMap = new Map();
+    if (previousOwnerUid && previousOwnerUid !== uid) {
+        cleanMap.set(previousOwnerUid, { deleteSingle: true });
+    }
     const arrSnap = await db.collection('users').where('fcmTokens', 'array-contains', token).limit(50).get();
     arrSnap.docs.forEach((d) => {
         var _a;
         if (d.id === uid)
             return;
-        const data = d.data();
-        const deleteSingle = ((_a = data === null || data === void 0 ? void 0 : data.fcmToken) !== null && _a !== void 0 ? _a : '') === token;
-        cleanMap.set(d.id, { deleteSingle });
+        const row = d.data();
+        const deleteSingle = ((_a = row === null || row === void 0 ? void 0 : row.fcmToken) !== null && _a !== void 0 ? _a : '') === token;
+        const prev = cleanMap.get(d.id);
+        cleanMap.set(d.id, { deleteSingle: Boolean((prev === null || prev === void 0 ? void 0 : prev.deleteSingle) || deleteSingle) });
     });
     const singleSnap = await db.collection('users').where('fcmToken', '==', token).limit(50).get();
     singleSnap.docs.forEach((d) => {
         if (d.id === uid)
             return;
-        // fcmToken이 token과 동일한 케이스이므로 무조건 삭제 대상
-        cleanMap.set(d.id, { deleteSingle: true });
+        const prev = cleanMap.get(d.id);
+        cleanMap.set(d.id, { deleteSingle: Boolean((prev === null || prev === void 0 ? void 0 : prev.deleteSingle) || true) });
     });
     if (cleanMap.size > 0) {
         console.log(`🧹 registerFcmToken: 다른 계정에서 토큰 제거 (${cleanMap.size}명)`);
@@ -3481,15 +3513,6 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
         }
         await batch.commit();
     }
-    // 2) 현재 사용자 문서 업데이트 (레거시 호환 유지)
-    await db.collection('users').doc(uid).set({
-        fcmToken: token,
-        fcmTokens: admin.firestore.FieldValue.arrayUnion(token),
-        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    // 3) 토큰 레지스트리 업데이트 (토큰 단위 로케일)
-    await db.collection('fcm_tokens').doc(token).set(Object.assign(Object.assign({ userId: uid, lang,
-        locale }, (platform ? { platform } : {})), { updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
     return { ok: true, uid, lang };
 });
 /**
@@ -3497,7 +3520,7 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
  * - fcm_tokens/{token}이 현재 사용자 소유일 때만 삭제
  */
 exports.unregisterFcmToken = functions.https.onCall(async (data, context) => {
-    var _a, _b, _c;
+    var _a, _b, _c, _d, _e;
     if (!((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
         throw new functions.https.HttpsError('unauthenticated', 'Authentication required.');
     }
@@ -3506,16 +3529,46 @@ exports.unregisterFcmToken = functions.https.onCall(async (data, context) => {
     if (!token) {
         throw new functions.https.HttpsError('invalid-argument', 'token is required.');
     }
-    const ref = db.collection('fcm_tokens').doc(token);
-    const snap = await ref.get();
-    if (!snap.exists)
-        return { ok: true, deleted: false };
-    const d = snap.data();
-    if (((_c = d === null || d === void 0 ? void 0 : d.userId) !== null && _c !== void 0 ? _c : '') !== uid) {
-        return { ok: true, deleted: false };
+    const tokenRef = db.collection('fcm_tokens').doc(token);
+    const userRef = db.collection('users').doc(uid);
+    let deleted = false;
+    await db.runTransaction(async (tx) => {
+        var _a;
+        const snap = await tx.get(tokenRef);
+        if (!snap.exists) {
+            return;
+        }
+        const d = snap.data();
+        if (((_a = d === null || d === void 0 ? void 0 : d.userId) !== null && _a !== void 0 ? _a : '') !== uid) {
+            return;
+        }
+        tx.delete(tokenRef);
+        deleted = true;
+        tx.set(userRef, {
+            fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
+            fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    });
+    if (deleted) {
+        try {
+            const userSnap = await userRef.get();
+            if (userSnap.exists) {
+                const userData = userSnap.data();
+                const currentSingle = ((_c = userData === null || userData === void 0 ? void 0 : userData.fcmToken) !== null && _c !== void 0 ? _c : '').toString();
+                if (currentSingle === token) {
+                    const list = (_e = (_d = userData === null || userData === void 0 ? void 0 : userData.fcmTokens) === null || _d === void 0 ? void 0 : _d.map((v) => (v !== null && v !== void 0 ? v : '').toString()).filter((v) => v.length > 0 && v !== token)) !== null && _e !== void 0 ? _e : [];
+                    await userRef.set({
+                        fcmToken: list.length > 0 ? list[0] : admin.firestore.FieldValue.delete(),
+                        fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    }, { merge: true });
+                }
+            }
+        }
+        catch (e) {
+            console.warn('⚠️ unregisterFcmToken: users 보정 실패(무시)', e);
+        }
     }
-    await ref.delete();
-    return { ok: true, deleted: true };
+    return { ok: true, deleted };
 });
 exports.onNotificationCreated = functions.firestore
     .document('notifications/{notificationId}')

@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter/widgets.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'dart:ui' as ui;
@@ -17,8 +18,19 @@ import 'badge_service.dart';
 import 'navigation_service.dart';
 import 'dm_active_conversation.dart';
 import 'snack_chat_active_conversation.dart';
+import 'language_service.dart';
 import '../utils/logger.dart';
 import 'dart:io';
+
+enum PushInitState {
+  idle,
+  localeReady,
+  sessionReady,
+  appActive,
+  permissionResolved,
+  apnsRegistered,
+  tokenSynced,
+}
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -37,18 +49,74 @@ class FCMService {
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
-  final FlutterLocalNotificationsPlugin _localNotifications = 
+  final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
+  final LanguageService _languageService = LanguageService();
+
+  static Future<void>? _initializingFuture;
+  static String? _initializedUserId;
+  static PushInitState _state = PushInitState.idle;
+  static int _sessionEpoch = 0;
+  static int _activeEpoch = 0;
+  static Timer? _delayedTokenSyncTimer;
+  static Completer<void>? _appActiveCompleter;
+  static AppLifecycleListener? _appLifecycleListener;
+  static StreamSubscription<String>? _tokenRefreshSub;
+  static StreamSubscription<RemoteMessage>? _onMessageSub;
+  static StreamSubscription<RemoteMessage>? _onMessageOpenedAppSub;
 
   static const String _channelHighImportanceId = 'high_importance_channel';
-  static const String _channelHighImportanceName = 'High Importance Notifications';
+  static const String _channelHighImportanceName =
+      'High Importance Notifications';
   static const String _channelMeetupId = 'meetup_notifications';
   static const String _channelMeetupName = 'Meetup Notifications';
+
+  void _setState(PushInitState state, {String? reason}) {
+    _state = state;
+    final suffix = reason == null ? '' : ' ($reason)';
+    Logger.log('🧭 PushInitState: ${state.name}$suffix');
+  }
+
+  Future<void> _waitUntilAppActive(int epoch) async {
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      _setState(PushInitState.appActive, reason: 'already_resumed');
+      return;
+    }
+
+    _appActiveCompleter ??= Completer<void>();
+    _appLifecycleListener ??= AppLifecycleListener(
+      onResume: () {
+        if (!(_appActiveCompleter?.isCompleted ?? true)) {
+          _appActiveCompleter?.complete();
+        }
+      },
+    );
+
+    await _appActiveCompleter!.future;
+    if (epoch != _activeEpoch) {
+      throw StateError('stale epoch while waiting app active');
+    }
+    _setState(PushInitState.appActive, reason: 'resumed');
+  }
+
+  void _scheduleDelayedTokenSync(int epoch, String userId) {
+    _delayedTokenSyncTimer?.cancel();
+    _delayedTokenSyncTimer = Timer(const Duration(seconds: 15), () {
+      if (epoch != _activeEpoch || _initializedUserId != userId) {
+        Logger.log('⏭️ 지연 토큰 동기화 취소: stale epoch/user');
+        return;
+      }
+      _startTokenSync(userId, epoch);
+    });
+  }
+
+  bool _isStaleEpoch(int epoch) => epoch != _activeEpoch;
 
   // 로컬 알림 초기화
   Future<void> _initializeLocalNotifications() async {
     // Android 알림 채널 설정
-    const AndroidNotificationChannel highImportanceChannel = AndroidNotificationChannel(
+    const AndroidNotificationChannel highImportanceChannel =
+        AndroidNotificationChannel(
       _channelHighImportanceId,
       _channelHighImportanceName,
       description: 'This channel is used for important notifications.',
@@ -67,21 +135,22 @@ class FCMService {
     );
 
     // Android 알림 채널 생성
-    final androidPlugin = _localNotifications.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin =
+        _localNotifications.resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>();
     await androidPlugin?.createNotificationChannel(highImportanceChannel);
     await androidPlugin?.createNotificationChannel(meetupChannel);
 
     // 초기화 설정
     const AndroidInitializationSettings initializationSettingsAndroid =
         AndroidInitializationSettings('@mipmap/ic_launcher');
-    
+
     final DarwinInitializationSettings initializationSettingsDarwin =
         DarwinInitializationSettings(
-          requestAlertPermission: true,
-          requestBadgePermission: true,
-          requestSoundPermission: true,
-        );
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
 
     final InitializationSettings initializationSettings =
         InitializationSettings(
@@ -97,7 +166,8 @@ class FCMService {
         final payload = response.payload;
         if (payload != null && payload.isNotEmpty) {
           try {
-            final Map<String, dynamic> data = jsonDecode(payload) as Map<String, dynamic>;
+            final Map<String, dynamic> data =
+                jsonDecode(payload) as Map<String, dynamic>;
             await NavigationService.handlePushNavigation(data);
           } catch (e) {
             Logger.error('⚠️ 로컬 알림 payload 파싱 실패: $e');
@@ -129,8 +199,29 @@ class FCMService {
     }
   }
 
-  // 로그아웃 시 호출 (현재는 no-op, 리스너 정리 불필요)
-  Future<void> reset() async {}
+  // 로그아웃/계정 전환 시 호출
+  Future<void> reset() async {
+    _sessionEpoch += 1;
+    _activeEpoch = _sessionEpoch;
+    _delayedTokenSyncTimer?.cancel();
+    _delayedTokenSyncTimer = null;
+    _appActiveCompleter = null;
+    _appLifecycleListener?.dispose();
+    _appLifecycleListener = null;
+
+    try {
+      await _tokenRefreshSub?.cancel();
+      await _onMessageSub?.cancel();
+      await _onMessageOpenedAppSub?.cancel();
+    } catch (_) {}
+
+    _tokenRefreshSub = null;
+    _onMessageSub = null;
+    _onMessageOpenedAppSub = null;
+    _initializingFuture = null;
+    _initializedUserId = null;
+    _setState(PushInitState.idle, reason: 'reset');
+  }
 
   // locale 안전성 검증
   Future<void> _ensureLocaleInitialized() async {
@@ -150,74 +241,73 @@ class FCMService {
     }
   }
 
-  Future<bool> _consumeIosRecoveryFlag() async {
-    if (kIsWeb || !Platform.isIOS) return false;
+  Future<bool> _waitForApnsReady() async {
+    if (kIsWeb || !Platform.isIOS) return true;
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final required = prefs.getBool('ios_fcm_recovery_required') ?? false;
-      if (!required) {
-        return false;
-      }
-
-      await prefs.setBool('ios_fcm_recovery_required', false);
-      Logger.log('🛟 iOS FCM 복구 플래그 감지');
-      return true;
-    } catch (e) {
-      Logger.error('iOS FCM 복구 플래그 확인 실패', e);
-      return false;
-    }
-  }
-
-  Future<void> _performDeferredIosTokenRecoveryIfNeeded() async {
-    if (kIsWeb || !Platform.isIOS) return;
-
-    final shouldRecover = await _consumeIosRecoveryFlag();
-    if (!shouldRecover) {
-      return;
-    }
-
-    try {
-      final String? apnsToken = await _messaging.getAPNSToken().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () => null,
-      );
-
-      if (apnsToken == null || apnsToken.isEmpty) {
-        Logger.log('⚠️ iOS FCM 복구 연기: APNs 토큰 미준비');
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('ios_fcm_recovery_required', true);
-        return;
-      }
-
-      Logger.log('🛟 iOS FCM 안전 복구 시작');
-      await _messaging.deleteToken().timeout(
-        const Duration(seconds: 5),
-        onTimeout: () {
-          Logger.log('⏱️ iOS FCM 안전 복구 토큰 삭제 타임아웃');
-        },
-      );
-      await Future.delayed(const Duration(seconds: 1));
-      Logger.log('✅ iOS FCM 안전 복구 완료');
-    } catch (e) {
-      Logger.error('iOS FCM 안전 복구 실패', e);
+    const int maxAttempts = 20; // 최대 10초 대기 (0.5초 * 20)
+    for (int i = 0; i < maxAttempts; i++) {
       try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('ios_fcm_recovery_required', true);
-      } catch (_) {}
+        final String? apnsToken = await _messaging.getAPNSToken();
+        if (apnsToken != null && apnsToken.isNotEmpty) {
+          Logger.log('✅ APNs 토큰 준비 완료');
+          return true;
+        }
+      } catch (e) {
+        Logger.error('APNs 토큰 확인 실패 (재시도)', e);
+      }
+      await Future.delayed(const Duration(milliseconds: 500));
     }
+
+    Logger.log('⚠️ APNs 토큰 미준비 - 이번 세션 FCM 토큰 조회 연기');
+    return false;
   }
 
   // FCM 초기화
   Future<void> initialize(String userId) async {
-    // 전체 초기화를 try-catch로 래핑 (최상위 보호)
+    if (_initializedUserId == userId) {
+      Logger.log('ℹ️ FCM 초기화 스킵: 동일 세션 사용자($userId)');
+      return;
+    }
+
+    if (_initializingFuture != null) {
+      await _initializingFuture;
+      if (_initializedUserId == userId) {
+        Logger.log('ℹ️ FCM 초기화 스킵: 초기화 완료됨($userId)');
+        return;
+      }
+    }
+
+    if (_initializedUserId != null && _initializedUserId != userId) {
+      await reset();
+    }
+
+    _sessionEpoch += 1;
+    _activeEpoch = _sessionEpoch;
+    final int epoch = _activeEpoch;
+    _setState(PushInitState.idle, reason: 'initialize_start');
+
+    final completer = Completer<void>();
+    _initializingFuture = completer.future;
+
     try {
+      _setState(PushInitState.sessionReady, reason: 'user:$userId');
+
       // locale 안전성 검증 (Firebase Messaging 초기화 전 필수)
       try {
+        await _languageService.initializeLanguage();
         await _ensureLocaleInitialized();
+        _setState(PushInitState.localeReady);
       } catch (e) {
         Logger.error('locale 초기화 실패 - 계속 진행', e);
       }
+
+      if (_isStaleEpoch(epoch)) {
+        Logger.log('⏭️ FCM 초기화 중단: stale epoch(locale)');
+        completer.complete();
+        return;
+      }
+
+      await _waitUntilAppActive(epoch);
 
       // 로컬 알림 초기화
       try {
@@ -250,10 +340,15 @@ class FCMService {
         if (!kIsWeb && Platform.isIOS) {
           if (settings.authorizationStatus == AuthorizationStatus.authorized) {
             Logger.log('✅ iOS 알림 권한 승인됨');
-          } else if (settings.authorizationStatus == AuthorizationStatus.provisional) {
+            _setState(PushInitState.permissionResolved);
+          } else if (settings.authorizationStatus ==
+              AuthorizationStatus.provisional) {
             Logger.log('✅ iOS 알림 권한 Provisional');
+            _setState(PushInitState.permissionResolved);
           } else {
             Logger.log('❌ iOS 알림 권한 거부됨 - FCM 초기화 중단');
+            _initializedUserId = userId;
+            completer.complete();
             return; // 권한 없으면 FCM 초기화 중단
           }
         }
@@ -267,11 +362,13 @@ class FCMService {
       // - 목적: DM 채팅 중에는 DM 알림을 띄우지 않기 위함(대화방 활성 시)
       if (!kIsWeb && Platform.isIOS) {
         try {
-          await _messaging.setForegroundNotificationPresentationOptions(
+          await _messaging
+              .setForegroundNotificationPresentationOptions(
             alert: false,
             badge: false,
             sound: true,
-          ).timeout(
+          )
+              .timeout(
             const Duration(seconds: 3),
             onTimeout: () {
               Logger.log('⏱️ 포그라운드 설정 타임아웃');
@@ -280,24 +377,42 @@ class FCMService {
         } catch (e) {
           Logger.error('포그라운드 설정 실패 - 계속 진행', e);
         }
-
-        try {
-          await _performDeferredIosTokenRecoveryIfNeeded();
-        } catch (e) {
-          Logger.error('iOS 지연 복구 처리 실패 - 계속 진행', e);
-        }
       }
 
       // 토큰 동기화는 UI와 분리해서 백그라운드로 처리
       try {
-        _startTokenSync(userId);
+        var canStartTokenSync = true;
+        if (!kIsWeb && Platform.isIOS) {
+          final apnsReady = await _waitForApnsReady();
+          if (!apnsReady) {
+            canStartTokenSync = false;
+            _scheduleDelayedTokenSync(epoch, userId);
+          } else {
+            _setState(PushInitState.apnsRegistered);
+          }
+        }
+
+        if (_isStaleEpoch(epoch)) {
+          Logger.log('⏭️ FCM 초기화 중단: stale epoch(token_sync_start)');
+          completer.complete();
+          return;
+        }
+
+        if (canStartTokenSync) {
+          _startTokenSync(userId, epoch);
+        }
       } catch (e) {
         Logger.error('토큰 동기화 시작 실패 - 계속 진행', e);
       }
 
       // 토큰 갱신 리스너 등록
       try {
-        _messaging.onTokenRefresh.listen((newToken) {
+        await _tokenRefreshSub?.cancel();
+        _tokenRefreshSub = _messaging.onTokenRefresh.listen((newToken) {
+          if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+            Logger.log('⏭️ 토큰 갱신 이벤트 무시: stale epoch/user');
+            return;
+          }
           Logger.log('📱 FCM 토큰 갱신: $newToken');
           _saveFCMToken(userId, newToken);
         });
@@ -307,7 +422,9 @@ class FCMService {
 
       // 포어그라운드 메시지 리스너 등록
       try {
-        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+        await _onMessageSub?.cancel();
+        _onMessageSub =
+            FirebaseMessaging.onMessage.listen((RemoteMessage message) {
           try {
             Logger.log('📱 포어그라운드 메시지 수신: ${message.messageId}');
             Logger.log('📱 제목: ${message.notification?.title}');
@@ -318,15 +435,18 @@ class FCMService {
             // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
             // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
             final type = (message.data['type'] ?? '').toString();
-            final conversationId = (message.data['conversationId'] ?? '').toString();
+            final conversationId =
+                (message.data['conversationId'] ?? '').toString();
             final snackChatId = (message.data['snackChatId'] ?? '').toString();
             final isDm = type == 'dm_received' && conversationId.isNotEmpty;
-            final isSnackChat = type == 'snack_chat_message' && snackChatId.isNotEmpty;
+            final isSnackChat =
+                type == 'snack_chat_message' && snackChatId.isNotEmpty;
 
             if (!kIsWeb && (Platform.isIOS || Platform.isAndroid)) {
               final isActiveConversation =
                   (isDm && DMActiveConversation.isActive(conversationId)) ||
-                  (isSnackChat && SnackChatActiveConversation.isActive(snackChatId));
+                      (isSnackChat &&
+                          SnackChatActiveConversation.isActive(snackChatId));
 
               if (isActiveConversation) {
                 return;
@@ -350,7 +470,9 @@ class FCMService {
 
       // 백그라운드에서 앱이 열렸을 때 메시지 처리
       try {
-        FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+        await _onMessageOpenedAppSub?.cancel();
+        _onMessageOpenedAppSub = FirebaseMessaging.onMessageOpenedApp
+            .listen((RemoteMessage message) async {
           try {
             Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
             Logger.log('📱 데이터: ${message.data}');
@@ -365,7 +487,8 @@ class FCMService {
 
       // 앱이 종료된 상태에서 알림을 통해 열렸을 때
       try {
-        RemoteMessage? initialMessage = await _messaging.getInitialMessage().timeout(
+        RemoteMessage? initialMessage =
+            await _messaging.getInitialMessage().timeout(
           const Duration(seconds: 3),
           onTimeout: () {
             Logger.log('⏱️ getInitialMessage 타임아웃');
@@ -381,7 +504,11 @@ class FCMService {
         Logger.error('초기 메시지 처리 실패 - 계속 진행', e);
       }
 
+      _initializedUserId = userId;
+      _setState(PushInitState.tokenSynced, reason: 'initialize_completed');
+      completer.complete();
     } catch (e) {
+      completer.complete();
       Logger.error('FCM 초기화 실패 - 앱은 계속 실행됨', e);
       // 크래시 방지: 예외를 삼키고 앱 실행 계속
       // Firebase Crashlytics에 리포트 (가능한 경우)
@@ -393,20 +520,27 @@ class FCMService {
       } catch (_) {
         // 크래시 리포트 실패해도 앱은 계속 실행
       }
+    } finally {
+      _initializingFuture = null;
     }
   }
 
-  void _startTokenSync(String userId) {
+  void _startTokenSync(String userId, int epoch) {
     // 로그인/초기화 흐름을 막지 않도록 비동기 작업으로 분리
     Future.microtask(() async {
-      await _syncTokenWithRetries(userId);
+      await _syncTokenWithRetries(userId, epoch);
     });
   }
 
-  Future<void> _syncTokenWithRetries(String userId) async {
+  Future<void> _syncTokenWithRetries(String userId, int epoch) async {
     const List<int> retrySeconds = [0, 2, 4, 8, 16];
 
     for (int i = 0; i < retrySeconds.length; i++) {
+      if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
+        Logger.log('⏭️ 토큰 동기화 중단: stale epoch/user');
+        return;
+      }
+
       if (retrySeconds[i] > 0) {
         await Future.delayed(Duration(seconds: retrySeconds[i]));
       }
@@ -420,7 +554,8 @@ class FCMService {
             final String? apnsToken = await _messaging.getAPNSToken();
             if (apnsToken == null || apnsToken.isEmpty) {
               if (shouldLogRetry) {
-                Logger.log('⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+                Logger.log(
+                    '⚠️ APNs 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
               }
               continue;
             } else {
@@ -435,17 +570,21 @@ class FCMService {
         // FCM 토큰 가져오기 - 타임아웃 추가
         try {
           final String? token = await _messaging.getToken().timeout(
-            const Duration(seconds: 5),
-            onTimeout: () => null,
-          );
-          
+                const Duration(seconds: 5),
+                onTimeout: () => null,
+              );
+
           if (token != null && token.isNotEmpty) {
             Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
             await _saveFCMToken(userId, token);
+            if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
+              _setState(PushInitState.tokenSynced, reason: 'token_uploaded');
+            }
             return;
           }
           if (shouldLogRetry) {
-            Logger.log('⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
+            Logger.log(
+                '⚠️ FCM 토큰 대기 중... (retry ${i + 1}/${retrySeconds.length})');
           }
         } catch (e) {
           Logger.error('❌ FCM 토큰 가져오기 실패: $e');
@@ -465,18 +604,23 @@ class FCMService {
   Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
       final notification = message.notification;
-      final title = notification?.title ?? (message.data['title'] ?? '').toString();
-      final body = notification?.body ?? (message.data['body'] ?? '').toString();
+      final title =
+          notification?.title ?? (message.data['title'] ?? '').toString();
+      final body =
+          notification?.body ?? (message.data['body'] ?? '').toString();
       if (title.trim().isEmpty && body.trim().isEmpty) return;
 
       final type = (message.data['type'] ?? '').toString();
-      final String androidChannelId = _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
-      final String androidChannelName = _isMeetupType(type) ? _channelMeetupName : _channelHighImportanceName;
+      final String androidChannelId =
+          _isMeetupType(type) ? _channelMeetupId : _channelHighImportanceId;
+      final String androidChannelName =
+          _isMeetupType(type) ? _channelMeetupName : _channelHighImportanceName;
       final String androidChannelDesc = _isMeetupType(type)
           ? 'This channel is used for meetup-related notifications.'
           : 'This channel is used for important notifications.';
 
-      final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      final AndroidNotificationDetails androidDetails =
+          AndroidNotificationDetails(
         androidChannelId,
         androidChannelName,
         channelDescription: androidChannelDesc,
@@ -538,7 +682,9 @@ class FCMService {
           return locale.toLanguageTag();
         } catch (_) {
           final cc = locale.countryCode;
-          return cc == null || cc.isEmpty ? locale.languageCode : '${locale.languageCode}-$cc';
+          return cc == null || cc.isEmpty
+              ? locale.languageCode
+              : '${locale.languageCode}-$cc';
         }
       })();
 

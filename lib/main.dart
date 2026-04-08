@@ -18,7 +18,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
@@ -66,12 +65,11 @@ void main() {
       // 1. Firebase 기본 초기화 (중복 초기화 방지)
       try {
         await Firebase.initializeApp(
-          options: DefaultFirebaseOptions.currentPlatform
-        );
+            options: DefaultFirebaseOptions.currentPlatform);
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 완료');
         }
-        
+
         // ✅ CRITICAL FIX: Firebase 완전 초기화 대기 (iOS 필수)
         // Firebase.initializeApp()이 완료되어도 내부적으로 모든 서비스가 준비되지 않을 수 있음
         await Future.delayed(const Duration(seconds: 2));
@@ -91,38 +89,6 @@ void main() {
         }
       }
 
-      // 1-A. iOS 버전 마이그레이션
-      // 중요: v1.0.35부터는 iOS 시작 구간에서 FirebaseMessaging.deleteToken()을 호출하지 않습니다.
-      // Crashlytics 스택상 FIRMessagingCurrentLocale / Swift Concurrency 크래시가
-      // 초기 토큰 정리와 겹칠 가능성이 높아, 앱 안정성을 우선합니다.
-      if (!kIsWeb && Platform.isIOS) {
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          final lastVersion = prefs.getString('last_app_version') ?? '';
-          const currentVersion = '1.0.35'; // pubspec.yaml과 동기화 필요
-
-          if (kDebugMode) {
-            debugPrint('📌 iOS 안전 마이그레이션: "$lastVersion" → "$currentVersion"');
-          }
-
-          if (lastVersion.isNotEmpty && lastVersion != currentVersion) {
-            await prefs.setBool('ios_fcm_recovery_required', true);
-            if (kDebugMode) {
-              debugPrint('🛟 iOS FCM 복구 플래그 설정 완료');
-            }
-          }
-
-          await prefs.setString('last_app_version', currentVersion);
-          if (kDebugMode) {
-            debugPrint('✅ 버전 기록 완료: $currentVersion');
-          }
-        } catch (e) {
-          if (kDebugMode) {
-            debugPrint('⚠️ iOS 버전 마이그레이션 실패(무시): $e');
-          }
-        }
-      }
-
       // 2. locale 강제 초기화 (Firebase Messaging보다 먼저 - 중요!)
       try {
         final languageService = LanguageService();
@@ -131,7 +97,7 @@ void main() {
         if (kDebugMode) {
           debugPrint('🌐 locale 초기화 완료: $lang');
         }
-        
+
         // locale 설정 후 추가 안정화 대기 (iOS 중요)
         await Future.delayed(const Duration(milliseconds: 1000));
       } catch (e) {
@@ -146,10 +112,13 @@ void main() {
       try {
         await Future.delayed(const Duration(milliseconds: 500));
 
-        // iOS는 시작 직후 Messaging에 과도하게 접근하지 않도록 지연 초기화만 사용한다.
+        // 부팅 단계에서는 푸시 활성화를 하지 않는다.
+        // iOS 푸시는 AuthProvider/FCMService 상태머신에서 locale/session/active 조건이
+        // 모두 만족된 뒤에만 시작된다.
         // 백그라운드 핸들러는 Android에만 등록해도 핵심 푸시 기능에는 영향이 없다.
         if (!kIsWeb && Platform.isAndroid) {
-          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+          FirebaseMessaging.onBackgroundMessage(
+              firebaseMessagingBackgroundHandler);
           if (kDebugMode) {
             debugPrint('📱 Android FCM 백그라운드 핸들러 등록 완료');
           }
@@ -196,7 +165,8 @@ void main() {
 
         PlatformDispatcher.instance.onError = (error, stack) {
           try {
-            FirebaseCrashlytics.instance.recordError(error, stack, fatal: false);
+            FirebaseCrashlytics.instance
+                .recordError(error, stack, fatal: false);
           } catch (_) {}
           return true;
         };
@@ -373,7 +343,7 @@ void main() {
         debugPrint('❌ runZonedGuarded 에러 캐치: $error');
         debugPrint('스택: $stack');
       }
-      
+
       try {
         FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       } catch (crashlyticsError) {
@@ -382,7 +352,7 @@ void main() {
           debugPrint('⚠️ Crashlytics 리포트 실패: $crashlyticsError');
         }
       }
-      
+
       // ❌ 절대 rethrow 하지 않음 - 앱이 종료됨!
       // production에서도 앱 계속 실행
     },

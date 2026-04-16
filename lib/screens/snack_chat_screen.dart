@@ -128,7 +128,16 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       final unreadMap = data['unreadCount'] as Map<String, dynamic>? ?? {};
       final myUnread = unreadMap[uid];
       final v = myUnread is int ? myUnread : (myUnread is num ? myUnread.toInt() : 0);
+      
+      // 🔍 디버깅: unreadCount 값 로깅
+      print('🔔 [SnackChat] Room 문서 업데이트 감지:');
+      print('  - snackChatId: ${widget.snackChatId}');
+      print('  - myUnread: $v');
+      print('  - lastMessage: ${data['lastMessage']}');
+      print('  - lastMessageSenderId: ${data['lastMessageSenderId']}');
+      
       if (v > 0) {
+        print('  ⚠️ unreadCount > 0 감지, markAsRead 예약');
         _scheduleMarkAsRead();
       }
     });
@@ -383,31 +392,41 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                               final msg = _messages[index];
                               final isMe = msg.senderId == _uid;
                               
+                              // 날짜 구분선 표시 여부
+                              final bool showDateDivider = _shouldShowDateDivider(index);
+                              
                               // 시간 표시 로직
                               final String timeText = _formatTime(msg.createdAt);
                               
-                              // ✅ 내 메시지: 항상 시간 표시
-                              // ✅ 상대방 메시지: 시간이 바뀔 때만 표시
-                              bool showTimeText;
-                              if (isMe) {
-                                showTimeText = true; // 내 메시지는 항상 표시
+                              // ✅ 시간 표시 로직: 이전 메시지와 시간이 다르거나 발신자가 다를 때만 표시
+                              bool showTimeText = false;
+                              if (index > 0) {
+                                final prevMsg = _messages[index - 1];
+                                final String prevTimeText = _formatTime(prevMsg.createdAt);
+                                // 시간이 바뀌거나 발신자가 바뀌면 시간 표시
+                                showTimeText = timeText != prevTimeText || prevMsg.senderId != msg.senderId;
                               } else {
-                                final String? prevTimeText = index > 0
-                                    ? _formatTime(_messages[index - 1].createdAt)
-                                    : null;
-                                showTimeText = prevTimeText == null || timeText != prevTimeText;
+                                // 가장 최근 메시지는 항상 시간 표시
+                                showTimeText = true;
                               }
                               
                               // ✅ 이름 표시 로직: 이전 메시지와 발신자가 다르면 이름 표시
                               final bool showSenderName = index == _messages.length - 1 || // 맨 처음 메시지
                                   _messages[index + 1].senderId != msg.senderId; // 이전 메시지가 다른 사용자
                               
-                              return _buildMessageBubble(
-                                message: msg,
-                                isMe: isMe,
-                                timeText: timeText,
-                                showTimeText: showTimeText,
-                                showSenderName: showSenderName,
+                              return Column(
+                                children: [
+                                  // 날짜 구분선
+                                  if (showDateDivider) _buildDateDivider(msg.createdAt),
+                                  // 메시지 버블
+                                  _buildMessageBubble(
+                                    message: msg,
+                                    isMe: isMe,
+                                    timeText: timeText,
+                                    showTimeText: showTimeText,
+                                    showSenderName: showSenderName,
+                                  ),
+                                ],
                               );
                             },
                           ),
@@ -733,6 +752,100 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
     final minute = local.minute.toString().padLeft(2, '0');
     return '$period $hour:$minute';
+  }
+
+  // 날짜가 바뀌는지 확인
+  bool _shouldShowDateDivider(int index) {
+    if (index == _messages.length - 1) {
+      // 맨 처음(가장 오래된) 메시지는 항상 날짜 표시
+      return true;
+    }
+    final currentMsg = _messages[index];
+    final prevMsg = _messages[index + 1]; // reverse=true이므로 index+1이 더 오래된 메시지
+    
+    final currentDate = currentMsg.createdAt.toLocal();
+    final prevDate = prevMsg.createdAt.toLocal();
+    
+    // 날짜가 다르면 구분선 표시
+    return currentDate.year != prevDate.year ||
+        currentDate.month != prevDate.month ||
+        currentDate.day != prevDate.day;
+  }
+
+  // 날짜 구분선 UI
+  Widget _buildDateDivider(DateTime dateTime) {
+    final local = dateTime.toLocal();
+    final now = DateTime.now();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    
+    String dateText;
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final messageDate = DateTime(local.year, local.month, local.day);
+    
+    if (messageDate == today) {
+      dateText = isKo ? '오늘' : 'Today';
+    } else if (messageDate == yesterday) {
+      dateText = isKo ? '어제' : 'Yesterday';
+    } else {
+      // 올해면 월/일만, 다른 해면 년/월/일
+      if (local.year == now.year) {
+        dateText = isKo
+            ? '${local.month}월 ${local.day}일'
+            : '${_getMonthName(local.month)} ${local.day}';
+      } else {
+        dateText = isKo
+            ? '${local.year}년 ${local.month}월 ${local.day}일'
+            : '${_getMonthName(local.month)} ${local.day}, ${local.year}';
+      }
+    }
+    
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.3),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                dateText,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: Colors.white.withValues(alpha: 0.3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    return months[month - 1];
   }
 
   void _handlePushBackNavigation(SnackChat room) {

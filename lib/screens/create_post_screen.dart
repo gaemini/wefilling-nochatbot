@@ -1066,7 +1066,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                                             ),
                                           ),
                                           child: Text(
-                                            '${_selectedAssets.length}/10',
+                                            '${_selectedAssets.length}/15',
                                             style: const TextStyle(
                                               fontFamily: 'Pretendard',
                                               fontSize: 12,
@@ -1283,313 +1283,320 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                   controller: _scrollController,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: EdgeInsets.only(
+                  padding: const EdgeInsets.only(
                     left: 16.0,
                     right: 16.0,
                     top: 12.0,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 공개 범위 선택
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
-                        margin: const EdgeInsets.only(bottom: 16.0),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
-                            _buildVisibilitySegmentedControl(),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // 공개 범위 선택
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 6),
+                            margin: const EdgeInsets.only(bottom: 16.0),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
+                                _buildVisibilitySegmentedControl(),
 
-                            if (_visibility == 'public') ...[
-                              const SizedBox(height: 8),
-                              Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  // 카테고리 안내 박스와 톤/규격 통일 (amber)
-                                  color: const Color(0xFFFFFBEB), // amber-50
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                      color:
-                                          const Color(0xFFFDE68A)), // amber-200
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.info_outline,
-                                      size: 18,
-                                      color: Color(0xFFB45309), // amber-700
+                                if (_visibility == 'public') ...[
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      // 카테고리 안내 박스와 톤/규격 통일 (amber)
+                                      color: const Color(0xFFFFFBEB), // amber-50
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(
+                                          color:
+                                              const Color(0xFFFDE68A)), // amber-200
                                     ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        _isAnonymous
-                                            ? (AppLocalizations.of(context)!
-                                                    .postAnonymously ??
-                                                "")
-                                            : AppLocalizations.of(context)!
-                                                .authorAndCommenterInfo,
-                                        style: const TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: Color(0xFF92400E), // amber-800
-                                          height: 1.25,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
-                              Container(
-                                margin: const EdgeInsets.only(top: 10),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                      color: const Color(0xFFE5E7EB)),
-                                ),
-                                child: Semantics(
-                                  container: true,
-                                  button: true,
-                                  checked: _isAnonymous,
-                                  label: AppLocalizations.of(context)!
-                                      .postAnonymously,
-                                  child: Material(
-                                    color: Colors.transparent,
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(12),
-                                      onTap: () {
-                                        setState(() {
-                                          _isAnonymous = !_isAnonymous;
-                                        });
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 10),
-                                        child: Row(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Padding(
-                                              padding:
-                                                  const EdgeInsets.only(top: 2),
-                                              child: IgnorePointer(
-                                                ignoring: true,
-                                                child: Checkbox(
-                                                  value: _isAnonymous,
-                                                  onChanged: (_) {},
-                                                  activeColor:
-                                                      AppColors.pointColor,
-                                                  materialTapTargetSize:
-                                                      MaterialTapTargetSize
-                                                          .shrinkWrap,
-                                                  visualDensity:
-                                                      const VisualDensity(
-                                                          horizontal: -4,
-                                                          vertical: -4),
-                                                ),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 10),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment:
-                                                    CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    AppLocalizations.of(
-                                                            context)!
-                                                        .postAnonymously,
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Pretendard',
-                                                      fontSize: 14,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: Color(0xFF111827),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    AppLocalizations.of(
-                                                            context)!
-                                                        .idWillBeShown,
-                                                    style: const TextStyle(
-                                                      fontFamily: 'Pretendard',
-                                                      fontSize: 12,
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                      color: Color(0xFF6B7280),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-
-                            if (_visibility == 'category')
-                              Container(
-                                key: _categorySectionKey,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const SizedBox(height: 8),
-                                    Row(
+                                    child: Row(
                                       children: [
-                                        Text(
-                                          AppLocalizations.of(context)!
-                                              .selectGroupRequired,
-                                          style: TextStyle(
-                                            fontFamily: 'Pretendard',
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w700,
-                                            color: (_showCategoryRequiredHint &&
-                                                    _selectedCategoryIds
-                                                        .isEmpty)
-                                                ? const Color(0xFFB91C1C)
-                                                : const Color(0xFF111827),
-                                          ),
+                                        const Icon(
+                                          Icons.info_outline,
+                                          size: 18,
+                                          color: Color(0xFFB45309), // amber-700
                                         ),
                                         const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                (_selectedCategoryIds.isEmpty)
-                                                    ? const Color(0xFFFEE2E2)
-                                                    : const Color(0xFFDCFCE7),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                          ),
+                                        Expanded(
                                           child: Text(
-                                            '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
-                                            style: TextStyle(
+                                            _isAnonymous
+                                                ? (AppLocalizations.of(context)!
+                                                        .postAnonymously ??
+                                                    "")
+                                                : AppLocalizations.of(context)!
+                                                    .authorAndCommenterInfo,
+                                            style: const TextStyle(
                                               fontFamily: 'Pretendard',
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              color:
-                                                  (_selectedCategoryIds.isEmpty)
-                                                      ? const Color(0xFF991B1B)
-                                                      : const Color(0xFF166534),
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: Color(0xFF92400E), // amber-800
+                                              height: 1.25,
                                             ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                    const SizedBox(height: 10),
-                                    Container(
-                                      padding: const EdgeInsets.all(12),
-                                      decoration: BoxDecoration(
-                                        color: const Color(0xFFFFFBEB),
-                                        borderRadius: BorderRadius.circular(10),
-                                        border: Border.all(
-                                            color: const Color(0xFFFDE68A)),
-                                      ),
-                                      child: Row(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const Icon(
-                                            Icons.info_outline,
-                                            size: 18,
-                                            color: Color(0xFFB45309),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              AppLocalizations.of(context)!
-                                                  .selectedGroupOnlyPost,
-                                              style: const TextStyle(
-                                                fontFamily: 'Pretendard',
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w600,
-                                                color: Color(0xFF92400E),
-                                                height: 1.25,
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                  ),
+                                  // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
+                                  Container(
+                                    margin: const EdgeInsets.only(top: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: const Color(0xFFE5E7EB)),
                                     ),
-                                    const SizedBox(height: 12),
-                                    AnimatedContainer(
-                                      duration:
-                                          const Duration(milliseconds: 220),
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: (_showCategoryRequiredHint &&
-                                                _selectedCategoryIds.isEmpty)
-                                            ? const Color(0xFFFFF1F2)
-                                            : Colors.transparent,
+                                    child: Semantics(
+                                      container: true,
+                                      button: true,
+                                      checked: _isAnonymous,
+                                      label: AppLocalizations.of(context)!
+                                          .postAnonymously,
+                                      child: Material(
+                                        color: Colors.transparent,
                                         borderRadius: BorderRadius.circular(12),
-                                        // 카테고리 목록을 감싸는 "안쪽 선" 제거:
-                                        // - 평상시에는 border 자체를 없애고
-                                        // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
-                                        border: (_showCategoryRequiredHint &&
-                                                _selectedCategoryIds.isEmpty)
-                                            ? Border.all(
-                                                color: const Color(0xFFFCA5A5),
-                                                width: 1.5,
-                                              )
-                                            : null,
-                                      ),
-                                      child: FriendCategorySelector(
-                                        categories: _friendCategories,
-                                        selectedCategoryIds:
-                                            _selectedCategoryIds,
-                                        selectedColor: AppColors.pointColor,
-                                        style: FriendCategorySelectorStyle.list,
-                                        onSelectionChanged: (newSelection) {
-                                          setState(() {
-                                            _selectedCategoryIds = newSelection;
-                                            if (newSelection.isNotEmpty) {
-                                              _showCategoryRequiredHint = false;
-                                            }
-                                          });
-                                          _checkCanSubmit();
-                                        },
-                                      ),
-                                    ),
-                                    if (_selectedCategoryIds.isEmpty &&
-                                        _friendCategories.isNotEmpty)
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.only(top: 8.0),
-                                        child: Text(
-                                          AppLocalizations.of(context)!
-                                              .groupSelectAtLeastOne,
-                                          style: const TextStyle(
-                                            color: Color(0xFFB91C1C),
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            fontFamily: 'Pretendard',
+                                        child: InkWell(
+                                          borderRadius: BorderRadius.circular(12),
+                                          onTap: () {
+                                            setState(() {
+                                              _isAnonymous = !_isAnonymous;
+                                            });
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 10),
+                                            child: Row(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.only(top: 2),
+                                                  child: IgnorePointer(
+                                                    ignoring: true,
+                                                    child: Checkbox(
+                                                      value: _isAnonymous,
+                                                      onChanged: (_) {},
+                                                      activeColor:
+                                                          AppColors.pointColor,
+                                                      materialTapTargetSize:
+                                                          MaterialTapTargetSize
+                                                              .shrinkWrap,
+                                                      visualDensity:
+                                                          const VisualDensity(
+                                                              horizontal: -4,
+                                                              vertical: -4),
+                                                    ),
+                                                  ),
+                                                ),
+                                                const SizedBox(width: 10),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment:
+                                                        CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(
+                                                        AppLocalizations.of(
+                                                                context)!
+                                                            .postAnonymously,
+                                                        style: const TextStyle(
+                                                          fontFamily: 'Pretendard',
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.w700,
+                                                          color: Color(0xFF111827),
+                                                        ),
+                                                      ),
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        AppLocalizations.of(
+                                                                context)!
+                                                            .idWillBeShown,
+                                                        style: const TextStyle(
+                                                          fontFamily: 'Pretendard',
+                                                          fontSize: 12,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                          color: Color(0xFF6B7280),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        ),
+                                    ),
+                                  ),
+                                ],
+
+                                if (_visibility == 'category')
+                                  Container(
+                                    key: _categorySectionKey,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              AppLocalizations.of(context)!
+                                                  .selectGroupRequired,
+                                              style: TextStyle(
+                                                fontFamily: 'Pretendard',
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w700,
+                                                color: (_showCategoryRequiredHint &&
+                                                        _selectedCategoryIds
+                                                            .isEmpty)
+                                                    ? const Color(0xFFB91C1C)
+                                                    : const Color(0xFF111827),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color:
+                                                    (_selectedCategoryIds.isEmpty)
+                                                        ? const Color(0xFFFEE2E2)
+                                                        : const Color(0xFFDCFCE7),
+                                                borderRadius:
+                                                    BorderRadius.circular(999),
+                                              ),
+                                              child: Text(
+                                                '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
+                                                style: TextStyle(
+                                                  fontFamily: 'Pretendard',
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color:
+                                                      (_selectedCategoryIds.isEmpty)
+                                                          ? const Color(0xFF991B1B)
+                                                          : const Color(0xFF166534),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFFFFBEB),
+                                            borderRadius: BorderRadius.circular(10),
+                                            border: Border.all(
+                                                color: const Color(0xFFFDE68A)),
+                                          ),
+                                          child: Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Icon(
+                                                Icons.info_outline,
+                                                size: 18,
+                                                color: Color(0xFFB45309),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  AppLocalizations.of(context)!
+                                                      .selectedGroupOnlyPost,
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Pretendard',
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF92400E),
+                                                    height: 1.25,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const SizedBox(height: 12),
+                                        AnimatedContainer(
+                                          duration:
+                                              const Duration(milliseconds: 220),
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            color: (_showCategoryRequiredHint &&
+                                                    _selectedCategoryIds.isEmpty)
+                                                ? const Color(0xFFFFF1F2)
+                                                : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(12),
+                                            // 카테고리 목록을 감싸는 "안쪽 선" 제거:
+                                            // - 평상시에는 border 자체를 없애고
+                                            // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
+                                            border: (_showCategoryRequiredHint &&
+                                                    _selectedCategoryIds.isEmpty)
+                                                ? Border.all(
+                                                    color: const Color(0xFFFCA5A5),
+                                                    width: 1.5,
+                                                  )
+                                                : null,
+                                          ),
+                                          child: FriendCategorySelector(
+                                            categories: _friendCategories,
+                                            selectedCategoryIds:
+                                                _selectedCategoryIds,
+                                            selectedColor: AppColors.pointColor,
+                                            style: FriendCategorySelectorStyle.list,
+                                            onSelectionChanged: (newSelection) {
+                                              setState(() {
+                                                _selectedCategoryIds = newSelection;
+                                                if (newSelection.isNotEmpty) {
+                                                  _showCategoryRequiredHint = false;
+                                                }
+                                              });
+                                              _checkCanSubmit();
+                                            },
+                                          ),
+                                        ),
+                                        if (_selectedCategoryIds.isEmpty &&
+                                            _friendCategories.isNotEmpty)
+                                          Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 8.0),
+                                            child: Text(
+                                              AppLocalizations.of(context)!
+                                                  .groupSelectAtLeastOne,
+                                              style: const TextStyle(
+                                                color: Color(0xFFB91C1C),
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                fontFamily: 'Pretendard',
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],

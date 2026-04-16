@@ -305,6 +305,9 @@ class SnackChatService {
           ? (text.isNotEmpty ? text : '[이미지]')
           : text;
 
+      // 대화방 정보 업데이트 (마지막 메시지/시간)
+      // ⚠️ 중요: unreadCount 증감은 서버(Cloud Functions)가 단일 소스로 처리한다.
+      // 클라이언트는 발신자 본인의 unreadCount만 0으로 리셋한다.
       final updateFields = <String, dynamic>{
         'lastMessage': previewText,
         'lastMessageTime': Timestamp.fromDate(now),
@@ -312,11 +315,6 @@ class SnackChatService {
         'unreadCount.$uid': 0,
         'updatedAt': Timestamp.fromDate(now),
       };
-      for (final id in room.participantIds) {
-        if (id != uid) {
-          updateFields['unreadCount.$id'] = FieldValue.increment(1);
-        }
-      }
 
       await roomRef.update(updateFields);
       return true;
@@ -332,9 +330,15 @@ class SnackChatService {
     if (uid == null) return;
 
     try {
+      print('📖 [SnackChat] markAsRead 호출:');
+      print('  - snackChatId: $snackChatId');
+      print('  - uid: $uid');
+      
       await _collection.doc(snackChatId).update({
         'unreadCount.$uid': 0,
       });
+      
+      print('  ✅ markAsRead 완료');
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
     }

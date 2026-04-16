@@ -4834,14 +4834,20 @@ exports.onSnackChatMessageCreated = functions.firestore
         const senderName = (senderData === null || senderData === void 0 ? void 0 : senderData.nickname) || (senderData === null || senderData === void 0 ? void 0 : senderData.name) || '익명';
         const roomTitle = roomData.title || 'Snack Chat';
         // FieldValue.increment로 unreadCount 원자적 증분
+        console.log(`  🔔 unreadCount 증분 시작`);
         const updateFields = {
             'updatedAt': admin.firestore.FieldValue.serverTimestamp(),
         };
         for (const rid of recipients) {
+            console.log(`    - ${rid}: increment(1)`);
             updateFields[`unreadCount.${rid}`] = admin.firestore.FieldValue.increment(1);
         }
         await roomRef.update(updateFields);
         console.log(`  ✅ unreadCount 증분 완료 (수신자 ${recipients.length}명)`);
+        // 증분 후 실제 값 확인
+        const updatedRoom = await roomRef.get();
+        const updatedData = updatedRoom.data();
+        console.log(`  📊 증분 후 unreadCount:`, updatedData === null || updatedData === void 0 ? void 0 : updatedData.unreadCount);
         // 각 수신자별로 개별 배지 계산 + FCM 푸시 전송
         for (const recipientId of recipients) {
             try {

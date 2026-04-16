@@ -191,14 +191,18 @@ class Conversation {
   /// 내 읽지 않은 메시지 수 가져오기
   /// Firestore unreadCount 필드 기본값만 반환 (단순화)
   /// 실제 정확한 값은 DMService.getActualUnreadCount()로 조회
+  /// 🔧 음수 방지: 0 미만이면 0 반환
   int getMyUnreadCount(String currentUserId) {
-    return unreadCount[currentUserId] ?? 0;
+    final count = unreadCount[currentUserId] ?? 0;
+    return count < 0 ? 0 : count;
   }
 
   /// 상대방 읽지 않은 메시지 수 가져오기
+  /// 🔧 음수 방지: 0 미만이면 0 반환
   int getOtherUnreadCount(String currentUserId) {
     final otherUserId = getOtherUserId(currentUserId);
-    return unreadCount[otherUserId] ?? 0;
+    final count = unreadCount[otherUserId] ?? 0;
+    return count < 0 ? 0 : count;
   }
 
   /// 마지막 메시지가 내가 보낸 것인지 확인

@@ -1050,15 +1050,25 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 대화방 열기
   void _openConversation(Conversation conversation) {
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
+    Logger.log('  - conversationId: ${conversation.id}');
+    Logger.log('  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
+    
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => DMChatScreen(
-          conversationId: conversation.id,
-          otherUserId: conversation.getOtherUserId(_currentUser!.uid),
-        ),
+        builder: (context) {
+          Logger.log('📱 [FCM 진단 2단계] DMChatScreen 생성됨');
+          return DMChatScreen(
+            conversationId: conversation.id,
+            otherUserId: conversation.getOtherUserId(_currentUser!.uid),
+          );
+        },
       ),
-    );
+    ).then((value) {
+      Logger.log('🔙 [FCM 진단 2단계] DM 채팅 화면에서 돌아옴');
+    });
   }
 
   /// 친구 선택 바텀시트 표시

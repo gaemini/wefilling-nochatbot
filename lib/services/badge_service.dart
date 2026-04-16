@@ -185,12 +185,13 @@ class BadgeService {
         final rawClaimed = unreadMap[userId];
         final claimed = rawClaimed is int ? rawClaimed : (rawClaimed is num ? rawClaimed.toInt() : 0);
 
-        // claimed가 0이면 굳이 messages를 스캔할 필요 없음
-        if (claimed <= 0) {
+        // 음수인 경우: 반드시 복구해야 하므로 메시지 스캔 필요
+        // 0인 경우: 스캔 생략 가능
+        if (claimed == 0) {
           continue;
         }
 
-        // 실제 unread(상대가 보낸 것 중 isRead=false) 재계산
+        // claimed < 0이면 반드시 스캔, claimed > 0이면 기존 로직대로 스캔
         final unreadSnap = await doc.reference
             .collection('messages')
             .where('isRead', isEqualTo: false)
@@ -209,12 +210,12 @@ class BadgeService {
 
         total += actual;
 
-        // 복구: claimed와 actual이 다르면 conversations.unreadCount[userId]를 실제값으로 정정
         if (actual != claimed) {
           repairs.add(doc.reference.set({
             'unreadCount': {userId: actual},
             'updatedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true)));
+          Logger.log('🔧 [BadgeService] unreadCount 복구: ${doc.id} claimed=$claimed → actual=$actual');
         }
       } catch (_) {
         // best-effort: 개별 대화방 오류는 전체 동기화를 막지 않음

@@ -78,14 +78,20 @@ class FCMService {
   }
 
   Future<void> _waitUntilAppActive(int epoch) async {
+    Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
+    Logger.log('  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
+    
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       _setState(PushInitState.appActive, reason: 'already_resumed');
+      Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
       return;
     }
 
+    Logger.log('🔍 [FCM 진단] 앱이 resumed 될 때까지 대기 중...');
     _appActiveCompleter ??= Completer<void>();
     _appLifecycleListener ??= AppLifecycleListener(
       onResume: () {
+        Logger.log('🔍 [FCM 진단] onResume 콜백 호출됨');
         if (!(_appActiveCompleter?.isCompleted ?? true)) {
           _appActiveCompleter?.complete();
         }
@@ -93,7 +99,10 @@ class FCMService {
     );
 
     await _appActiveCompleter!.future;
+    Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
+    
     if (epoch != _activeEpoch) {
+      Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
       throw StateError('stale epoch while waiting app active');
     }
     _setState(PushInitState.appActive, reason: 'resumed');
@@ -102,8 +111,12 @@ class FCMService {
   void _scheduleDelayedTokenSync(int epoch, String userId) {
     _delayedTokenSyncTimer?.cancel();
     _delayedTokenSyncTimer = Timer(const Duration(seconds: 15), () {
-      if (epoch != _activeEpoch || _initializedUserId != userId) {
-        Logger.log('⏭️ 지연 토큰 동기화 취소: stale epoch/user');
+      if (epoch != _activeEpoch) {
+        Logger.log('⏭️ 지연 토큰 동기화 취소: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
+        return;
+      }
+      if (_initializedUserId != userId) {
+        Logger.log('⏭️ 지연 토큰 동기화 취소: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
       _startTokenSync(userId, epoch);
@@ -387,6 +400,8 @@ class FCMService {
           final apnsReady = await _waitForApnsReady();
           if (!apnsReady) {
             canStartTokenSync = false;
+            // _initializedUserId를 먼저 설정해야 토큰 동기화에서 stale user로 중단되지 않음
+            _initializedUserId = userId;
             _scheduleDelayedTokenSync(epoch, userId);
           } else {
             _setState(PushInitState.apnsRegistered);
@@ -398,6 +413,10 @@ class FCMService {
           completer.complete();
           return;
         }
+
+        // _initializedUserId를 토큰 동기화 시작 전에 설정
+        // (microtask로 실행되는 _startTokenSync에서 stale user 체크 통과를 위해)
+        _initializedUserId = userId;
 
         if (canStartTokenSync) {
           _startTokenSync(userId, epoch);
@@ -537,8 +556,12 @@ class FCMService {
     const List<int> retrySeconds = [0, 2, 4, 8, 16];
 
     for (int i = 0; i < retrySeconds.length; i++) {
-      if (_isStaleEpoch(epoch) || _initializedUserId != userId) {
-        Logger.log('⏭️ 토큰 동기화 중단: stale epoch/user');
+      if (_isStaleEpoch(epoch)) {
+        Logger.log('⏭️ 토큰 동기화 중단: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
+        return;
+      }
+      if (_initializedUserId != userId) {
+        Logger.log('⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
 
@@ -579,7 +602,10 @@ class FCMService {
             Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
             await _saveFCMToken(userId, token);
             if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
+              Logger.log('✅ [FCM] 토큰 동기화 성공 - userId=$userId, token=${token.substring(0, 20)}... (시도 ${i + 1}/${retrySeconds.length})');
               _setState(PushInitState.tokenSynced, reason: 'token_uploaded');
+            } else {
+              Logger.log('⏭️ [FCM] 토큰 저장 완료 후 stale 감지 - 상태 업데이트 생략');
             }
             return;
           }
@@ -674,6 +700,11 @@ class FCMService {
   // FCM 토큰 저장
   Future<void> _saveFCMToken(String userId, String token) async {
     try {
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
+      Logger.log('  - userId: $userId');
+      Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
+      
       // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
       //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.
       //    (한국어/영어 알림이 연속으로 2번 오는 문제의 핵심 원인 방지)
@@ -688,14 +719,17 @@ class FCMService {
               : '${locale.languageCode}-$cc';
         }
       })();
+      Logger.log('  - locale: $localeTag');
 
       final String? platform = (() {
         if (defaultTargetPlatform == TargetPlatform.iOS) return 'ios';
         if (defaultTargetPlatform == TargetPlatform.android) return 'android';
         return null;
       })();
+      Logger.log('  - platform: $platform');
 
       try {
+        Logger.log('  - registerFcmToken 함수 호출 시작...');
         // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable = _functions.httpsCallable('registerFcmToken');
         await callable.call(<String, dynamic>{
@@ -710,6 +744,24 @@ class FCMService {
           },
         );
         Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
+        
+        // 🔍 진단: 실제로 Firestore에 저장되었는지 확인
+        try {
+          final userDoc = await _firestore.collection('users').doc(userId).get();
+          if (userDoc.exists) {
+            final data = userDoc.data();
+            Logger.log('🔍 [FCM 진단 1단계] Firestore 확인:');
+            Logger.log('  - fcmToken 존재: ${data?['fcmToken'] != null}');
+            Logger.log('  - fcmTokens 길이: ${(data?['fcmTokens'] as List?)?.length ?? 0}');
+            Logger.log('  - fcmTokenUpdatedAt: ${data?['fcmTokenUpdatedAt']}');
+          } else {
+            Logger.log('⚠️ [FCM 진단 1단계] users/{$userId} 문서가 없음!');
+          }
+        } catch (e) {
+          Logger.error('⚠️ [FCM 진단 1단계] Firestore 확인 실패: $e');
+        }
+        
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       } catch (e) {
         // 네트워크/함수 오류 시 레거시 방식으로 fallback (토큰은 최소한 저장되도록)
@@ -718,14 +770,17 @@ class FCMService {
 
       // fallback: 단일 토큰(fcmToken) + 멀티 토큰(fcmTokens)
       // ⚠️ merge set은 users 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
+      Logger.log('  - 레거시 방식 (Firestore 직접 update) 시작...');
       await _firestore.collection('users').doc(userId).update({
         'fcmToken': token,
         'fcmTokens': FieldValue.arrayUnion([token]),
         'fcmTokenUpdatedAt': FieldValue.serverTimestamp(),
       });
       Logger.log('✅ FCM 토큰 저장 완료 (레거시 fallback)');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     } catch (e) {
-      Logger.error('❌ FCM 토큰 저장 실패: $e');
+      Logger.error('❌ [FCM 진단 1단계] FCM 토큰 저장 실패: $e');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     }
   }
 

@@ -5,8 +5,10 @@
 
 import 'dart:io' show Platform;
 import 'dart:async';
+import 'dart:ui' show AppExitResponse, ViewFocusEvent;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart' show PredictiveBackEvent;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -24,7 +26,7 @@ import '../config/app_config.dart';
 import '../utils/logger.dart';
 import '../utils/profile_photo_policy.dart';
 
-class AuthProvider with ChangeNotifier {
+class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   static const String _profilePhotoPathPrefix = 'profile_images/';
   static const Duration _profileNicknameCooldown = Duration(days: 3);
   static const Duration _profileNationalityCooldown = Duration(days: 3);
@@ -92,6 +94,9 @@ class AuthProvider with ChangeNotifier {
       debugPrint('🔐 AuthProvider 생성자 시작: ${DateTime.now()}');
     }
 
+    // 앱 포그라운드 복귀 시 FCM 재초기화를 감지하기 위해 lifecycle observer 등록
+    WidgetsBinding.instance.addObserver(this);
+
     // 초기화를 Future.microtask로 지연 - 크래시 방지
     Future.microtask(() async {
       try {
@@ -153,6 +158,7 @@ class AuthProvider with ChangeNotifier {
       if (_user != null) {
         try {
           await _loadUserData();
+          // _loadUserData() 내부에서 이미 FCM 초기화를 호출하므로 여기서는 제거
         } catch (e) {
           Logger.error('초기 _loadUserData 실패', e);
           _userData = null;
@@ -296,6 +302,10 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
 
     // FCM 초기화 (백그라운드로 이동 - 회원가입 플로우를 막지 않음)
+    Logger.log('🔍 [FCM 진단] _loadUserData 완료 후 FCM 초기화 시작');
+    Logger.log('  - _user: ${_user?.uid}');
+    Logger.log('  - _userData exists: ${_userData != null}');
+    Logger.log('  - emailVerified: ${_userData?['emailVerified']}');
     unawaited(_initializeFCMIfNeeded());
   }
 
@@ -1799,11 +1809,16 @@ class AuthProvider with ChangeNotifier {
 
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
+    Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
+    
     if (_user == null || _userData == null) {
+      Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
       return;
     }
 
     final uid = _user!.uid;
+    Logger.log('🔍 [FCM 진단] uid: $uid');
+    
     if (_fcmInitializing) {
       Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
       return;
@@ -1811,40 +1826,50 @@ class AuthProvider with ChangeNotifier {
 
     // 세션 내 동일 사용자 재초기화 차단
     if (_fcmInitialized && _fcmInitializedUserId == uid) {
+      Logger.log('🔍 [FCM 진단] 초기화 스킵: 이미 초기화됨 (uid: $uid)');
       return;
     }
 
-    // 이메일 인증이 완료된 사용자만 FCM 초기화
+    // emailVerified 조건 제거:
+    // - Firestore 캐시에서 userData를 읽으면 emailVerified 필드가 없거나 false일 수 있음
+    // - FCM 토큰 등록은 로그인 상태(_user != null)만으로 충분하며 emailVerified에 의존하지 않음
+    // - emailVerified 미완료 사용자에게 push를 보내도 앱 내에서 기능 제한은 별도로 처리함
     final emailVerified = _userData!['emailVerified'] == true;
-    if (!emailVerified) {
-      Logger.log('📱 FCM 초기화 스킵: 이메일 인증 미완료');
-      return;
-    }
+    Logger.log('🔍 [FCM 진단] emailVerified: $emailVerified (FCM 초기화에는 영향 없음)');
 
     _fcmInitializing = true;
+    Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
+    
     try {
       // locale 상태를 먼저 확정
       await _languageService.initializeLanguage();
 
       // iOS는 지연 시간 감소 (2초 → 1초)
       if (!kIsWeb && Platform.isIOS) {
+        Logger.log('🔍 [FCM 진단] iOS 1초 대기 시작');
         await Future.delayed(const Duration(seconds: 1)); // 2초 → 1초로 감소
+        Logger.log('🔍 [FCM 진단] iOS 1초 대기 완료');
       }
 
       if (kDebugMode) {
         debugPrint('📱 FCM 초기화 시작: uid=$uid');
       }
+      
+      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
       await _fcmService.initialize(uid);
+      Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
+
       _fcmInitialized = true;
       _fcmInitializedUserId = uid;
-      if (kDebugMode) {
-        debugPrint('✅ FCM 초기화 완료');
-      }
+      Logger.log('✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
     } catch (e) {
-      Logger.error('⚠️ FCM 자동 초기화 실패 (계속 진행): $e');
-      // 실패해도 앱 사용에는 지장 없음 (best-effort)
+      // 실패 시 _fcmInitialized를 false로 유지 → 다음 _initializeFCMIfNeeded() 호출 시 재시도 가능
+      _fcmInitialized = false;
+      _fcmInitializedUserId = null;
+      Logger.error('⚠️ [FCM 진단] FCM 초기화 실패 - 다음 호출 시 재시도 가능: $e');
     } finally {
       _fcmInitializing = false;
+      Logger.log('🔍 [FCM 진단] _fcmInitializing = false');
     }
   }
 
@@ -2169,6 +2194,65 @@ class AuthProvider with ChangeNotifier {
       'updatedAt': FieldValue.serverTimestamp(),
       'lastLogin': FieldValue.serverTimestamp(),
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // WidgetsBindingObserver: 앱 포그라운드 복귀 시 FCM 재초기화 보장
+  // ---------------------------------------------------------------------------
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // 앱이 포그라운드로 복귀할 때 FCM이 초기화되지 않았으면 재시도한다.
+      // - 앱 시작 시 APNs/네트워크 미준비로 token sync가 실패한 경우를 복구한다.
+      // - _fcmInitialized가 false이면 _initializeFCMIfNeeded가 재진입을 허용한다.
+      if (!_fcmInitialized && _user != null && _userData != null) {
+        Logger.log('📲 [FCM] 앱 resume 감지 - FCM 미초기화 상태, 재시도');
+        unawaited(_initializeFCMIfNeeded());
+      }
+    }
+  }
+
+  // WidgetsBindingObserver가 요구하는 나머지 메서드들 (사용 안 함)
+  @override
+  void didChangeMetrics() {}
+  @override
+  void didChangeTextScaleFactor() {}
+  @override
+  void didChangePlatformBrightness() {}
+  @override
+  void didChangeLocales(List<Locale>? locales) {}
+  @override
+  void didChangeAccessibilityFeatures() {}
+  @override
+  Future<bool> didPopRoute() async => false;
+  @override
+  Future<bool> didPushRoute(String route) async => false;
+  @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async => false;
+  @override
+  void didHaveMemoryPressure() {}
+  
+  // Flutter SDK 3.x+ 새 메서드들
+  @override
+  void didChangeViewFocus(ViewFocusEvent event) {}
+  @override
+  Future<AppExitResponse> didRequestAppExit() async => AppExitResponse.exit;
+  @override
+  void handleCancelBackGesture() {}
+  @override
+  void handleCommitBackGesture() {}
+  @override
+  bool handleStartBackGesture(dynamic backEvent) => false;
+  @override
+  void handleStatusBarTap() {}
+  @override
+  void handleUpdateBackGestureProgress(dynamic backEvent) {}
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 }
 

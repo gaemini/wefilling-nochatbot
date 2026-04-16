@@ -120,6 +120,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   double? _uploadProgress; // 이미지 업로드 진행률 (0~1)
   bool _originPostContextAttached = false; // 현재 진입(세션)에서 게시글 컨텍스트를 1회만 부착
   bool _composerPostContextDismissed = false; // 입력창 위 미리보기 카드 닫힘 여부
+  bool _inputAreaDebugLogged = false; // 입력창 빌드 로그 1회만 출력
   
   void _setActiveConversationId(String conversationId) {
     _activeConversationId = conversationId;
@@ -130,6 +131,14 @@ class _DMChatScreenState extends State<DMChatScreen> {
   @override
   void initState() {
     super.initState();
+    
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('🔍 [FCM 진단 2단계] DMChatScreen.initState 호출');
+    Logger.log('  - widget.conversationId: ${widget.conversationId}');
+    Logger.log('  - widget.otherUserId: ${widget.otherUserId}');
+    Logger.log('  - widget.originPostId: ${widget.originPostId}');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
     // ✅ 현재 보고 있는 DM 대화방 추적 (포그라운드 DM 알림 억제에 사용)
     _setActiveConversationId(widget.conversationId);
     _otherUserInfoStream = _userInfoCacheService.watchUserInfo(widget.otherUserId);
@@ -350,7 +359,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
         // 메시지/대화방 로딩은 백그라운드에서 진행 (UI 블로킹 방지)
         unawaited(_initializeMessagesStream(conversationId: _activeConversationId));
         unawaited(_loadConversation());
-        unawaited(_markAsRead());
+        // markAsRead는 메시지 스트림이 수신된 후 _scheduleAutoMarkAsRead에서 처리한다.
+        // 고정 딜레이 방식은 Cloud Function의 unreadCount 증분과 경쟁 조건을 유발하므로 제거.
       }
 
       // 1) 서버로 최종 확인 (권한/참여자 검증 포함)
@@ -437,7 +447,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
           unawaited(_initializeMessagesStream(conversationId: _activeConversationId));
         }
         unawaited(_loadConversation());
-        unawaited(_markAsRead());
+        // markAsRead는 메시지 스트림 수신 후 _scheduleAutoMarkAsRead에서 처리한다.
       }
     } catch (e) {
       Logger.error('대화 초기화 오류: $e');
@@ -488,19 +498,36 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
     // 상대방이 보낸 "안 읽음" 메시지가 있으면, 채팅 화면이 열려 있는 동안 즉시 읽음 처리
     final hasUnreadIncoming = messages.any((m) => m.senderId != me.uid && !m.isRead);
-    if (!hasUnreadIncoming) return;
+    
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('🔍 [FCM 진단 3단계] markAsRead 타이밍 체크');
+    Logger.log('  - conversationId: $_activeConversationId');
+    Logger.log('  - 전체 메시지 수: ${messages.length}');
+    Logger.log('  - 안읽은 수신 메시지 존재: $hasUnreadIncoming');
+    Logger.log('  - mounted: $mounted');
+    Logger.log('  - _isLeaving: $_isLeaving');
+    Logger.log('  - _autoMarkReadInFlight: $_autoMarkReadInFlight');
+    
+    if (!hasUnreadIncoming) {
+      Logger.log('  - markAsRead 스킵: 안읽은 수신 메시지 없음');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      return;
+    }
 
     _autoMarkReadDebounce?.cancel();
     _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
       if (!mounted) return;
       if (_autoMarkReadInFlight) return;
       _autoMarkReadInFlight = true;
+      Logger.log('📖 [markAsRead] 실행 - conversationId: $_activeConversationId (스트림 기반 트리거)');
       try {
         await _dmService.markAsRead(_activeConversationId);
-      } catch (_) {
-        // best-effort
+        Logger.log('✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
+      } catch (e) {
+        Logger.error('❌ [markAsRead] 실패: $e');
       } finally {
         _autoMarkReadInFlight = false;
+        Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
     });
   }
@@ -614,14 +641,44 @@ class _DMChatScreenState extends State<DMChatScreen> {
         setState(() {
           _messages = _mergeRecentIntoAll(recent, _messages);
           _isMessagesLoading = false;
+          _messagesError = null; // 이전 오류 상태 초기화
         });
         // ✅ 채팅 화면이 열려 있을 때 들어오는 메시지는 빠르게 읽음 처리(디바운스)
         _scheduleAutoMarkAsRead(_messages);
       }, onError: (e) {
         if (!mounted) return;
+        Logger.error('❌ [메시지 스트림] 오류: $e');
         setState(() {
           _messagesError = e;
           _isMessagesLoading = false;
+        });
+
+        // permission 오류가 아닌 경우 3초 후 재연결 시도
+        // - Firestore SDK는 네트워크 오류에서 자체 재연결하므로 error 이벤트를 보내지 않는다.
+        // - error 이벤트는 주로 권한 문제이므로 permission 오류는 재시도하지 않는다.
+        final isPermissionError = e.toString().contains('permission-denied') ||
+            e.toString().contains('PERMISSION_DENIED');
+        if (!isPermissionError) {
+          Logger.log('🔄 [메시지 스트림] 3초 후 재연결 예약');
+          Future.delayed(const Duration(seconds: 3), () {
+            if (!mounted) return;
+            if (_messagesError == null) return; // 이미 복구됨
+            Logger.log('🔄 [메시지 스트림] 재연결 시도 - conversationId: $targetConversationId');
+            setState(() {
+              _messagesError = null;
+            });
+            unawaited(_initializeMessagesStream(conversationId: targetConversationId));
+          });
+        }
+      }, onDone: () {
+        // Firestore 스트림은 정상적으로 onDone을 호출하지 않는다.
+        // onDone이 호출된다면 예상치 못한 스트림 종료이므로 재연결한다.
+        if (!mounted) return;
+        Logger.log('⚠️ [메시지 스트림] 예상치 못한 종료(onDone) - 재연결 시도');
+        Future.delayed(const Duration(seconds: 2), () {
+          if (!mounted) return;
+          if (_recentMessagesSub != null) return; // 이미 새 구독이 있음
+          unawaited(_initializeMessagesStream(conversationId: targetConversationId));
         });
       });
     } catch (e) {
@@ -742,20 +799,6 @@ class _DMChatScreenState extends State<DMChatScreen> {
     }
     // 버튼은 제거하고(요청사항), 스크롤 자동 로드만 사용한다.
     return const SizedBox.shrink();
-  }
-
-  /// 읽음 처리
-  Future<void> _markAsRead() async {
-    try {
-      await _dmService.markAsRead(_activeConversationId);
-      
-      // UI 강제 업데이트를 위해 스트림 재초기화
-      if (mounted) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-    } catch (e) {
-      Logger.error('⚠️ 읽음 처리 중 오류: $e');
-    }
   }
 
   @override
@@ -2125,6 +2168,19 @@ class _DMChatScreenState extends State<DMChatScreen> {
         !_isLoading &&
         (_messageController.text.trim().isNotEmpty || _pendingImage != null);
 
+    // 디버그: 입력창이 빌드될 때 상태 출력 (1회만)
+    if (!_inputAreaDebugLogged) {
+      _inputAreaDebugLogged = true;
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      Logger.log('🎨 [FCM 진단 2단계] _buildInputArea 첫 빌드');
+      Logger.log('  - canSend: $canSend');
+      Logger.log('  - _isBlocked: $_isBlocked');
+      Logger.log('  - _isBlockedBy: $_isBlockedBy');
+      Logger.log('  - _isLoading: $_isLoading');
+      Logger.log('  - text length: ${_messageController.text.trim().length}');
+      Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
+
     final originPostId = (widget.originPostId ?? '').trim();
     final shouldShowComposerPostContext = originPostId.isNotEmpty &&
         !_originPostContextAttached &&
@@ -2232,7 +2288,18 @@ class _DMChatScreenState extends State<DMChatScreen> {
                 const SizedBox(width: 8),
                 // 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
                 InkWell(
-                  onTap: canSend ? _sendMessage : null,
+                  onTap: canSend ? _sendMessage : () {
+                    // canSend가 false일 때 디버그 로그
+                    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    Logger.log('❌ [FCM 진단 2단계] 전송 버튼 클릭했지만 canSend=false');
+                    Logger.log('  - _isBlocked: $_isBlocked');
+                    Logger.log('  - _isBlockedBy: $_isBlockedBy');
+                    Logger.log('  - _isLoading: $_isLoading');
+                    Logger.log('  - text.isNotEmpty: ${_messageController.text.trim().isNotEmpty}');
+                    Logger.log('  - _pendingImage: ${_pendingImage != null}');
+                    Logger.log('  - canSend 결과: $canSend');
+                    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                  },
                   customBorder: const CircleBorder(),
                   child: Container(
                     width: 40,
@@ -2600,9 +2667,26 @@ class _DMChatScreenState extends State<DMChatScreen> {
 
   /// 메시지 전송
   Future<void> _sendMessage() async {
+    // ⚠️ 최우선 로그 - 함수가 호출되는지 절대적으로 확인
+    print('🚨🚨🚨 _sendMessage 함수 호출됨 🚨🚨🚨');
+    Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    Logger.log('🔍 [FCM 진단 2단계] _sendMessage UI 함수 호출됨');
+    
     final text = _messageController.text.trim();
     final imageFile = _pendingImage;
-    if ((text.isEmpty && imageFile == null) || _isLoading) return;
+    
+    Logger.log('  - text: "$text"');
+    Logger.log('  - imageFile: ${imageFile != null ? "있음" : "없음"}');
+    Logger.log('  - _isLoading: $_isLoading');
+    
+    if ((text.isEmpty && imageFile == null) || _isLoading) {
+      Logger.log('❌ [FCM 진단 2단계] 조건 불충족으로 전송 중단');
+      Logger.log('  - text.isEmpty: ${text.isEmpty}');
+      Logger.log('  - imageFile == null: ${imageFile == null}');
+      Logger.log('  - _isLoading: $_isLoading');
+      return;
+    }
+    
     setState(() => _isLoading = true);
     _messageController.clear();
 
@@ -2610,6 +2694,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
     try {
       // 실제로 메시지를 보낼 conversationId를 결정
       String actualConversationId = _activeConversationId;
+      Logger.log('  - _activeConversationId: $_activeConversationId');
+      Logger.log('  - _conversationExists: $_conversationExists');
       
       // 대화방이 존재하지 않으면 첫 메시지 전송 시 생성
       if (_conversationExists != true) {
@@ -2692,6 +2778,12 @@ class _DMChatScreenState extends State<DMChatScreen> {
           widget.originPostId != null &&
           widget.originPostId!.trim().isNotEmpty &&
           !_composerPostContextDismissed;
+
+      Logger.log('🔍 [FCM 진단 2단계] dmService.sendMessage 호출 직전');
+      Logger.log('  - actualConversationId: $actualConversationId');
+      Logger.log('  - text: "$text"');
+      Logger.log('  - uploadedImageUrl: ${uploadedImageUrl != null ? "있음" : "없음"}');
+      Logger.log('  - shouldAttachPostContext: $shouldAttachPostContext');
 
       final success = await _dmService.sendMessage(
         actualConversationId,

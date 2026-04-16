@@ -4,7 +4,7 @@
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.expireSnackChats = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
-exports.onSnackChatMessageCreated = void 0;
+exports.fixNegativeUnreadCounts = exports.onSnackChatMessageCreated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -4578,13 +4578,18 @@ exports.onDMMessageCreated = functions.firestore
         const senderId = messageData.senderId;
         const text = messageData.text || '';
         const imageUrl = messageData.imageUrl;
-        console.log(`📨 새 DM 메시지 감지: ${conversationId}/${messageId}`);
-        console.log(`  - 발신자: ${senderId}`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        console.log('🔍 [FCM 진단 - Functions] 새 DM 메시지 감지');
+        console.log(`  - conversationId: ${conversationId}`);
+        console.log(`  - messageId: ${messageId}`);
+        console.log(`  - senderId: ${senderId}`);
+        console.log(`  - text: ${text.substring(0, 50)}...`);
         // 대화방 정보 조회
         const convRef = db.collection('conversations').doc(conversationId);
         const convDoc = await convRef.get();
         if (!convDoc.exists) {
             console.log('❌ 대화방을 찾을 수 없음');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         const convData = convDoc.data();
@@ -4592,8 +4597,11 @@ exports.onDMMessageCreated = functions.firestore
         // 방어적 처리: participants 중복/빈 값이 있으면 unreadCount가 2배로 증가할 수 있으므로 정규화한다.
         const participants = Array.from(new Set(participantsRaw.filter((id) => typeof id === 'string' && id.length > 0)));
         const recipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
+        console.log(`  - participants: ${participants.join(', ')}`);
+        console.log(`  - recipients: ${recipients.join(', ')}`);
         if (recipients.length === 0) {
             console.log('⚠️ 수신자를 찾을 수 없음');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         // DM은 1:1이 기본이므로 첫 번째 수신자를 기준으로 "푸시/배지"를 구성한다.
@@ -4602,6 +4610,7 @@ exports.onDMMessageCreated = functions.firestore
         console.log(`  - 수신자: ${recipientId} (recipients=${recipients.length})`);
         if (await hasBlockRelationship(senderId, recipientId)) {
             console.log('⏭️ 차단 관계(dm_received) - 푸시/안읽음 증분 스킵');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         // 발신자 정보 조회
@@ -4609,11 +4618,13 @@ exports.onDMMessageCreated = functions.firestore
         const senderData = senderDoc.data();
         const isAnonymous = ((_a = convData.isAnonymous) === null || _a === void 0 ? void 0 : _a[senderId]) || false;
         const senderName = isAnonymous ? '익명' : ((senderData === null || senderData === void 0 ? void 0 : senderData.nickname) || (senderData === null || senderData === void 0 ? void 0 : senderData.name) || '익명');
+        console.log(`  - 발신자 이름: ${senderName}`);
         // 수신자 정보(토큰/총 DM 안읽음) 조회
         const recipientRef = db.collection('users').doc(recipientId);
         const recipientDoc = await recipientRef.get();
         if (!recipientDoc.exists) {
             console.log('⚠️ 수신자 문서를 찾을 수 없음');
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
             return null;
         }
         const recipientData = recipientDoc.data();
@@ -4631,61 +4642,83 @@ exports.onDMMessageCreated = functions.firestore
             });
         }
         const tokens = Array.from(tokenSet);
-        if (tokens.length === 0) {
-            console.log('⚠️ 수신자의 FCM 토큰이 없음');
-            return null;
+        const hasTokens = tokens.length > 0;
+        console.log('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
+        console.log(`  - fcmToken: ${(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) ? '있음' : '없음'}`);
+        console.log(`  - fcmTokens 길이: ${Array.isArray(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmTokens) ? recipientData.fcmTokens.length : 0}`);
+        console.log(`  - 유효한 토큰 수: ${tokens.length}`);
+        if (!hasTokens) {
+            // 토큰이 없어도 unreadCount는 반드시 증가해야 한다.
+            // push는 optional 기능이므로 토큰 없이도 unreadCount 트랜잭션은 계속 진행한다.
+            console.log('⚠️ 수신자의 FCM 토큰이 없음 - unreadCount 증분은 정상 진행, push만 스킵');
         }
-        console.log(`  - FCM 토큰: ${tokens.length}개`);
+        else {
+            console.log(`  - FCM 토큰: ${tokens.length}개`);
+        }
         // -----------------------------------------------------------------------
         // ✅ DM unreadCount + users.dmUnreadTotal 증분 업데이트 (이벤트 기반)
         // - 목적: "대화방 전체 스캔" 없이 총 DM 안읽음(dmUnreadTotal)을 유지
         // - 동시에 archivedBy(보관/나가기)가 설정된 수신자에게 새 메시지가 오면 자동 복원
+        // - 중요: push 가능 여부(토큰 유무)와 무관하게 항상 실행
         // -----------------------------------------------------------------------
         let newDmUnreadTotal = 0;
         try {
             await db.runTransaction(async (tx) => {
+                var _a;
+                // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
                 const convSnap = await tx.get(convRef);
                 if (!convSnap.exists)
                     return;
+                // recipients의 user 문서도 미리 읽기 (dmUnreadTotal 음수 보정 위해)
+                const userRefs = recipients.filter(Boolean).map((rid) => db.collection('users').doc(rid));
+                const userSnaps = [];
+                for (const ref of userRefs) {
+                    userSnaps.push(await tx.get(ref));
+                }
                 const data = convSnap.data();
                 const archivedBy = Array.isArray(data === null || data === void 0 ? void 0 : data.archivedBy)
                     ? data.archivedBy.filter((v) => typeof v === 'string')
                     : [];
                 const unreadCount = ((data === null || data === void 0 ? void 0 : data.unreadCount) && typeof data.unreadCount === 'object')
                     ? Object.assign({}, data.unreadCount) : {};
-                // recipients 전체에 unread +1, archivedBy 자동 복원
                 let archivedChanged = false;
-                for (const rid of recipients) {
-                    if (!rid)
-                        continue;
+                const validRecipients = recipients.filter(Boolean);
+                for (let i = 0; i < validRecipients.length; i++) {
+                    const rid = validRecipients[i];
                     if (archivedBy.includes(rid)) {
-                        // 새 메시지가 오면 "목록/배지"에서 다시 보이도록 복원
                         const idx = archivedBy.indexOf(rid);
                         if (idx >= 0)
                             archivedBy.splice(idx, 1);
                         archivedChanged = true;
                     }
                     const cur = typeof unreadCount[rid] === 'number' ? unreadCount[rid] : 0;
-                    unreadCount[rid] = cur + 1;
-                    // 총 DM 안읽음은 users/{rid}.dmUnreadTotal로 증분 유지
-                    const userRef = db.collection('users').doc(rid);
-                    tx.set(userRef, { dmUnreadTotal: admin.firestore.FieldValue.increment(1) }, { merge: true });
+                    const safeCount = Math.max(0, cur);
+                    unreadCount[rid] = safeCount + 1;
+                    console.log(`  📈 [unreadCount] ${rid}: ${cur} → ${unreadCount[rid]} (safe: ${safeCount})`);
+                    // dmUnreadTotal: 음수면 0으로 보정 후 +1 (FieldValue.increment는 음수를 복구 못함)
+                    const userSnap = userSnaps[i];
+                    const userData = (userSnap === null || userSnap === void 0 ? void 0 : userSnap.exists) ? userSnap.data() : null;
+                    const curDmTotal = typeof (userData === null || userData === void 0 ? void 0 : userData.dmUnreadTotal) === 'number' ? userData.dmUnreadTotal : 0;
+                    const safeDmTotal = Math.max(0, curDmTotal) + 1;
+                    tx.set(userRefs[i], { dmUnreadTotal: safeDmTotal }, { merge: true });
+                    console.log(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
                 }
                 const update = {
                     unreadCount,
-                    // updatedAt은 서버 기준으로도 최신화 (정렬 안정성)
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 };
                 if (archivedChanged) {
                     update.archivedBy = archivedBy;
                 }
                 tx.set(convRef, update, { merge: true });
-                // 배지 계산용: recipient의 dmUnreadTotal은 "현재값 + 1"로 가정
-                // (동시성 경쟁이 있어도 badge는 다음 sync/다음 푸시에서 정정됨)
-                const curTotal = typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.dmUnreadTotal) === 'number'
-                    ? recipientData.dmUnreadTotal
-                    : 0;
-                newDmUnreadTotal = curTotal + 1;
+                // 배지 계산용
+                if (validRecipients.length > 0 && userSnaps.length > 0) {
+                    const recipientUserData = ((_a = userSnaps[0]) === null || _a === void 0 ? void 0 : _a.exists) ? userSnaps[0].data() : null;
+                    const curTotal = typeof (recipientUserData === null || recipientUserData === void 0 ? void 0 : recipientUserData.dmUnreadTotal) === 'number'
+                        ? recipientUserData.dmUnreadTotal
+                        : 0;
+                    newDmUnreadTotal = Math.max(0, curTotal) + 1;
+                }
             });
         }
         catch (e) {
@@ -4694,6 +4727,17 @@ exports.onDMMessageCreated = functions.firestore
             newDmUnreadTotal = typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.dmUnreadTotal) === 'number'
                 ? recipientData.dmUnreadTotal
                 : 0;
+        }
+        // unreadCount 증분 완료 로그
+        console.log('🔍 [FCM 진단 - Functions] unreadCount 증분 완료:');
+        console.log(`  - conversationId: ${conversationId}`);
+        console.log(`  - recipientId: ${recipientId}`);
+        console.log(`  - newDmUnreadTotal: ${newDmUnreadTotal}`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        // FCM 토큰이 없으면 push는 스킵하고 종료 (unreadCount는 이미 증가됨)
+        if (!hasTokens) {
+            console.log('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
+            return null;
         }
         // 배지 계산: (카운터 기반) 일반 알림 + (증분 기반) DM 총 안읽음
         // - 일반 알림 카운트: users/{uid}.notificationUnreadTotal 사용(없으면 0으로 간주)
@@ -4991,6 +5035,59 @@ exports.onSnackChatMessageCreated = functions.firestore
     catch (error) {
         console.error('❌ onSnackChatMessageCreated 오류:', error);
         return null;
+    }
+});
+// ===== 음수 unreadCount 복구 함수 (일회성 실행용) =====
+exports.fixNegativeUnreadCounts = functions
+    .runWith({ timeoutSeconds: 540, memory: '512MB' })
+    .https.onRequest(async (req, res) => {
+    try {
+        console.log('🔧 음수 unreadCount 복구 시작');
+        const conversationsSnapshot = await db.collection('conversations').get();
+        const batch = db.batch();
+        let fixedCount = 0;
+        let totalConversations = 0;
+        for (const doc of conversationsSnapshot.docs) {
+            totalConversations++;
+            const data = doc.data();
+            const unreadCount = data.unreadCount || {};
+            let needsUpdate = false;
+            const fixedUnreadCount = {};
+            for (const [uid, count] of Object.entries(unreadCount)) {
+                if (typeof count === 'number' && count < 0) {
+                    fixedUnreadCount[uid] = 0;
+                    needsUpdate = true;
+                    console.log(`  🔧 ${doc.id}: ${uid} ${count} → 0`);
+                }
+                else {
+                    fixedUnreadCount[uid] = count;
+                }
+            }
+            if (needsUpdate) {
+                batch.update(doc.ref, { unreadCount: fixedUnreadCount });
+                fixedCount++;
+            }
+        }
+        if (fixedCount > 0) {
+            await batch.commit();
+            console.log(`✅ 복구 완료: ${fixedCount}/${totalConversations} 대화방`);
+        }
+        else {
+            console.log(`✅ 복구할 음수값 없음 (총 ${totalConversations} 대화방)`);
+        }
+        res.status(200).json({
+            success: true,
+            totalConversations,
+            fixedCount,
+            message: `복구 완료: ${fixedCount}/${totalConversations} 대화방`,
+        });
+    }
+    catch (error) {
+        console.error('❌ 음수 unreadCount 복구 실패:', error);
+        res.status(500).json({
+            success: false,
+            error: String(error),
+        });
     }
 });
 //# sourceMappingURL=index.js.map

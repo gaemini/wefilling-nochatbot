@@ -13,6 +13,7 @@ import '../screens/email_login_screen.dart';
 import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
+import '../ui/widgets/app_button.dart';
 import '../utils/logger.dart';
 import '../ui/snackbar/app_snackbar.dart';
 
@@ -155,29 +156,9 @@ class _LoginScreenState extends State<LoginScreen>
                   ),
                 ),
                 const SizedBox(height: 24),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue.shade600,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      AppLocalizations.of(context)!.confirm,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
-                  ),
+                AppButton(
+                  label: AppLocalizations.of(context)!.confirm,
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                 ),
               ],
             ),
@@ -196,7 +177,6 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context);
-    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       body: Container(
@@ -219,345 +199,249 @@ class _LoginScreenState extends State<LoginScreen>
                   child: Column(
                     children: [
                       Expanded(
-                        child: SingleChildScrollView(
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                SizedBox(height: size.height * 0.12),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final isShort = constraints.maxHeight < 760;
+                            final isVeryShort = constraints.maxHeight < 700;
+                            final hPadding = isVeryShort ? 16.0 : 24.0;
+                            final logoSize = isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
+                            final appNameSize = isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
+                            final cardVPadding = isVeryShort ? 14.0 : 20.0;
+                            final cardHPadding = isVeryShort ? 16.0 : 24.0;
+                            final buttonGap = isVeryShort ? 10.0 : 14.0;
+                            final titleGap = isVeryShort ? 4.0 : 6.0;
+                            final headerTopGap = ((constraints.maxHeight *
+                                        (isVeryShort ? 0.065 : 0.095)) +
+                                    (isVeryShort ? 14.0 : 24.0))
+                                .clamp(56.0, 108.0);
 
-                                // 앱 로고 및 이름
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Image.asset(
-                                      // 투명 배경 로고 사용 (흰 배경 박힘 방지)
-                                      'assets/images/wefilling_boot_logo.png',
-                                      width: 100,
-                                      height: 100,
-                                      fit: BoxFit.contain,
-                                      errorBuilder: (context, error, stackTrace) {
-                                        return Icon(
-                                          Icons.people_alt_rounded,
-                                          size: 80,
-                                          color: Colors.blue.shade700,
-                                        );
-                                      },
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      AppLocalizations.of(context)!.appName,
-                                      style: const TextStyle(
-                                        fontSize: 40,
-                                        fontWeight: FontWeight.bold,
-                                        fontFamily: 'HancomMalrangmalrang',
-                                        fontFamilyFallback: ['Pretendard'],
-                                        color: Colors.black,
-                                        letterSpacing: 1.2,
+                            return Padding(
+                              padding: EdgeInsets.symmetric(horizontal: hPadding),
+                              child: Column(
+                                children: [
+                                  SizedBox(height: headerTopGap),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Image.asset(
+                                        'assets/images/wefilling_boot_logo.png',
+                                        width: logoSize,
+                                        height: logoSize,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (context, error, stackTrace) {
+                                          return Icon(
+                                            Icons.people_alt_rounded,
+                                            size: logoSize * 0.8,
+                                            color: Colors.blue.shade700,
+                                          );
+                                        },
                                       ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      AppLocalizations.of(context)!.appTagline,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        color: Colors.grey.shade700,
-                                        letterSpacing: 0.5,
+                                      SizedBox(height: isVeryShort ? 8 : 12),
+                                      Text(
+                                        AppLocalizations.of(context)!.appName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: appNameSize,
+                                          fontWeight: FontWeight.bold,
+                                          fontFamily: 'HancomMalrangmalrang',
+                                          fontFamilyFallback: const ['Pretendard'],
+                                          color: Colors.black,
+                                          letterSpacing: 1.2,
+                                        ),
                                       ),
-                                    ),
-                                  ],
-                                ),
-
-                                SizedBox(height: size.height * 0.01),
-
-                                // 로그인 안내 메시지
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 24,
-                                    vertical: 20,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.05),
-                                        offset: const Offset(0, 3),
-                                        blurRadius: 10,
-                                        spreadRadius: 0,
+                                      SizedBox(height: isVeryShort ? 2 : 4),
+                                      Text(
+                                        AppLocalizations.of(context)!.appTagline,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: isVeryShort ? 15 : 18,
+                                          color: Colors.grey.shade700,
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ],
                                   ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        AppLocalizations.of(context)!.welcomeTitle,
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue.shade800,
+                                  SizedBox(height: isVeryShort ? 8 : 12),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: EdgeInsets.symmetric(
+                                      horizontal: cardHPadding,
+                                      vertical: cardVPadding,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.05),
+                                          offset: const Offset(0, 3),
+                                          blurRadius: 10,
+                                          spreadRadius: 0,
                                         ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        AppLocalizations.of(context)!.googleLoginDescription,
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          height: 1.4,
-                                          color: Colors.grey.shade800,
+                                      ],
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          AppLocalizations.of(context)!.welcomeTitle,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: isVeryShort ? 20 : 22,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.blue.shade800,
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 24),
-
-                                      // Apple 로그인 버튼
-                                      MaterialButton(
-                                        onPressed:
-                                            authProvider.isLoading
-                                                ? null
-                                                : () => _handleAppleLogin(
-                                                  context,
-                                                  authProvider,
+                                        SizedBox(height: titleGap),
+                                        Text(
+                                          AppLocalizations.of(context)!.googleLoginDescription,
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: isVeryShort ? 15 : 16,
+                                            height: 1.4,
+                                            color: Colors.grey.shade800,
+                                          ),
+                                        ),
+                                        SizedBox(height: isVeryShort ? 14 : 20),
+                                        AppButton(
+                                          label: AppLocalizations.of(context)!.appleLogin,
+                                          onPressed: authProvider.isLoading
+                                              ? null
+                                              : () => _handleAppleLogin(
+                                                    context,
+                                                    authProvider,
+                                                  ),
+                                          variant: AppButtonVariant.outline,
+                                          size: AppButtonSize.m,
+                                          leading: Icon(
+                                            Icons.apple,
+                                            size: isVeryShort ? 19 : 20,
+                                            color: Colors.black,
+                                          ),
+                                        ),
+                                        SizedBox(height: buttonGap),
+                                        AppButton(
+                                          label: AppLocalizations.of(context)!.googleLogin,
+                                          onPressed: authProvider.isLoading
+                                              ? null
+                                              : () => _handleGoogleLogin(
+                                                    context,
+                                                    authProvider,
+                                                  ),
+                                          variant: AppButtonVariant.outline,
+                                          size: AppButtonSize.m,
+                                          leading: Image.asset(
+                                            'assets/icons/google_logo.png',
+                                            width: isVeryShort ? 18 : 20,
+                                            height: isVeryShort ? 18 : 20,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return SizedBox(
+                                                width: isVeryShort ? 18 : 20,
+                                                height: isVeryShort ? 18 : 20,
+                                                child: CustomPaint(
+                                                  painter: GoogleLogoPainter(),
                                                 ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(30),
-                                        ),
-                                        color: Colors.white,
-                                        elevation: 2,
-                                        highlightElevation: 4,
-                                        disabledColor: Colors.grey.shade200,
-                                        padding: EdgeInsets.zero,
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(30),
-                                            border: Border.all(color: Colors.grey.shade300),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              const Icon(
-                                                Icons.apple,
-                                                size: 24,
-                                                color: Colors.black,
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                AppLocalizations.of(context)!.appleLogin,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: Colors.black87,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                            ],
+                                              );
+                                            },
                                           ),
                                         ),
-                                      ),
-
-                                      const SizedBox(height: 16),
-
-                                      // Google 로그인 버튼
-                                      MaterialButton(
-                                        onPressed:
-                                            authProvider.isLoading
-                                                ? null
-                                                : () => _handleGoogleLogin(
-                                                  context,
-                                                  authProvider,
-                                                ),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(30),
-                                        ),
-                                        color: Colors.white,
-                                        elevation: 2,
-                                        highlightElevation: 4,
-                                        disabledColor: Colors.grey.shade200,
-                                        padding: EdgeInsets.zero,
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(30),
-                                            border: Border.all(color: Colors.grey.shade300),
-                                          ),
-                                          child: Row(
-                                            mainAxisAlignment: MainAxisAlignment.center,
-                                            children: [
-                                              // Google "G" 로고
-                                              Image.asset(
-                                                'assets/icons/google_logo.png',
-                                                width: 20,
-                                                height: 20,
-                                                errorBuilder: (context, error, stackTrace) {
-                                                  return Container(
-                                                    width: 20,
-                                                    height: 20,
-                                                    decoration: BoxDecoration(
-                                                      borderRadius: BorderRadius.circular(2),
-                                                    ),
-                                                    child: CustomPaint(
-                                                      painter: GoogleLogoPainter(),
+                                        SizedBox(height: buttonGap),
+                                        AppButton(
+                                          label: AppLocalizations.of(context)!.emailLogin,
+                                          onPressed: authProvider.isLoading
+                                              ? null
+                                              : () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (_) => const EmailLoginScreen(),
                                                     ),
                                                   );
                                                 },
-                                              ),
-                                              const SizedBox(width: 12),
-                                              Text(
-                                                AppLocalizations.of(context)!.googleLogin,
-                                                style: const TextStyle(
-                                                  fontSize: 16,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: Colors.black87,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 4),
-                                            ],
+                                          variant: AppButtonVariant.outline,
+                                          size: AppButtonSize.m,
+                                          leading: Icon(
+                                            Icons.email_outlined,
+                                            size: isVeryShort ? 18 : 19,
+                                            color: Colors.black87,
                                           ),
                                         ),
-                                      ),
-
-                                      const SizedBox(height: 16),
-
-                                      // 이메일 로그인 버튼
-                                      MaterialButton(
-                                        onPressed:
-                                            authProvider.isLoading
-                                                ? null
-                                                : () {
-                                                    Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (_) => const EmailLoginScreen(),
-                                                      ),
-                                                    );
-                                                  },
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(30),
-                                        ),
-                                        color: Colors.white,
-                                        elevation: 2,
-                                        highlightElevation: 4,
-                                        disabledColor: Colors.grey.shade200,
-                                        padding: EdgeInsets.zero,
-                                        child: Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 12,
-                                            horizontal: 16,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(30),
-                                            border: Border.all(color: Colors.grey.shade300),
-                                          ),
+                                        SizedBox(height: isVeryShort ? 8 : 12),
+                                        TextButton(
+                                          onPressed: authProvider.isLoading
+                                              ? null
+                                              : () {
+                                                  _navigateToSignUpFlow(context);
+                                                },
                                           child: Row(
                                             mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(
-                                                Icons.email_outlined,
-                                                size: 20,
-                                                color: Colors.black87,
-                                              ),
-                                              const SizedBox(width: 12),
-                                            Text(
-                                              AppLocalizations.of(context)!.emailLogin,
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w500,
-                                                color: Colors.black87,
-                                              ),
-                                            ),
-                                              const SizedBox(width: 4),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-
-                                      const SizedBox(height: 24),
-
-                                      // 회원가입하기 버튼
-                                      TextButton(
-                                        onPressed: authProvider.isLoading
-                                            ? null
-                                            : () {
-                                                _navigateToSignUpFlow(context);
-                                              },
-                                        child: Row(
-                                          mainAxisAlignment: MainAxisAlignment.center,
-                                          children: [
-                                            Text(
-                                              AppLocalizations.of(context)!.noAccountYet,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.grey.shade700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 4),
-                                            Text(
-                                              AppLocalizations.of(context)!.signUp,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.blue.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-
-                                      // 로딩 표시
-                                      if (authProvider.isLoading)
-                                        Container(
-                                          margin: const EdgeInsets.only(top: 20),
-                                          child: Column(
-                                            children: [
-                                              const CircularProgressIndicator(
-                                                valueColor: AlwaysStoppedAnimation<Color>(
-                                                  Colors.blue,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 12),
                                               Text(
-                                                AppLocalizations.of(context)!.loggingIn,
+                                                AppLocalizations.of(context)!.noAccountYet,
                                                 style: TextStyle(
-                                                  fontSize: 14,
-                                                  color: Colors.grey.shade600,
+                                                  fontSize: isVeryShort ? 13 : 14,
+                                                  color: Colors.grey.shade700,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                AppLocalizations.of(context)!.signUp,
+                                                style: TextStyle(
+                                                  fontSize: isVeryShort ? 13 : 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.blue.shade700,
                                                 ),
                                               ),
                                             ],
                                           ),
                                         ),
-                                    ],
+                                        if (authProvider.isLoading)
+                                          Padding(
+                                            padding: const EdgeInsets.only(top: 10),
+                                            child: Column(
+                                              children: [
+                                                const SizedBox(
+                                                  height: 18,
+                                                  width: 18,
+                                                  child: CircularProgressIndicator(
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<Color>(
+                                                      Colors.blue,
+                                                    ),
+                                                    strokeWidth: 2,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  AppLocalizations.of(context)!.loggingIn,
+                                                  style: TextStyle(
+                                                    fontSize: isVeryShort ? 12 : 13,
+                                                    color: Colors.grey.shade600,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-
-                                const SizedBox(height: 32),
-
-                                // 하단 텍스트
-                                Text(
-                                  AppLocalizations.of(context)!.loginTermsNotice,
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
+                                  const Spacer(),
+                                  Text(
+                                    AppLocalizations.of(context)!.loginTermsNotice,
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontSize: isVeryShort ? 11 : 12,
+                                      color: Colors.grey.shade600,
+                                    ),
                                   ),
-                                ),
-
-                                SizedBox(height: size.height * 0.05),
-                              ],
-                            ),
-                          ),
+                                  SizedBox(height: isVeryShort ? 6 : 12),
+                                ],
+                              ),
+                            );
+                          },
                         ),
                       ),
                     ],
@@ -672,31 +556,10 @@ class _LoginScreenState extends State<LoginScreen>
               },
             ),
             const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF6B7280),
-                  side: const BorderSide(
-                    color: Color(0xFFE6EAF0),
-                    width: 1.5,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  currentLocale == 'ko' ? '취소' : 'Cancel',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
+            AppButton(
+              label: currentLocale == 'ko' ? '취소' : 'Cancel',
+              onPressed: () => Navigator.pop(dialogContext),
+              variant: AppButtonVariant.outline,
             ),
           ],
         ),
@@ -847,59 +710,22 @@ class _LoginScreenState extends State<LoginScreen>
                     Row(
                       children: [
                         Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF64748B),
-                                side: const BorderSide(
-                                  color: Color(0xFFE2E8F0),
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(
-                                AppLocalizations.of(context)!.close,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
+                          child: AppButton(
+                            label: AppLocalizations.of(context)!.close,
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            variant: AppButtonVariant.outline,
+                            size: AppButtonSize.m,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.of(dialogContext).pop();
-                                _navigateToSignUpFlow(context);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade600,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(
-                                AppLocalizations.of(context)!.signUp,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
+                          child: AppButton(
+                            label: AppLocalizations.of(context)!.signUp,
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                              _navigateToSignUpFlow(context);
+                            },
+                            size: AppButtonSize.m,
                           ),
                         ),
                       ],
@@ -1054,59 +880,22 @@ class _LoginScreenState extends State<LoginScreen>
                     Row(
                       children: [
                         Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(dialogContext).pop(),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF64748B),
-                                side: const BorderSide(
-                                  color: Color(0xFFE2E8F0),
-                                  width: 1.5,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(
-                                AppLocalizations.of(context)!.close,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
+                          child: AppButton(
+                            label: AppLocalizations.of(context)!.close,
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                            variant: AppButtonVariant.outline,
+                            size: AppButtonSize.m,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: SizedBox(
-                            height: 48,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                Navigator.of(dialogContext).pop();
-                                _navigateToSignUpFlow(context);
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue.shade600,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: Text(
-                                AppLocalizations.of(context)!.signUp,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
-                            ),
+                          child: AppButton(
+                            label: AppLocalizations.of(context)!.signUp,
+                            onPressed: () {
+                              Navigator.of(dialogContext).pop();
+                              _navigateToSignUpFlow(context);
+                            },
+                            size: AppButtonSize.m,
                           ),
                         ),
                       ],

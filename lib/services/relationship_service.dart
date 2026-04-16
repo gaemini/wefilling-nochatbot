@@ -2,6 +2,7 @@
 // 친구요청 관련 비즈니스 로직 서비스
 // Cloud Functions 호출 및 데이터 정합성 관리
 
+import 'dart:async';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'content_filter_service.dart';
@@ -45,9 +46,15 @@ class RelationshipService {
         throw Exception('자기 자신에게 친구요청을 보낼 수 없습니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('sendFriendRequest');
-      final result = await callable.call({'toUid': toUid});
+      final result = await callable.call({'toUid': toUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 친구요청 전송 타임아웃 (10초)');
+          throw TimeoutException('친구요청 전송 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -93,9 +100,15 @@ class RelationshipService {
         throw Exception('로그인이 필요합니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('cancelFriendRequest');
-      final result = await callable.call({'toUid': toUid});
+      final result = await callable.call({'toUid': toUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 친구요청 취소 타임아웃 (10초)');
+          throw TimeoutException('친구요청 취소 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -118,9 +131,15 @@ class RelationshipService {
         throw Exception('로그인이 필요합니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('acceptFriendRequest');
-      final result = await callable.call({'fromUid': fromUid});
+      final result = await callable.call({'fromUid': fromUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 친구요청 수락 타임아웃 (10초)');
+          throw TimeoutException('친구요청 수락 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -147,9 +166,15 @@ class RelationshipService {
         throw Exception('로그인이 필요합니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('rejectFriendRequest');
-      final result = await callable.call({'fromUid': fromUid});
+      final result = await callable.call({'fromUid': fromUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 친구요청 거절 타임아웃 (10초)');
+          throw TimeoutException('친구요청 거절 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -172,9 +197,15 @@ class RelationshipService {
         throw Exception('로그인이 필요합니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('unfriend');
-      final result = await callable.call({'otherUid': otherUid});
+      final result = await callable.call({'otherUid': otherUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 친구 삭제 타임아웃 (10초)');
+          throw TimeoutException('친구 삭제 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -205,9 +236,15 @@ class RelationshipService {
         throw Exception('자기 자신을 차단할 수 없습니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('blockUser');
-      final result = await callable.call({'targetUid': targetUid});
+      final result = await callable.call({'targetUid': targetUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
+          throw TimeoutException('사용자 차단 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {
@@ -233,9 +270,15 @@ class RelationshipService {
         throw Exception('로그인이 필요합니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('unblockUser');
-      final result = await callable.call({'targetUid': targetUid});
+      final result = await callable.call({'targetUid': targetUid}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
+          throw TimeoutException('사용자 차단 해제 시간 초과');
+        },
+      );
 
       final success = result.data['success'] as bool? ?? false;
       if (success) {

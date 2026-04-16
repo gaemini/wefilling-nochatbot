@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../config/app_config.dart';
+import '../utils/logger.dart';
 
 class AccountDeletionService {
   final FirebaseFunctions _functions = FirebaseFunctions.instance;
@@ -61,9 +63,16 @@ class AccountDeletionService {
   }
 
   Future<void> deleteAccountImmediately({required String reason}) async {
+    // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
     final callable = _functions.httpsCallable('deleteAccountImmediately');
     await callable.call({
       'reason': reason,
-    });
+    }).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () {
+        Logger.log('⏱️ 계정 삭제 타임아웃 (30초)');
+        throw TimeoutException('계정 삭제 시간 초과');
+      },
+    );
   }
 }

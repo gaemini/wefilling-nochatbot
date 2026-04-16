@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../constants/app_constants.dart';
+import 'tokens.dart';
 
 /// 앱 테마 클래스
 class AppTheme {
@@ -104,33 +105,60 @@ class AppTheme {
   static ElevatedButtonThemeData _elevatedButtonTheme(ColorScheme cs) =>
       ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          minimumSize: const Size(120, 48),
+          minimumSize: const Size(120, DesignTokens.hit),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12), // 12px 둥근 모서리
+            borderRadius: BorderRadius.circular(DesignTokens.r12),
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: DesignTokens.s16,
+            vertical: DesignTokens.s12,
+          ),
+          textStyle: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+          ),
         ),
       );
 
   static FilledButtonThemeData _filledButtonTheme(ColorScheme cs) =>
       FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(120, 48),
+          minimumSize: const Size(120, DesignTokens.hit),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12), // 12px 둥근 모서리
+            borderRadius: BorderRadius.circular(DesignTokens.r12),
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: DesignTokens.s16,
+            vertical: DesignTokens.s12,
+          ),
+          textStyle: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+          ),
         ),
       );
 
   static OutlinedButtonThemeData _outlinedButtonTheme(ColorScheme cs) =>
       OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          minimumSize: const Size(120, 48),
+          minimumSize: const Size(120, DesignTokens.hit),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12), // 12px 둥근 모서리
+            borderRadius: BorderRadius.circular(DesignTokens.r12),
           ),
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.symmetric(
+            horizontal: DesignTokens.s16,
+            vertical: DesignTokens.s12,
+          ),
+          textStyle: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            height: 1.2,
+          ),
         ),
       );
 

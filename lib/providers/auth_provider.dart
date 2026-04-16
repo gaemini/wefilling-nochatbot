@@ -209,8 +209,8 @@ class AuthProvider with ChangeNotifier {
     if (_user == null) return;
 
     int retryCount = 0;
-    const maxRetries = 3;
-    const retryDelay = Duration(seconds: 2);
+    const maxRetries = 2; // 3 → 2로 감소
+    const retryDelay = Duration(seconds: 1); // 2초 → 1초로 감소
 
     while (retryCount < maxRetries) {
       try {
@@ -220,7 +220,7 @@ class AuthProvider with ChangeNotifier {
           const GetOptions(source: Source.serverAndCache),
         )
             .timeout(
-          const Duration(seconds: 30), // 10초 → 30초로 증가
+          const Duration(seconds: 15), // 30초 → 15초로 감소
           onTimeout: () {
             Logger.log('⏱️ 사용자 데이터 로드 타임아웃');
             throw TimeoutException('사용자 데이터 로드 타임아웃');
@@ -245,7 +245,7 @@ class AuthProvider with ChangeNotifier {
               const GetOptions(source: Source.serverAndCache),
             )
                 .timeout(
-              const Duration(seconds: 10), // 5초 → 10초로 증가
+              const Duration(seconds: 5), // 10초 → 5초로 감소
               onTimeout: () {
                 Logger.log('⏱️ 스키마 보정 후 재로드 타임아웃');
                 throw TimeoutException('재로드 타임아웃');
@@ -295,8 +295,8 @@ class AuthProvider with ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
-    // FCM 초기화 (자동 로그인/앱 재시작 시에도 토큰 등록 보장)
-    await _initializeFCMIfNeeded();
+    // FCM 초기화 (백그라운드로 이동 - 회원가입 플로우를 막지 않음)
+    unawaited(_initializeFCMIfNeeded());
   }
 
   // 구글 로그인
@@ -414,8 +414,8 @@ class AuthProvider with ChangeNotifier {
 
         await _loadUserData();
 
-        // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
-        await _initializeFCMIfNeeded();
+        // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
+        unawaited(_initializeFCMIfNeeded());
       }
 
       return _user != null;
@@ -548,8 +548,8 @@ class AuthProvider with ChangeNotifier {
         await _updateExistingUserDocument();
         await _loadUserData();
 
-        // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
-        await _initializeFCMIfNeeded();
+        // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
+        unawaited(_initializeFCMIfNeeded());
       }
 
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -637,11 +637,18 @@ class AuthProvider with ChangeNotifier {
       // - Google/Apple 플로우는 completeEmailVerification에서 처리하지만,
       //   이메일/비밀번호 회원가입 플로우는 여기서 반드시 처리해야 "메일 1개=계정 1개"가 보장됨
       try {
+        // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable =
             _functions.httpsCallable('finalizeHanyangEmailVerification');
         await callable.call({
           'email': hanyangEmail.trim(),
-        });
+        }).timeout(
+          const Duration(seconds: 15),
+          onTimeout: () {
+            Logger.log('⏱️ 한양메일 인증 확정 타임아웃 (15초)');
+            throw TimeoutException('한양메일 인증 시간 초과');
+          },
+        );
         hanyangClaimFinalized = true;
         Logger.log('✅ 한양메일 claim 점유 완료: $hanyangEmail');
       } on FirebaseFunctionsException catch (e) {
@@ -761,8 +768,8 @@ class AuthProvider with ChangeNotifier {
 
       await _loadUserData();
 
-      // FCM 초기화는 단일 진입점(_initializeFCMIfNeeded)에서만 수행
-      await _initializeFCMIfNeeded();
+      // FCM 초기화 (백그라운드로 이동 - 로그인 플로우를 막지 않음)
+      unawaited(_initializeFCMIfNeeded());
 
       return _user != null;
     } on FirebaseAuthException catch (e) {
@@ -1646,14 +1653,20 @@ class AuthProvider with ChangeNotifier {
         throw Exception('한양대학교 이메일 주소만 사용할 수 있습니다.');
       }
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('sendEmailVerificationCode');
       final result = await callable.call({
         'email': email,
         if (locale != null)
           'locale':
               '${locale.languageCode}${locale.countryCode != null ? '-${locale.countryCode}' : ''}',
-      });
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          Logger.log('⏱️ 이메일 인증번호 전송 타임아웃 (15초)');
+          throw TimeoutException('이메일 인증번호 전송 시간 초과');
+        },
+      );
 
       return {
         'success': result.data['success'] == true,
@@ -1686,12 +1699,18 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // Cloud Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('verifyEmailCode');
       final result = await callable.call({
         'email': email,
         'code': code,
-      });
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          Logger.log('⏱️ 이메일 인증번호 검증 타임아웃 (15초)');
+          throw TimeoutException('이메일 인증번호 검증 시간 초과');
+        },
+      );
 
       return result.data['success'] == true;
     } on FirebaseFunctionsException catch (e) {
@@ -1716,9 +1735,16 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable =
           _functions.httpsCallable('finalizeHanyangEmailVerification');
-      await callable.call({'email': hanyangEmail});
+      await callable.call({'email': hanyangEmail}).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          Logger.log('⏱️ 한양메일 인증 완료 처리 타임아웃 (15초)');
+          throw TimeoutException('한양메일 인증 완료 처리 시간 초과');
+        },
+      );
 
       await _loadUserData();
       return true;
@@ -1744,10 +1770,17 @@ class AuthProvider with ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('finalizeEnglishSocialSignup');
       await callable.call({
         'signupLanguage': signupLanguage,
-      });
+      }).timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          Logger.log('⏱️ 영어 소셜 회원가입 승인 타임아웃 (15초)');
+          throw TimeoutException('영어 소셜 회원가입 승인 시간 초과');
+        },
+      );
 
       await _loadUserData();
       return true;
@@ -1793,9 +1826,9 @@ class AuthProvider with ChangeNotifier {
       // locale 상태를 먼저 확정
       await _languageService.initializeLanguage();
 
-      // iOS는 자동 로그인 직후 경쟁 상태를 피하기 위해 지연 후 초기화
+      // iOS는 지연 시간 감소 (2초 → 1초)
       if (!kIsWeb && Platform.isIOS) {
-        await Future.delayed(const Duration(seconds: 2));
+        await Future.delayed(const Duration(seconds: 1)); // 2초 → 1초로 감소
       }
 
       if (kDebugMode) {
@@ -2008,7 +2041,7 @@ class AuthProvider with ChangeNotifier {
 
     try {
       await docRef.set(updates, SetOptions(merge: true)).timeout(
-        const Duration(seconds: 10), // 5초 → 10초로 증가
+        const Duration(seconds: 5), // 10초 → 5초로 감소
         onTimeout: () {
           Logger.log('⏱️ 스키마 보정 타임아웃');
           throw TimeoutException('스키마 보정 타임아웃');

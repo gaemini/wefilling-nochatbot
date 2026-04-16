@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'notification_badge.dart';
 import '../ui/widgets/shape_icon.dart';
 import '../constants/app_constants.dart';
+import '../utils/responsive_helper.dart';
 
 /// 하단 네비게이션 아이템 데이터 클래스
 class BottomNavigationItem {
@@ -46,11 +47,19 @@ class AdaptiveBottomNavigation extends StatelessWidget {
         final screenWidth = mediaQuery.size.width;
         final screenHeight = mediaQuery.size.height;
         final bottomPadding = mediaQuery.padding.bottom;
+        final textScale = MediaQuery.textScalerOf(context).scale(1.0);
 
         // 화면 크기별 동적 크기 계산
-        final navHeight = _calculateNavHeight(screenWidth, screenHeight);
-        final iconSize = _calculateIconSize(screenWidth);
-        final fontSize = _calculateFontSize(screenWidth);
+        final navHeight = _calculateNavHeight(
+          context,
+          screenWidth,
+          screenHeight,
+          textScale,
+        );
+        final iconSize = _calculateIconSize(context);
+        final fontSize = _calculateFontSize(context, textScale);
+        final allowTwoLineLabel =
+            textScale > 1.25 || screenWidth < 360 || context.isCompactLayout;
 
         return Container(
           height: navHeight + bottomPadding,
@@ -68,8 +77,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
             top: false,
             child: Padding(
               padding: EdgeInsets.symmetric(
-                horizontal: _calculateHorizontalPadding(screenWidth),
-                vertical: _calculateVerticalPadding(screenWidth),
+                horizontal: _calculateHorizontalPadding(context),
+                vertical: _calculateVerticalPadding(context),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -87,6 +96,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                       onTap: () => onItemTapped(index),
                       iconSize: iconSize,
                       fontSize: fontSize,
+                      allowTwoLineLabel: allowTwoLineLabel,
                     ),
                   );
                 }).toList(),
@@ -99,46 +109,38 @@ class AdaptiveBottomNavigation extends StatelessWidget {
   }
 
   /// 화면 크기별 네비게이션 높이 계산
-  double _calculateNavHeight(double width, double height) {
-    // 작은 화면 (갤럭시 S23 등) - 더 얇게
-    if (width < 360) return 52;
-    if (width < 380) return 54;
-    if (width < 400) return 56;
-    // 일반 화면
-    if (width < 500) return 60;
-    // 태블릿
-    return 65;
+  double _calculateNavHeight(
+    BuildContext context,
+    double width,
+    double height,
+    double textScale,
+  ) {
+    final base = context.rh(56, min: 52, max: 68);
+    if (textScale > 1.35) return (base + 8).clamp(56, 74);
+    if (width < 360 && textScale > 1.2) return (base + 4).clamp(54, 72);
+    return base;
   }
 
   /// 화면 크기별 아이콘 크기 계산 - 인스타그램 비율 참고
-  double _calculateIconSize(double width) {
-    if (width < 360) return 18;
-    if (width < 400) return 20;
-    if (width < 500) return 21;
-    return 22;
+  double _calculateIconSize(BuildContext context) {
+    return context.ri(20).clamp(18, 24);
   }
 
   /// 화면 크기별 폰트 크기 계산
-  double _calculateFontSize(double width) {
-    if (width < 360) return 10;
-    if (width < 400) return 10.5;
-    if (width < 500) return 11;
-    return 12;
+  double _calculateFontSize(BuildContext context, double textScale) {
+    final scaled = context.rf(11).clamp(10, 12.5);
+    if (textScale > 1.35) return (scaled * 0.95).clamp(10, 12).toDouble();
+    return scaled.toDouble();
   }
 
   /// 화면 크기별 수평 패딩 계산
-  double _calculateHorizontalPadding(double width) {
-    if (width < 360) return 4;
-    if (width < 400) return 8;
-    if (width < 500) return 12;
-    return 16;
+  double _calculateHorizontalPadding(BuildContext context) {
+    return context.rs(8).clamp(4, 16);
   }
 
   /// 화면 크기별 수직 패딩 계산
-  double _calculateVerticalPadding(double width) {
-    if (width < 360) return 4;
-    if (width < 400) return 6;
-    return 8;
+  double _calculateVerticalPadding(BuildContext context) {
+    return context.rs(6).clamp(4, 10);
   }
 
   /// 네비게이션 아이템 빌드
@@ -149,6 +151,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     required VoidCallback onTap,
     required double iconSize,
     required double fontSize,
+    required bool allowTwoLineLabel,
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     // 선택 상태 색상: 검정(#000000)으로 고정
@@ -224,10 +227,10 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   fontSize: fontSize,
                   fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
                   color: isSelected ? selectedColor : unselectedColor,
-                  height: 1.1,
+                  height: allowTwoLineLabel ? 1.2 : 1.1,
                 ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+                maxLines: allowTwoLineLabel ? 2 : 1,
+                overflow: TextOverflow.fade,
                 textAlign: TextAlign.center,
               ),
             ),

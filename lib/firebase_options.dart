@@ -68,7 +68,7 @@ class DefaultFirebaseOptions {
     messagingSenderId: '700373659727',
     projectId: 'flutterproject3-af322',
     storageBucket: 'flutterproject3-af322.firebasestorage.app',
-    androidClientId: '700373659727-6nrlohkdkdrmrf2pceukdlve2sfjcufg.apps.googleusercontent.com',
+    androidClientId: '700373659727-3hlv2tok95n9njke4do5p1uoiachuh02.apps.googleusercontent.com',
     iosClientId: '700373659727-ijco1q1rp93rkejsk8662sbqr4j4rsfj.apps.googleusercontent.com',
     iosBundleId: 'com.wefilling.app',
   );

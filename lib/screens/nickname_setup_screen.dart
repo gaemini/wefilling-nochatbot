@@ -74,10 +74,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
             ),
           );
           
-          // 🔥 실패 시 로그인 화면으로 복귀
-          await Future.delayed(const Duration(seconds: 3));
-          if (!mounted) return;
-          navigator.pushReplacementNamed('/login');
+          // 🔥 실패 시 로딩 해제하고 사용자에게 재시도 기회 제공
+          setState(() {
+            _isLoading = false;
+          });
         }
       } catch (e) {
         // 오류 처리
@@ -90,17 +90,10 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           ),
         );
         
-        // 🔥 오류 시 로그인 화면으로 복귀
-        await Future.delayed(const Duration(seconds: 3));
-        if (!mounted) return;
-        navigator.pushReplacementNamed('/login');
-      } finally {
-        // 로딩 표시 제거
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+        // 🔥 오류 시 로딩 해제하고 사용자에게 재시도 기회 제공
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

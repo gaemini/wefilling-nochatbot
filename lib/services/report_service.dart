@@ -1,6 +1,7 @@
 // lib/services/report_service.dart
 // 신고 및 차단 관련 서비스
 
+import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -71,11 +72,17 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
-      // Firebase Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('blockUser');
       final result = await callable.call({
         'targetUid': blockedUserId,
-      });
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 사용자 차단 타임아웃 (10초)');
+          throw TimeoutException('사용자 차단 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         Logger.log('✅ 사용자를 차단했습니다: $blockedUserId');
@@ -104,11 +111,17 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
-      // Firebase Functions 호출
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('unblockUser');
       final result = await callable.call({
         'targetUid': blockedUserId,
-      });
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 사용자 차단 해제 타임아웃 (10초)');
+          throw TimeoutException('사용자 차단 해제 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         Logger.log('✅ 사용자 차단을 해제했습니다: $blockedUserId');
@@ -136,12 +149,19 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('blockAnonymousPost');
       final result = await callable.call({
         'postId': postId,
         'titleSnapshot': titleSnapshot ?? '',
         'previewSnapshot': previewSnapshot ?? '',
-      });
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 익명 게시글 차단 타임아웃 (10초)');
+          throw TimeoutException('익명 게시글 차단 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         ContentFilterService.addBlockedAnonymousPostId(postId);
@@ -162,8 +182,15 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('unblockAnonymousPost');
-      final result = await callable.call({'postId': postId});
+      final result = await callable.call({'postId': postId}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 익명 게시글 차단 해제 타임아웃 (10초)');
+          throw TimeoutException('익명 게시글 차단 해제 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         ContentFilterService.removeBlockedAnonymousPostId(postId);
@@ -216,11 +243,18 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('hideAnonymousComment');
       final result = await callable.call({
         'commentId': commentId,
         'postId': postId,
-      });
+      }).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 익명 댓글 숨김 타임아웃 (10초)');
+          throw TimeoutException('익명 댓글 숨김 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         ContentHideService.hideAnonymousComment(commentId);
@@ -239,8 +273,15 @@ class ReportService {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
 
+      // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
       final callable = _functions.httpsCallable('unhideAnonymousComment');
-      final result = await callable.call({'commentId': commentId});
+      final result = await callable.call({'commentId': commentId}).timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {
+          Logger.log('⏱️ 익명 댓글 숨김 해제 타임아웃 (10초)');
+          throw TimeoutException('익명 댓글 숨김 해제 시간 초과');
+        },
+      );
 
       if (result.data['success'] == true) {
         ContentHideService.unhideAnonymousComment(commentId);

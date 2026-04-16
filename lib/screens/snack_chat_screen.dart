@@ -16,6 +16,7 @@ import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
+import '../ui/widgets/fullscreen_image_viewer.dart';
 import 'friend_categories_screen.dart';
 import 'main_screen.dart';
 import 'snack_chat_info_screen.dart';
@@ -546,31 +547,9 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (hasImage)
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: CachedNetworkImage(
-                          imageUrl: message.imageUrl!,
-                          cacheManager: AppImageCacheManager.instance,
-                          fit: BoxFit.cover,
-                          placeholder: (_, __) => Container(
-                            height: 140,
-                            width: 240,
-                            color: Colors.black12,
-                            alignment: Alignment.center,
-                            child: const SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                          errorWidget: (_, __, ___) => Container(
-                            height: 140,
-                            width: 240,
-                            color: Colors.black12,
-                            alignment: Alignment.center,
-                            child: const Icon(Icons.broken_image_outlined),
-                          ),
-                        ),
+                      _buildImageBubble(
+                        message: message,
+                        isMe: true,
                       ),
                     if (hasImage && hasText) const SizedBox(height: 8),
                     if (hasText)
@@ -644,32 +623,9 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         if (hasImage)
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(12),
-                            child: CachedNetworkImage(
-                              imageUrl: message.imageUrl!,
-                              cacheManager: AppImageCacheManager.instance,
-                              fit: BoxFit.cover,
-                              placeholder: (_, __) => Container(
-                                height: 140,
-                                width: 240,
-                                color: Colors.black12,
-                                alignment: Alignment.center,
-                                child: const SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              ),
-                              errorWidget: (_, __, ___) => Container(
-                                height: 140,
-                                width: 240,
-                                color: Colors.black12,
-                                alignment: Alignment.center,
-                                child: const Icon(Icons.broken_image_outlined),
-                              ),
-                            ),
+                          _buildImageBubble(
+                            message: message,
+                            isMe: false,
                           ),
                         if (hasImage && hasText) const SizedBox(height: 8),
                         if (hasText)
@@ -711,6 +667,62 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
         ),
       );
     }
+  }
+
+  Widget _buildImageBubble({
+    required SnackChatMessage message,
+    required bool isMe,
+  }) {
+    final imageUrl = message.imageUrl;
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final heroTag = 'snack_chat_image_${widget.snackChatId}_${message.id}';
+
+    return GestureDetector(
+      onTap: () => _openImageViewer(imageUrl, heroTag: heroTag),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Hero(
+          tag: heroTag,
+          child: CachedNetworkImage(
+            imageUrl: imageUrl,
+            cacheManager: AppImageCacheManager.instance,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Container(
+              height: 140,
+              width: 240,
+              color: Colors.black12,
+              alignment: Alignment.center,
+              child: const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+            errorWidget: (_, __, ___) => Container(
+              height: 140,
+              width: 240,
+              color: Colors.black12,
+              alignment: Alignment.center,
+              child: Icon(
+                Icons.broken_image_outlined,
+                color: isMe ? Colors.white70 : Colors.black54,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openImageViewer(String imageUrl, {required String heroTag}) {
+    showFullscreenImageViewer(
+      context,
+      imageUrls: [imageUrl],
+      initialIndex: 0,
+      heroTag: heroTag,
+    );
   }
 
   String _formatTime(DateTime t) {

@@ -129,11 +129,13 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.sendFriendRequest(toUid);
       if (success) {
-        // 관계 상태 업데이트
-        await updateRelationshipStatus(toUid);
-        // 검색 결과에서 해당 사용자 제거 (이미 요청을 보냈으므로)
+        // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
+        // 검색 결과에서 즉시 제거 (UI 빠른 반응)
         _searchResults.removeWhere((user) => user.uid == toUid);
         notifyListeners();
+        
+        // 백그라운드에서 관계 상태 업데이트 (앱 블로킹 방지)
+        unawaited(updateRelationshipStatus(toUid));
       }
       return success;
     } catch (e) {
@@ -183,24 +185,30 @@ class RelationshipProvider with ChangeNotifier {
 
       final success = await _relationshipService.acceptFriendRequest(fromUid);
       if (success) {
-        // 관계 상태 업데이트
-        await updateRelationshipStatus(fromUid);
-        // 받은 요청 목록에서 제거
+        // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
+        // 받은 요청 목록에서 즉시 제거 (UI 빠른 반응)
         _incomingRequests.removeWhere((req) => req.fromUid == fromUid);
-
-        // 친구 목록 즉시 반영(스트림 반영 전 UX 개선)
-        try {
-          if (!_friends.any((f) => f.uid == fromUid)) {
-            final profile = await _relationshipService.getUserProfile(fromUid);
-            if (profile != null) {
-              _friends = [..._friends, profile];
-            }
-          }
-        } catch (_) {
-          // 실패해도 Firestore friends 스트림이 최종 정합성을 보장
-        }
-
         notifyListeners();
+        
+        // 백그라운드에서 상태 업데이트 (앱 블로킹 방지)
+        unawaited(Future(() async {
+          try {
+            // 관계 상태 업데이트
+            await updateRelationshipStatus(fromUid);
+            
+            // 친구 목록 즉시 반영(스트림 반영 전 UX 개선)
+            if (!_friends.any((f) => f.uid == fromUid)) {
+              final profile = await _relationshipService.getUserProfile(fromUid);
+              if (profile != null) {
+                _friends = [..._friends, profile];
+                notifyListeners();
+              }
+            }
+          } catch (e) {
+            Logger.error('친구 수락 후 상태 동기화 실패(무시): $e');
+            // Firestore 스트림이 최종 정합성을 보장하므로 무시
+          }
+        }));
       }
       return success;
     } catch (e) {
@@ -249,34 +257,42 @@ class RelationshipProvider with ChangeNotifier {
       Logger.error('   friendships 컬렉션 삭제: ${success ? "✅ 성공" : "❌ 실패"}');
       
       if (success) {
-        // 관계 상태 업데이트
-        await updateRelationshipStatus(otherUid);
-        Logger.log('   관계 상태 업데이트: ✅ 완료');
-        
-        // 모든 친구 카테고리에서 제거 (기존 기능에 영향 없도록 try-catch)
-        try {
-          Logger.log('   카테고리에서 제거 시작...');
-          final categoryService = FriendCategoryService();
-          await categoryService.removeFriendFromAllCategories(otherUid);
-          Logger.log('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
-        } catch (categoryError) {
-          Logger.error('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
-          // 카테고리 제거 실패해도 친구 삭제는 성공으로 처리
-        }
-        
-        // 친구 목록에서 제거
+        // 🔥 iOS 크래시 방지: 즉시 UI 업데이트 후 백그라운드에서 상태 동기화
+        // 친구 목록에서 즉시 제거 (UI 빠른 반응)
         _friends.removeWhere((friend) => friend.uid == otherUid);
         Logger.log('   _friends 목록에서 제거: ✅ 완료');
-        
-        // 검색 결과에 해당 사용자 다시 추가
-        final userProfile = await _relationshipService.getUserProfile(otherUid);
-        if (userProfile != null &&
-            !_searchResults.any((u) => u.uid == otherUid)) {
-          _searchResults.add(userProfile);
-        }
-        Logger.log('   검색 결과 업데이트: ✅ 완료');
-        
         notifyListeners();
+        
+        // 백그라운드에서 상태 업데이트 (앱 블로킹 방지)
+        unawaited(Future(() async {
+          try {
+            // 관계 상태 업데이트
+            await updateRelationshipStatus(otherUid);
+            Logger.log('   관계 상태 업데이트: ✅ 완료');
+            
+            // 모든 친구 카테고리에서 제거
+            try {
+              Logger.log('   카테고리에서 제거 시작...');
+              final categoryService = FriendCategoryService();
+              await categoryService.removeFriendFromAllCategories(otherUid);
+              Logger.log('   ✅ 친구 카테고리에서 제거 완료: $otherUid');
+            } catch (categoryError) {
+              Logger.error('   ⚠️ 카테고리에서 제거 실패 (계속 진행): $categoryError');
+            }
+            
+            // 검색 결과에 해당 사용자 다시 추가
+            final userProfile = await _relationshipService.getUserProfile(otherUid);
+            if (userProfile != null &&
+                !_searchResults.any((u) => u.uid == otherUid)) {
+              _searchResults.add(userProfile);
+              notifyListeners();
+            }
+            Logger.log('   검색 결과 업데이트: ✅ 완료');
+          } catch (e) {
+            Logger.error('친구 삭제 후 상태 동기화 실패(무시): $e');
+          }
+        }));
+        
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         Logger.log('🎉 친구 삭제 완료!');
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

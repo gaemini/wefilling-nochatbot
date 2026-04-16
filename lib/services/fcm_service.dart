@@ -346,10 +346,11 @@ class FCMService {
             Logger.log('✅ iOS 알림 권한 Provisional');
             _setState(PushInitState.permissionResolved);
           } else {
-            Logger.log('❌ iOS 알림 권한 거부됨 - FCM 초기화 중단');
+            Logger.log('❌ iOS 알림 권한 거부됨 - FCM 기능 제한 (앱은 계속 실행)');
             _initializedUserId = userId;
+            _setState(PushInitState.permissionResolved);
             completer.complete();
-            return; // 권한 없으면 FCM 초기화 중단
+            return; // 권한 없어도 앱은 계속 실행
           }
         }
       } catch (e) {
@@ -695,12 +696,19 @@ class FCMService {
       })();
 
       try {
+        // 🔥 iOS 크래시 방지: 네이티브 gRPC 통신에 명시적 타임아웃 추가
         final callable = _functions.httpsCallable('registerFcmToken');
         await callable.call(<String, dynamic>{
           'token': token,
           'locale': localeTag,
           if (platform != null) 'platform': platform,
-        });
+        }).timeout(
+          const Duration(seconds: 10),
+          onTimeout: () {
+            Logger.log('⏱️ FCM 토큰 등록 타임아웃 (10초)');
+            throw TimeoutException('FCM 토큰 등록 시간 초과');
+          },
+        );
         Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
         return;
       } catch (e) {
@@ -739,7 +747,13 @@ class FCMService {
         if (token != null && token.isNotEmpty)
           _functions.httpsCallable('unregisterFcmToken').call(<String, dynamic>{
             'token': token,
-          }).then((_) {
+          }).timeout(
+            const Duration(seconds: 10),
+            onTimeout: () {
+              Logger.log('⏱️ FCM 토큰 해제 타임아웃 (10초)');
+              throw TimeoutException('FCM 토큰 해제 시간 초과');
+            },
+          ).then((_) {
             Logger.log('✅ unregisterFcmToken 완료');
           }, onError: (e) {
             Logger.log('⚠️ unregisterFcmToken 실패(무시): $e');

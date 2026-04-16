@@ -3,6 +3,7 @@
 // Material 3 기반의 통일된 디자인 시스템
 
 import 'package:flutter/material.dart';
+import '../utils/responsive_helper.dart';
 
 /// 디자인 토큰 클래스
 /// 앱 전체에서 사용하는 간격, 반지름, 지속시간, 아이콘 크기 등을 정의
@@ -113,6 +114,23 @@ class DesignTokens {
   static const double mobileBreakpoint = 600.0;
   static const double tabletBreakpoint = 1024.0;
   static const double desktopBreakpoint = 1440.0;
+}
+
+/// 반응형 토큰 유틸: 고정 토큰값을 화면/글꼴에 맞춰 보정한다.
+extension ResponsiveDesignTokens on BuildContext {
+  double spacingToken(double base) => rs(base);
+  double fontToken(double base) => rf(base);
+  double iconToken(double base) => ri(base);
+  double heightToken(double base, {double min = 44, double? max}) =>
+      rh(base, min: min, max: max);
+
+  EdgeInsets horizontalPaddingToken(double base) =>
+      EdgeInsets.symmetric(horizontal: rs(base));
+
+  EdgeInsets verticalPaddingToken(double base) =>
+      EdgeInsets.symmetric(vertical: rs(base));
+
+  EdgeInsets allPaddingToken(double base) => EdgeInsets.all(rs(base));
 }
 
 /// 디자인 토큰 확장 유틸리티

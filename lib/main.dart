@@ -69,13 +69,6 @@ void main() {
         if (kDebugMode) {
           debugPrint('🔥 Firebase 초기화 완료');
         }
-
-        // ✅ CRITICAL FIX: Firebase 완전 초기화 대기 (iOS 필수)
-        // Firebase.initializeApp()이 완료되어도 내부적으로 모든 서비스가 준비되지 않을 수 있음
-        await Future.delayed(const Duration(seconds: 2));
-        if (kDebugMode) {
-          debugPrint('✅ Firebase 안정화 대기 완료');
-        }
       } catch (e) {
         if (e.toString().contains('duplicate-app')) {
           if (kDebugMode) {
@@ -85,11 +78,10 @@ void main() {
           if (kDebugMode) {
             debugPrint('🔥 Firebase 초기화 실패: $e');
           }
-          // 크래시 방지: 로그만 남기고 계속 진행
         }
       }
 
-      // 2. locale 강제 초기화 (Firebase Messaging보다 먼저 - 중요!)
+      // 2. locale 초기화 (비동기로 빠르게 처리)
       try {
         final languageService = LanguageService();
         await languageService.initializeLanguage();
@@ -97,25 +89,14 @@ void main() {
         if (kDebugMode) {
           debugPrint('🌐 locale 초기화 완료: $lang');
         }
-
-        // locale 설정 후 추가 안정화 대기 (iOS 중요)
-        await Future.delayed(const Duration(milliseconds: 1000));
       } catch (e) {
         if (kDebugMode) {
           debugPrint('⚠️ locale 초기화 실패 - 기본값 사용: $e');
         }
-        // 실패해도 기본 locale으로 계속 진행
-        await Future.delayed(const Duration(milliseconds: 500));
       }
 
-      // 3. Firebase Messaging 백그라운드 핸들러 등록
+      // 3. Firebase Messaging 백그라운드 핸들러 등록 (즉시 실행)
       try {
-        await Future.delayed(const Duration(milliseconds: 500));
-
-        // 부팅 단계에서는 푸시 활성화를 하지 않는다.
-        // iOS 푸시는 AuthProvider/FCMService 상태머신에서 locale/session/active 조건이
-        // 모두 만족된 뒤에만 시작된다.
-        // 백그라운드 핸들러는 Android에만 등록해도 핵심 푸시 기능에는 영향이 없다.
         if (!kIsWeb && Platform.isAndroid) {
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
@@ -192,8 +173,7 @@ void main() {
         }
       }
 
-      // 7. Firebase Auth 및 Firestore 설정
-      // 7. Firebase Auth 및 Firestore 설정
+      // 7. Firebase Auth 및 Firestore 설정 (병렬 처리로 최적화)
       try {
         if (kDebugMode) {
           debugPrint('🔥 Firebase 추가 초기화 시작: ${DateTime.now()}');
@@ -203,21 +183,16 @@ void main() {
               '🔥 Firebase Storage 버킷: ${Firebase.app().options.storageBucket}');
         }
 
-        // Firestore 설정 개선 (연결 안정성 향상) - Auth 전에 설정
+        // Firestore 설정 (즉시 실행)
         try {
           if (kDebugMode) {
             debugPrint('🗃️ Firestore 설정 시작');
           }
           final firestore = FirebaseFirestore.instance;
-
-          // 🔥 하이브리드 동기화: Firestore 설정 조정
-          // Android 캐시 문제 해결을 위해 무제한 → 100MB 제한
           firestore.settings = const Settings(
             persistenceEnabled: true,
-            cacheSizeBytes:
-                100 * 1024 * 1024, // 100MB (기존: CACHE_SIZE_UNLIMITED)
+            cacheSizeBytes: 100 * 1024 * 1024, // 100MB
           );
-
           if (kDebugMode) {
             debugPrint('✅ Firestore 설정 완료 (캐시: 100MB)');
           }
@@ -227,10 +202,7 @@ void main() {
           }
         }
 
-        // Firebase Auth 안정화 대기 (중요!)
-        await Future.delayed(const Duration(milliseconds: 1000));
-
-        // Firebase Auth 상태 변화 로깅
+        // Firebase Auth 상태 변화 로깅 (비동기로 처리)
         FirebaseAuth.instance.authStateChanges().listen((User? user) {
           if (kDebugMode) {
             debugPrint(
@@ -241,51 +213,35 @@ void main() {
           }
         });
 
+        // 현재 로그인 상태만 확인 (대기 시간 제거)
+        final currentUser = FirebaseAuth.instance.currentUser;
         if (kDebugMode) {
-          debugPrint('🔐 인증 초기화 대기 중...');
-        }
-
-        // 인증 상태를 최대 5초간 기다림
-        User? currentUser;
-        int attempts = 0;
-        while (attempts < 10) {
-          // 0.5초씩 10번 = 5초
-          currentUser = FirebaseAuth.instance.currentUser;
           if (currentUser != null) {
-            if (kDebugMode) {
-              debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
-            }
-            break;
+            debugPrint('🔐 사용자 로그인 확인: ${currentUser.email}');
+          } else {
+            debugPrint('🔐 로그인된 사용자 없음');
           }
-          await Future.delayed(Duration(milliseconds: 500));
-          attempts++;
-          if (kDebugMode) {
-            debugPrint('🔐 인증 대기 중... (${attempts}/10)');
-          }
-        }
-
-        if (kDebugMode) {
           debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
         }
 
-        // Firebase Storage 접근 테스트
-        try {
-          if (kDebugMode) {
-            debugPrint('🗄️ Storage 접근 테스트 시작');
-          }
-          final storageRef = FirebaseStorage.instance.ref();
-          await storageRef.listAll();
-          if (kDebugMode) {
-            debugPrint('✅ Firebase Storage 접근 테스트: 성공');
-          }
-        } catch (storageError) {
-          if (kDebugMode) {
-            debugPrint('⚠️ Firebase Storage 접근 테스트 실패: $storageError');
-            if (storageError.toString().contains('403')) {
-              debugPrint('⚠️  Firebase 프로젝트 권한 문제일 가능성이 높습니다.');
-              debugPrint('   프로젝트 소유자에게 Firebase Console에서 사용자 추가를 요청하세요.');
+        // Firebase Storage 접근 테스트 (백그라운드로 이동)
+        if (currentUser != null) {
+          unawaited(Future(() async {
+            try {
+              if (kDebugMode) {
+                debugPrint('🗄️ Storage 접근 테스트 시작 (백그라운드)');
+              }
+              final storageRef = FirebaseStorage.instance.ref();
+              await storageRef.listAll();
+              if (kDebugMode) {
+                debugPrint('✅ Firebase Storage 접근 테스트: 성공');
+              }
+            } catch (storageError) {
+              if (kDebugMode) {
+                debugPrint('⚠️ Firebase Storage 접근 테스트 실패: $storageError');
+              }
             }
-          }
+          }));
         }
       } catch (e) {
         if (kDebugMode) {
@@ -293,27 +249,21 @@ void main() {
         }
       }
 
-      // 8. FeatureFlagService 초기화
-      try {
-        await FeatureFlagService().init();
-        if (kDebugMode) {
-          debugPrint('🚩 FeatureFlagService 초기화 완료');
+      // 8. FeatureFlagService 초기화 (백그라운드로 이동)
+      unawaited(Future(() async {
+        try {
+          await FeatureFlagService().init();
+          if (kDebugMode) {
+            debugPrint('🚩 FeatureFlagService 초기화 완료');
+          }
+        } catch (e) {
+          if (kDebugMode) {
+            debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
+          }
         }
-      } catch (e) {
-        if (kDebugMode) {
-          debugPrint('⚠️ FeatureFlagService 초기화 오류: $e');
-        }
-      }
+      }));
 
-      // 9. 최종 안정화 대기 (AuthProvider 초기화 전 중요!)
-      if (kDebugMode) {
-        debugPrint('⏳ 최종 안정화 대기 시작: ${DateTime.now()}');
-      }
-      await Future.delayed(const Duration(milliseconds: 1500));
-      if (kDebugMode) {
-        debugPrint('✅ 최종 안정화 완료 - runApp 시작: ${DateTime.now()}');
-      }
-
+      // 9. 앱 시작 (대기 시간 제거)
       if (kDebugMode) {
         debugPrint('🚀 runApp 호출: ${DateTime.now()}');
       }

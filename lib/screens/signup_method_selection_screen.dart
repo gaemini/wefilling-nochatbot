@@ -272,12 +272,14 @@ class _SignUpMethodSelectionScreenState
         ),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 20),
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 20),
 
             // 헤더
             Container(
@@ -606,6 +608,7 @@ class _SignUpMethodSelectionScreenState
               ),
             ],
           ],
+        ),
         ),
       ),
     );

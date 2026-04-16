@@ -196,51 +196,55 @@ class _LoginScreenState extends State<LoginScreen>
                 opacity: _fadeInAnimation,
                 child: SlideTransition(
                   position: _slideAnimation,
-                  child: Column(
-                    children: [
-                      Expanded(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isShort = constraints.maxHeight < 760;
-                            final isVeryShort = constraints.maxHeight < 700;
-                            final hPadding = isVeryShort ? 16.0 : 24.0;
-                            final logoSize = isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
-                            final appNameSize = isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
-                            final cardVPadding = isVeryShort ? 14.0 : 20.0;
-                            final cardHPadding = isVeryShort ? 16.0 : 24.0;
-                            final buttonGap = isVeryShort ? 10.0 : 14.0;
-                            final titleGap = isVeryShort ? 4.0 : 6.0;
-                            final headerTopGap = ((constraints.maxHeight *
-                                        (isVeryShort ? 0.065 : 0.095)) +
-                                    (isVeryShort ? 14.0 : 24.0))
-                                .clamp(56.0, 108.0);
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isShort = constraints.maxHeight < 760;
+                      final isVeryShort = constraints.maxHeight < 700;
+                      final hPadding = isVeryShort ? 16.0 : 24.0;
+                      final logoSize = isVeryShort ? 78.0 : (isShort ? 86.0 : 100.0);
+                      final appNameSize = isVeryShort ? 34.0 : (isShort ? 37.0 : 40.0);
+                      final cardVPadding = isVeryShort ? 14.0 : 20.0;
+                      final cardHPadding = isVeryShort ? 16.0 : 24.0;
+                      final buttonGap = isVeryShort ? 10.0 : 14.0;
+                      final titleGap = isVeryShort ? 4.0 : 6.0;
+                      final headerTopGap = ((constraints.maxHeight *
+                                  (isVeryShort ? 0.065 : 0.095)) +
+                              (isVeryShort ? 14.0 : 24.0))
+                          .clamp(56.0, 108.0);
 
-                            return Padding(
-                              padding: EdgeInsets.symmetric(horizontal: hPadding),
-                              child: Column(
-                                children: [
-                                  SizedBox(height: headerTopGap),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Image.asset(
-                                        'assets/images/wefilling_boot_logo.png',
-                                        width: logoSize,
-                                        height: logoSize,
-                                        fit: BoxFit.contain,
-                                        errorBuilder: (context, error, stackTrace) {
-                                          return Icon(
-                                            Icons.people_alt_rounded,
-                                            size: logoSize * 0.8,
-                                            color: Colors.blue.shade700,
-                                          );
-                                        },
-                                      ),
-                                      SizedBox(height: isVeryShort ? 8 : 12),
-                                      Text(
+                      return SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        padding: EdgeInsets.symmetric(horizontal: hPadding),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: IntrinsicHeight(
+                            child: Column(
+                              children: [
+                                SizedBox(height: headerTopGap),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Image.asset(
+                                      'assets/images/wefilling_boot_logo.png',
+                                      width: logoSize,
+                                      height: logoSize,
+                                      fit: BoxFit.contain,
+                                      errorBuilder: (context, error, stackTrace) {
+                                        return Icon(
+                                          Icons.people_alt_rounded,
+                                          size: logoSize * 0.8,
+                                          color: Colors.blue.shade700,
+                                        );
+                                      },
+                                    ),
+                                    SizedBox(height: isVeryShort ? 8 : 12),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
                                         AppLocalizations.of(context)!.appName,
                                         maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: appNameSize,
                                           fontWeight: FontWeight.bold,
@@ -250,19 +254,22 @@ class _LoginScreenState extends State<LoginScreen>
                                           letterSpacing: 1.2,
                                         ),
                                       ),
-                                      SizedBox(height: isVeryShort ? 2 : 4),
-                                      Text(
+                                    ),
+                                    SizedBox(height: isVeryShort ? 2 : 4),
+                                    FittedBox(
+                                      fit: BoxFit.scaleDown,
+                                      child: Text(
                                         AppLocalizations.of(context)!.appTagline,
                                         maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
                                           fontSize: isVeryShort ? 15 : 18,
                                           color: Colors.grey.shade700,
                                           letterSpacing: 0.5,
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
+                                ),
                                   SizedBox(height: isVeryShort ? 8 : 12),
                                   Container(
                                     width: double.infinity,
@@ -428,23 +435,22 @@ class _LoginScreenState extends State<LoginScreen>
                                       ],
                                     ),
                                   ),
-                                  const Spacer(),
-                                  Text(
-                                    AppLocalizations.of(context)!.loginTermsNotice,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontSize: isVeryShort ? 11 : 12,
-                                      color: Colors.grey.shade600,
-                                    ),
+                                const Spacer(),
+                                Text(
+                                  AppLocalizations.of(context)!.loginTermsNotice,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: isVeryShort ? 11 : 12,
+                                    color: Colors.grey.shade600,
                                   ),
-                                  SizedBox(height: isVeryShort ? 6 : 12),
-                                ],
-                              ),
-                            );
-                          },
+                                ),
+                                SizedBox(height: isVeryShort ? 6 : 12),
+                              ],
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
                 ),
               ),

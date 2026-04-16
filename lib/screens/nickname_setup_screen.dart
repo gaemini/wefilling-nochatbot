@@ -127,9 +127,11 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
           onPressed: () => Navigator.pop(context),
         ),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20.0),
-        child: Form(
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20.0),
+          child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -382,6 +384,7 @@ class _NicknameSetupScreenState extends State<NicknameSetupScreen> {
               ),
             ],
           ),
+        ),
         ),
       ),
     );

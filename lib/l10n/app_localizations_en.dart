@@ -2666,6 +2666,19 @@ class AppLocalizationsEn extends AppLocalizations {
   String get profileSetupWelcome => 'Welcome! Please set up your profile.';
 
   @override
+  String get signupCancelDialogTitle => 'Cancel sign up?';
+
+  @override
+  String get signupCancelDialogContent =>
+      'If you leave now, all your information will be deleted and you\'ll need to sign up again from the beginning.';
+
+  @override
+  String get signupCancelDialogContinue => 'Continue signing up';
+
+  @override
+  String get signupCancelDialogQuit => 'Cancel sign up';
+
+  @override
   String get profileSetupSuccess => 'Your profile has been set up.';
 
   @override

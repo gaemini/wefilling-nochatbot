@@ -1173,6 +1173,10 @@
 
   "profileSetupTitle": "Profile Setup",
   "profileSetupWelcome": "Welcome! Please set up your profile.",
+  "signupCancelDialogTitle": "Cancel sign up?",
+  "signupCancelDialogContent": "If you leave now, all your information will be deleted and you'll need to sign up again from the beginning.",
+  "signupCancelDialogContinue": "Continue signing up",
+  "signupCancelDialogQuit": "Cancel sign up",
   "profileSetupSuccess": "Your profile has been set up.",
   "profileSetupFailed": "Failed to set up your profile.\nPlease return to the login screen and try again.",
   "profileSetupError": "An error occurred: {error}\nPlease return to the login screen.",

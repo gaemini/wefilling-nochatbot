@@ -251,7 +251,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            '한양메일 인증을 완료한 후 회원가입을 진행해주세요.',
+                            '회원가입을 먼저 진행해주세요.',
                             style: TextStyle(
                                 fontSize: 13, color: Colors.orange.shade900),
                           ),

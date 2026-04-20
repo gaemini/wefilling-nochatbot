@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/nickname_setup_screen.dart';
 import '../screens/main_screen.dart';
-import '../screens/hanyang_email_verification_screen.dart';
 import '../screens/email_login_screen.dart';
 import '../screens/signup_method_selection_screen.dart';
 import '../main.dart';
@@ -397,9 +396,9 @@ class _LoginScreenState extends State<LoginScreen>
                                               Text(
                                                 AppLocalizations.of(context)!.signUp,
                                                 style: TextStyle(
-                                                  fontSize: isVeryShort ? 13 : 14,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: Colors.blue.shade700,
+                                                  fontSize: isVeryShort ? 17 : 18,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Colors.black,
                                                 ),
                                               ),
                                             ],
@@ -485,20 +484,20 @@ class _LoginScreenState extends State<LoginScreen>
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(
+                            const Icon(
                               Icons.language,
                               size: 20,
-                              color: Colors.blue.shade700,
+                              color: Colors.black,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               Localizations.localeOf(context).languageCode == 'ko' 
                                   ? 'KOR' 
                                   : 'ENG',
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.blue.shade700,
+                                color: Colors.black,
                               ),
                             ),
                           ],
@@ -578,13 +577,12 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   void _navigateToSignUpFlow(BuildContext context) {
-    final isEnglishSignUp = _isEnglishLocale(context);
+    // ✅ 한국어/영어 모두 동일하게 바로 가입 방식 선택 화면으로 이동
+    // skipHanyangVerification: true = 한양메일 인증 없이 가입
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => isEnglishSignUp
-            ? const SignUpMethodSelectionScreen(skipHanyangVerification: true)
-            : const HanyangEmailVerificationScreen(),
+        builder: (_) => const SignUpMethodSelectionScreen(skipHanyangVerification: true),
       ),
     );
   }
@@ -604,9 +602,9 @@ class _LoginScreenState extends State<LoginScreen>
       if (success && authProvider.isLoggedIn) {
         Logger.log("로그인 성공: ${authProvider.user?.email}");
 
-        // 닉네임 설정 여부 확인
-        if (!authProvider.hasNickname) {
-          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+        // 프로필 완성 여부 확인
+        if (!authProvider.isProfileComplete) {
+          Logger.log("프로필 미완성 -> 닉네임 설정 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -614,14 +612,14 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        // 닉네임 있으면 메인 화면
+        // 프로필 완성되었으면 메인 화면
         Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
       } 
-      // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
+      // 로그인 실패한 경우 (신규 사용자)
       else if (!success) {
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
         
@@ -774,9 +772,9 @@ class _LoginScreenState extends State<LoginScreen>
       if (success && authProvider.isLoggedIn) {
         Logger.log("로그인 성공: ${authProvider.user?.email}");
 
-        // 닉네임 설정 여부 확인
-        if (!authProvider.hasNickname) {
-          Logger.log("닉네임 설정 필요 -> 닉네임 설정 화면으로 이동");
+        // 프로필 완성 여부 확인
+        if (!authProvider.isProfileComplete) {
+          Logger.log("프로필 미완성 -> 닉네임 설정 화면으로 이동");
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
@@ -784,14 +782,14 @@ class _LoginScreenState extends State<LoginScreen>
           return;
         }
 
-        // 닉네임 있으면 메인 화면
+        // 프로필 완성되었으면 메인 화면
         Logger.log("로그인 성공 -> 메인 화면으로 이동");
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const MainScreen()),
         );
       } 
-      // 로그인 실패한 경우 (신규 사용자 또는 한양메일 미인증)
+      // 로그인 실패한 경우 (신규 사용자)
       else if (!success) {
         Logger.error("로그인 실패 -> 회원가입 필요 여부 확인");
         

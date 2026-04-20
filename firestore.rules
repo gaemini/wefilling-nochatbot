@@ -30,17 +30,19 @@ service cloud.firestore {
 
     
     // ===== 사용자 컬렉션 =====
+    // signupCompleted: false = 가입 진행 중 (닉네임/국적 미설정)
+    // signupCompleted: true  = 가입 완료
     match /users/{userId} {
-      // 본인만 민감한 필드 수정 가능
-      allow read: if request.auth != null; // 인증된 사용자만 프로필 읽기 가능
-      // 참고: 영어 소셜 회원가입(en bypass)은 Cloud Functions(Admin SDK)에서 users 문서를 생성/보정한다.
-      // 클라이언트 직접 create 정책은 기존 한양메일 인증 조건을 유지한다.
+      allow read: if request.auth != null;
+      // 생성: Cloud Functions(Admin SDK)가 주로 처리. 클라이언트 폴백 허용
       allow create: if request.auth != null 
-        && request.auth.uid == userId
-        && request.resource.data.emailVerified == true
-        && request.resource.data.hanyangEmail.matches('.*@hanyang.ac.kr$');
+        && request.auth.uid == userId;
       allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false; // 사용자 삭제는 금지
+      // 삭제: 본인이 가입 미완료 상태(signupCompleted != true)일 때만 허용
+      // (가입 취소 시 미완성 문서 정리용)
+      allow delete: if request.auth != null
+        && request.auth.uid == userId
+        && (!resource.data.keys().hasAny(['signupCompleted']) || resource.data.signupCompleted != true);
       
       // 저장된 게시글 서브컬렉션
       match /savedPosts/{postId} {
@@ -243,7 +245,6 @@ service cloud.firestore {
       
       allow create: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true
         && request.resource.data.userId == request.auth.uid;
       
       // 게시글 수정: 작성자만 가능 또는 좋아요/조회수 필드만 변경하는 경우 읽기 권한이 있는 사용자 가능
@@ -276,8 +277,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid));
         allow update: if request.auth != null 
           && resource.data.userId != 'deleted'
           && request.auth.uid == resource.data.userId;
@@ -324,8 +324,7 @@ service cloud.firestore {
     match /meetups/{meetupId} {
       allow read: if request.auth != null;
       allow create: if request.auth != null
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
       
       // 업데이트 규칙 세분화
       allow update: if request.auth != null && (
@@ -348,8 +347,7 @@ service cloud.firestore {
       match /comments/{commentId} {
         allow read: if request.auth != null;
         allow create: if request.auth != null
-          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid));
         allow update: if request.auth != null 
           && resource.data.userId != 'deleted'
           && request.auth.uid == resource.data.userId;
@@ -390,11 +388,10 @@ service cloud.firestore {
           (resource.data.keys().hasAny(['pendingParticipants']) && request.auth.uid in resource.data.pendingParticipants)
         );
       
-      // 생성: 모임장만 후기 생성 가능 (emailVerified 확인)
+      // 생성: 모임장만 후기 생성 가능
       allow create: if 
         request.auth != null &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true &&
         request.auth.uid == request.resource.data.authorId;
       
       // 수정: 
@@ -447,8 +444,7 @@ service cloud.firestore {
       allow create: if 
         request.auth != null &&
         request.auth.uid == request.resource.data.requesterId &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true;
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
       
       // 수정: 요청자 또는 수신자만 수정 가능 (상태 업데이트)
       allow update: if 
@@ -642,12 +638,11 @@ service cloud.firestore {
       // 읽기: 인증된 사용자만 댓글을 읽을 수 있음
       allow read: if request.auth != null;
       
-      // 생성: 로그인한 사용자만 댓글 작성 가능 (emailVerified 확인)
+      // 생성: 로그인한 사용자만 댓글 작성 가능
       // 대댓글 검증: parentCommentId가 있으면 depth는 1, 없으면 depth는 0
       allow create: if 
         request.auth != null &&
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true &&
         request.auth.uid == request.resource.data.userId &&
         // 대댓글 깊이 검증
         ((request.resource.data.parentCommentId == null && request.resource.data.depth == 0) ||

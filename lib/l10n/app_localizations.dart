@@ -3257,7 +3257,7 @@ abstract class AppLocalizations {
   /// No description provided for @signupRequired.
   ///
   /// In ko, this message translates to:
-  /// **'회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 한양메일 인증을 진행해주세요.'**
+  /// **'회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 가입을 진행해주세요.'**
   String get signupRequired;
 
   /// No description provided for @meetupNotifications.
@@ -4223,7 +4223,7 @@ abstract class AppLocalizations {
   /// No description provided for @signUpFirstMessage.
   ///
   /// In ko, this message translates to:
-  /// **'아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.'**
+  /// **'아래 \"회원가입하기\" 버튼을 눌러\n가입을 먼저 진행해주세요.'**
   String get signUpFirstMessage;
 
   /// No description provided for @none.
@@ -4999,6 +4999,30 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'환영합니다! 프로필을 설정해주세요.'**
   String get profileSetupWelcome;
+
+  /// No description provided for @signupCancelDialogTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'가입을 중단할까요?'**
+  String get signupCancelDialogTitle;
+
+  /// No description provided for @signupCancelDialogContent.
+  ///
+  /// In ko, this message translates to:
+  /// **'지금 나가면 입력한 정보가 모두 삭제되고\n처음부터 다시 가입해야 합니다.'**
+  String get signupCancelDialogContent;
+
+  /// No description provided for @signupCancelDialogContinue.
+  ///
+  /// In ko, this message translates to:
+  /// **'계속 가입하기'**
+  String get signupCancelDialogContinue;
+
+  /// No description provided for @signupCancelDialogQuit.
+  ///
+  /// In ko, this message translates to:
+  /// **'가입 취소하기'**
+  String get signupCancelDialogQuit;
 
   /// No description provided for @profileSetupSuccess.
   ///

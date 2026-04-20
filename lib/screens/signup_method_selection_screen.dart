@@ -1,5 +1,6 @@
 // lib/screens/signup_method_selection_screen.dart
-// 한양메일 인증 완료 후 회원가입 방식 선택 화면 (Apple / Google / 아이디)
+// 회원가입 방식 선택 화면 (Apple / Google)
+// ✅ 한양메일 인증 제거 - 모든 사용자 공통 플로우
 
 import 'dart:io' show Platform;
 
@@ -11,20 +12,19 @@ import 'package:provider/provider.dart';
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
-import 'email_login_screen.dart';
-import 'email_signup_screen.dart';
 import 'nickname_setup_screen.dart';
 import 'terms_screen.dart';
 import 'privacy_policy_screen.dart';
 
 class SignUpMethodSelectionScreen extends StatefulWidget {
+  // ⚠️ Deprecated: 하위 호환성을 위해 남겨둠 (사용 안 함)
   final String? verifiedHanyangEmail;
   final bool skipHanyangVerification;
 
   const SignUpMethodSelectionScreen({
     Key? key,
     this.verifiedHanyangEmail,
-    this.skipHanyangVerification = false,
+    this.skipHanyangVerification = true, // ✅ 기본값 true (항상 한양메일 건너뛰기)
   }) : super(key: key);
 
   @override
@@ -37,10 +37,6 @@ class _SignUpMethodSelectionScreenState
   bool _isLoading = false;
   String? _errorMessage;
   bool _agreedTerms = false;
-
-  bool get _isEnglishBypassMode => widget.skipHanyangVerification;
-
-  String get _verifiedHanyangEmail => widget.verifiedHanyangEmail?.trim() ?? '';
 
   Future<bool> _blockIfExistingAccount({
     required String providerLabel,
@@ -76,8 +72,8 @@ class _SignUpMethodSelectionScreenState
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      final loginSuccess =
-          await authProvider.signInWithGoogle(skipEmailVerifiedCheck: true);
+      // ✅ 가입 흐름: forSignup: true → 신규 사용자도 Auth 유지
+      final loginSuccess = await authProvider.signInWithGoogle(forSignup: true);
       if (!mounted) return;
 
       if (!loginSuccess) {
@@ -95,21 +91,10 @@ class _SignUpMethodSelectionScreenState
 
       bool completed = false;
       try {
-        if (_isEnglishBypassMode) {
-          completed = await authProvider.finalizeEnglishSocialSignup(
-            signupLanguage: 'en',
-          );
-        } else {
-          final verifiedEmail = _verifiedHanyangEmail;
-          if (verifiedEmail.isEmpty) {
-            setState(() {
-              _errorMessage = l10n.signupProcessError;
-              _isLoading = false;
-            });
-            return;
-          }
-          completed = await authProvider.completeEmailVerification(verifiedEmail);
-        }
+        // ✅ 한국어/영어 모두 동일하게 일반 소셜 가입 (한양메일 인증 없음)
+        completed = await authProvider.finalizeEnglishSocialSignup(
+          signupLanguage: Localizations.localeOf(context).languageCode,
+        );
       } on FirebaseFunctionsException catch (e) {
         setState(() {
           _errorMessage = e.code == 'already-exists'
@@ -161,8 +146,8 @@ class _SignUpMethodSelectionScreenState
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
-      final loginSuccess =
-          await authProvider.signInWithApple(skipEmailVerifiedCheck: true);
+      // ✅ 가입 흐름: forSignup: true → 신규 사용자도 Auth 유지
+      final loginSuccess = await authProvider.signInWithApple(forSignup: true);
       if (!mounted) return;
 
       if (!loginSuccess) {
@@ -180,21 +165,10 @@ class _SignUpMethodSelectionScreenState
 
       bool completed = false;
       try {
-        if (_isEnglishBypassMode) {
-          completed = await authProvider.finalizeEnglishSocialSignup(
-            signupLanguage: 'en',
-          );
-        } else {
-          final verifiedEmail = _verifiedHanyangEmail;
-          if (verifiedEmail.isEmpty) {
-            setState(() {
-              _errorMessage = l10n.signupProcessError;
-              _isLoading = false;
-            });
-            return;
-          }
-          completed = await authProvider.completeEmailVerification(verifiedEmail);
-        }
+        // ✅ 한국어/영어 모두 동일하게 일반 소셜 가입 (한양메일 인증 없음)
+        completed = await authProvider.finalizeEnglishSocialSignup(
+          signupLanguage: Localizations.localeOf(context).languageCode,
+        );
       } on FirebaseFunctionsException catch (e) {
         setState(() {
           _errorMessage = e.code == 'already-exists'
@@ -228,29 +202,13 @@ class _SignUpMethodSelectionScreenState
     }
   }
 
-  void _signUpWithId() {
-    if (_isEnglishBypassMode) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const EmailLoginScreen()),
-      );
-      return;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) =>
-            EmailSignUpScreen(verifiedHanyangEmail: _verifiedHanyangEmail),
-      ),
-    );
-  }
+  // ✅ 이메일/비밀번호 가입은 더 이상 지원하지 않음
+  // (소셜 로그인만 사용)
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isAppleSupported = Platform.isIOS || Platform.isMacOS;
-    final isEnglishLocale = Localizations.localeOf(context).languageCode == 'en';
 
     return Scaffold(
       backgroundColor: const Color(0xFFDEEFFF),
@@ -348,60 +306,8 @@ class _SignUpMethodSelectionScreenState
 
             const SizedBox(height: 24),
 
-            // 인증된 한양메일 표시 (한양메일 인증 경로에서만 노출)
-            if (!_isEnglishBypassMode && _verifiedHanyangEmail.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFBBF7D0),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.verified_user,
-                      color: Color(0xFF10B981),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.verifiedHanyangEmailLabel,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF065F46),
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _verifiedHanyangEmail,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF065F46),
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 28),
-            ] else
-              const SizedBox(height: 24),
+            // ✅ 한양메일 인증 경로는 더 이상 사용 안 함
+            // (모든 사용자가 skipHanyangVerification: true로 진입)
 
             Container(
               padding: const EdgeInsets.all(12),
@@ -527,36 +433,8 @@ class _SignUpMethodSelectionScreenState
               ),
             ),
 
-            if (!isEnglishLocale) ...[
-              const SizedBox(height: 12),
-
-              // 아이디(이메일/비밀번호)
-              SizedBox(
-                height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading || !_agreedTerms ? null : _signUpWithId,
-                  icon: const Icon(Icons.email_outlined, size: 20),
-                  label: Text(
-                    l10n.signUpWithId,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    disabledBackgroundColor: const Color(0xFFE2E8F0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ],
+            // ✅ 이메일/비밀번호 가입 버튼 제거
+            // 모든 사용자는 소셜 로그인(Google/Apple)만 사용
 
             const SizedBox(height: 16),
 

@@ -597,18 +597,13 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
         if (providerId !== 'google.com' && providerId !== 'apple.com') {
             throw new functions.https.HttpsError('permission-denied', '영어 회원가입은 Google/Apple 계정으로만 가능합니다.');
         }
-        const normalizedAuthEmail = authEmail ? normalizeEmail(authEmail) : '';
         const result = await db.runTransaction(async (tx) => {
             const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
             const userSnap = await tx.get(userRef);
             const existing = (userSnap.exists ? userSnap.data() : {}) || {};
-            // 한양메일 인증 계정은 기존 정책 유지(충돌 방지)
+            // ✅ 기존 한양메일 인증 계정은 필드 유지 (하위 호환)
             const existingHanyangEmail = String((existing === null || existing === void 0 ? void 0 : existing.hanyangEmail) || '').trim();
-            const hasVerifiedHanyang = /^[^\s@]+@hanyang\.ac\.kr$/i.test(existingHanyangEmail)
-                && (existing === null || existing === void 0 ? void 0 : existing.emailVerified) === true;
-            if (hasVerifiedHanyang) {
-                throw new functions.https.HttpsError('failed-precondition', '이미 한양메일 인증 계정이 등록되어 있습니다.');
-            }
+            const hasExistingHanyangEmail = /^[^\s@]+@hanyang\.ac\.kr$/i.test(existingHanyangEmail);
             const missing = (k) => existing[k] === undefined || existing[k] === null;
             const schemaFill = {};
             if (missing('uid'))
@@ -657,8 +652,20 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
                 schemaFill.termsAcceptedAt = admin.firestore.FieldValue.serverTimestamp();
             if (missing('createdAt'))
                 schemaFill.createdAt = admin.firestore.FieldValue.serverTimestamp();
-            const targetHanyangEmail = existingHanyangEmail || normalizedAuthEmail;
-            tx.set(userRef, Object.assign(Object.assign({}, schemaFill), { uid, email: authEmail, hanyangEmail: targetHanyangEmail, emailVerified: true, signupLanguage, verificationMethod: 'social_en_bypass', signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            // ✅ 핵심 수정: 한양메일 필드는 조건부로만 저장
+            // - 기존 사용자: hanyangEmail/emailVerified 유지
+            // - 신규 사용자: 해당 필드 생성 안 함
+            // 기존 사용자가 이미 signupCompleted: true라면 그 값을 유지
+            const isAlreadyCompleted = (existing === null || existing === void 0 ? void 0 : existing.signupCompleted) === true;
+            const userDoc = Object.assign(Object.assign({}, schemaFill), { uid, email: authEmail, signupLanguage, verificationMethod: 'social_signup', signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp(), 
+                // 신규 가입 중 상태: 닉네임/국적 설정 완료 후 true로 업데이트됨
+                signupCompleted: isAlreadyCompleted ? true : false });
+            // 기존 한양메일 사용자만 필드 유지
+            if (hasExistingHanyangEmail) {
+                userDoc.hanyangEmail = existingHanyangEmail;
+                userDoc.emailVerified = true;
+            }
+            tx.set(userRef, userDoc, { merge: true });
             return { success: true, provider: providerId };
         });
         return result;

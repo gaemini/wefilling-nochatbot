@@ -464,12 +464,12 @@ class _MeetupAppState extends State<MeetupApp> {
 
           // 로그인되어 있으면
           if (authProvider.isLoggedIn) {
-            // 닉네임 설정 확인
-            if (!authProvider.hasNickname) {
+            // 프로필 완성 여부 확인 (닉네임 + 국적 모두 필수)
+            if (!authProvider.isProfileComplete) {
               return const NicknameSetupScreen();
             }
 
-            // 닉네임 있으면 메인 화면
+            // 프로필 완성되었으면 메인 화면
             return const MainScreen();
           }
 

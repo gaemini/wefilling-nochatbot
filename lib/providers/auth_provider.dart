@@ -185,17 +185,47 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // 로그인 여부
   bool get isLoggedIn => _user != null;
 
-  // 닉네임 설정 여부
+  // 닉네임 설정 여부 (빈 문자열 제외)
   bool get hasNickname =>
       _userData != null &&
       _userData!.containsKey('nickname') &&
-      _userData!['nickname'] != null;
+      _userData!['nickname'] != null &&
+      (_userData!['nickname'] as String).trim().isNotEmpty;
+  
+  // 국적 설정 여부 (빈 문자열 제외)
+  bool get hasNationality =>
+      _userData != null &&
+      _userData!.containsKey('nationality') &&
+      _userData!['nationality'] != null &&
+      (_userData!['nationality'] as String).trim().isNotEmpty;
+  
+  // 가입 완료 여부 (signupCompleted: true 필드 기준)
+  // 레거시 사용자(signupCompleted 필드 없음)는 닉네임+국적으로 판단
+  bool get isSignupCompleted {
+    if (_userData == null) return false;
+    if (_userData!.containsKey('signupCompleted')) {
+      return _userData!['signupCompleted'] == true;
+    }
+    // 레거시: 필드가 없으면 닉네임+국적으로 판단 (기존 사용자 하위 호환)
+    return hasNickname && hasNationality;
+  }
 
-  // 한양메일 인증 여부
+  // 프로필 완성 여부 (닉네임 + 국적 + 가입 완료 플래그)
+  bool get isProfileComplete => hasNickname && hasNationality && isSignupCompleted;
+
+  // 한양메일 인증 여부 (레거시 사용자 전용)
+  // ⚠️ Deprecated: 신규 사용자는 이 필드가 없을 수 있음
   bool get isEmailVerified =>
       _userData != null &&
       _userData!.containsKey('emailVerified') &&
       _userData!['emailVerified'] == true;
+  
+  // 한양메일로 가입한 사용자인지 확인 (필드 존재 여부로 판단)
+  bool get isHanyangUser =>
+      _userData != null &&
+      _userData!.containsKey('hanyangEmail') &&
+      (_userData!['hanyangEmail'] as String?)?.isNotEmpty == true &&
+      (_userData!['hanyangEmail'] as String).endsWith('@hanyang.ac.kr');
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
@@ -310,8 +340,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 구글 로그인
-  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
-  Future<bool> signInWithGoogle({bool skipEmailVerifiedCheck = false}) async {
+  // forSignup: true이면 신규 사용자도 Auth를 유지하여 finalizeEnglishSocialSignup 진행 가능
+  Future<bool> signInWithGoogle({bool forSignup = false}) async {
     try {
       _isLoading = true;
       notifyListeners();
@@ -343,35 +373,26 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             await _firestore.collection('users').doc(_user!.uid).get();
 
         if (!docSnapshot.exists) {
-          // 신규 사용자 또는 탈퇴한 사용자 - 회원가입 필요
-          if (skipEmailVerifiedCheck) {
-            // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
-            Logger.log('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+          if (forSignup) {
+            // 가입 흐름: 신규 사용자이므로 Auth를 유지하고 true 반환
+            // finalizeEnglishSocialSignup이 이후에 Firestore 문서를 생성함
+            Logger.log('✅ 신규 사용자 Google Auth 완료 (가입 흐름)');
             _isLoading = false;
             notifyListeners();
-            return true; // 로그인 허용 (completeEmailVerification 실행 예정)
+            return true;
           }
 
-          Logger.log('❌ 사용자 문서 없음: 신규 사용자이거나 탈퇴한 계정입니다. 회원가입이 필요합니다.');
-
-          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
+          // 로그인 흐름: 신규 사용자이면 거부
+          Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
           _signupRequired = true;
 
-          // ✅ 중요: 이 시점의 Google 로그인은 "회원가입을 위한 계정 생성"이 아니라,
-          // "로그인 시도" 과정에서 Firebase Auth 사용자 레코드가 생성될 수 있습니다.
-          // users/{uid} 문서가 없어서 회원가입이 필요하다고 판단한 경우,
-          // 이 Auth 레코드를 남겨두면 동일 이메일로 '아이디(이메일/비밀번호) 가입'을 할 때
-          // email-already-in-use로 막혀 "인증용 한양메일이 아이디에 포함됐다"처럼 보이는 문제가 발생합니다.
-          //
-          // 따라서 skipEmailVerifiedCheck=false(=로그인 시도)에서만 best-effort로 정리합니다.
           try {
             await _user?.delete();
-            Logger.log('🧹 신규/탈퇴 사용자 Google Auth 레코드 삭제 완료');
+            Logger.log('🧹 신규 사용자 Google Auth 레코드 삭제 완료');
           } catch (e) {
             Logger.error('⚠️ Google Auth 레코드 삭제 실패(계속 진행): $e');
           }
 
-          // Google 로그인은 유지하고 Firebase만 로그아웃
           await _auth.signOut();
           _user = null;
           _userData = null;
@@ -381,25 +402,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           return false; // 로그인 거부
         }
 
-        // 기존 사용자 - 한양메일 인증 확인
-        final userData = docSnapshot.data();
-        final emailVerified = userData?['emailVerified'] == true;
-
-        if (!emailVerified && !skipEmailVerifiedCheck) {
-          // 한양메일 인증 미완료
-          Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
-
-          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
-          _signupRequired = true;
-
-          // Google 로그인은 유지하고 Firebase만 로그아웃
-          await _auth.signOut();
-          _user = null;
-          _userData = null;
+        if (forSignup) {
+          // 가입 흐름인데 이미 Firestore 문서가 있으면 기존 계정
+          Logger.log('⚠️ 이미 가입된 계정입니다 (가입 흐름에서 기존 문서 발견)');
           _isLoading = false;
           notifyListeners();
-
-          return false; // 로그인 거부
+          return true; // 가입 화면에서 _blockIfExistingAccount가 처리
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
@@ -457,8 +465,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // Apple 로그인
-  // skipEmailVerifiedCheck: 한양메일 인증 완료 후 회원가입 시 true로 설정
-  Future<bool> signInWithApple({bool skipEmailVerifiedCheck = false}) async {
+  // forSignup: true이면 신규 사용자도 Auth를 유지하여 finalizeEnglishSocialSignup 진행 가능
+  Future<bool> signInWithApple({bool forSignup = false}) async {
     try {
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       Logger.log('🍎 Apple Sign In 시작');
@@ -501,21 +509,18 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             await _firestore.collection('users').doc(_user!.uid).get();
 
         if (!docSnapshot.exists) {
-          // 신규 사용자 - 회원가입 필요
-          if (skipEmailVerifiedCheck) {
-            // 한양메일 인증 완료 후 회원가입 중 → 로그인 허용
-            Logger.log('✅ 신규 사용자 (한양메일 인증 완료): 회원가입 진행 중');
+          if (forSignup) {
+            // 가입 흐름: 신규 사용자이므로 Auth를 유지하고 true 반환
+            Logger.log('✅ 신규 사용자 Apple Auth 완료 (가입 흐름)');
             _isLoading = false;
             notifyListeners();
-            return true; // 로그인 허용 (completeEmailVerification 실행 예정)
+            return true;
           }
 
+          // 로그인 흐름: 신규 사용자이면 거부
           Logger.log('❌ 신규 사용자: 회원가입이 필요합니다.');
-
-          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
           _signupRequired = true;
 
-          // ✅ Google과 동일한 이유로, "로그인 시도"에서 생성된 Auth 레코드는 남기지 않는다.
           try {
             await _user?.delete();
             Logger.log('🧹 신규 사용자 Apple Auth 레코드 삭제 완료');
@@ -523,7 +528,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             Logger.error('⚠️ Apple Auth 레코드 삭제 실패(계속 진행): $e');
           }
 
-          // Firebase 로그아웃
           await _auth.signOut();
           _user = null;
           _userData = null;
@@ -533,25 +537,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           return false; // 로그인 거부
         }
 
-        // 기존 사용자 - 한양메일 인증 확인
-        final userData = docSnapshot.data();
-        final emailVerified = userData?['emailVerified'] == true;
-
-        if (!emailVerified && !skipEmailVerifiedCheck) {
-          // 한양메일 인증 미완료
-          Logger.log('❌ 한양메일 인증이 완료되지 않았습니다.');
-
-          // 회원가입 필요 플래그 설정 (UI에서 안내 표시)
-          _signupRequired = true;
-
-          // Firebase 로그아웃
-          await _auth.signOut();
-          _user = null;
-          _userData = null;
+        if (forSignup) {
+          // 가입 흐름인데 이미 Firestore 문서가 있으면 기존 계정
+          Logger.log('⚠️ 이미 가입된 계정입니다 (가입 흐름에서 기존 문서 발견)');
           _isLoading = false;
           notifyListeners();
-
-          return false; // 로그인 거부
+          return true; // 가입 화면에서 _blockIfExistingAccount가 처리
         }
 
         // 기존 사용자 정보 업데이트 (lastLogin)
@@ -688,8 +679,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       try {
         await _upsertUserDocWithFullSchema(
           user: _user!,
-          hanyangEmail: hanyangEmail,
-          emailVerified: true,
+          hanyangEmail: hanyangEmail,  // ✅ 한양메일 인증 사용자
           // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
           nickname: '',
           nationality: '',
@@ -990,6 +980,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             'nickname': nicknameToWrite,
             'nationality': nationalityToWrite,
             'updatedAt': FieldValue.serverTimestamp(),
+            // 닉네임+국적 설정 완료 → 가입 완전히 완료 상태로 전환
+            'signupCompleted': true,
           };
           if (nicknameChanged && nicknameAllowed) {
             updateData['nicknameUpdatedAt'] = FieldValue.serverTimestamp();
@@ -1021,10 +1013,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           if (!docSnapshot.exists) {
             Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
             // 문서 생성 (✅ 모든 가입 경로에서 동일한 스키마)
+            // ✅ hanyangEmail은 기존 데이터에서 가져오되, 없으면 null
+            final existingHanyangEmail = (_userData?['hanyangEmail'] as String?)?.trim();
             final full = _buildFullUserDoc(
               user: _user!,
-              hanyangEmail: (_user!.email ?? ''),
-              emailVerified: true,
+              hanyangEmail: existingHanyangEmail,  // ✅ Optional
               nickname: nicknameToWrite,
               nationality: nationalityToWrite,
               photoURL: newPhotoUrlStr,
@@ -1048,6 +1041,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
                 (nationalityToWrite.trim().isNotEmpty)
                     ? FieldValue.serverTimestamp()
                     : null;
+            // 닉네임+국적 직접 설정 = 가입 완료
+            full['signupCompleted'] = true;
             await docRef.set(full);
             Logger.log("✅ 사용자 문서 생성 완료");
           } else {
@@ -1873,6 +1868,48 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     }
   }
 
+  // 가입 중 취소: Firestore 미완성 문서 + Firebase Auth 레코드 완전 삭제 후 로그아웃
+  // NicknameSetupScreen에서 "로그아웃" 버튼을 누를 때 호출
+  Future<void> cancelSignup() async {
+    try {
+      final uid = _user?.uid;
+      if (uid != null) {
+        // signupCompleted: false인 미완성 문서 삭제
+        try {
+          final docRef = _firestore.collection('users').doc(uid);
+          final snap = await docRef.get();
+          if (snap.exists && snap.data()?['signupCompleted'] != true) {
+            await docRef.delete();
+            Logger.log('🗑️ 미완성 가입 Firestore 문서 삭제 완료: $uid');
+          }
+        } catch (e) {
+          Logger.error('⚠️ Firestore 문서 삭제 실패(계속 진행): $e');
+        }
+
+        // Firebase Auth 레코드도 삭제 (동일 계정으로 재가입 가능하게)
+        try {
+          await _user?.delete();
+          Logger.log('🗑️ 미완성 가입 Firebase Auth 레코드 삭제 완료: $uid');
+        } catch (e) {
+          Logger.error('⚠️ Auth 레코드 삭제 실패(계속 진행): $e');
+        }
+      }
+    } finally {
+      // 반드시 로그아웃 처리
+      try {
+        await _googleSignIn.signOut();
+      } catch (_) {}
+      try {
+        await _auth.signOut();
+      } catch (_) {}
+      _user = null;
+      _userData = null;
+      _signupRequired = false;
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   // 로그아웃
   Future<void> signOut() async {
     try {
@@ -1986,13 +2023,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   /// 신규 생성 시 항상 동일한 users 문서 스키마를 만든다.
   /// (이미 문서가 있으면 누락 필드만 채우고, 핵심 필드는 최신 값으로 정합성 유지)
+  /// 
+  /// ✅ hanyangEmail 파라미터: 한양메일 인증자만 전달 (null이면 일반 사용자)
   Future<void> _upsertUserDocWithFullSchema({
     required User user,
-    required String hanyangEmail,
-    required bool emailVerified,
-    required String nickname,
-    required String nationality,
-    required String photoURL,
+    String? hanyangEmail,  // ✅ Optional
+    String nickname = '',
+    String nationality = '',
+    String photoURL = '',
     String bio = '',
   }) async {
     final docRef = _firestore.collection('users').doc(user.uid);
@@ -2004,7 +2042,6 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             _buildFullUserDoc(
               user: user,
               hanyangEmail: hanyangEmail,
-              emailVerified: emailVerified,
               nickname: nickname,
               nationality: nationality,
               photoURL: photoURL,
@@ -2023,8 +2060,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // 가입 확정에서 반드시 맞춰야 하는 핵심 필드들
       updates['uid'] = user.uid;
       updates['email'] = user.email ?? '';
-      updates['hanyangEmail'] = hanyangEmail;
-      updates['emailVerified'] = emailVerified;
+      
+      // ✅ 한양메일 인증자만 해당 필드 업데이트
+      if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
+        updates['hanyangEmail'] = hanyangEmail;
+        updates['emailVerified'] = true;
+      }
+      
       updates['updatedAt'] = FieldValue.serverTimestamp();
       updates['lastLogin'] = FieldValue.serverTimestamp();
 
@@ -2080,6 +2122,10 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   /// 누락 필드 계산: "키 자체가 없거나 null"이면 기본값을 넣는다.
+  /// 
+  /// ✅ 한양메일 필드(hanyangEmail, emailVerified)는 기본값 설정 안 함
+  /// - 기존 사용자: 필드 유지
+  /// - 신규 사용자: 필드 없음 (의도적)
   Map<String, dynamic> _computeMissingUserSchemaFields({
     required Map<String, dynamic> existingData,
     required User user,
@@ -2093,8 +2139,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     // 식별/기본
     if (missing('uid')) updates['uid'] = user.uid;
     if (missing('email')) updates['email'] = authEmail;
-    if (missing('hanyangEmail')) updates['hanyangEmail'] = authEmail;
-    if (missing('emailVerified')) updates['emailVerified'] = false;
+    // ✅ hanyangEmail, emailVerified는 기본값 설정 안 함
 
     // 표시 이름: nickname 단일 소스
     if (missing('nickname')) updates['nickname'] = '';
@@ -2152,20 +2197,22 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   /// 신규 문서 생성용: 항상 동일한 키 셋을 가진 전체 문서 생성.
+  /// 
+  /// ✅ 한양메일 필드는 optional:
+  /// - hanyangEmail == null → 필드 생성 안 함 (일반 가입자)
+  /// - hanyangEmail != null → 필드 생성 (한양대 학생)
   Map<String, dynamic> _buildFullUserDoc({
     required User user,
-    required String hanyangEmail,
-    required bool emailVerified,
-    required String nickname,
-    required String nationality,
-    required String photoURL,
-    required String bio,
+    String? hanyangEmail,  // ✅ Optional로 변경
+    String nickname = '',
+    String nationality = '',
+    String photoURL = '',
+    String bio = '',
   }) {
-    return <String, dynamic>{
+    final doc = <String, dynamic>{
       'uid': user.uid,
       'email': user.email ?? '',
-      'hanyangEmail': hanyangEmail,
-      'emailVerified': emailVerified,
+      // ✅ hanyangEmail, emailVerified는 한양대생만 가짐
       'nickname': nickname,
       'nationality': nationality,
       'nicknameUpdatedAt': null,
@@ -2194,6 +2241,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       'updatedAt': FieldValue.serverTimestamp(),
       'lastLogin': FieldValue.serverTimestamp(),
     };
+    
+    // ✅ 한양메일 인증 사용자만 해당 필드 추가
+    if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
+      doc['hanyangEmail'] = hanyangEmail;
+      doc['emailVerified'] = true;
+    }
+    
+    return doc;
   }
 
   // ---------------------------------------------------------------------------

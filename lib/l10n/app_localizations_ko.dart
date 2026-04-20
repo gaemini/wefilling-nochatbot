@@ -1666,7 +1666,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get signupRequired =>
-      '회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 한양메일 인증을 진행해주세요.';
+      '회원가입이 필요합니다.\n\n신규 사용자이거나 탈퇴한 계정인 경우 \'회원가입하기\' 버튼을 눌러 가입을 진행해주세요.';
 
   @override
   String get meetupNotifications => '모임 알림';
@@ -2190,7 +2190,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get dmFriendsOnlyHint => '친구추가 후 디엠을 보내보세요';
 
   @override
-  String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n한양메일 인증을 먼저 진행해주세요.';
+  String get signUpFirstMessage => '아래 \"회원가입하기\" 버튼을 눌러\n가입을 먼저 진행해주세요.';
 
   @override
   String get none => '없음';
@@ -2591,6 +2591,19 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get profileSetupWelcome => '환영합니다! 프로필을 설정해주세요.';
+
+  @override
+  String get signupCancelDialogTitle => '가입을 중단할까요?';
+
+  @override
+  String get signupCancelDialogContent =>
+      '지금 나가면 입력한 정보가 모두 삭제되고\n처음부터 다시 가입해야 합니다.';
+
+  @override
+  String get signupCancelDialogContinue => '계속 가입하기';
+
+  @override
+  String get signupCancelDialogQuit => '가입 취소하기';
 
   @override
   String get profileSetupSuccess => '프로필이 설정되었습니다.';

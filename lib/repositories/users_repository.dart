@@ -153,10 +153,11 @@ class UsersRepository {
       // 검색어 전처리 - 대소문자 구분 없이 검색
       final normalizedQuery = query.trim().toLowerCase();
       
-      // 더 넓은 범위로 사용자 데이터 가져오기
+      // 가입 완료된 사용자만 검색 (signupCompleted: true)
       final allUsersQuery = await _firestore
           .collection(_usersCollection)
-          .limit(100) // 검색 대상을 늘려서 더 정확한 매칭
+          .where('signupCompleted', isEqualTo: true)
+          .limit(100)
           .get();
 
       final matchedProfiles = <UserProfile>[];

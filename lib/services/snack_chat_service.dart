@@ -18,9 +18,21 @@ class SnackChatService {
   CollectionReference<Map<String, dynamic>> get _collection =>
       _firestore.collection('snack_chats');
 
+  // _watchMySnackChats()를 여러 곳(getTodaySnackChats, getAllSnackChats,
+  // getFavoritedUnreadCount 등)에서 호출하면 uid마다 별도 Firestore 리스너가
+  // 생성된다. 같은 uid에 대해 하나의 broadcast stream을 공유해 Firestore 비용과
+  // 연결 수를 줄인다.
+  String? _cachedWatchUid;
+  Stream<List<SnackChat>>? _cachedWatchStream;
+
   Stream<List<SnackChat>> _watchMySnackChats() {
     final uid = _uid;
     if (uid == null) return Stream.value(const <SnackChat>[]);
+
+    // 같은 uid이고 기존 stream이 살아있으면 재사용
+    if (uid == _cachedWatchUid && _cachedWatchStream != null) {
+      return _cachedWatchStream!;
+    }
 
     // NOTE:
     // 기존 쿼리(다중 where + orderBy)는 복합 인덱스 누락 시 에러가 발생했고,
@@ -61,9 +73,14 @@ class SnackChatService {
       onCancel: () {
         firestoreSub?.cancel();
         firestoreSub = null;
+        // 마지막 리스너가 해제되면 캐시도 초기화 → 다음 호출 시 새 stream 생성
+        _cachedWatchUid = null;
+        _cachedWatchStream = null;
       },
     );
 
+    _cachedWatchUid = uid;
+    _cachedWatchStream = controller.stream;
     return controller.stream;
   }
 

@@ -966,6 +966,8 @@ class PostService {
           }
 
           // posts snapshots
+          // 기존 구독이 살아 있으면 먼저 취소 (start()가 재진입될 때 중복 구독 방지)
+          await _postsSub?.cancel();
           _postsSub = _firestore
               .collection('posts')
               .orderBy('createdAt', descending: true)
@@ -1046,6 +1048,10 @@ class PostService {
         _authSub = null;
         _blockListenUid = null;
         _lastParsedPosts = null;
+        // 캐시도 초기화: 다음 getPostsStream() 호출 시 완전히 새 stream을 생성해
+        // stale controller를 재사용하는 문제를 방지한다.
+        _postsStreamCached = null;
+        _postsStreamController = null;
       },
     );
 

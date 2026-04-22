@@ -59,16 +59,32 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   DateTime? _oldestMessageTime;
   bool _hasMore = true;
   bool _isLoadingMore = false;
-  bool _isInitialLoading = true;  // 초기 로딩 상태 추가
+  bool _isInitialLoading = true;
+
+  // build()마다 새 stream을 생성하면 매 setState마다 Firestore 리스너가
+  // 등록/해제를 반복해 SDK 내부 상태가 불안정해진다.
+  // initState에서 한 번만 생성하고 재사용한다.
+  late final Stream<SnackChat?> _roomStream;
+  Timer? _initialLoadingTimeoutTimer;
 
   @override
   void initState() {
     super.initState();
+    _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     SnackChatActiveConversation.setActive(widget.snackChatId);
     _scrollController.addListener(_onScroll);
     _scheduleMarkAsRead();
     _subscribeToMessages();
     _subscribeToRoom();
+
+    // 방어 코드: stream이 영원히 첫 이벤트를 내보내지 않는 경우
+    // (네트워크 단절, Firestore 재연결 지연 등) 로딩 상태 해제
+    _initialLoadingTimeoutTimer = Timer(const Duration(seconds: 12), () {
+      if (mounted && _isInitialLoading) {
+        setState(() => _isInitialLoading = false);
+        Logger.warning('⚠️ [SnackChat] 초기 로딩 타임아웃 → 강제 해제');
+      }
+    });
   }
 
   /// DM의 _scheduleAutoMarkAsRead와 동일한 패턴 (250ms debounce)
@@ -209,6 +225,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   @override
   void dispose() {
+    _initialLoadingTimeoutTimer?.cancel();
     _autoMarkReadDebounce?.cancel();
     _roomSub?.cancel();
     if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
@@ -280,7 +297,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return StreamBuilder<SnackChat?>(
-      stream: _snackChatService.watchSnackChat(widget.snackChatId),
+      stream: _roomStream,
       builder: (context, roomSnap) {
         final room = roomSnap.data;
         if (room == null) {

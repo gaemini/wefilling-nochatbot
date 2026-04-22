@@ -13,6 +13,7 @@ import '../l10n/app_localizations.dart';
 import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
 import '../services/notification_service.dart';
+import '../services/post_service.dart';
 import '../services/snack_chat_service.dart';
 import '../services/badge_service.dart';
 import '../ui/widgets/app_icon_button.dart';
@@ -121,6 +122,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       BadgeService.syncAndroidBadgeOnResume();
+      // 앱이 백그라운드에서 포그라운드로 돌아올 때, Firestore stream이 suspend 중
+      // 일시적으로 끊겼을 수 있다. 현재 캐시 기준으로 즉시 재emit해 BoardScreen의
+      // StreamBuilder가 waiting 상태에 고정되지 않게 한다.
+      PostService.instance.requestReemitWithCurrentFilters();
     }
   }
 

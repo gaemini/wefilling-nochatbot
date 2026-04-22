@@ -141,16 +141,12 @@ class FriendCategoryService {
     }
   }
 
-  // 카테고리 삭제
+  // 카테고리 삭제 (문서만 삭제 — 삭제한 그룹의 friendIds를 다른 그룹에 합치지 않음)
   Future<bool> deleteCategory(String categoryId) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return false;
 
-      // 카테고리에 속한 친구들을 먼저 '기본' 카테고리로 이동
-      await _moveFriendsToDefault(categoryId);
-
-      // 카테고리 삭제
       await _firestore
           .collection('friend_categories')
           .doc(categoryId)
@@ -353,53 +349,4 @@ class FriendCategoryService {
     Logger.log('   └─────────────────────────────────');
   }
 
-  // 카테고리 삭제 시 친구들을 기본 카테고리로 이동
-  Future<void> _moveFriendsToDefault(String categoryId) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      // 삭제할 카테고리 정보 가져오기
-      final categoryDoc = await _firestore
-          .collection('friend_categories')
-          .doc(categoryId)
-          .get();
-
-      if (!categoryDoc.exists) return;
-
-      final category = FriendCategory.fromFirestore(categoryDoc);
-      if (category.friendIds.isEmpty) return;
-
-      // 기본 카테고리 찾기 (인덱스 없이 동작하도록 orderBy를 피하고 클라이언트에서 정렬)
-      final allCategoriesSnapshot = await _firestore
-          .collection('friend_categories')
-          .where('userId', isEqualTo: user.uid)
-          .get();
-
-      if (allCategoriesSnapshot.docs.isNotEmpty) {
-        final categories = allCategoriesSnapshot.docs
-            .map((doc) => FriendCategory.fromFirestore(doc))
-            .toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-        // 삭제 대상 카테고리를 제외한 가장 오래된 카테고리를 기본으로 사용
-        final defaultCategory = categories.firstWhere(
-          (c) => c.id != categoryId,
-          orElse: () => categories.first,
-        );
-        final defaultCategoryId = defaultCategory.id;
-        
-        // 친구들을 기본 카테고리로 이동
-        await _firestore
-            .collection('friend_categories')
-            .doc(defaultCategoryId)
-            .update({
-          'friendIds': FieldValue.arrayUnion(category.friendIds),
-          'updatedAt': Timestamp.fromDate(DateTime.now()),
-        });
-      }
-    } catch (e) {
-      Logger.error('친구 이동 오류: $e');
-    }
-  }
 }

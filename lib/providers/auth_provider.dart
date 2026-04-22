@@ -1117,6 +1117,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           }
 
           await _loadUserData();
+
+          // ✅ DM conversations의 participantNames/displayTitle 동기화 (fire-and-forget)
+          // - 닉네임 또는 사진이 실제로 변경된 경우에만 배치 업데이트 실행
+          // - 실패해도 프로필 업데이트 결과에 영향 없음
+          if (nicknameChanged && nicknameAllowed || photoChanged) {
+            unawaited(_updateAllConversationsForUser(nicknameToWrite, finalPhotoURL));
+          }
+
           return ProfileUpdateResult.success(
             nicknameApplied: nicknameApplied,
             nationalityApplied: nationalityApplied,

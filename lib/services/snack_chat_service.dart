@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -24,18 +26,45 @@ class SnackChatService {
     // 기존 쿼리(다중 where + orderBy)는 복합 인덱스 누락 시 에러가 발생했고,
     // UI에서 빈 리스트로 보이면서 "잠깐 보였다가 사라짐"처럼 보일 수 있었다.
     // 우선 참여자 조건만 서버에서 걸고, 나머지 필터/정렬은 클라이언트에서 처리한다.
-    return _collection
-        .where('participantIds', arrayContains: uid)
-        .snapshots()
-        .map((snap) {
-      final items =
-          snap.docs.map((doc) => SnackChat.fromFirestore(doc)).toList();
-      items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
-      return items;
-    }).handleError((e) {
-      Logger.error('Snack Chat 조회 실패: $e');
-      return <SnackChat>[];
-    });
+    //
+    // ✅ broadcast StreamController 래핑 이유:
+    //   1) 구독 즉시 [] 를 emit → StreamBuilder가 ConnectionState.waiting 에 고정되지 않음
+    //   2) Firestore 에러를 스트림에 전파하지 않고 내부에서 흡수 → 스트림이 닫히지 않음
+    //   3) handleError()의 return 값이 Dart stream 에서 무시되는 버그 패턴 제거
+    late StreamController<List<SnackChat>> controller;
+    StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? firestoreSub;
+
+    controller = StreamController<List<SnackChat>>.broadcast(
+      onListen: () {
+        // 첫 구독 시 즉시 빈 리스트를 emit → StreamBuilder 가 waiting 에 머물지 않음
+        scheduleMicrotask(() {
+          if (!controller.isClosed) controller.add(const <SnackChat>[]);
+        });
+
+        firestoreSub = _collection
+            .where('participantIds', arrayContains: uid)
+            .snapshots()
+            .listen(
+          (snap) {
+            if (controller.isClosed) return;
+            final items =
+                snap.docs.map((doc) => SnackChat.fromFirestore(doc)).toList();
+            items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
+            controller.add(items);
+          },
+          onError: (e) {
+            // 에러를 스트림에 전파하지 않고 로그만 남김 → 스트림이 닫히지 않음
+            Logger.error('Snack Chat 조회 실패: $e');
+          },
+        );
+      },
+      onCancel: () {
+        firestoreSub?.cancel();
+        firestoreSub = null;
+      },
+    );
+
+    return controller.stream;
   }
 
   List<SnackChat> _filterByToday(List<SnackChat> items, {required bool today}) {

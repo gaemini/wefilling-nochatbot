@@ -14,6 +14,7 @@ import '../models/snack_chat_message.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_service.dart';
+import '../utils/logger.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
@@ -92,25 +93,37 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   void _subscribeToMessages() {
     _msgSub = _snackChatService
         .watchMessages(widget.snackChatId)
-        .listen((incoming) {
-      if (!mounted) return;
-      _scheduleMarkAsRead();
-      setState(() {
-        // 초기 로딩 완료
-        _isInitialLoading = false;
-        
-        for (final m in incoming) {
-          if (!_messageIds.contains(m.id)) {
-            _messageIds.add(m.id);
-            _messages.add(m);
+        .listen(
+      (incoming) {
+        if (!mounted) return;
+        _scheduleMarkAsRead();
+        setState(() {
+          // 초기 로딩 완료
+          _isInitialLoading = false;
+
+          for (final m in incoming) {
+            if (!_messageIds.contains(m.id)) {
+              _messageIds.add(m.id);
+              _messages.add(m);
+            }
           }
+          _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+          if (_messages.isNotEmpty) {
+            _oldestMessageTime = _messages.last.createdAt;
+          }
+        });
+      },
+      onError: (e) {
+        // 메시지 스트림 오류 시 _isInitialLoading 을 반드시 해제
+        // 해제하지 않으면 화면이 무한 로딩 상태에 고정됨
+        Logger.error('메시지 스트림 오류: $e');
+        if (mounted) {
+          setState(() {
+            _isInitialLoading = false;
+          });
         }
-        _messages.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        if (_messages.isNotEmpty) {
-          _oldestMessageTime = _messages.last.createdAt;
-        }
-      });
-    });
+      },
+    );
   }
 
   /// 방 문서 실시간 감시: CF의 increment를 감지하면 즉시 다시 markAsRead 실행
@@ -181,14 +194,15 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   }
 
   Future<String> _getSenderName(String senderId, String? senderName) async {
-    if (senderName != null && senderName.isNotEmpty) return senderName;
+    // ✅ users 컬렉션을 기본 소스로 사용 → 닉네임 변경 시 자동 반영
+    // senderName(메시지 저장 시점 스냅샷)은 getUserInfo 실패 시 fallback으로만 사용
     if (_senderNameCache.containsKey(senderId)) {
       return _senderNameCache[senderId]!;
     }
     final userInfo = await _userInfoCache.getUserInfo(senderId);
     final name = (userInfo?.nickname.isNotEmpty == true)
         ? userInfo!.nickname
-        : senderId;
+        : (senderName?.isNotEmpty == true ? senderName! : senderId);
     _senderNameCache[senderId] = name;
     return name;
   }

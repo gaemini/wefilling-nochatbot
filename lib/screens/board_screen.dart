@@ -54,6 +54,10 @@ class BoardScreenState extends State<BoardScreen>
 
   List<SnackChat>? _cachedTodaySnackChats;
 
+  // 스낵 스트림이 일정 시간 내에 데이터를 내보내지 않으면 빈 리스트로 fallback
+  // (SnackChatService 가 즉시 [] 를 emit하므로 이 타이머는 최후 방어선)
+  Timer? _snackLoadingTimeoutTimer;
+
   Set<String> _mutedSnackChatIds = {};
   StreamSubscription<Set<String>>? _mutedSnackChatSub;
 
@@ -122,6 +126,17 @@ class BoardScreenState extends State<BoardScreen>
     _allSnackChatsStream = _snackChatService.getAllSnackChats();
     _mutedSnackChatSub = _snackChatService.watchMutedSnackChatIds().listen((ids) {
       if (mounted) setState(() => _mutedSnackChatIds = ids);
+    });
+
+    // 안전망: 스낵 스트림이 8초 내에 데이터를 내보내지 않으면 빈 리스트로 fallback
+    // (SnackChatService 즉시 emit이 동작하면 이 타이머는 사실상 발동되지 않음)
+    _snackLoadingTimeoutTimer = Timer(const Duration(seconds: 8), () {
+      if (mounted && _cachedTodaySnackChats == null) {
+        setState(() {
+          _cachedTodaySnackChats = const [];
+        });
+        Logger.warning('⚠️ 스낵챗 스트림 타임아웃 → 빈 리스트로 fallback');
+      }
     });
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
@@ -268,6 +283,7 @@ class BoardScreenState extends State<BoardScreen>
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
+    _snackLoadingTimeoutTimer?.cancel();
     _mutedSnackChatSub?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장

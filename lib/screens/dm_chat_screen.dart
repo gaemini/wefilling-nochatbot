@@ -817,11 +817,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
       appBar: _buildAppBar(),
       body: Column(
         children: [
-          // 익명 게시글 DM인 경우에만 게시글로 돌아가기 배너 추가
-          if (_conversation != null &&
-              _conversation!.postId != null &&
-              _conversation!.postId!.isNotEmpty &&
-              _conversation!.isOtherUserAnonymous(_currentUser!.uid))
+          // 나눔/포스트 기반 DM인 경우, 상단에 썸네일+제목 배너를 고정 노출한다.
+          if (_shouldShowPostBanner())
             _buildPostNavigationBanner(),
           Expanded(child: _buildMessageList()),
           _buildInputArea(),
@@ -2951,55 +2948,100 @@ class _DMChatScreenState extends State<DMChatScreen> {
   }
 
   /// 게시글 네비게이션 배너 빌드
+  /// 포스트 배너(썸네일+제목)를 노출해야 하는지 여부.
+  /// `originPostId` 혹은 대화 문서의 `postId`가 존재하면 항상 노출한다.
+  bool _shouldShowPostBanner() {
+    final fromWidget = (widget.originPostId ?? '').trim();
+    if (fromWidget.isNotEmpty) return true;
+    final fromConv = _conversation?.postId?.trim() ?? '';
+    return fromConv.isNotEmpty;
+  }
+
+  String? _activePostId() {
+    final fromWidget = (widget.originPostId ?? '').trim();
+    if (fromWidget.isNotEmpty) return fromWidget;
+    final fromConv = _conversation?.postId?.trim() ?? '';
+    return fromConv.isEmpty ? null : fromConv;
+  }
+
   Widget _buildPostNavigationBanner() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+    final postId = _activePostId();
+    final imageUrl = (widget.originPostImageUrl ?? '').trim();
+    final preview = (widget.originPostPreview ?? '').trim();
+    final title = preview.isNotEmpty
+        ? preview
+        : (Localizations.localeOf(context).languageCode == 'ko'
+            ? '나눔 게시글'
+            : 'Sharing post');
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: postId == null ? null : () => _navigateToPost(postId),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF9FAFB),
+            border: Border(
+              bottom: BorderSide(color: Colors.grey.shade200, width: 1),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: imageUrl.isNotEmpty
+                      ? CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) => Container(
+                            color: const Color(0xFFE5E7EB),
+                          ),
+                          errorWidget: (_, __, ___) => Container(
+                            color: const Color(0xFFE5E7EB),
+                            child: const Icon(
+                              Icons.image_not_supported_outlined,
+                              size: 18,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          color: const Color(0xFFE5E7EB),
+                          child: const Icon(
+                            Icons.article_outlined,
+                            size: 18,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF9CA3AF),
+              ),
+            ],
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            Icons.article_outlined,
-            color: Colors.blue.shade700,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'ko'
-                  ? '이 대화는 포스트에서 시작되었습니다'
-                  : 'This conversation started from a post',
-              style: TextStyle(
-                color: Colors.blue.shade700,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => _navigateToPost(_conversation!.postId!),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.blue.shade700,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            child: Text(
-              Localizations.localeOf(context).languageCode == 'ko'
-                  ? '포스트 보기'
-                  : 'View Post',
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

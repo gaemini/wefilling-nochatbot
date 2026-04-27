@@ -8,20 +8,19 @@ import 'package:provider/provider.dart';
 
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
-import '../models/meetup.dart';
 import '../models/post.dart';
 import '../models/user_profile.dart';
 import '../models/relationship_status.dart';
 import '../providers/relationship_provider.dart';
-import '../screens/meetup_detail_screen.dart';
-import '../services/meetup_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/app_icon_button.dart';
+import '../utils/sharing_category.dart';
 import '../widgets/post_search_card.dart';
 import '../widgets/user_tile.dart';
+import 'friend_profile_screen.dart';
 
 class UnifiedSearchScreen extends StatefulWidget {
-  /// 0: 이름(유저), 1: 게시글, 2: 모임
+  /// 0: 이름(유저), 1: 나눔, 2: 피드
   final int initialTabIndex;
   final String? initialQuery;
 
@@ -45,25 +44,22 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
   Timer? _debounceTimer;
 
   final PostService _postService = PostService();
-  final MeetupService _meetupService = MeetupService();
 
   bool _relationshipInitialized = false;
 
   bool _isLoadingPosts = false;
-  bool _isLoadingMeetups = false;
 
   String? _postsError;
-  String? _meetupsError;
 
   List<Post> _postResults = const [];
-  List<Meetup> _meetupResults = const [];
 
   @override
   void initState() {
     super.initState();
 
     final initialIndex = widget.initialTabIndex.clamp(0, _tabCount - 1);
-    _tabController = TabController(length: _tabCount, vsync: this, initialIndex: initialIndex);
+    _tabController = TabController(
+        length: _tabCount, vsync: this, initialIndex: initialIndex);
     _tabController.addListener(_onTabChanged);
 
     _searchController.addListener(() {
@@ -134,11 +130,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     context.read<RelationshipProvider>().clearSearchResults();
     setState(() {
       _postsError = null;
-      _meetupsError = null;
       _postResults = const [];
-      _meetupResults = const [];
       _isLoadingPosts = false;
-      _isLoadingMeetups = false;
     });
   }
 
@@ -151,10 +144,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
         _searchUsers(q);
         return;
       case 1:
-        await _searchPosts(q);
-        return;
       case 2:
-        await _searchMeetups(q);
+        await _searchPosts(q);
         return;
     }
   }
@@ -187,28 +178,6 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     }
   }
 
-  Future<void> _searchMeetups(String query) async {
-    setState(() {
-      _isLoadingMeetups = true;
-      _meetupsError = null;
-    });
-    try {
-      final meetups = await _meetupService.searchMeetupsAsync(query);
-      if (!mounted) return;
-      setState(() {
-        _meetupResults = meetups;
-        _isLoadingMeetups = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _meetupResults = const [];
-        _isLoadingMeetups = false;
-        _meetupsError = e.toString();
-      });
-    }
-  }
-
   // ---- 유저 액션 (SearchUsersPage 로직 재사용) ----
   Future<void> _sendFriendRequest(String toUid) async {
     final provider = context.read<RelationshipProvider>();
@@ -236,7 +205,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          success ? (l10n?.friendRequestCancelled ?? '') : (l10n?.friendRequestCancelFailed ?? ''),
+          success
+              ? (l10n?.friendRequestCancelled ?? '')
+              : (l10n?.friendRequestCancelFailed ?? ''),
         ),
         backgroundColor: success ? Colors.orange : Colors.red,
         duration: const Duration(seconds: 2),
@@ -274,7 +245,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(success ? (l10n?.unfriendedUser ?? '') : (l10n?.unfriendFailed ?? '')),
+        content: Text(success
+            ? (l10n?.unfriendedUser ?? '')
+            : (l10n?.unfriendFailed ?? '')),
         backgroundColor: success ? Colors.orange : Colors.red,
         duration: const Duration(seconds: 2),
       ),
@@ -311,7 +284,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(success ? (l10n?.userUnblocked ?? '') : (l10n?.unblockFailed ?? '')),
+        content: Text(success
+            ? (l10n?.userUnblocked ?? '')
+            : (l10n?.unblockFailed ?? '')),
         backgroundColor: success ? Colors.green : Colors.red,
         duration: const Duration(seconds: 2),
       ),
@@ -346,9 +321,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       case 0:
         return isKo ? '이름' : 'Name';
       case 1:
-        return isKo ? '포스트' : 'Posts';
+        return isKo ? '나눔' : 'Sharing';
       case 2:
-        return isKo ? '모임' : 'Meetups';
+        return isKo ? '피드' : 'Feed';
       default:
         return '';
     }
@@ -361,9 +336,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Container(
+        height: 56,
         decoration: BoxDecoration(
           color: const Color(0xFFF5F6F8),
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(28),
         ),
         child: Stack(
           alignment: Alignment.center,
@@ -373,7 +349,11 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                 const SizedBox(
                   width: 44,
                   child: Center(
-                    child: Icon(Icons.search, color: Colors.black54, size: 20),
+                    child: Icon(
+                      Icons.search,
+                      color: Color(0xFF6B7280),
+                      size: 22,
+                    ),
                   ),
                 ),
                 Expanded(
@@ -386,11 +366,17 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                       border: InputBorder.none,
                       isDense: true,
                       contentPadding:
-                          EdgeInsets.symmetric(horizontal: 0, vertical: 12),
+                          EdgeInsets.symmetric(horizontal: 0, vertical: 16),
                     ),
-                    style: const TextStyle(fontSize: 14),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      color: Color(0xFF111827),
+                    ),
                     textInputAction: TextInputAction.search,
                     onChanged: _onQueryChanged,
+                    onSubmitted: (_) =>
+                        _performSearchForActiveTab(immediate: true),
                   ),
                 ),
                 SizedBox(
@@ -422,7 +408,12 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Colors.black54, fontSize: 14),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      color: Color(0xFF6B7280),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               ),
@@ -471,18 +462,22 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
-        elevation: 0.5,
-        shadowColor: Colors.black12,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
         leading: AppIconButton(
           icon: Icons.arrow_back,
           onPressed: () => Navigator.pop(context),
           semanticLabel: AppLocalizations.of(context)!.back,
         ),
         title: Text(
-          Localizations.localeOf(context).languageCode == 'ko' ? '검색창' : 'Search',
+          Localizations.localeOf(context).languageCode == 'ko'
+              ? '검색어'
+              : 'Search',
           style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontFamily: 'Pretendard',
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
             color: Colors.black,
           ),
         ),
@@ -497,7 +492,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
             unselectedLabelColor: const Color(0xFF6B7280),
             labelStyle: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 17,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               letterSpacing: -0.2,
             ),
@@ -515,14 +510,14 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               (i) => Tab(text: _tabLabel(context, i)),
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1, color: Color(0xFFD1D5DB)),
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
                 _buildUsersTab(),
-                _buildPostsTab(),
-                _buildMeetupsTab(),
+                _buildSharingPostsTab(),
+                _buildFeedPostsTab(),
               ],
             ),
           ),
@@ -544,7 +539,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       return _buildEmptyPrompt(
         icon: Icons.search,
         title: isKo ? '사용자를 검색해보세요' : 'Search for users',
-        subtitle: isKo ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요' : 'Search by nickname or name\nto find new friends',
+        subtitle: isKo
+            ? '닉네임이나 이름으로 검색하여\n새로운 친구를 찾아보세요'
+            : 'Search by nickname or name\nto find new friends',
       );
     }
 
@@ -584,7 +581,7 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
               user: user,
               relationshipStatus: status,
               onActionPressed: () => _handleUserAction(user, status),
-              onTilePressed: () {},
+              onTilePressed: () => _openUserProfile(user),
             );
           },
         );
@@ -592,7 +589,43 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     );
   }
 
-  Widget _buildPostsTab() {
+  void _openUserProfile(UserProfile user) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: user.uid,
+          nickname: user.displayNameOrNickname,
+          photoURL: user.photoURL,
+          email: user.email,
+          university: user.university,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingPostsTab() {
+    return _buildPostResultsTab(
+      emptyTitleKo: '나눔을 검색해보세요',
+      emptySubtitleKo: '제목/내용 기준으로\n나눔 글을 찾아볼 수 있어요',
+      filter: isSharingPost,
+    );
+  }
+
+  Widget _buildFeedPostsTab() {
+    return _buildPostResultsTab(
+      emptyTitleKo: '피드를 검색해보세요',
+      emptySubtitleKo: '제목/내용 기준으로\n피드 글을 찾아볼 수 있어요',
+      filter: (post) => !isSharingPost(post),
+    );
+  }
+
+  Widget _buildPostResultsTab({
+    required String emptyTitleKo,
+    required String emptySubtitleKo,
+    required bool Function(Post post) filter,
+  }) {
     final q = _searchController.text.trim();
     final locale = Localizations.localeOf(context).languageCode;
     final isKo = locale == 'ko';
@@ -600,10 +633,8 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
     if (q.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search,
-        title: isKo ? '포스트를 검색해보세요' : 'Search posts',
-        subtitle: isKo
-            ? '제목/내용 기준으로\n포스트를 찾아볼 수 있어요'
-            : 'Search by title/content',
+        title: isKo ? emptyTitleKo : 'Search posts',
+        subtitle: isKo ? emptySubtitleKo : 'Search by title/content',
       );
     }
 
@@ -619,7 +650,9 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
       );
     }
 
-    if (_postResults.isEmpty) {
+    final filteredResults = _postResults.where(filter).toList();
+
+    if (filteredResults.isEmpty) {
       return _buildEmptyPrompt(
         icon: Icons.search_off,
         title: AppLocalizations.of(context)!.noSearchResults,
@@ -629,159 +662,10 @@ class _UnifiedSearchScreenState extends State<UnifiedSearchScreen>
 
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      itemCount: _postResults.length,
+      itemCount: filteredResults.length,
       itemBuilder: (context, index) {
-        return PostSearchCard(post: _postResults[index]);
-      },
-    );
-  }
-
-  Widget _buildMeetupsTab() {
-    final q = _searchController.text.trim();
-    final locale = Localizations.localeOf(context).languageCode;
-    final isKo = locale == 'ko';
-
-    if (q.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search,
-        title: isKo ? '모임을 검색해보세요' : 'Search meetups',
-        subtitle: isKo ? '제목/설명/위치/호스트 기준으로\n모임을 찾아볼 수 있어요' : 'Search by title/description/location/host',
-      );
-    }
-
-    if (_isLoadingMeetups) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_meetupsError != null) {
-      return _buildEmptyPrompt(
-        icon: Icons.error_outline,
-        title: AppLocalizations.of(context)!.error,
-        subtitle: _meetupsError!,
-      );
-    }
-
-    if (_meetupResults.isEmpty) {
-      return _buildEmptyPrompt(
-        icon: Icons.search_off,
-        title: AppLocalizations.of(context)!.noSearchResults,
-        subtitle: '"$q"${isKo ? '에 대한 검색 결과가 없습니다' : ' - No results found'}',
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _meetupResults.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 12),
-      itemBuilder: (context, index) {
-        final meetup = _meetupResults[index];
-        return InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => MeetupDetailScreen(
-                  meetup: meetup,
-                  meetupId: meetup.id,
-                  onMeetupDeleted: () {
-                    final q = _searchController.text.trim();
-                    if (q.isNotEmpty) {
-                      _searchMeetups(q);
-                    }
-                  },
-                ),
-              ),
-            );
-          },
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFE9F1FF),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        meetup.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        meetup.getFormattedDate(context),
-                        style: const TextStyle(
-                          fontSize: 11,
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${AppLocalizations.of(context)!.host}: ${meetup.host}',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.black.withOpacity(0.7),
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  meetup.description,
-                  style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.6)),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Icon(Icons.location_on, size: 14, color: Colors.red.shade400),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        meetup.location,
-                        style: TextStyle(fontSize: 12, color: Colors.black.withOpacity(0.6)),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Icon(Icons.people, size: 16, color: Colors.blue.shade700),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${meetup.currentParticipants}/${meetup.maxParticipants}',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.blue.shade700,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
+        return PostSearchCard(post: filteredResults[index]);
       },
     );
   }
 }
-

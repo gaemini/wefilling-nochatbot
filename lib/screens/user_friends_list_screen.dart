@@ -60,7 +60,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       }
 
       // 친구가 아니면 접근 불가
-      final status = await _relationshipService.getRelationshipStatus(widget.userId);
+      final status =
+          await _relationshipService.getRelationshipStatus(widget.userId);
       if (status != RelationshipStatus.friends) {
         _denyAccess();
         return;
@@ -131,7 +132,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             nonFriends.map(
               (u) async {
                 try {
-                  return await _relationshipService.getRelationshipStatus(u.uid);
+                  return await _relationshipService
+                      .getRelationshipStatus(u.uid);
                 } catch (_) {
                   return RelationshipStatus.none;
                 }
@@ -145,7 +147,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           }
         }
       }
-      
+
       if (mounted) {
         setState(() {
           _friends = friends;
@@ -290,7 +292,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.pointColor,
                 foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -473,7 +476,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      _displayNameWithMeSuffix(friend.displayNameOrNickname, isMe),
+                      _displayNameWithMeSuffix(
+                          friend.displayNameOrNickname, isMe),
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 15,
@@ -555,7 +559,9 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                           const Icon(Icons.person_add_alt_1, size: 16),
                         const SizedBox(width: 6),
                         Text(
-                          isRequested ? l10n.requestPending : l10n.friendRequest,
+                          isRequested
+                              ? l10n.requestPending
+                              : l10n.friendRequest,
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
                             fontSize: 12,

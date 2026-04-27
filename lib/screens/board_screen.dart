@@ -1,34 +1,33 @@
 // lib/screens/board_screen.dart
-// 게시판 화면 - 게시글 목록 표시 및 관리
-// 검색, 필터링, 작성 기능 포함
+// 나눔 피드 화면 - 나눔 / 피드 2개 탭으로 게시글 구성
+// 나눔 탭: 나눔 카테고리({생활용품, 전자기기, 도서, 기타}) 전용
+// 피드 탭: 그 외 일반(레거시) 게시글
 
 import 'dart:async';
-import 'package:firebase_auth/firebase_auth.dart';
+
 import 'package:flutter/material.dart';
-import '../models/post.dart';
-import '../models/meetup.dart';
-import '../models/snack_chat.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+
 import '../constants/app_constants.dart';
-import '../services/post_service.dart';
+import '../models/post.dart';
+import '../providers/auth_provider.dart' as app_auth;
 import '../services/comment_service.dart';
-import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
-import '../services/snack_chat_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
+import '../services/post_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
-import '../ui/widgets/optimized_post_card.dart';
-import '../ui/widgets/board_meetup_card.dart';
-import '../ui/widgets/snack_chat_card.dart';
-import '../ui/snackbar/app_snackbar.dart';
-import 'create_post_screen.dart';
-import 'create_snack_chat_screen.dart';
-import 'post_detail_screen.dart';
-import 'meetup_detail_screen.dart';
-import 'snack_chat_screen.dart';
-import '../widgets/ad_banner_widget.dart';
-import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/sharing_category.dart';
+import '../widgets/ad_banner_widget.dart';
+import 'create_post_screen.dart';
+import 'create_sharing_post_screen.dart';
+import 'create_snack_chat_screen.dart';
+import 'hanyang_email_verification_screen.dart';
+import 'post_detail_screen.dart';
 
 class BoardScreen extends StatefulWidget {
   const BoardScreen({super.key});
@@ -41,107 +40,33 @@ class BoardScreenState extends State<BoardScreen>
     with SingleTickerProviderStateMixin {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
-  final MeetupService _meetupService = MeetupService();
-  final SnackChatService _snackChatService = SnackChatService();
+
   late TabController _tabController;
-  Timer? _midnightTimer;
-  late final Stream<List<Meetup>> _todayMeetupsStream;
-  late final Stream<List<SnackChat>> _todaySnackChatsStream;
-  late final Stream<List<SnackChat>> _allSnackChatsStream;
 
-  List<Meetup>? _cachedTodayMeetups;
-  DateTime? _lastNonEmptyMeetupsAt;
-
-  List<SnackChat>? _cachedTodaySnackChats;
-
-  // 스낵 스트림이 일정 시간 내에 데이터를 내보내지 않으면 빈 리스트로 fallback
-  // (SnackChatService 가 즉시 [] 를 emit하므로 이 타이머는 최후 방어선)
-  Timer? _snackLoadingTimeoutTimer;
-
-  Set<String> _mutedSnackChatIds = {};
-  StreamSubscription<Set<String>>? _mutedSnackChatSub;
+  // 스크롤 위치 복원을 위한 컨트롤러들
+  late final ScrollController _sharingScrollController;
+  late final ScrollController _feedScrollController;
+  bool _controllersInitialized = false;
+  static const String _psTabIndexId = 'board.tabIndex.v2';
+  static const String _psSharingOffsetId = 'board.sharingScrollOffset.v2';
+  static const String _psFeedOffsetId = 'board.feedScrollOffset.v2';
 
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
-  bool _didAutoRefreshTodayCommentCounts = false;
-  bool _didAutoRefreshAllCommentCounts = false;
+  bool _didAutoRefreshSharingCommentCounts = false;
+  bool _didAutoRefreshFeedCommentCounts = false;
 
-  // 게시글 카드 외부 여백: 좌우 없음, 카드 간 위아래 구분을 위한 작은 여백만
-  static const EdgeInsets _boardPostCardMargin =
-      EdgeInsets.symmetric(horizontal: 0, vertical: 4);
-  // 카드 내부 패딩(기본 12 유지, 필요 시 여기서만 조정)
-  static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
-  
-  // 스크롤 위치 복원을 위한 ScrollController들
-  late final ScrollController _todayScrollController;
-  late final ScrollController _allScrollController;
-  bool _controllersInitialized = false;
-  static const String _psTabIndexId = 'board.tabIndex.v1';
-  static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
-  static const String _psAllOffsetId = 'board.allScrollOffset.v1';
-  
-  // 캐시된 데이터를 저장하여 부드러운 전환 구현
-  List<Post>? _cachedTodayPosts;
-  List<Post>? _cachedAllPosts;
-  bool _isInitialLoad = true;
-  
-  // AppLocalizations 안전 호출 헬퍼
-  String _safeL10n(String Function(AppLocalizations) getter, String fallback) {
-    try {
-      final l10n = AppLocalizations.of(context);
-      return l10n != null ? getter(l10n) : fallback;
-    } catch (e) {
-      return fallback;
-    }
-  }
-
-  DateTime _startOfToday() {
-    final now = DateTime.now();
-    return DateTime(now.year, now.month, now.day);
-  }
-
-  bool _isPostInToday(Post post) {
-    final local = post.createdAt.toLocal();
-    return !local.isBefore(_startOfToday());
-  }
-
-  bool _isPostInAllTab(Post post) {
-    // All 탭: Today에 올라온 글은 제외하고(중복 방지),
-    // 날짜가 넘어가면 자동으로 All에 포함된다.
-    final local = post.createdAt.toLocal();
-    return local.isBefore(_startOfToday());
-  }
+  // 캐시된 데이터 (부드러운 탭 전환)
+  List<Post>? _cachedSharingPosts;
+  List<Post>? _cachedFeedPosts;
+  String? _activeSharingGatePostId;
 
   @override
   void initState() {
     super.initState();
     _loadCachedData();
-    _scheduleMidnightRefresh();
-    // Today 밋업 섹션은 "공개 범위"와 무관하게:
-    // - 오늘 생성된 모임
-    // - 약속 날짜가 오늘인 모임
-    // 만 노출한다. (필터링은 MeetupService.getTodayTabMeetups에서 강제)
-    _todayMeetupsStream = _meetupService.getTodayTabMeetups();
-    _todaySnackChatsStream = _snackChatService.getTodaySnackChats();
-    _allSnackChatsStream = _snackChatService.getAllSnackChats();
-    _mutedSnackChatSub = _snackChatService.watchMutedSnackChatIds().listen((ids) {
-      if (mounted) setState(() => _mutedSnackChatIds = ids);
-    });
-
-    // 안전망: 스낵 스트림이 8초 내에 데이터를 내보내지 않으면 빈 리스트로 fallback
-    // (SnackChatService 즉시 emit이 동작하면 이 타이머는 사실상 발동되지 않음)
-    _snackLoadingTimeoutTimer = Timer(const Duration(seconds: 8), () {
-      if (mounted && _cachedTodaySnackChats == null) {
-        setState(() {
-          _cachedTodaySnackChats = const [];
-        });
-        Logger.warning('⚠️ 스낵챗 스트림 타임아웃 → 빈 리스트로 fallback');
-      }
-    });
-    
-    // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -154,11 +79,11 @@ class BoardScreenState extends State<BoardScreen>
     final storage = PageStorage.of(context);
     final savedTabIndex =
         (storage.readState(context, identifier: _psTabIndexId) as int?) ?? 0;
-    final savedTodayOffset =
-        (storage.readState(context, identifier: _psTodayOffsetId) as double?) ??
-            0.0;
-    final savedAllOffset =
-        (storage.readState(context, identifier: _psAllOffsetId) as double?) ??
+    final savedSharingOffset = (storage.readState(context,
+            identifier: _psSharingOffsetId) as double?) ??
+        0.0;
+    final savedFeedOffset =
+        (storage.readState(context, identifier: _psFeedOffsetId) as double?) ??
             0.0;
 
     _tabController = TabController(
@@ -166,21 +91,19 @@ class BoardScreenState extends State<BoardScreen>
       vsync: this,
       initialIndex: savedTabIndex.clamp(0, 1),
     );
-    _todayScrollController = ScrollController(
-      initialScrollOffset: savedTodayOffset < 0 ? 0 : savedTodayOffset,
+    _sharingScrollController = ScrollController(
+      initialScrollOffset: savedSharingOffset < 0 ? 0 : savedSharingOffset,
     );
-    _allScrollController = ScrollController(
-      initialScrollOffset: savedAllOffset < 0 ? 0 : savedAllOffset,
+    _feedScrollController = ScrollController(
+      initialScrollOffset: savedFeedOffset < 0 ? 0 : savedFeedOffset,
     );
 
-    // 스크롤 상태 감지 (Today/All 탭 모두)
-    _todayScrollController.addListener(_handleScrollChanged);
-    _allScrollController.addListener(_handleScrollChanged);
+    _sharingScrollController.addListener(_handleScrollChanged);
+    _feedScrollController.addListener(_handleScrollChanged);
     _tabController.addListener(_handleTabChanged);
 
     _controllersInitialized = true;
 
-    // 첫 프레임 이후 스크롤 "최대값 초과" 방지용 보정
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _clampScrollOffsetsIfNeeded();
@@ -196,61 +119,44 @@ class BoardScreenState extends State<BoardScreen>
     );
 
     if (!persistOffsets) return;
-    if (_todayScrollController.hasClients) {
+    if (_sharingScrollController.hasClients) {
       storage.writeState(
         context,
-        _todayScrollController.offset,
-        identifier: _psTodayOffsetId,
+        _sharingScrollController.offset,
+        identifier: _psSharingOffsetId,
       );
     }
-    if (_allScrollController.hasClients) {
+    if (_feedScrollController.hasClients) {
       storage.writeState(
         context,
-        _allScrollController.offset,
-        identifier: _psAllOffsetId,
+        _feedScrollController.offset,
+        identifier: _psFeedOffsetId,
       );
     }
   }
 
   void _clampScrollOffsetsIfNeeded() {
-    // 데이터/레이아웃 변화로 saved offset이 maxScrollExtent보다 클 수 있어
-    // attach 이후 안전하게 clamp한다.
-    if (_todayScrollController.hasClients) {
-      final pos = _todayScrollController.position;
-      final target = _todayScrollController.offset.clamp(
-        pos.minScrollExtent,
-        pos.maxScrollExtent,
-      );
-      if (target != _todayScrollController.offset) {
-        _todayScrollController.jumpTo(target);
-      }
+    void clamp(ScrollController c) {
+      if (!c.hasClients) return;
+      final pos = c.position;
+      final target = c.offset.clamp(pos.minScrollExtent, pos.maxScrollExtent);
+      if (target != c.offset) c.jumpTo(target);
     }
-    if (_allScrollController.hasClients) {
-      final pos = _allScrollController.position;
-      final target = _allScrollController.offset.clamp(
-        pos.minScrollExtent,
-        pos.maxScrollExtent,
-      );
-      if (target != _allScrollController.offset) {
-        _allScrollController.jumpTo(target);
-      }
-    }
+
+    clamp(_sharingScrollController);
+    clamp(_feedScrollController);
   }
 
   /// 캐시된 데이터를 먼저 로드하여 즉시 화면에 표시
   Future<void> _loadCachedData() async {
     try {
-      // 차단 목록을 먼저 로드하여 flickering 방지
       await ContentFilterService.preloadBlockLists();
-      
       final cachedPosts = await _postService.getCachedPosts();
       if (!mounted) return;
-      
       if (cachedPosts.isNotEmpty) {
         setState(() {
-          // 캐시에서 Today/All을 분리 저장 (Today는 All에 중복 포함하지 않음)
-          _cachedTodayPosts = cachedPosts.where(_isPostInToday).toList();
-          _cachedAllPosts = cachedPosts.where(_isPostInAllTab).toList();
+          _cachedFeedPosts =
+              cachedPosts.where((p) => !isSharingPost(p)).toList();
         });
         Logger.log('✅ 캐시된 게시글 로드 완료: ${cachedPosts.length}개');
       }
@@ -259,17 +165,18 @@ class BoardScreenState extends State<BoardScreen>
     }
   }
 
-  /// 댓글 수 재집계 - 백그라운드에서 조용히 처리 (setState 없이)
-  Future<void> _refreshCommentCountsForPosts(List<Post> posts, {bool silent = false}) async {
-    // 너무 많은 카드에 대해 매번 집계하면 느려질 수 있어, 상위 N개만 갱신
+  /// 댓글 수 재집계 - 백그라운드에서 조용히 처리
+  Future<void> _refreshCommentCountsForPosts(
+    List<Post> posts, {
+    bool silent = false,
+  }) async {
     const maxTargets = 40;
     final ids = posts.map((p) => p.id).toSet().take(maxTargets).toList();
     if (ids.isEmpty) return;
 
     final counts = await _commentService.fetchCommentCountsForPostIds(ids);
     if (!mounted) return;
-    
-    // silent 모드일 때는 setState 없이 데이터만 업데이트
+
     if (silent) {
       _commentCountOverrides.addAll(counts);
     } else {
@@ -282,85 +189,29 @@ class BoardScreenState extends State<BoardScreen>
   @override
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
-    _midnightTimer?.cancel();
-    _snackLoadingTimeoutTimer?.cancel();
-    _mutedSnackChatSub?.cancel();
     if (_controllersInitialized) {
-      // 마지막 상태 저장
       try {
         _persistBoardState();
       } catch (_) {}
 
       _tabController.removeListener(_handleTabChanged);
-      _todayScrollController.removeListener(_handleScrollChanged);
-      _allScrollController.removeListener(_handleScrollChanged);
+      _sharingScrollController.removeListener(_handleScrollChanged);
+      _feedScrollController.removeListener(_handleScrollChanged);
       _tabController.dispose();
-      _todayScrollController.dispose();
-      _allScrollController.dispose();
+      _sharingScrollController.dispose();
+      _feedScrollController.dispose();
     }
     Logger.log('✅ BoardScreen dispose 완료');
     super.dispose();
   }
 
-  void _scheduleMidnightRefresh() {
-    _midnightTimer?.cancel();
-    final now = DateTime.now();
-    final startOfTomorrow = DateTime(now.year, now.month, now.day).add(const Duration(days: 1));
-    final delay = startOfTomorrow.difference(now) + const Duration(seconds: 1);
-    _midnightTimer = Timer(delay, () async {
-      if (!mounted) return;
-      // 날짜가 넘어가면 Today/All 분리가 바뀌므로 캐시를 갱신하고 화면을 리빌드
-      await _loadCachedData();
-      if (!mounted) return;
-      setState(() {
-        // 댓글 자동 리프레시 플래그는 날짜별로 다시 계산될 수 있게 초기화
-        _didAutoRefreshTodayCommentCounts = false;
-        _didAutoRefreshAllCommentCounts = false;
-      });
-      _scheduleMidnightRefresh();
-    });
-  }
-
-  Future<void> _navigateToMeetupDetail(Meetup meetup) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final kicked = await _meetupService.isUserKickedFromMeetup(
-        meetupId: meetup.id,
-        userId: user.uid,
-      );
-      if (!mounted) return;
-      if (kicked) {
-        AppSnackBar.show(
-          context,
-          message: '죄송합니다. 모임에 참여할 수 없습니다',
-          type: AppSnackBarType.error,
-        );
-        return;
-      }
-    }
-
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MeetupDetailScreen(
-          meetup: meetup,
-          meetupId: meetup.id,
-          onMeetupDeleted: () => setState(() {}),
-        ),
-      ),
-    );
-
-    // 상세 화면에서 참여 상태가 바뀔 수 있으니 캐시를 비워 재조회
-    if (mounted) setState(() {});
-  }
-
   ScrollController get _activeScrollController {
-    // index 0: Today, index 1: All
-    return _tabController.index == 0 ? _todayScrollController : _allScrollController;
+    return _tabController.index == 0
+        ? _sharingScrollController
+        : _feedScrollController;
   }
 
   void _handleTabChanged() {
-    // 탭 전환 시 상태 저장
     if (!mounted) return;
     if (_tabController.indexIsChanging) return;
     _persistBoardState(persistOffsets: false);
@@ -382,92 +233,20 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
+      backgroundColor: const Color(0xFFEBEBEB),
       body: Column(
         children: [
-          // 탭 바
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: AnimatedBuilder(
-              animation: _tabController,
-              builder: (context, _) {
-                final isTodaySelected = _tabController.index == 0;
-
-                const selectedBase = TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                );
-                const unselectedBase = TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                );
-
-                return TabBar(
-                  controller: _tabController,
-                  // 요구사항: 선택된 탭은 로고(위필링) 색으로
-                  indicatorColor: AppColors.pointColor,
-                  indicatorWeight: 2.5,
-                  overlayColor:
-                      WidgetStateProperty.all(Colors.black.withOpacity(0.04)),
-                  tabs: [
-                    Tab(
-                      child: Text(
-                        'Today',
-                        style: (isTodaySelected ? selectedBase : unselectedBase)
-                            .copyWith(
-                          color: isTodaySelected
-                              ? AppColors.pointColor
-                              : (Colors.grey[600] ?? const Color(0xFF6B7280)),
-                        ),
-                      ),
-                    ),
-                    Tab(
-                      child: Text(
-                        'All',
-                        style: (!isTodaySelected ? selectedBase : unselectedBase)
-                            .copyWith(
-                          color: !isTodaySelected
-                              ? AppColors.pointColor
-                              : (Colors.grey[600] ?? const Color(0xFF6B7280)),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ),
-          // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
+          _buildTabBar(),
           Expanded(
-            child: StreamBuilder<List<Post>>(
-              stream: _postService.getPostsStream(),
-              builder: (context, postSnap) {
-                return TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Today
-                    _buildTodayPostsTab(postSnap),
-                    // All
-                    _buildAllPostsTab(postSnap),
-                  ],
-                );
-              },
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _buildSharingStreamTab(),
+                _buildFeedStreamTab(),
+              ],
             ),
           ),
         ],
@@ -479,975 +258,852 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
-  /// 오늘 게시글 탭 (posts 스트림은 build()에서 1회 구독)
-  Widget _buildTodayPostsTab(AsyncSnapshot<List<Post>> snapshot) {
-    final bool isPostsLoading = snapshot.connectionState == ConnectionState.waiting &&
-        !snapshot.hasData &&
-        _cachedTodayPosts == null;
-
-    final bool isPostsError = snapshot.hasError &&
-        (_cachedTodayPosts == null || _cachedTodayPosts!.isEmpty);
-
-    final sourcePosts = snapshot.data ?? _cachedTodayPosts ?? const <Post>[];
-    final todayPosts = sourcePosts.where(_isPostInToday).toList();
-
-    if (snapshot.hasData) {
-      _cachedTodayPosts = todayPosts;
-      if (_isInitialLoad) _isInitialLoad = false;
-    }
-
-    if (!_didAutoRefreshTodayCommentCounts && todayPosts.isNotEmpty) {
-      _didAutoRefreshTodayCommentCounts = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        _refreshCommentCountsForPosts(todayPosts, silent: true);
-      });
-    }
-
-    return _buildTodayUnifiedList(
-      todayPosts: todayPosts,
-      isPostsLoading: isPostsLoading,
-      isPostsError: isPostsError,
-    );
-  }
-  
-  // 로딩 뷰 (AdBanner + 스켈레톤)
-  Widget _buildTodayLoadingView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _todayScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(top: 4, bottom: 90),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_today'),
-            widgetId: 'board_banner_today',
-          ),
-          ...List.generate(5, (index) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: _buildPostSkeleton(),
-          )),
-        ],
-      ),
-    );
-  }
-  
-  // 에러 뷰 (AdBanner + 에러)
-  Widget _buildTodayErrorView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _todayScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(top: 4, bottom: 90),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_today'),
-            widgetId: 'board_banner_today',
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // NOTE: Today 탭은 "오늘의 모임 + 오늘의 게시글" 섹션이 항상 존재하므로
-  // 기존 단일 EmptyView는 더 이상 사용하지 않습니다(미사용 경고 방지).
-
-  // 게시글 목록 뷰 (AdBanner + 게시글들)
-  Widget _buildTodayPostsView(List<Post> todayPosts) {
-    return StreamBuilder<List<Meetup>>(
-      stream: _todayMeetupsStream,
-      builder: (context, meetupSnapshot) {
-        final todayMeetupsTitle = _safeL10n(
-          (l) => l.todayMeetupsSectionTitle,
-          '오늘의 밋업',
-        );
-        final todayPostsTitle = _safeL10n(
-          (l) => l.todayPostsSectionTitle,
-          '오늘의 게시글',
-        );
-        final noTodayMeetupsText = _safeL10n(
-          (l) => l.todayNoMeetups,
-          '오늘 올라온 밋업이 없어요.',
-        );
-        final noTodayPostsText = _safeL10n(
-          (l) => l.todayNoPosts,
-          '오늘 올라온 게시글이 없어요.',
-        );
-
-        final bool isMeetupsLoading =
-            meetupSnapshot.connectionState == ConnectionState.waiting &&
-            !meetupSnapshot.hasData &&
-            _cachedTodayMeetups == null;
-
-        final todayMeetups =
-            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
-
-        // 캐시 업데이트:
-        // - empty가 순간적으로 들어와도(재구독/중간 emit) 카드가 사라졌다가 생기는 현상을 줄이기 위해
-        //   "최근에 non-empty를 받았다면" 짧게는 non-empty 캐시를 유지한다.
-        if (meetupSnapshot.hasData) {
-          final incoming = meetupSnapshot.data ?? const <Meetup>[];
-          final now = DateTime.now();
-          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
-            _cachedTodayMeetups = incoming;
-            _lastNonEmptyMeetupsAt = incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
-          } else {
-            // incoming empty + cached non-empty
-            final last = _lastNonEmptyMeetupsAt;
-            if (last == null || now.difference(last) > const Duration(seconds: 3)) {
-              _cachedTodayMeetups = incoming;
-            }
-          }
-        }
-
-        return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-          onRefresh: () async {
-        await _refreshCommentCountsForPosts(todayPosts);
-          },
-          child: ListView.builder(
-            key: const PageStorageKey('board_today_list'),
-            controller: _todayScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: 1000,
-            padding: const EdgeInsets.only(top: 4, bottom: 90),
-        itemCount:
-            1 + // AdBanner
-            1 + // meetups header
-                (isMeetupsLoading ? 2 : (todayMeetups.isNotEmpty ? todayMeetups.length : 1)) + // meetups skeleton or meetups or empty
-            1 + // posts header
-            (todayPosts.isNotEmpty ? todayPosts.length : 1), // posts or empty
-            itemBuilder: (context, index) {
-          var i = index;
-
-          // 0) AdBanner
-          if (i == 0) {
-            return AdBannerWidget(
-              key: ValueKey('board_banner_today'),
-              widgetId: 'board_banner_today',
-            );
-          }
-          i -= 1;
-
-          // 1) Meetups header
-          if (i == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.event_available_rounded, size: 18, color: Color(0xFF111827)),
-                  const SizedBox(width: 8),
-                  Text(
-                    todayMeetupsTitle,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  if (isMeetupsLoading)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    Text(
-                      '${todayMeetups.length}',
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                ],
-              ),
-            );
-          }
-          i -= 1;
-
-          // 2) Meetups list or empty
-          final meetupsCount =
-              isMeetupsLoading ? 2 : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
-          if (i < meetupsCount) {
-            if (isMeetupsLoading) {
-              // 로딩 중에도 카드 자리(스켈레톤)를 확보해서 레이아웃 점프를 줄인다.
-              return Padding(
-                padding: _boardPostCardMargin,
-                child: _buildMeetupSkeletonCard(),
-              );
-            }
-            if (todayMeetups.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                child: Text(
-                  noTodayMeetupsText,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              );
-            }
-
-            final meetup = todayMeetups[i];
-            return Padding(
-              padding: _boardPostCardMargin,
-              child: StreamBuilder<int>(
-                stream: _meetupService.participantCountStream(
-                  meetup.id,
-                  fallback: meetup.currentParticipants,
-                ),
-                builder: (context, countSnap) {
-                  final count = countSnap.data ?? meetup.currentParticipants;
-                  return BoardMeetupCard(
-                    key: ValueKey('board_meetup_${meetup.id}'),
-                    meetup: meetup,
-                    currentParticipants: count,
-                    onTap: () => _navigateToMeetupDetail(meetup),
-                  );
-                },
-              ),
-            );
-          }
-          i -= meetupsCount;
-
-          // 3) Posts header
-          if (i == 0) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.article_rounded, size: 18, color: Color(0xFF111827)),
-                  const SizedBox(width: 8),
-                  Text(
-                    todayPostsTitle,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF111827),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-          i -= 1;
-
-          // 4) Posts list or empty
-          if (todayPosts.isEmpty) {
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-              child: Text(
-                noTodayPostsText,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-            );
-          }
-
-          final postIndex = i;
-          final post = todayPosts[postIndex];
-          return OptimizedPostCard(
-            key: ValueKey(post.id),
-            post: post,
-            index: postIndex,
-            onTap: () => _navigateToPostDetail(post),
-            externalCommentCountOverride: _commentCountOverrides[post.id],
-            preloadImage: postIndex < 3,
-            margin: _boardPostCardMargin,
-            contentPadding: _boardPostCardContentPadding,
-          );
-            },
-          ),
-        );
-      },
+  Widget _buildSharingStreamTab() {
+    return StreamBuilder<List<Post>>(
+      stream: _postService.getSharingPostsStream(),
+      builder: (context, snapshot) => _buildSharingTab(snapshot),
     );
   }
 
-  Widget _buildMeetupSkeletonCard() {
+  Widget _buildFeedStreamTab() {
+    return StreamBuilder<List<Post>>(
+      stream: _postService.getPostsStream(),
+      builder: (context, snapshot) => _buildFeedTab(snapshot),
+    );
+  }
+
+  Widget _buildTabBar() {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
+            color: Colors.grey.withValues(alpha: 0.1),
+            blurRadius: 4,
             offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: AppTextSkeleton(width: 180, height: 16, lines: 2, spacing: 10),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    AppSkeleton(width: 16, height: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: AppTextSkeleton(height: 14)),
-                  ],
+      child: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, _) {
+          final isSharingSelected = _tabController.index == 0;
+          final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+          const selectedBase = TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          );
+          const unselectedBase = TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          );
+
+          return TabBar(
+            controller: _tabController,
+            indicatorColor: AppColors.pointColor,
+            indicatorWeight: 2.5,
+            overlayColor:
+                WidgetStateProperty.all(Colors.black.withValues(alpha: 0.04)),
+            tabs: [
+              Tab(
+                child: Text(
+                  isKo ? '나눔' : 'Sharing',
+                  style: (isSharingSelected ? selectedBase : unselectedBase)
+                      .copyWith(
+                    color: isSharingSelected
+                        ? AppColors.pointColor
+                        : (Colors.grey[600] ?? const Color(0xFF6B7280)),
+                  ),
                 ),
-                SizedBox(height: 10),
-                Row(
-                  children: [
-                    AppSkeleton(width: 16, height: 16),
-                    SizedBox(width: 8),
-                    AppTextSkeleton(width: 120, height: 14),
-                  ],
+              ),
+              Tab(
+                child: Text(
+                  isKo ? '피드' : 'Feed',
+                  style: (!isSharingSelected ? selectedBase : unselectedBase)
+                      .copyWith(
+                    color: !isSharingSelected
+                        ? AppColors.pointColor
+                        : (Colors.grey[600] ?? const Color(0xFF6B7280)),
+                  ),
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
               ),
-            ),
-            child: const Row(
-              children: [
-                AppAvatarSkeleton(size: 32),
-                SizedBox(width: 8),
-                Expanded(child: AppTextSkeleton(width: 90, height: 14)),
-                AppSkeleton(width: 72, height: 32, borderRadius: BorderRadius.all(Radius.circular(20))),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-  /// 전체 게시글 탭 (posts 스트림은 build()에서 1회 구독)
-  Widget _buildAllPostsTab(AsyncSnapshot<List<Post>> snapshot) {
-    return StreamBuilder<List<SnackChat>>(
-      stream: _allSnackChatsStream,
-      builder: (context, snackSnapshot) {
-        final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData &&
-            _cachedAllPosts == null;
-
-        final bool isError =
-            snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
-
-        final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
-        final posts = sourcePosts.where(_isPostInAllTab).toList();
-
-        if (snapshot.hasData) {
-          _cachedAllPosts = posts;
-        }
-
-        if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
-          _didAutoRefreshAllCommentCounts = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _refreshCommentCountsForPosts(posts, silent: true);
-          });
-        }
-
-        final allSnackChats = snackSnapshot.data ?? const <SnackChat>[];
-
-        // Posts와 SnackChats를 합쳐서 날짜 기준으로 정렬
-        final List<dynamic> allItems = <dynamic>[
-          ...posts,
-          ...allSnackChats,
-        ]..sort((a, b) =>
-            _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
-
-        final grouped = (!isLoading && !isError && allItems.isNotEmpty)
-            ? _groupItemsByDate(allItems)
-            : const <Map<String, dynamic>>[];
-
-        final int bodyCount;
-        if (isLoading) {
-          bodyCount = 5;
-        } else if (isError) {
-          bodyCount = 1;
-        } else if (allItems.isEmpty) {
-          bodyCount = 1;
-        } else {
-          bodyCount = _calculateAllItemCount(grouped) - 1; // minus banner
-        }
-
-        return RefreshIndicator(
-          color: AppColors.pointColor,
-          backgroundColor: Colors.white,
-          onRefresh: () async {
-            if (!isLoading && !isError) {
-              await _refreshCommentCountsForPosts(posts);
-            } else {
-              await Future.delayed(const Duration(milliseconds: 500));
-              if (mounted) setState(() {});
-            }
-          },
-          child: ListView.builder(
-            key: const PageStorageKey('board_all_list_unified'),
-            controller: _allScrollController,
-            physics: const AlwaysScrollableScrollPhysics(),
-            cacheExtent: 1000,
-            padding: const EdgeInsets.only(top: 4, bottom: 90),
-            itemCount: 1 + bodyCount,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return AdBannerWidget(
-                  key: const ValueKey('board_banner_all'),
-                  widgetId: 'board_banner_all',
-                );
-              }
-
-              if (isLoading) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: _buildPostSkeleton(),
-                );
-              }
-
-              if (isError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-                );
-              }
-
-              if (allItems.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-                  child: AppEmptyState.noPosts(
-                    onCreatePost: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CreatePostScreen(
-                            onPostCreated: () {
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                );
-              }
-
-              return _buildAllGroupedItem(grouped, index - 1);
-            },
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildTodayUnifiedList({
-    required List<Post> todayPosts,
-    required bool isPostsLoading,
-    required bool isPostsError,
-  }) {
-    return StreamBuilder<List<Meetup>>(
-      stream: _todayMeetupsStream,
-      builder: (context, meetupSnapshot) {
-        final todayMeetupsTitle = _safeL10n(
-          (l) => l.todayMeetupsSectionTitle,
-          '오늘의 밋업',
-        );
-        final todayPostsTitle = _safeL10n(
-          (l) => l.todayPostsSectionTitle,
-          '오늘의 게시글',
-        );
-        final noTodayMeetupsText = _safeL10n(
-          (l) => l.todayNoMeetups,
-          '오늘 올라온 밋업이 없어요.',
-        );
-        final noTodayPostsText = _safeL10n(
-          (l) => l.todayNoPosts,
-          '오늘 올라온 게시글이 없어요.',
-        );
-
-        final bool isMeetupsLoading =
-            meetupSnapshot.connectionState == ConnectionState.waiting &&
-            !meetupSnapshot.hasData &&
-            _cachedTodayMeetups == null;
-
-        final todayMeetups =
-            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
-
-        // meetups cache update (기존 로직 유지)
-        if (meetupSnapshot.hasData) {
-          final incoming = meetupSnapshot.data ?? const <Meetup>[];
-          final now = DateTime.now();
-          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
-            _cachedTodayMeetups = incoming;
-            _lastNonEmptyMeetupsAt = incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
-          } else {
-            final last = _lastNonEmptyMeetupsAt;
-            if (last == null || now.difference(last) > const Duration(seconds: 3)) {
-              _cachedTodayMeetups = incoming;
-            }
-          }
-        }
-
-        final meetupsCount = isMeetupsLoading
-            ? 2
-            : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
-
-        return StreamBuilder<List<SnackChat>>(
-          stream: _todaySnackChatsStream,
-          builder: (context, snackSnapshot) {
-            if (snackSnapshot.hasData) {
-              _cachedTodaySnackChats = snackSnapshot.data;
-            }
-            final isSnackLoading =
-                snackSnapshot.connectionState == ConnectionState.waiting &&
-                    _cachedTodaySnackChats == null;
-            final todaySnackChats = _cachedTodaySnackChats ?? const <SnackChat>[];
-
-            final List<dynamic> todayCombined = <dynamic>[
-              ...todayPosts,
-              ...todaySnackChats,
-            ]..sort((a, b) =>
-                _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
-
-            final postsCount = (isPostsLoading || isSnackLoading)
-                ? 3
-                : (isPostsError ? 1 : (todayCombined.isNotEmpty ? todayCombined.length : 1));
-
-            final itemCount =
-                1 + // banner
-                1 + // meetups header
-                meetupsCount +
-                1 + // posts header
-                postsCount;
-
-            return RefreshIndicator(
-              color: AppColors.pointColor,
-              backgroundColor: Colors.white,
-              onRefresh: () async {
-                if (!isPostsLoading && !isPostsError) {
-                  await _refreshCommentCountsForPosts(todayPosts);
-                } else {
-                  await Future.delayed(const Duration(milliseconds: 500));
-                  if (mounted) setState(() {});
-                }
-              },
-              child: ListView.builder(
-                key: const PageStorageKey('board_today_list_unified'),
-                controller: _todayScrollController,
-                physics: const AlwaysScrollableScrollPhysics(),
-                cacheExtent: 1000,
-                padding: const EdgeInsets.only(top: 4, bottom: 90),
-                itemCount: itemCount,
-                itemBuilder: (context, index) {
-                  var i = index;
-
-              // 0) banner
-              if (i == 0) {
-                return AdBannerWidget(
-                  key: const ValueKey('board_banner_today'),
-                  widgetId: 'board_banner_today',
-                );
-              }
-              i -= 1;
-
-              // 1) meetups header
-              if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.event_available_rounded,
-                          size: 18, color: Color(0xFF111827)),
-                      const SizedBox(width: 8),
-                      Text(
-                        todayMeetupsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (isMeetupsLoading)
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      else
-                        Text(
-                          '${todayMeetups.length}',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              }
-              i -= 1;
-
-              // 2) meetups list/skeleton/empty
-              if (i < meetupsCount) {
-                if (isMeetupsLoading) {
-                  return Padding(
-                    padding: _boardPostCardMargin,
-                    child: _buildMeetupSkeletonCard(),
-                  );
-                }
-                if (todayMeetups.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: Text(
-                      noTodayMeetupsText,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  );
-                }
-
-                final meetup = todayMeetups[i];
-                return Padding(
-                  padding: _boardPostCardMargin,
-                  child: StreamBuilder<int>(
-                    stream: _meetupService.participantCountStream(
-                      meetup.id,
-                      fallback: meetup.currentParticipants,
-                    ),
-                    builder: (context, countSnap) {
-                      final count = countSnap.data ?? meetup.currentParticipants;
-                      return BoardMeetupCard(
-                        key: ValueKey('board_meetup_${meetup.id}'),
-                        meetup: meetup,
-                        currentParticipants: count,
-                        onTap: () => _navigateToMeetupDetail(meetup),
-                      );
-                    },
-                  ),
-                );
-              }
-              i -= meetupsCount;
-
-              // 3) posts header
-              if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.article_rounded,
-                          size: 18, color: Color(0xFF111827)),
-                      const SizedBox(width: 8),
-                      Text(
-                        todayPostsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              i -= 1;
-
-                  // 4) posts list/skeleton/error/empty
-                  if (isPostsLoading || isSnackLoading) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  child: _buildPostSkeleton(),
-                );
-              }
-
-              if (isPostsError) {
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-                );
-              }
-
-                  if (todayCombined.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  child: Text(
-                    noTodayPostsText,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                );
-              }
-
-                  final itemIndex = i;
-                  final item = todayCombined[itemIndex];
-                  if (item is Post) {
-                    return OptimizedPostCard(
-                      key: ValueKey(item.id),
-                      post: item,
-                      index: itemIndex,
-                      onTap: () => _navigateToPostDetail(item),
-                      externalCommentCountOverride: _commentCountOverrides[item.id],
-                      preloadImage: itemIndex < 3,
-                      margin: _boardPostCardMargin,
-                      contentPadding: _boardPostCardContentPadding,
-                    );
-                  }
-                  if (item is SnackChat) {
-                    return SnackChatCard(
-                      key: ValueKey(item.id),
-                      snackChat: item,
-                      currentUserId: FirebaseAuth.instance.currentUser?.uid,
-                      isMuted: _mutedSnackChatIds.contains(item.id),
-                      onTap: () => _navigateToSnackChat(item),
-                      onLongPress: () => _showSnackChatMuteSheet(item),
-                      onToggleFavorite: () {
-                        _snackChatService.toggleFavorite(item.id, !item.isFavorited);
-                      },
-                    );
-                  }
-                  return const SizedBox.shrink();
-                },
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-  
-  // 전체 탭 - 로딩 뷰
-  Widget _buildAllLoadingView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _allScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_all'),
-            widgetId: 'board_banner_all',
-          ),
-          ...List.generate(5, (index) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: _buildPostSkeleton(),
-          )),
-        ],
-      ),
-    );
-  }
-  
-  // 전체 탭 - 에러 뷰
-  Widget _buildAllErrorView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _allScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_all'),
-            widgetId: 'board_banner_all',
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  // 전체 탭 - 빈 상태 뷰
-  Widget _buildAllEmptyView() {
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await Future.delayed(const Duration(milliseconds: 500));
-        if (mounted) setState(() {});
-      },
-      child: ListView(
-        controller: _allScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        children: [
-          AdBannerWidget(
-            key: ValueKey('board_banner_all'),
-            widgetId: 'board_banner_all',
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
-            child: AppEmptyState.noPosts(
-              onCreatePost: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CreatePostScreen(
-                      onPostCreated: () {
-                        setState(() {});
-                      },
-                    ),
-                  ),
-                );
-              },
-                  ),
-          ),
-        ],
-      ),
-            );
-          }
-  
-  // 전체 탭 - 게시글 목록 뷰 (레거시, 현재 미사용)
-  Widget _buildAllPostsView(List<Post> posts) {
-    final grouped = _groupItemsByDate(posts);
-
-    return RefreshIndicator(
-      color: AppColors.pointColor,
-      backgroundColor: Colors.white,
-      onRefresh: () async {
-        await _refreshCommentCountsForPosts(posts);
-      },
-      child: ListView.builder(
-        key: const PageStorageKey('board_all_list'),
-        controller: _allScrollController,
-        physics: const AlwaysScrollableScrollPhysics(),
-        cacheExtent: 1000,
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: _calculateAllItemCount(grouped),
-        itemBuilder: (context, index) {
-          if (index == 0) {
-            return AdBannerWidget(
-              key: ValueKey('board_banner_all'),
-              widgetId: 'board_banner_all',
-            );
-          }
-          return _buildAllGroupedItem(grouped, index - 1);
+            ],
+          );
         },
       ),
     );
   }
-  
-  int _calculateAllItemCount(List<Map<String, dynamic>> grouped) {
-    int totalItems = 1; // AdBanner
-    for (var group in grouped) {
-      totalItems += 1; // 날짜 헤더
-      final groupItems = group['items'] as List<dynamic>;
-      totalItems += groupItems.length;
+
+  Widget _buildSharingTab(AsyncSnapshot<List<Post>> snapshot) {
+    final isLoading = snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData &&
+        _cachedSharingPosts == null;
+
+    final isError = snapshot.hasError &&
+        (_cachedSharingPosts == null || _cachedSharingPosts!.isEmpty);
+
+    final snapshotPosts = snapshot.data;
+    final posts = (snapshotPosts != null && snapshotPosts.isNotEmpty)
+        ? snapshotPosts
+        : (_cachedSharingPosts ?? snapshotPosts ?? const <Post>[]);
+
+    if (snapshot.hasData && posts.isNotEmpty) {
+      _cachedSharingPosts = posts;
     }
-    return totalItems;
-  }
-  
-  Widget _buildAllGroupedItem(List<Map<String, dynamic>> grouped, int adjustedIndex) {
-    int currentIndex = 0;
-    
-    for (var group in grouped) {
-      final dateLabel = group['dateLabel'] as String;
-      final groupItems = group['items'] as List<dynamic>;
-      
-      // 날짜 헤더
-      if (currentIndex == adjustedIndex) {
-        return _buildDateHeader(dateLabel);
-      }
-      currentIndex++;
-      
-      // 아이템들 (Post 또는 SnackChat)
-      for (int i = 0; i < groupItems.length; i++) {
-        if (currentIndex == adjustedIndex) {
-          final item = groupItems[i];
-          if (item is Post) {
-            return OptimizedPostCard(
-              key: ValueKey(item.id),
-              post: item,
-              index: i,
-              onTap: () => _navigateToPostDetail(item),
-              externalCommentCountOverride: _commentCountOverrides[item.id],
-              preloadImage: i < 3,
-              margin: _boardPostCardMargin,
-              contentPadding: _boardPostCardContentPadding,
-            );
-          } else if (item is SnackChat) {
-            return SnackChatCard(
-              key: ValueKey('snack_${item.id}'),
-              snackChat: item,
-              currentUserId: FirebaseAuth.instance.currentUser?.uid,
-              isMuted: _mutedSnackChatIds.contains(item.id),
-              onTap: () => _navigateToSnackChat(item),
-              onLongPress: () => _showSnackChatMuteSheet(item),
-              onToggleFavorite: () {
-                _snackChatService.toggleFavorite(item.id, !item.isFavorited);
-              },
-            );
-          }
-        }
-        currentIndex++;
-      }
+
+    if (!_didAutoRefreshSharingCommentCounts && posts.isNotEmpty) {
+      _didAutoRefreshSharingCommentCounts = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshCommentCountsForPosts(posts, silent: true);
+      });
     }
-    
-    return const SizedBox.shrink();
+
+    return _buildPostsList(
+      posts: posts,
+      isLoading: isLoading,
+      isError: isError,
+      scrollController: _sharingScrollController,
+      listKey: 'board_sharing_list',
+      bannerKey: 'board_banner_sharing',
+      emptyBuilder: () => _buildSharingEmpty(),
+    );
   }
 
+  Widget _buildFeedTab(AsyncSnapshot<List<Post>> snapshot) {
+    final isLoading = snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData &&
+        _cachedFeedPosts == null;
+
+    final isError = snapshot.hasError &&
+        (_cachedFeedPosts == null || _cachedFeedPosts!.isEmpty);
+
+    final snapshotPosts = snapshot.data;
+    final sourcePosts = (snapshotPosts != null && snapshotPosts.isNotEmpty)
+        ? snapshotPosts
+        : (_cachedFeedPosts ?? snapshotPosts ?? const <Post>[]);
+    final posts = sourcePosts.where((p) => !isSharingPost(p)).toList();
+
+    if (snapshot.hasData && posts.isNotEmpty) {
+      _cachedFeedPosts = posts;
+    }
+
+    if (!_didAutoRefreshFeedCommentCounts && posts.isNotEmpty) {
+      _didAutoRefreshFeedCommentCounts = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshCommentCountsForPosts(posts, silent: true);
+      });
+    }
+
+    return _buildFeedList(
+      posts: posts,
+      isLoading: isLoading,
+      isError: isError,
+    );
+  }
+
+  Widget _buildFeedList({
+    required List<Post> posts,
+    required bool isLoading,
+    required bool isError,
+  }) {
+    final int bodyCount;
+    if (isLoading) {
+      bodyCount = 5;
+    } else if (isError || posts.isEmpty) {
+      bodyCount = 1;
+    } else {
+      bodyCount = posts.length;
+    }
+
+    return RefreshIndicator(
+      color: AppColors.pointColor,
+      backgroundColor: Colors.white,
+      onRefresh: () async {
+        if (!isLoading && !isError) {
+          await _refreshCommentCountsForPosts(posts);
+        } else {
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) setState(() {});
+        }
+      },
+      child: ListView.builder(
+        key: const PageStorageKey('board_feed_list'),
+        controller: _feedScrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        cacheExtent: 1000,
+        padding: const EdgeInsets.only(top: 4, bottom: 90),
+        itemCount: 1 + bodyCount,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return const AdBannerWidget(
+              key: ValueKey('board_banner_feed'),
+              widgetId: 'board_banner_feed',
+            );
+          }
+
+          if (isLoading) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _buildPostSkeleton(),
+            );
+          }
+
+          if (isError) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+            );
+          }
+
+          if (posts.isEmpty) {
+            return _buildFeedEmpty();
+          }
+
+          final post = posts[index - 1];
+          return _buildFeedPostCard(post);
+        },
+      ),
+    );
+  }
+
+  Widget _buildPostsList({
+    required List<Post> posts,
+    required bool isLoading,
+    required bool isError,
+    required ScrollController scrollController,
+    required String listKey,
+    required String bannerKey,
+    required Widget Function() emptyBuilder,
+  }) {
+    final int bodyCount;
+    if (isLoading) {
+      bodyCount = 5;
+    } else if (isError || posts.isEmpty) {
+      bodyCount = 1;
+    } else {
+      bodyCount = posts.length;
+    }
+
+    return RefreshIndicator(
+      color: AppColors.pointColor,
+      backgroundColor: Colors.white,
+      onRefresh: () async {
+        if (!isLoading && !isError) {
+          await _refreshCommentCountsForPosts(posts);
+        } else {
+          await Future.delayed(const Duration(milliseconds: 500));
+          if (mounted) setState(() {});
+        }
+      },
+      child: ListView.builder(
+        key: PageStorageKey(listKey),
+        controller: scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        cacheExtent: 1000,
+        padding: const EdgeInsets.only(top: 4, bottom: 90),
+        itemCount: 1 + bodyCount,
+        itemBuilder: (context, index) {
+          if (index == 0) {
+            return AdBannerWidget(
+              key: ValueKey(bannerKey),
+              widgetId: bannerKey,
+            );
+          }
+
+          if (isLoading) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: _buildPostSkeleton(),
+            );
+          }
+
+          if (isError) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
+            );
+          }
+
+          if (posts.isEmpty) {
+            return emptyBuilder();
+          }
+
+          final postIndex = index - 1;
+          final post = posts[postIndex];
+          return _buildSharingPostCard(post);
+        },
+      ),
+    );
+  }
+
+  Widget _buildSharingEmpty() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 80),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 24),
+          const Icon(Icons.volunteer_activism_outlined,
+              size: 64, color: Color(0xFF9CA3AF)),
+          const SizedBox(height: 16),
+          const Text(
+            '아직 나눔이 없어요',
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '처음 나눔 글을 등록해보세요.',
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 14,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: _openCreateSharingPost,
+            icon: const Icon(Icons.add, size: 18),
+            label: const Text('나눔 글 쓰기'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingPostCard(Post post) {
+    final thumbnailUrl = post.imageUrls.isNotEmpty ? post.imageUrls.first : '';
+    final sharingLocation = post.sharingLocation.trim();
+    final commentCount = _commentCountOverrides[post.id] ?? post.commentCount;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final isLiked =
+        currentUserId != null && post.likedBy.contains(currentUserId);
+    final canOpenUniv = !post.schoolOnly ||
+        post.userId == currentUserId ||
+        context.watch<app_auth.AuthProvider>().isHanyangUser;
+    final requiresGate = post.schoolOnly && !canOpenUniv;
+    final showGate = requiresGate && _activeSharingGatePostId == post.id;
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () {
+          if (requiresGate) {
+            setState(() {
+              _activeSharingGatePostId =
+                  _activeSharingGatePostId == post.id ? null : post.id;
+            });
+            return;
+          }
+          _navigateToPostDetail(post);
+        },
+        child: SizedBox(
+          height: 180,
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 10, 12, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _buildSharingThumbnail(
+                        thumbnailUrl,
+                        width: 144,
+                        height: 170,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 8),
+                          Text(
+                            post.title.trim().isNotEmpty
+                                ? post.title.trim()
+                                : _feedPostTitle(post),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black,
+                              height: 1.12,
+                              letterSpacing: -0.4,
+                            ),
+                          ),
+                          if (sharingLocation.isNotEmpty) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              sharingLocation,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF374151),
+                                height: 1.15,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 5),
+                          Text(
+                            post.getFormattedTime(context),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF9CA3AF),
+                              height: 1.15,
+                            ),
+                          ),
+                          const Spacer(),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              if (post.schoolOnly) _buildUnivBadge(),
+                              const Spacer(),
+                              Flexible(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: _buildSharingMetrics(
+                                    isLiked: isLiked,
+                                    likes: post.likes,
+                                    comments: commentCount,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Container(height: 1, color: const Color(0xFFE5E7EB)),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  ignoring: !showGate,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 180),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    child: showGate
+                        ? _buildSharingGateOverlay(
+                            key: ValueKey('sharing_gate_${post.id}'),
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingThumbnail(
+    String thumbnailUrl, {
+    required double width,
+    required double height,
+  }) {
+    return thumbnailUrl.isNotEmpty
+        ? CachedNetworkImage(
+            imageUrl: thumbnailUrl,
+            cacheManager: AppImageCacheManager.instance,
+            memCacheWidth: 520,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) =>
+                _buildSharingImageFallback(width: width, height: height),
+          )
+        : _buildSharingImageFallback(width: width, height: height);
+  }
+
+  Widget _buildSharingImageFallback({
+    double width = 172,
+    double height = 170,
+  }) {
+    return Container(
+      width: width,
+      height: height,
+      color: const Color(0xFFE5E7EB),
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        color: Color(0xFF9CA3AF),
+      ),
+    );
+  }
+
+  Widget _buildUnivBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0xFF244BFF),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: const Text(
+        'Univ.',
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingMetrics({
+    required bool isLiked,
+    required int likes,
+    required int comments,
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+            size: 18,
+            color: const Color(0xFF111827),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '$likes',
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Icon(
+            Icons.chat_bubble_outline_rounded,
+            size: 18,
+            color: Color(0xFF111827),
+          ),
+          const SizedBox(width: 3),
+          Text(
+            '$comments',
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF111827),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingGateOverlay({Key? key}) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return GestureDetector(
+      key: key,
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _activeSharingGatePostId = null),
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.68),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                isKo ? '한양메일 인증을 해주세요.' : 'Please verify your Hanyang email.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 23,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: _openHanyangVerification,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF244BFF),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 11,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: Text(
+                  isKo ? '인증하러 가기' : 'Verify now',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedEmpty() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 120),
+      child: AppEmptyState.noPosts(
+        onCreatePost: _openCreateEntrySheet,
+      ),
+    );
+  }
+
+  Widget _buildFeedPostCard(Post post) {
+    final thumbnailUrl = post.imageUrls.isNotEmpty ? post.imageUrls.first : '';
+    final commentCount = _commentCountOverrides[post.id] ?? post.commentCount;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final isLiked =
+        currentUserId != null && post.likedBy.contains(currentUserId);
+    final hasFriendVisibility =
+        post.visibility != 'public' || post.visibleToCategoryIds.isNotEmpty;
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () => _navigateToPostDetail(post),
+        child: Container(
+          height: 152,
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 10),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 130,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _feedPostTitle(post),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF111827),
+                          height: 1.2,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      _buildFeedMetaRow(
+                        isLiked: isLiked,
+                        likes: post.likes,
+                        comments: commentCount,
+                        timeText: post.getFormattedTime(context),
+                        hasFriendVisibility: hasFriendVisibility,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (thumbnailUrl.isNotEmpty) ...[
+                const SizedBox(width: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: CachedNetworkImage(
+                    imageUrl: thumbnailUrl,
+                    cacheManager: AppImageCacheManager.instance,
+                    memCacheWidth: 360,
+                    width: 112,
+                    height: 112,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Container(
+                      width: 112,
+                      height: 112,
+                      color: const Color(0xFFE5E7EB),
+                      child: const Icon(
+                        Icons.image_not_supported_outlined,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeedMetaRow({
+    required bool isLiked,
+    required int likes,
+    required int comments,
+    required String timeText,
+    required bool hasFriendVisibility,
+  }) {
+    const iconSize = 18.0;
+    const countStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF111827),
+      height: 1.0,
+    );
+    const metaStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+      color: Color(0xFF6B7280),
+      height: 1.0,
+    );
+    const friendStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: 12,
+      fontWeight: FontWeight.w800,
+      color: Color(0xFFE85D2A),
+      height: 1.0,
+    );
+
+    return SizedBox(
+      height: 22,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _buildFlexibleMetric(
+            icon: Icon(
+              isLiked ? Icons.favorite : Icons.favorite_border,
+              size: iconSize,
+              color:
+                  isLiked ? const Color(0xFFEF4444) : const Color(0xFF111827),
+            ),
+            text: '$likes',
+            textStyle: countStyle,
+            iconBoxSize: iconSize,
+          ),
+          const SizedBox(width: 5),
+          _buildFlexibleMetric(
+            icon: const Icon(
+              Icons.chat_bubble_outline,
+              size: iconSize,
+              color: Color(0xFF111827),
+            ),
+            text: '$comments',
+            textStyle: countStyle,
+            iconBoxSize: iconSize,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            fit: FlexFit.loose,
+            child: Text(
+              timeText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: metaStyle,
+            ),
+          ),
+          if (hasFriendVisibility) ...[
+            const SizedBox(width: 8),
+            Flexible(
+              fit: FlexFit.loose,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.change_history,
+                    size: 12,
+                    color: Color(0xFFE85D2A),
+                  ),
+                  const SizedBox(width: 3),
+                  Flexible(
+                    child: Text(
+                      '친구 공개',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
+                      style: friendStyle,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFlexibleMetric({
+    required Widget icon,
+    required String text,
+    required TextStyle textStyle,
+    required double iconBoxSize,
+  }) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 44),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: iconBoxSize,
+              height: iconBoxSize,
+              child: Center(child: icon),
+            ),
+            const SizedBox(width: 2),
+            Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textStyle,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
@@ -1455,135 +1111,184 @@ class BoardScreenState extends State<BoardScreen>
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
-
-    // StreamBuilder가 자동으로 갱신하므로 setState 불필요
-    // setState를 호출하면 로딩 화면이 다시 보여 스크롤이 초기화될 수 있음
   }
 
-  DateTime _getTodayCombinedCreatedAt(dynamic item) {
-    if (item is Post) return item.createdAt;
-    if (item is SnackChat) return item.createdAt;
-    return DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
-  void _navigateToSnackChat(SnackChat snackChat) {
+  void _openCreatePost() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => SnackChatScreen(snackChatId: snackChat.id),
+        builder: (context) => CreatePostScreen(
+          onPostCreated: () {
+            if (mounted) setState(() {});
+          },
+        ),
       ),
     );
   }
 
-  void _showSnackChatMuteSheet(SnackChat snackChat) {
-    final isMuted = _mutedSnackChatIds.contains(snackChat.id);
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+  void _openCreateSharingPost() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreateSharingPostScreen(
+          onPostCreated: () {
+            if (mounted) setState(() {});
+          },
+        ),
       ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1D5DB),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: Icon(
-                  isMuted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
-                  color: isMuted ? const Color(0xFF3B82F6) : const Color(0xFF6B7280),
-                ),
-                title: Text(
-                  isMuted
-                      ? (isKo ? '알림 켜기' : 'Unmute notifications')
-                      : (isKo ? '알림 끄기' : 'Mute notifications'),
-                  style: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _snackChatService.toggleMuteSnackChat(snackChat.id, !isMuted);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
     );
+  }
+
+  void _openCreateSnackChat() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const CreateSnackChatScreen(),
+      ),
+    );
+  }
+
+  Future<void> _openHanyangVerification() async {
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const HanyangEmailVerificationScreen(
+          returnOnSuccess: true,
+        ),
+      ),
+    );
+    if (mounted) {
+      setState(() => _activeSharingGatePostId = null);
+    }
+  }
+
+  String _feedPostTitle(Post post) {
+    final title = post.title.trim();
+    if (title.isNotEmpty) return title;
+    final firstLine = post.content
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .firstWhere((line) => line.isNotEmpty, orElse: () => '');
+    return firstLine.isNotEmpty ? firstLine : 'Untitled';
   }
 
   void _openCreateEntrySheet() {
-    showModalBottomSheet<void>(
+    final isSharingTab = _tabController.index == 0;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final primaryTitle = isSharingTab
+        ? (isKo ? '나눔 작성하기' : 'Create Sharing Post')
+        : (isKo ? '피드 작성하기' : 'Create Feed Post');
+    final primarySubtitle = isSharingTab
+        ? (isKo
+            ? '사진과 카테고리를 넣어 무료 나눔을 올려요.'
+            : 'Add photos and a category to share for free.')
+        : (isKo
+            ? '사진과 내용을 넣어 새 피드를 올려요.'
+            : 'Add photos and text to create a new feed post.');
+    final snackChatTitle = isKo ? '스낵챗 만들기' : 'Create Snack Chat';
+    final snackChatSubtitle = isKo
+        ? '오늘 함께 이야기할 스낵챗을 만들어요.'
+        : 'Create a Snack Chat to talk with others today.';
+    showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.article_outlined),
-                title: Text(AppLocalizations.of(context)!.createPost),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CreatePostScreen(
-                        onPostCreated: () {
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_outline),
-                title: Text(AppLocalizations.of(context)!.createSnackChat),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateSnackChatScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+          child: Container(
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildCreateEntryTile(
+                  icon: Icons.volunteer_activism_outlined,
+                  title: primaryTitle,
+                  subtitle: primarySubtitle,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    if (isSharingTab) {
+                      _openCreateSharingPost();
+                    } else {
+                      _openCreatePost();
+                    }
+                  },
+                ),
+                const Divider(height: 1),
+                _buildCreateEntryTile(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  title: snackChatTitle,
+                  subtitle: snackChatSubtitle,
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _openCreateSnackChat();
+                  },
+                ),
+              ],
+            ),
           ),
         );
       },
     );
   }
 
-  /// 에러 위젯 빌드
+  Widget _buildCreateEntryTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return ListTile(
+      leading: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: AppColors.pointColor.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Icon(icon, color: AppColors.pointColor),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF111827),
+        ),
+      ),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 12,
+          color: Color(0xFF6B7280),
+        ),
+      ),
+      trailing: const Icon(
+        Icons.chevron_right_rounded,
+        color: Color(0xFF9CA3AF),
+      ),
+      onTap: onTap,
+    );
+  }
+
   Widget _buildErrorWidget(String error) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Colors.red,
-          ),
+          const Icon(Icons.error_outline, size: 64, color: Colors.red),
           const SizedBox(height: 16),
           Text(
             '오류가 발생했습니다',
@@ -1598,7 +1303,7 @@ class BoardScreenState extends State<BoardScreen>
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
-              setState(() {}); // 새로고침
+              setState(() {});
             },
             child: const Text('다시 시도'),
           ),
@@ -1607,101 +1312,6 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
-
-  /// 날짜별로 Post+SnackChat 혼합 아이템 그룹화 (All 탭용)
-  List<Map<String, dynamic>> _groupItemsByDate(List<dynamic> items) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
-
-    final Map<String, List<dynamic>> groups = {
-      'today': [],
-      'yesterday': [],
-      'thisWeek': [],
-      'previous': [],
-    };
-
-    for (final item in items) {
-      final createdAt = _getTodayCombinedCreatedAt(item).toLocal();
-      final itemDate = DateTime(createdAt.year, createdAt.month, createdAt.day);
-
-      if (itemDate.isAtSameMomentAs(today)) {
-        groups['today']!.add(item);
-      } else if (itemDate.isAtSameMomentAs(yesterday)) {
-        groups['yesterday']!.add(item);
-      } else if (itemDate.isAfter(thisWeekStart.subtract(const Duration(days: 1))) &&
-                 itemDate.isBefore(yesterday)) {
-        groups['thisWeek']!.add(item);
-      } else {
-        groups['previous']!.add(item);
-      }
-    }
-
-    return groups.entries
-        .where((entry) => entry.value.isNotEmpty)
-        .map((entry) => {
-              'dateLabel': entry.key,
-              'items': entry.value,
-            })
-        .toList();
-  }
-
-  /// 날짜별로 게시글 그룹화
-  List<Map<String, dynamic>> _groupPostsByDate(List<Post> posts) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = today.subtract(const Duration(days: 1));
-    final thisWeekStart = today.subtract(Duration(days: today.weekday - 1));
-    
-    final Map<String, List<Post>> groups = {
-      'today': [],
-      'yesterday': [],
-      'thisWeek': [],
-      'previous': [],
-    };
-    
-    for (final post in posts) {
-      final postDate = DateTime(
-        post.createdAt.year,
-        post.createdAt.month,
-        post.createdAt.day,
-      );
-      
-      if (postDate.isAtSameMomentAs(today)) {
-        groups['today']!.add(post);
-      } else if (postDate.isAtSameMomentAs(yesterday)) {
-        groups['yesterday']!.add(post);
-      } else if (postDate.isAfter(thisWeekStart.subtract(const Duration(days: 1))) && 
-                 postDate.isBefore(yesterday)) {
-        groups['thisWeek']!.add(post);
-      } else {
-        groups['previous']!.add(post);
-      }
-    }
-    
-    // 비어있지 않은 그룹만 반환
-    return groups.entries
-        .where((entry) => entry.value.isNotEmpty)
-        .map((entry) => {
-              'dateLabel': entry.key,
-              'posts': entry.value,
-            })
-        .toList();
-  }
-
-  /// 날짜 헤더 빌드
-  Widget _buildDateHeader(String dateLabel) {
-    // All 탭에서 날짜 구분(어제/이전 등) 텍스트 라벨을 표시하지 않음
-    return const SizedBox.shrink();
-  }
-
-  /// 전체 목록에서의 인덱스 찾기
-  int _getGlobalIndex(List<Post> allPosts, Post targetPost) {
-    return allPosts.indexWhere((post) => post.id == targetPost.id);
-  }
-
-  /// 게시글 카드 스켈레톤 (로딩 시 표시)
   Widget _buildPostSkeleton() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1710,7 +1320,7 @@ class BoardScreenState extends State<BoardScreen>
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1719,7 +1329,6 @@ class BoardScreenState extends State<BoardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 헤더: 작성자 정보
           Row(
             children: [
               AppSkeleton(
@@ -1748,19 +1357,13 @@ class BoardScreenState extends State<BoardScreen>
               ),
             ],
           ),
-          
           const SizedBox(height: 12),
-          
-          // 제목
           AppSkeleton(
             width: double.infinity,
             height: 18,
             borderRadius: BorderRadius.circular(4),
           ),
-          
           const SizedBox(height: 8),
-          
-          // 내용 (2줄)
           AppSkeleton(
             width: double.infinity,
             height: 14,
@@ -1772,10 +1375,7 @@ class BoardScreenState extends State<BoardScreen>
             height: 14,
             borderRadius: BorderRadius.circular(4),
           ),
-          
           const SizedBox(height: 12),
-          
-          // 하단: 좋아요, 댓글 수
           Row(
             children: [
               AppSkeleton(
@@ -1795,5 +1395,4 @@ class BoardScreenState extends State<BoardScreen>
       ),
     );
   }
-
 }

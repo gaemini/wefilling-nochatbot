@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_localizations.dart';
+import 'sharing_category.dart';
 
 /// 카테고리 키/레거시 값을 사용자에게 보여줄 라벨로 변환합니다.
 ///
@@ -12,6 +13,14 @@ String localizedCategoryLabel(BuildContext context, String rawCategory) {
   final l10n = AppLocalizations.of(context)!;
   final raw = rawCategory.trim();
   final key = raw.toLowerCase();
+  final canonicalSharing = canonicalSharingCategory(raw);
+
+  if (canonicalSharing != null) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return isKo
+        ? canonicalSharing
+        : (kSharingCategoryLabelsEn[canonicalSharing] ?? canonicalSharing);
+  }
 
   // (A) 키 기반 (영문)
   switch (key) {
@@ -51,4 +60,3 @@ String localizedCategoryLabel(BuildContext context, String rawCategory) {
 
   return rawCategory;
 }
-

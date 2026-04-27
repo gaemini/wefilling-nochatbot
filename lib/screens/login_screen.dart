@@ -258,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen>
                                     FittedBox(
                                       fit: BoxFit.scaleDown,
                                       child: Text(
-                                        AppLocalizations.of(context)!.appTagline,
+                                        '버리긴 아깝고 팔긴 귀찮을 때, 우리 학교 무료 나눔 Wefilling',
                                         maxLines: 1,
                                         style: TextStyle(
                                           fontSize: isVeryShort ? 15 : 18,

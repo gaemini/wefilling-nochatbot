@@ -117,8 +117,9 @@ void main() {
         // ⚠️ 임시: iOS에서 App Check 완전 비활성화 (TestFlight 크래시 방지)
         // TODO: 나중에 제대로 된 App Check 설정 필요
         if (Platform.isIOS) {
+          await FirebaseAppCheck.instance.setTokenAutoRefreshEnabled(false);
           if (kDebugMode) {
-            debugPrint('🛡️ App Check: iOS 전체 비활성화 (임시)');
+            debugPrint('🛡️ App Check: iOS 토큰 자동 갱신 비활성화 (임시)');
           }
         } else {
           await FirebaseAppCheck.instance.activate(

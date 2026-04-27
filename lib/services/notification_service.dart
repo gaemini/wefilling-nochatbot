@@ -17,13 +17,14 @@ class NotificationService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final NotificationSettingsService _settingsService =
       NotificationSettingsService();
-  
+
   // 활성 스트림 구독 관리
   final List<StreamSubscription> _activeSubscriptions = [];
 
   // 모든 스트림 구독 정리
   void dispose() {
-    Logger.log('NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
+    Logger.log(
+        'NotificationService: ${_activeSubscriptions.length}개 스트림 정리 중...');
     for (final subscription in _activeSubscriptions) {
       subscription.cancel();
     }
@@ -65,7 +66,8 @@ class NotificationService {
         'isRead': false,
       };
 
-      final docRef = await _firestore.collection('notifications').add(notificationData);
+      final docRef =
+          await _firestore.collection('notifications').add(notificationData);
       Logger.log('✅ 알림 생성 성공: $title (ID: ${docRef.id})');
       return true;
     } catch (e) {
@@ -183,7 +185,8 @@ class NotificationService {
     }
   }
 
-  String _normalizeSnackChatInviterLabel(String raw, {required String fallback}) {
+  String _normalizeSnackChatInviterLabel(String raw,
+      {required String fallback}) {
     final base = raw.trim().isNotEmpty ? raw.trim() : fallback.trim();
     if (base.isEmpty) return 'User';
 
@@ -240,13 +243,16 @@ class NotificationService {
     }
 
     try {
-      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '포스트';
-      final notificationType = isReview ? 'review_comment' : NotificationSettingKeys.newComment;
-      
+      final safePostTitle =
+          postTitle.trim().isNotEmpty ? postTitle.trim() : '포스트';
+      final notificationType =
+          isReview ? 'review_comment' : NotificationSettingKeys.newComment;
+
       return await createNotification(
         userId: postAuthorId,
         title: '새 댓글이 달렸습니다',
-        message: '$commenterName님이 회원님의 ${isReview ? '후기' : '포스트'} "$safePostTitle"에 댓글을 남겼습니다.',
+        message:
+            '$commenterName님이 회원님의 ${isReview ? '후기' : '포스트'} "$safePostTitle"에 댓글을 남겼습니다.',
         type: notificationType,
         postId: isReview ? null : postId,
         actorId: commenterId,
@@ -259,12 +265,11 @@ class NotificationService {
             'userId': reviewOwnerUserId ?? postAuthorId,
             'reviewTitle': postTitle,
             'meetupTitle': postTitle,
-          } else
-            ...{
-              'postId': postId,
-              if (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
-                'thumbnailUrl': thumbnailUrl.trim(),
-            },
+          } else ...{
+            'postId': postId,
+            if (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
+              'thumbnailUrl': thumbnailUrl.trim(),
+          },
         },
       );
     } catch (e) {
@@ -279,9 +284,11 @@ class NotificationService {
     String postTitle,
     String postAuthorId,
     String likerName,
-    String likerId,
-    {
+    String likerId, {
     bool postIsAnonymous = false,
+    bool isSharingPost = false,
+    String collectionPath = 'posts',
+    String? thumbnailUrl,
   }) async {
     // 자기 게시글에 자신이 좋아요를 누른 경우는 알림 제외
     if (postAuthorId == likerId) {
@@ -291,12 +298,18 @@ class NotificationService {
     try {
       // 익명 게시글이면 알림에서 '누가 눌렀는지'를 절대 노출하지 않음
       final safeLikerName = postIsAnonymous ? '익명' : likerName;
-      final safePostTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '포스트';
+      final safePostTitle = postTitle.trim().isNotEmpty
+          ? postTitle.trim()
+          : (isSharingPost ? '나눔글' : '포스트');
       return await createNotification(
         userId: postAuthorId,
-        title: '포스트에 좋아요가 추가되었습니다',
-        message: '$safeLikerName님이 회원님의 포스트 "$safePostTitle"을 좋아합니다.',
-        type: NotificationSettingKeys.newLike,
+        title: isSharingPost ? '나눔글에 하트가 추가되었습니다' : '포스트에 좋아요가 추가되었습니다',
+        message: isSharingPost
+            ? '$safeLikerName님이 회원님의 나눔글 "$safePostTitle"에 하트를 눌렀습니다.'
+            : '$safeLikerName님이 회원님의 포스트 "$safePostTitle"을 좋아합니다.',
+        type: isSharingPost
+            ? NotificationSettingKeys.sharingLike
+            : NotificationSettingKeys.newLike,
         postId: postId,
         actorId: likerId,
         // 익명 게시글이면 actorName도 안전한 값으로 저장 (푸시/구버전 호환)
@@ -307,10 +320,51 @@ class NotificationService {
           // 익명 게시글이면 실제 이름 대신 안전한 값만 저장
           'likerName': safeLikerName,
           'postTitle': safePostTitle,
+          'collectionPath': collectionPath,
+          'isSharingPost': isSharingPost,
+          if (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
+            'thumbnailUrl': thumbnailUrl.trim(),
         },
       );
     } catch (e) {
       Logger.error('좋아요 알림 오류: $e');
+      return false;
+    }
+  }
+
+  Future<bool> sendSharingRequestNotification({
+    required String postId,
+    required String postTitle,
+    required String postAuthorId,
+    required String requesterId,
+    required String requesterName,
+    String? thumbnailUrl,
+  }) async {
+    if (postAuthorId == requesterId) return true;
+
+    try {
+      final safeTitle = postTitle.trim().isNotEmpty ? postTitle.trim() : '나눔글';
+      final safeRequester =
+          requesterName.trim().isNotEmpty ? requesterName.trim() : '사용자';
+      return await createNotification(
+        userId: postAuthorId,
+        title: '나눔 신청이 왔습니다',
+        message: '$safeRequester님이 회원님의 나눔글 "$safeTitle"에 신청했습니다.',
+        type: NotificationSettingKeys.sharingRequest,
+        postId: postId,
+        actorId: requesterId,
+        actorName: safeRequester,
+        data: {
+          'postId': postId,
+          'postTitle': safeTitle,
+          'requesterName': safeRequester,
+          'collectionPath': 'sharing_posts',
+          if (thumbnailUrl != null && thumbnailUrl.trim().isNotEmpty)
+            'thumbnailUrl': thumbnailUrl.trim(),
+        },
+      );
+    } catch (e) {
+      Logger.error('나눔 신청 알림 오류: $e');
       return false;
     }
   }
@@ -329,20 +383,19 @@ class NotificationService {
         .orderBy('createdAt', descending: true)
         .snapshots(includeMetadataChanges: true)
         .asyncMap((snapshot) async {
-          Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
-          final list =
-              snapshot.docs
-              .map((doc) => AppNotification.fromFirestore(doc))
-              // DM 알림은 알림(Notifications) 탭에서 표시하지 않음
-              .where((n) => n.type != 'dm_received')
-              .toList();
+      Logger.log('📬 사용자 알림 목록 업데이트: ${snapshot.docs.length}개');
+      final list = snapshot.docs
+          .map((doc) => AppNotification.fromFirestore(doc))
+          // DM 알림은 알림(Notifications) 탭에서 표시하지 않음
+          .where((n) => n.type != 'dm_received')
+          .toList();
 
-          final visibleList = await _filterBlockedNotifications(list);
+      final visibleList = await _filterBlockedNotifications(list);
 
-          // 서버/클라이언트/트리거 재시도 등으로 동일 알림이 2개 생성되는 경우가 있어
-          // UI에선 중복을 숨긴다 (특히 meetup 참여/나가기 알림)
-          return _dedupeForUi(visibleList);
-        });
+      // 서버/클라이언트/트리거 재시도 등으로 동일 알림이 2개 생성되는 경우가 있어
+      // UI에선 중복을 숨긴다 (특히 meetup 참여/나가기 알림)
+      return _dedupeForUi(visibleList);
+    });
   }
 
   // 현재 사용자의 안 읽은 알림 수 가져오기
@@ -358,17 +411,15 @@ class NotificationService {
         .where('isRead', isEqualTo: false)
         .snapshots(includeMetadataChanges: true)
         .asyncMap((snapshot) async {
-          final list =
-              snapshot.docs
-              .map((doc) => AppNotification.fromFirestore(doc))
-              // DM 알림은 전역 알림 뱃지/카운트에서 제외
-              .where((n) => n.type != 'dm_received')
-              .toList();
+      final list = snapshot.docs
+          .map((doc) => AppNotification.fromFirestore(doc))
+          // DM 알림은 전역 알림 뱃지/카운트에서 제외
+          .where((n) => n.type != 'dm_received')
+          .toList();
 
-          final visibleList = await _filterBlockedNotifications(list);
-          return _dedupeForUi(visibleList).length;
-        })
-        .distinct(); // 중복 값 제거로 불필요한 업데이트 방지
+      final visibleList = await _filterBlockedNotifications(list);
+      return _dedupeForUi(visibleList).length;
+    }).distinct(); // 중복 값 제거로 불필요한 업데이트 방지
   }
 
   // 알림 읽음 상태로 변경
@@ -392,12 +443,11 @@ class NotificationService {
 
     try {
       // 현재 사용자의 모든 안 읽은 알림 찾기
-      final querySnapshot =
-          await _firestore
-              .collection('notifications')
-              .where('userId', isEqualTo: user.uid)
-              .where('isRead', isEqualTo: false)
-              .get();
+      final querySnapshot = await _firestore
+          .collection('notifications')
+          .where('userId', isEqualTo: user.uid)
+          .where('isRead', isEqualTo: false)
+          .get();
 
       // 배치 작업으로 모든 알림 업데이트
       final batch = _firestore.batch();
@@ -406,7 +456,7 @@ class NotificationService {
       }
 
       await batch.commit();
-      
+
       // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
       return true;
     } catch (e) {

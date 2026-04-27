@@ -14,9 +14,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/post.dart';
 import '../models/comment.dart';
+import '../models/snack_chat.dart';
 import '../services/post_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../services/comment_service.dart';
 import '../services/dm_service.dart';
+import '../services/snack_chat_service.dart';
 import 'dm_chat_screen.dart';
 import '../providers/auth_provider.dart' as app_auth;
 import 'edit_post_screen.dart';
@@ -28,14 +31,19 @@ import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
 import '../utils/logger.dart';
+import '../utils/category_label_utils.dart';
+import '../utils/sharing_category.dart';
 import 'friend_profile_screen.dart';
+import 'hanyang_email_verification_screen.dart';
 import 'main_screen.dart';
+import 'snack_chat_screen.dart';
 import '../services/relationship_service.dart';
 import '../models/relationship_status.dart';
 import '../services/content_hide_service.dart';
 import '../services/report_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
+import '../constants/app_constants.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final Post post;
@@ -50,13 +58,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final DMService _dmService = DMService();
+  final SnackChatService _snackChatService = SnackChatService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Timer? _likeHoldTimer;
   bool _likeSheetOpenedByHold = false;
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
-  
+
   // "맨 위로" 버튼 노출 상태 (상세 화면에서 글/댓글이 길 때 UX 개선)
   bool _showScrollToTop = false;
   static const double _scrollToTopShowOffset = 520;
@@ -68,11 +77,15 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isTogglingLike = false;
   bool _isSaved = false;
   bool _isTogglingSave = false;
+  bool _isCreatingSharingSnackChat = false;
+  bool _isRequestingSharing = false;
+  bool _hasRequestedSharing = false;
   late Post _currentPost;
   bool _accessValidated = false;
-  final PageController _imagePageController = PageController(initialPage: 0, keepPage: false);
+  final PageController _imagePageController =
+      PageController(initialPage: 0, keepPage: false);
   int _currentImageIndex = 0;
-  
+
   // 이미지 페이지 인디케이터 표시 상태
   bool _showPageIndicator = false;
   Timer? _indicatorTimer;
@@ -83,13 +96,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
   static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
   bool _didPrefetchImages = false;
-  
+
   static const Map<String, String> _imageHttpHeaders = {
     'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
     'Accept': 'image/*',
   };
-  
+
   // 익명 번호 매핑 (userId -> 익명번호)
   final Map<String, int> _anonymousUserMap = {};
 
@@ -117,13 +130,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // - 검색 결과/로컬 캐시로 인해 노출되면 안 되는 글이 보이는 것을 방지
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _validateAccessAndRefreshPost();
+      _loadSharingRequestState();
     });
-    
+
     // 디버그용: 이미지 URL 확인
     if (kDebugMode) {
       _logImageUrls();
     }
-    
+
     // 이미지가 여러 개일 때 첫 진입 시 인디케이터 표시
     if (_currentPost.imageUrls.length > 1) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -136,19 +150,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
     // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
     _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
-    
+
     // 스크롤 상태 감지 → "맨 위로" 버튼 자연스러운 노출/숨김
     _scrollController.addListener(_handleScrollChanged);
-    
+
     // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetchPostImages(initial: true);
     });
   }
 
+  Future<void> _loadSharingRequestState() async {
+    if (!isSharingPost(_currentPost) || _isAuthor) return;
+    final hasRequested =
+        await _postService.hasRequestedSharing(_currentPost.id);
+    if (!mounted) return;
+    setState(() => _hasRequestedSharing = hasRequested);
+  }
+
   Future<void> _validateAccessAndRefreshPost() async {
     try {
-      final refreshed = await _postService.getPostById(widget.post.id);
+      final refreshed = await _postService.getPostById(
+        widget.post.id,
+        collectionPath: widget.post.collectionPath,
+      );
       if (!mounted) return;
 
       if (refreshed == null) {
@@ -181,6 +206,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       // 접근 검증 통과 후에만 조회수 증가
       await _incrementViewCount();
+
+      // 나눔 글 Univ. 게이트: 작성자가 한양 인증자인데 나는 미인증이면 안내 다이얼로그
+      await _maybeShowUnivGateDialog();
     } catch (e) {
       Logger.error('❌ 게시글 접근 검증/갱신 오류: $e');
       if (!mounted) return;
@@ -226,7 +254,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final reportedUserId = _currentPost.userId.trim();
-    if (reportedUserId.isEmpty || reportedUserId == 'deleted' || reportedUserId == currentUser.uid) {
+    if (reportedUserId.isEmpty ||
+        reportedUserId == 'deleted' ||
+        reportedUserId == currentUser.uid) {
       return;
     }
 
@@ -290,7 +320,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success) {
         // 포스트 상세 화면을 닫고 이전 화면(포스트 목록)으로 돌아가기
         Navigator.of(context).pop();
-        
+
         // 성공 메시지 표시
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -304,9 +334,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isKo
-                  ? '익명 게시글 차단에 실패했습니다.'
-                  : 'Failed to block anonymous post.',
+              isKo ? '익명 게시글 차단에 실패했습니다.' : 'Failed to block anonymous post.',
             ),
             backgroundColor: Colors.red,
           ),
@@ -316,7 +344,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final targetUserId = _currentPost.userId.trim();
-    if (targetUserId.isEmpty || targetUserId == 'deleted' || targetUserId == currentUser.uid) {
+    if (targetUserId.isEmpty ||
+        targetUserId == 'deleted' ||
+        targetUserId == currentUser.uid) {
       return;
     }
 
@@ -331,11 +361,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
 
     if (!mounted) return;
-    if (result != null && result is Map<String, dynamic> && result['success'] == true) {
+    if (result != null &&
+        result is Map<String, dynamic> &&
+        result['success'] == true) {
       Navigator.of(context).pop();
     }
   }
-  
+
   @override
   void dispose() {
     _likeHoldTimer?.cancel();
@@ -353,8 +385,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!_scrollController.hasClients) return;
 
     final offset = _scrollController.offset;
-    final shouldShow =
-        _showScrollToTop ? offset > _scrollToTopHideOffset : offset > _scrollToTopShowOffset;
+    final shouldShow = _showScrollToTop
+        ? offset > _scrollToTopHideOffset
+        : offset > _scrollToTopShowOffset;
 
     if (shouldShow != _showScrollToTop) {
       setState(() => _showScrollToTop = shouldShow);
@@ -408,7 +441,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       height: 44,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                        border: Border.all(
+                            color: const Color(0xFFE5E7EB), width: 1),
                       ),
                       child: const Icon(
                         Icons.keyboard_arrow_up_rounded,
@@ -425,16 +459,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
   }
-  
+
   // 페이지 인디케이터를 표시하고 1초 후 자동으로 숨김
   void _showPageIndicatorTemporarily() {
     setState(() {
       _showPageIndicator = true;
     });
-    
+
     // 기존 타이머가 있으면 취소
     _indicatorTimer?.cancel();
-    
+
     // 1초 후 숨김
     _indicatorTimer = Timer(const Duration(seconds: 1), () {
       if (mounted) {
@@ -480,7 +514,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       return Container(
                         width: dotSize,
                         height: dotSize,
-                        margin: EdgeInsets.only(right: i == count - 1 ? 0 : dotGap),
+                        margin:
+                            EdgeInsets.only(right: i == count - 1 ? 0 : dotGap),
                         decoration: const BoxDecoration(
                           color: inactiveColor,
                           shape: BoxShape.circle,
@@ -588,7 +623,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 if (_isTogglingLike) return;
                 _likeHoldTimer?.cancel();
                 _likeSheetOpenedByHold = false;
-                _likeHoldTimer = Timer(const Duration(milliseconds: 500), () async {
+                _likeHoldTimer =
+                    Timer(const Duration(milliseconds: 500), () async {
                   if (!mounted) return;
                   _likeSheetOpenedByHold = true;
                   // 익명 게시글은 좋아요 누른 사용자 목록을 확인할 수 없음
@@ -614,7 +650,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 width: itemWidth,
                 count: likes,
                 iconWidget: Icon(
-                  isLiked ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  isLiked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
                   size: likeCommentIconSize, // 아이콘 크기 유지
                   color: isLiked ? Colors.red : inactiveIconColor,
                 ),
@@ -725,9 +763,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
     const maxShown = 50;
-    final shownIds =
-        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
-    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+    final shownIds = orderedUnique.length > maxShown
+        ? orderedUnique.take(maxShown).toList()
+        : orderedUnique;
+    final hiddenCount =
+        orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -830,7 +870,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         child: FutureBuilder<List<_PostLikeUser>>(
                           future: _fetchLikeUsers(shownIds),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState != ConnectionState.done &&
+                            if (snapshot.connectionState !=
+                                    ConnectionState.done &&
                                 !snapshot.hasData) {
                               return const Center(
                                 child: CircularProgressIndicator(
@@ -838,11 +879,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 ),
                               );
                             }
-                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            final users =
+                                snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
                               return Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  padding:
+                                      const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
@@ -904,7 +947,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             fontFamily: 'Pretendard',
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
-                                          )).copyWith(color: const Color(0xFF111827)),
+                                          )).copyWith(
+                                              color: const Color(0xFF111827)),
                                         ),
                                       ),
                                       if (u.nationality != null) ...[
@@ -982,12 +1026,161 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 조회수 증가 메서드
   Future<void> _incrementViewCount() async {
     try {
-      await _postService.incrementViewCount(widget.post.id);
+      await _postService.incrementViewCount(
+        widget.post.id,
+        collectionPath: _currentPost.collectionPath,
+      );
 
       // UI 업데이트는 실제 Firestore에서 업데이트된 후에 하도록 개선
       // (실제로는 Firestore의 실시간 업데이트를 통해 자동으로 반영됨)
     } catch (e) {
       Logger.error('포스트 조회수 증가 실패', e);
+    }
+  }
+
+  /// 나눔 글의 Univ. 게이트를 표시해야 하는지 확인하고, 필요 시 다이얼로그를 띄운다.
+  ///
+  /// 조건:
+  /// - 해당 글이 나눔 카테고리에 속하고,
+  /// - 작성자가 한양 인증 사용자이며,
+  /// - 현재 로그인 사용자가 한양 인증자가 아닌 경우.
+  Future<void> _maybeShowUnivGateDialog() async {
+    if (!mounted) return;
+    if (!_currentPost.schoolOnly) return;
+    if (_isAuthor) return;
+    if (_currentPost.userId.isEmpty || _currentPost.userId == 'deleted') {
+      return;
+    }
+
+    final auth = Provider.of<app_auth.AuthProvider>(context, listen: false);
+    if (auth.isHanyangUser) return;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.school, color: AppColors.pointColor),
+              SizedBox(width: 8),
+              Text(
+                '한양 인증 필요',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          content: const Text(
+            '이 나눔 글의 상세 내용과 작성자를 확인하려면\n한양메일 인증이 필요합니다.',
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              height: 1.4,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                if (mounted) Navigator.of(context).pop();
+              },
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const HanyangEmailVerificationScreen(
+                      returnOnSuccess: true,
+                    ),
+                  ),
+                );
+              },
+              child: const Text('인증하기'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _createSharingSnackChat() async {
+    if (_isCreatingSharingSnackChat) return;
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginRequired),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    if (_currentPost.userId == currentUser.uid ||
+        _currentPost.userId.isEmpty ||
+        _currentPost.userId == 'deleted') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isKo
+              ? '이 나눔 글로 스낵챗을 만들 수 없어요.'
+              : 'You cannot create a Snack Chat from this sharing post.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isCreatingSharingSnackChat = true);
+    try {
+      final title = _sharingTitle(_currentPost);
+      final snackChatId = await _snackChatService.createSharingSnackChat(
+        title: title,
+        postId: _currentPost.id,
+        postCollectionPath: _currentPost.collectionPath,
+        otherUserId: _currentPost.userId,
+      );
+
+      if (!mounted) return;
+      if (snackChatId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text(isKo ? '스낵챗을 만들지 못했어요.' : 'Could not create Snack Chat.'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SnackChatScreen(snackChatId: snackChatId),
+        ),
+      );
+    } catch (e) {
+      Logger.error('나눔 기반 스낵챗 생성 실패: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              isKo ? '스낵챗 생성 중 오류가 발생했어요.' : 'Failed to create Snack Chat.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isCreatingSharingSnackChat = false);
+      }
     }
   }
 
@@ -1011,7 +1204,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       Logger.log('  - post.userId: ${_currentPost.userId}');
       Logger.log('  - post.isAnonymous: ${_currentPost.isAnonymous}');
       Logger.log('  - currentUser.uid: ${currentUser.uid}');
-      
+
       // 본인에게 DM 전송 체크 (익명 포함)
       if (_currentPost.userId == currentUser.uid) {
         Logger.log('❌ 본인 게시글에는 DM 불가');
@@ -1028,7 +1221,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
 
       // 친구가 아니면 DM 불가 (친구에게만 메시지)
-      final status = await RelationshipService().getRelationshipStatus(_currentPost.userId);
+      final status = await RelationshipService()
+          .getRelationshipStatus(_currentPost.userId);
       if (status != RelationshipStatus.friends) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1051,11 +1245,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(_currentPost.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
+        Logger.log(
+            '❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1067,7 +1262,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (_currentPost.userId == 'deleted' || _currentPost.userId.isEmpty) {
         Logger.log('❌ 탈퇴했거나 삭제된 사용자');
@@ -1082,7 +1277,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // ✅ UX 개선: 기존 대화방이 있으면 "그 방의 연장선"으로 DM 전송
       // - 익명 게시글은 실명 대화와 분리(기존 정책 유지)
       // - 전체공개/카테고리 등은 기존 1:1 방(uidA_uidB)로 통일
@@ -1094,17 +1289,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         postId: _currentPost.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
       );
-      
-      Logger.log('✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
+
+      Logger.log(
+          '✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
 
       if (mounted) {
-        final originPostImageUrl =
-            (_currentPost.imageUrls.isNotEmpty ? _currentPost.imageUrls.first : '').trim();
+        final originPostImageUrl = (_currentPost.imageUrls.isNotEmpty
+                ? _currentPost.imageUrls.first
+                : '')
+            .trim();
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = _currentPost.content.trim();
         final rawTitle = _currentPost.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
-        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
+        final base = rawContent.isNotEmpty
+            ? rawContent
+            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final originPostPreview =
+            base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1203,7 +1404,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
-      
+
       if (mounted) {
         setState(() {
           _isSaved = newSavedStatus;
@@ -1212,9 +1413,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              newSavedStatus ? (AppLocalizations.of(context)!.postSaved ?? "") : AppLocalizations.of(context)!.postUnsaved
-            ),
+            content: Text(newSavedStatus
+                ? (AppLocalizations.of(context)!.postSaved ?? "")
+                : AppLocalizations.of(context)!.postUnsaved),
             backgroundColor: newSavedStatus ? Colors.green : Colors.grey,
             duration: Duration(seconds: 1),
           ),
@@ -1225,7 +1426,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _isTogglingSave = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(AppLocalizations.of(context)!.error ?? ""),
@@ -1246,9 +1447,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
       builder: (context) {
         final currentUser = FirebaseAuth.instance.currentUser;
+        final isSharing = isSharingPost(_currentPost);
         // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어/하이픈 포함 가능)
         final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
         final canSendDM = currentUser != null &&
+            !isSharing &&
             _currentPost.userId.isNotEmpty &&
             _currentPost.userId != 'deleted' &&
             _currentPost.userId != currentUser.uid &&
@@ -1408,7 +1611,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 게시글 새로고침
   Future<void> _refreshPost() async {
     try {
-      final updatedPost = await _postService.getPostById(widget.post.id);
+      final updatedPost = await _postService.getPostById(
+        widget.post.id,
+        collectionPath: widget.post.collectionPath,
+      );
       if (updatedPost != null && mounted) {
         setState(() {
           _currentPost = updatedPost;
@@ -1434,7 +1640,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!isLoggedIn || user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loginToComment ?? "")));
+      ).showSnackBar(SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginToComment ?? "")));
       return;
     }
 
@@ -1461,28 +1668,34 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       // Firebase에 변경사항 저장
-      final success = await _postService.toggleLike(_currentPost.id);
+      final success = await _postService.toggleLike(
+        _currentPost.id,
+        collectionPath: _currentPost.collectionPath,
+      );
 
       if (!success && mounted) {
         // 실패 시 UI 롤백
         setState(() {
           _isLiked = !_isLiked;
-        // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
-        if (_isLiked) {
-          _currentPost = _currentPost.copyWith(
-            likes: _currentPost.likes + 1,
-            likedBy: [..._currentPost.likedBy, user.uid],
-          );
-        } else {
-          _currentPost = _currentPost.copyWith(
-            likes: _currentPost.likes - 1,
-            likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
-          );
-        }
+          // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
+          if (_isLiked) {
+            _currentPost = _currentPost.copyWith(
+              likes: _currentPost.likes + 1,
+              likedBy: [..._currentPost.likedBy, user.uid],
+            );
+          } else {
+            _currentPost = _currentPost.copyWith(
+              likes: _currentPost.likes - 1,
+              likedBy:
+                  _currentPost.likedBy.where((id) => id != user.uid).toList(),
+            );
+          }
 
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
+          ).showSnackBar(SnackBar(
+              content:
+                  Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
         });
       }
 
@@ -1495,7 +1708,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -1508,25 +1722,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   Future<void> _deletePost() async {
     // 삭제 확인 다이얼로그 표시
-    final shouldDelete =
-        await showDialog<bool>(
+    final shouldDelete = await showDialog<bool>(
           context: context,
-          builder:
-              (context) => AlertDialog(
-                title: Text(AppLocalizations.of(context)!.deletePost ?? ""),
-                content: Text(AppLocalizations.of(context)!.deletePostConfirm ?? ""),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    style: TextButton.styleFrom(foregroundColor: Colors.red),
-                    child: Text(AppLocalizations.of(context)!.delete ?? ""),
-                  ),
-                ],
+          builder: (context) => AlertDialog(
+            title: Text(AppLocalizations.of(context)!.deletePost ?? ""),
+            content:
+                Text(AppLocalizations.of(context)!.deletePostConfirm ?? ""),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: Text(AppLocalizations.of(context)!.cancel ?? ""),
               ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
+                child: Text(AppLocalizations.of(context)!.delete ?? ""),
+              ),
+            ],
+          ),
         ) ??
         false;
 
@@ -1537,18 +1750,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
 
     try {
-      final success = await _postService.deletePost(widget.post.id);
+      final success = await _postService.deletePost(
+        widget.post.id,
+        collectionPath: _currentPost.collectionPath,
+      );
 
       if (success && mounted) {
         // 삭제 성공 시 화면 닫기
         Navigator.of(context).pop(true); // true를 반환하여 삭제되었음을 알림
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleted ?? "")));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)!.postDeleted ?? "")));
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.postDeleteFailed ?? "")));
         setState(() {
           _isDeleting = false;
         });
@@ -1557,7 +1776,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
         setState(() {
           _isDeleting = false;
         });
@@ -1579,7 +1799,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _replyToUserName = replyToUserName;
       _replyTargetCommentId = targetCommentId;
     });
-    
+
     // 입력창으로 포커스 및 스크롤 이동
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToInputAndFocus();
@@ -1631,7 +1851,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       final bool success;
-      
+
       if (_isReplyMode) {
         // 대댓글 작성
         success = await _commentService.addComment(
@@ -1641,7 +1861,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
         );
-        Logger.log('💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
+        Logger.log(
+            '💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content);
@@ -1659,7 +1880,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       if (success && mounted) {
         _commentController.clear();
-        
+
         // 대댓글 모드 종료
         if (_isReplyMode) {
           _exitReplyMode();
@@ -1675,14 +1896,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
       }
     } catch (e) {
       Logger.error('❌ 댓글 작성 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -1695,16 +1919,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 댓글 삭제 (대댓글 포함)
   Future<void> _deleteCommentWithReplies(String commentId) async {
-    final success = await _commentService.deleteCommentWithReplies(commentId, _currentPost.id);
-    
+    final success = await _commentService.deleteCommentWithReplies(
+        commentId, _currentPost.id);
+
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
+        SnackBar(
+            content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
       );
       await _refreshPost();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")),
+        SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")),
       );
     }
   }
@@ -1720,51 +1948,41 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success && mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
 
         // 게시글 정보 새로고침 (댓글 수 업데이트)
         await _refreshPost();
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
-
 
   // 알림 시간 포맷팅
   String _formatNotificationTime(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 0) {
-      if (locale == 'ko') {
-        return '${difference.inDays}${AppLocalizations.of(context)!.daysAgo}';
-      } else {
-        return '${difference.inDays}${difference.inDays == 1 ? ' day ago' : ' days ago'}';
-      }
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
-      if (locale == 'ko') {
-        return '${difference.inHours}${AppLocalizations.of(context)!.hoursAgo}';
-      } else {
-        return '${difference.inHours}${difference.inHours == 1 ? ' hour ago' : AppLocalizations.of(context)!.hoursAgo}';
-      }
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
     } else if (difference.inMinutes > 0) {
-      if (locale == 'ko') {
-        return '${difference.inMinutes}${AppLocalizations.of(context)!.minutesAgo}';
-      } else {
-        return '${difference.inMinutes}${difference.inMinutes == 1 ? ' minute ago' : AppLocalizations.of(context)!.minutesAgo}';
-      }
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
-      return AppLocalizations.of(context)!.justNow ?? "";
+      return AppLocalizations.of(context)!.justNow;
     }
   }
 
@@ -1772,7 +1990,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void _logImageUrls() {
     // 로깅 제거 (필요시 디버거 사용)
   }
-  
+
   /// 익명 게시글의 댓글 작성자 표시명 생성
   /// - 글쓴이: "글쓴이"
   /// - 다른 사람: "익명1", "익명2", ... (같은 사람은 같은 번호)
@@ -1781,19 +1999,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!_currentPost.isAnonymous) {
       return comment.authorNickname;
     }
-    
+
     // 익명 게시글인 경우
     // 글쓴이인 경우
     if (comment.userId == _currentPost.userId) {
       return AppLocalizations.of(context)!.author ?? "";
     }
-    
+
     // 다른 사람인 경우 익명 번호 할당
     if (!_anonymousUserMap.containsKey(comment.userId)) {
       _anonymousUserMap[comment.userId] = _anonymousUserMap.length + 1;
     }
-    
-    return AppLocalizations.of(context)!.anonymousUser('${_anonymousUserMap[comment.userId]}');
+
+    return AppLocalizations.of(context)!
+        .anonymousUser('${_anonymousUserMap[comment.userId]}');
   }
 
   // 이미지 로딩 재시도 로직
@@ -1824,7 +2043,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     Future.delayed(Duration(seconds: delaySeconds), () {
       if (mounted) {
         // 캐시를 비우고 다시 요청 (일시적 403/네트워크 오류 대응)
-        CachedNetworkImage.evictFromCache(imageUrl);
+        CachedNetworkImage.evictFromCache(
+          imageUrl,
+          cacheManager: AppImageCacheManager.instance,
+        );
         setState(() {
           _imageRetrying[imageUrl] = false;
         });
@@ -1833,7 +2055,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
-  Future<void> _prefetchPostImages({required bool initial, int? aroundIndex}) async {
+  Future<void> _prefetchPostImages(
+      {required bool initial, int? aroundIndex}) async {
     if (!mounted) return;
     final urls = _currentPost.imageUrls;
     if (urls.length <= 1) return;
@@ -1872,7 +2095,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 성공 처리
   void _onImageLoadSuccess(String imageUrl) {
     if (_imageRetryCount.containsKey(imageUrl)) {
-      Logger.log('✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
+      Logger.log(
+          '✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
       setState(() {
         _imageRetryCount.remove(imageUrl);
         _imageRetrying.remove(imageUrl);
@@ -1913,6 +2137,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return CachedNetworkImage(
       key: ValueKey('$imageUrl:$retryCount'),
       imageUrl: imageUrl,
+      cacheManager: AppImageCacheManager.instance,
       httpHeaders: _imageHttpHeaders,
       fit: fit,
       fadeInDuration: const Duration(milliseconds: 140),
@@ -1979,7 +2204,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                retryCount >= _maxRetryCount ? Icons.error_outline : Icons.broken_image,
+                retryCount >= _maxRetryCount
+                    ? Icons.error_outline
+                    : Icons.broken_image,
                 color: Colors.grey[600],
                 size: isFullScreen ? 32 : 24,
               ),
@@ -2002,7 +2229,10 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 // 수동 재시도 버튼 (최대 재시도 후에만 표시)
                 ElevatedButton.icon(
                   onPressed: () {
-                    CachedNetworkImage.evictFromCache(imageUrl);
+                    CachedNetworkImage.evictFromCache(
+                      imageUrl,
+                      cacheManager: AppImageCacheManager.instance,
+                    );
                     setState(() {
                       _imageRetryCount[imageUrl] = 0;
                       _imageRetrying[imageUrl] = false;
@@ -2016,7 +2246,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: const Size(0, 0),
                   ),
                 ),
@@ -2025,6 +2256,1211 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           ),
         );
       },
+    );
+  }
+
+  String _sharingTitle(Post post) {
+    final title = post.title.trim();
+    if (title.isNotEmpty) return title;
+    final headline = _splitHeadlineAndBody(post.content).headline;
+    return headline.isNotEmpty ? headline : '나눔 글';
+  }
+
+  Widget _buildSharingDetailScaffold({required bool isLoggedIn}) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Scaffold(
+      resizeToAvoidBottomInset: true,
+      backgroundColor: const Color(0xFFF9FAFB),
+      appBar: _buildPostAppBar(title: 'WeFilling'),
+      bottomNavigationBar:
+          _isAuthor ? null : _buildSharingBottomActionBar(isLoggedIn),
+      body: Stack(
+        children: [
+          SingleChildScrollView(
+            controller: _scrollController,
+            padding: EdgeInsets.only(bottom: _isAuthor ? 0 : 88),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildSharingHeroImages(),
+                _buildSharingSummarySection(),
+                _buildSharingAuthorCard(),
+                if (!_isAuthor) _buildSharingSnackChatAction(),
+                _buildSharingInfoSection(
+                  title: isKo ? '설명' : 'Description',
+                  child: Text(
+                    _currentPost.content.trim().isNotEmpty
+                        ? _currentPost.content.trim()
+                        : (isKo ? '나눔 설명이 없습니다.' : 'No sharing description.'),
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF374151),
+                      height: 1.48,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+                _buildSharingCommentsSection(),
+                Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).padding.bottom + 12,
+                  ),
+                  child: _buildCommentInputArea(
+                    isLoggedIn: isLoggedIn,
+                    includeBottomSafePadding: false,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildScrollToTopOverlay(),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildPostAppBar({required String title}) {
+    return AppBar(
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+        onPressed: () => Navigator.pop(context),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: title == 'WeFilling' ? 18 : 17,
+          fontWeight: title == 'WeFilling' ? FontWeight.w800 : FontWeight.w600,
+          color: title == 'WeFilling'
+              ? AppColors.pointColor
+              : const Color(0xFF111827),
+        ),
+      ),
+      centerTitle: true,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
+          tooltip: AppLocalizations.of(context)!.moreOptions,
+          onPressed: _openPostActionsSheet,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSharingHeroImages() {
+    final urls = _currentPost.imageUrls;
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: AspectRatio(
+          aspectRatio: 1.08,
+          child: Stack(
+            children: [
+              if (urls.isEmpty)
+                Container(
+                  color: const Color(0xFFE5E7EB),
+                  child: const Center(
+                    child: Icon(
+                      Icons.image_not_supported_outlined,
+                      size: 40,
+                      color: Color(0xFF9CA3AF),
+                    ),
+                  ),
+                )
+              else
+                PageView.builder(
+                  controller: _imagePageController,
+                  itemCount: urls.length,
+                  onPageChanged: (i) {
+                    setState(() => _currentImageIndex = i);
+                    _showPageIndicatorTemporarily();
+                    _prefetchPostImages(initial: false, aroundIndex: i);
+                  },
+                  itemBuilder: (context, index) {
+                    final imageUrl = urls[index];
+                    return GestureDetector(
+                      onTap: () {
+                        showFullscreenImageViewer(
+                          context,
+                          imageUrls: urls,
+                          initialIndex: index,
+                          heroTag: 'sharing_post_image_$index',
+                        );
+                      },
+                      child: Hero(
+                        tag: 'sharing_post_image_$index',
+                        child: _buildRetryableImage(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          isFullScreen: false,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              if (urls.length > 1)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 12,
+                  child: _buildImageDotsIndicator(count: urls.length),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingSummarySection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  _sharingTitle(_currentPost),
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                    height: 1.12,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _isTogglingLike ? null : _toggleLike,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    _isLiked
+                        ? Icons.favorite_rounded
+                        : Icons.favorite_border_rounded,
+                    size: 26,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildSharingChip(_currentPost.category),
+              Text(
+                '· ${_currentPost.getFormattedTime(context)}',
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _buildSharingMetric(
+                icon: Icons.visibility_outlined,
+                text: isKo
+                    ? '조회 ${_currentPost.viewCount}'
+                    : '${_currentPost.viewCount} views',
+              ),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onLongPress: () => _showPostLikesSheet(
+                  likedBy: _currentPost.likedBy,
+                  likeCount: _currentPost.likes,
+                ),
+                child: _buildSharingMetric(
+                  icon: _isLiked
+                      ? Icons.favorite_rounded
+                      : Icons.favorite_border_rounded,
+                  text: isKo
+                      ? '좋아요 ${_currentPost.likes}'
+                      : '${_currentPost.likes} likes',
+                  color: const Color(0xFF374151),
+                ),
+              ),
+            ],
+          ),
+          if (_isAuthor) ...[
+            const SizedBox(height: 12),
+            _buildSharingApplicationsButton(),
+          ],
+          if (_currentPost.schoolOnly) ...[
+            const SizedBox(height: 10),
+            _buildSharingNotice(
+              icon: Icons.school_outlined,
+              title: isKo ? '한양 인증 전용' : 'Hanyang verification required',
+              subtitle: isKo
+                  ? '인증된 사용자만 상세 확인 및 신청이 가능합니다.'
+                  : 'Only verified users can view details and request sharing.',
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingChip(String label) {
+    final displayLabel = localizedCategoryLabel(context, label);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        displayLabel,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF2563EB),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingMetric({
+    required IconData icon,
+    required String text,
+    Color color = const Color(0xFF6B7280),
+  }) {
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingApplicationsButton() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return StreamBuilder<List<SharingPostApplication>>(
+      stream: _postService.watchSharingApplications(_currentPost.id),
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length ?? 0;
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width - 28,
+            ),
+            child: OutlinedButton.icon(
+              onPressed: () => _showSharingApplicationsSheet(),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF111827),
+                side: const BorderSide(color: Color(0xFFD1D5DB)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                textStyle: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              icon: const Icon(Icons.volunteer_activism_outlined, size: 17),
+              label: Text(
+                isKo ? '나눔 신청 리스트 $count' : 'Request List $count',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _requestSharing() async {
+    if (_isRequestingSharing || _hasRequestedSharing) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo ? '로그인이 필요합니다.' : 'Please log in to request sharing.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (_isAuthor) return;
+
+    setState(() => _isRequestingSharing = true);
+    try {
+      final result = await _postService.requestSharing(_currentPost);
+      if (!mounted) return;
+      if (result == true || result == false) {
+        setState(() => _hasRequestedSharing = true);
+      }
+      final message = result == true
+          ? (isKo ? '나눔 신청을 보냈습니다.' : 'Your sharing request has been sent.')
+          : (isKo
+              ? '이미 나눔 신청을 보냈습니다.'
+              : 'You already requested this sharing post.');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+    } catch (e) {
+      Logger.error('나눔 신청 실패: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isKo ? '나눔 신청에 실패했습니다.' : 'Failed to request sharing.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isRequestingSharing = false);
+    }
+  }
+
+  void _showSharingApplicationsSheet() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.68,
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE5E7EB),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: AppColors.pointColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(13),
+                        ),
+                        child: const Icon(
+                          Icons.volunteer_activism_outlined,
+                          color: AppColors.pointColor,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isKo ? '나눔 신청 리스트' : 'Sharing Requests',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              isKo
+                                  ? '먼저 신청한 사람부터 표시됩니다.'
+                                  : 'Shown from earliest request to latest.',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                Expanded(
+                  child: StreamBuilder<List<SharingPostApplication>>(
+                    stream: _postService.watchSharingApplications(
+                      _currentPost.id,
+                    ),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting &&
+                          !snapshot.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final applications =
+                          snapshot.data ?? const <SharingPostApplication>[];
+                      if (applications.isEmpty) {
+                        return Center(
+                          child: Text(
+                            isKo
+                                ? '아직 나눔 신청이 없습니다.'
+                                : 'No sharing requests yet.',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6B7280),
+                            ),
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        itemCount: applications.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final application = applications[index];
+                          final name = application.requesterName.trim().isEmpty
+                              ? (isKo ? '사용자' : 'User')
+                              : application.requesterName.trim();
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 18,
+                              vertical: 6,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 22,
+                              backgroundColor: const Color(0xFFE5E7EB),
+                              backgroundImage:
+                                  application.requesterPhotoUrl.trim().isEmpty
+                                      ? null
+                                      : NetworkImage(
+                                          application.requesterPhotoUrl.trim(),
+                                        ),
+                              child:
+                                  application.requesterPhotoUrl.trim().isEmpty
+                                      ? const Icon(
+                                          Icons.person,
+                                          color: Color(0xFF6B7280),
+                                        )
+                                      : null,
+                            ),
+                            title: Text(
+                              name,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                            subtitle: Text(
+                              _formatNotificationTime(application.requestedAt),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF6B7280),
+                              ),
+                            ),
+                            trailing: const Icon(
+                              Icons.chevron_right_rounded,
+                              color: Color(0xFF9CA3AF),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                this.context,
+                                MaterialPageRoute(
+                                  builder: (_) => FriendProfileScreen(
+                                    userId: application.requesterId,
+                                    nickname: name,
+                                    photoURL: application.requesterPhotoUrl,
+                                    allowNonFriendsPreview: true,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSharingAuthorCard() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Container(
+      margin: const EdgeInsets.only(top: 1),
+      color: Colors.white,
+      child: InkWell(
+        onTap: _openAuthorProfile,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          child: Row(
+            children: [
+              UserAvatar(
+                uid: _currentPost.userId,
+                photoUrl:
+                    _currentPost.isAnonymous ? '' : _currentPost.authorPhotoURL,
+                photoVersion: 0,
+                isAnonymous: _currentPost.isAnonymous,
+                size: 44,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _currentPost.isAnonymous
+                                ? AppLocalizations.of(context)!.anonymous
+                                : _currentPost.author,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF111827),
+                            ),
+                          ),
+                        ),
+                        if (_currentPost.authorNationality.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          CountryFlagCircle(
+                            nationality: _currentPost.authorNationality,
+                            size: 18,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      isKo
+                          ? '받은 좋아요 ${_currentPost.likes > 0 ? _currentPost.likes : 0}개'
+                          : '${_currentPost.likes > 0 ? _currentPost.likes : 0} likes received',
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF6B7280),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 26,
+                color: Color(0xFF374151),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharingSnackChatAction() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return StreamBuilder<SnackChat?>(
+      stream: _snackChatService.watchMySharingSnackChatForPost(
+        postId: _currentPost.id,
+        postCollectionPath: _currentPost.collectionPath,
+      ),
+      builder: (context, snapshot) {
+        final existingChat = snapshot.data;
+        final hasExistingChat = existingChat != null;
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 1),
+          color: Colors.white,
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width - 28,
+              ),
+              child: OutlinedButton.icon(
+                onPressed: _isCreatingSharingSnackChat
+                    ? null
+                    : () {
+                        if (hasExistingChat) {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  SnackChatScreen(snackChatId: existingChat.id),
+                            ),
+                          );
+                          return;
+                        }
+                        _createSharingSnackChat();
+                      },
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF111827),
+                  side: const BorderSide(color: Color(0xFFD1D5DB)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  textStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                icon: _isCreatingSharingSnackChat
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        hasExistingChat
+                            ? Icons.forum_rounded
+                            : Icons.forum_outlined,
+                        size: 18,
+                      ),
+                label: Text(
+                  hasExistingChat
+                      ? (isKo ? '스낵챗 사용하기' : 'Open Snack Chat')
+                      : (isKo ? '스낵챗 만들기' : 'Create Snack Chat'),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSharingInfoSection({
+    required String title,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 1),
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+              letterSpacing: -0.2,
+            ),
+          ),
+          const SizedBox(height: 18),
+          child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingNotice({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 24, color: AppColors.pointColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF6B7280),
+                    height: 1.28,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingCommentsSection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 1),
+      color: Colors.white,
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Text(
+              isKo
+                  ? '댓글 ${_currentPost.commentCount}'
+                  : 'Comments ${_currentPost.commentCount}',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          StreamBuilder<List<Comment>>(
+            stream: _commentsStream,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(18),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+
+              if (snapshot.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    '${AppLocalizations.of(context)!.loadingComments}: ${snapshot.error}',
+                  ),
+                );
+              }
+
+              final rawComments = (snapshot.data ?? []).where((c) {
+                return !ContentHideService.shouldHideComment(
+                  commentId: c.id,
+                  userId: c.userId,
+                );
+              }).toList();
+              final topLevelComments =
+                  rawComments.where((c) => c.isTopLevel).toList();
+              final topLevelIds = topLevelComments.map((c) => c.id).toSet();
+              final allComments = rawComments
+                  .where(
+                    (c) =>
+                        c.isTopLevel ||
+                        (c.parentCommentId != null &&
+                            topLevelIds.contains(c.parentCommentId)),
+                  )
+                  .toList();
+              final currentUser = FirebaseAuth.instance.currentUser;
+
+              if (_currentPost.commentCount != allComments.length) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  if (_currentPost.commentCount == allComments.length) return;
+                  setState(() {
+                    _currentPost =
+                        _currentPost.copyWith(commentCount: allComments.length);
+                  });
+                });
+              }
+
+              if (allComments.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 18),
+                  child: Text(
+                    AppLocalizations.of(context)!.firstCommentPrompt,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                );
+              }
+
+              Widget buildReplyWidget(Comment comment, String parentTopId) {
+                return EnhancedCommentWidget(
+                  comment: comment,
+                  replies: const [],
+                  postId: _currentPost.id,
+                  onDeleteComment: _deleteCommentWithReplies,
+                  onBlockApplied: () {
+                    if (!mounted) return;
+                    setState(() {});
+                  },
+                  isAnonymousPost: _currentPost.isAnonymous,
+                  getDisplayName: (comment) =>
+                      getCommentAuthorName(comment, currentUser?.uid),
+                  isReplyTarget: _replyTargetCommentId == comment.id,
+                  onReplyTap: () {
+                    _enterReplyMode(
+                      parentTopId: parentTopId,
+                      replyToUserId: comment.userId,
+                      replyToUserName:
+                          getCommentAuthorName(comment, currentUser?.uid),
+                      targetCommentId: comment.id,
+                    );
+                  },
+                  parentTopLevelCommentId: parentTopId,
+                );
+              }
+
+              return ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: topLevelComments.length,
+                itemBuilder: (context, index) {
+                  final comment = topLevelComments[index];
+                  final replies = allComments
+                      .where((c) => c.parentCommentId == comment.id)
+                      .toList();
+                  return EnhancedCommentWidget(
+                    comment: comment,
+                    replies: replies,
+                    postId: _currentPost.id,
+                    onDeleteComment: _deleteCommentWithReplies,
+                    onBlockApplied: () {
+                      if (!mounted) return;
+                      setState(() {});
+                    },
+                    isAnonymousPost: _currentPost.isAnonymous,
+                    getDisplayName: (comment) =>
+                        getCommentAuthorName(comment, currentUser?.uid),
+                    isReplyTarget: _replyTargetCommentId == comment.id,
+                    onReplyTap: () {
+                      _enterReplyMode(
+                        parentTopId: comment.id,
+                        replyToUserId: comment.userId,
+                        replyToUserName:
+                            getCommentAuthorName(comment, currentUser?.uid),
+                        targetCommentId: comment.id,
+                      );
+                    },
+                    parentTopLevelCommentId: comment.id,
+                    replyWidgetBuilder: (reply) =>
+                        buildReplyWidget(reply, comment.id),
+                  );
+                },
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSharingBottomActionBar(bool isLoggedIn) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SizedBox(
+                height: 42,
+                child: FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: AppColors.pointColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onPressed: (_isRequestingSharing || _hasRequestedSharing)
+                      ? null
+                      : _requestSharing,
+                  child: _isRequestingSharing
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            _hasRequestedSharing
+                                ? (isKo ? '신청 완료' : 'Requested')
+                                : (isKo ? '나눔 신청하기' : 'Request Sharing'),
+                            maxLines: 1,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCommentInputArea({
+    required bool isLoggedIn,
+    bool includeBottomSafePadding = true,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 대댓글 모드 상단 바 (미니멀 디자인)
+          if (_isReplyMode)
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16.0,
+                vertical: 10.0,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                border: Border(
+                  bottom: BorderSide(
+                    color: Colors.grey[300]!,
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.subdirectory_arrow_right,
+                    size: 18,
+                    color: Colors.grey[700],
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      AppLocalizations.of(context)!
+                          .replyingTo(_replyToUserName ?? ''),
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[800],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _exitReplyMode,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.close,
+                        size: 18,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // 입력창
+          Padding(
+            padding: EdgeInsets.only(
+              left: 16.0,
+              right: 16.0,
+              top: 8.0,
+              bottom: MediaQuery.of(context).viewInsets.bottom > 0
+                  ? 8.0
+                  : (includeBottomSafePadding
+                      ? MediaQuery.of(context).padding.bottom + 8.0
+                      : 8.0),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    focusNode: _commentFocusNode,
+                    enabled: isLoggedIn,
+                    decoration: InputDecoration(
+                      hintText: isLoggedIn
+                          ? (_isReplyMode
+                              ? AppLocalizations.of(context)!.writeReplyHint
+                              : AppLocalizations.of(context)!.enterComment)
+                          : AppLocalizations.of(context)!.loginToComment,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: _isReplyMode
+                            ? BorderSide(
+                                color: Colors.grey[400]!,
+                                width: 1.5,
+                              )
+                            : BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: _isReplyMode
+                            ? BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1.5,
+                              )
+                            : BorderSide.none,
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        borderSide: _isReplyMode
+                            ? BorderSide(
+                                color: Colors.blue[600]!,
+                                width: 2,
+                              )
+                            : BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.grey[100],
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      isDense: true,
+                    ),
+                    minLines: 1,
+                    maxLines: 5,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: isLoggedIn ? (_) => _submitComment() : null,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                isLoggedIn
+                    ? (_isSubmittingComment
+                        ? const SizedBox(
+                            width: 36,
+                            height: 36,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : InkWell(
+                            onTap: _submitComment,
+                            customBorder: const CircleBorder(),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: Colors.blue[600],
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Center(
+                                child: Icon(
+                                  Icons.arrow_upward_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ))
+                    : const SizedBox.shrink(),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2059,574 +3495,420 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       );
     }
 
+    if (isSharingPost(_currentPost)) {
+      return _buildSharingDetailScaffold(isLoggedIn: isLoggedIn);
+    }
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: Colors.white, // 상세 화면은 흰색 배경 유지
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.board,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          if (_isAuthor)
-            IconButton(
-              icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
-              tooltip: AppLocalizations.of(context)!.moreOptions,
-              onPressed: _openPostActionsSheet,
-            ),
-          // 작성자가 아닌 경우에도 케밥 메뉴는 유지 (DM/신고 등)
-          if (!_isAuthor)
-            IconButton(
-              icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
-              tooltip: AppLocalizations.of(context)!.moreOptions,
-              onPressed: _openPostActionsSheet,
-            ),
-        ],
-      ),
+      appBar: _buildPostAppBar(title: AppLocalizations.of(context)!.board),
       body: Stack(
         children: [
           Column(
             children: [
-          // 게시글 내용
-          Expanded(
-            child: SingleChildScrollView(
-              controller: _scrollController,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 작성자 정보 헤더 (인스타그램 스타일)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: DesignTokens.s16,
-                      vertical: DesignTokens.s8,
-                    ),
-                    child: Row(
-                      children: [
-                        // 프로필 사진 (인스타그램 크기)
-                        GestureDetector(
-                          onTap: _openAuthorProfile,
-                          child: Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.grey[200],
-                            ),
-                            child: (!_currentPost.isAnonymous && _currentPost.authorPhotoURL.isNotEmpty)
-                                ? ClipOval(
-                                    child: Image.network(
-                                      _currentPost.authorPhotoURL,
-                                      width: 40,
-                                      height: 40,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Icon(
+              // 게시글 내용
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 작성자 정보 헤더 (인스타그램 스타일)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: DesignTokens.s16,
+                          vertical: DesignTokens.s8,
+                        ),
+                        child: Row(
+                          children: [
+                            // 프로필 사진 (인스타그램 크기)
+                            GestureDetector(
+                              onTap: _openAuthorProfile,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.grey[200],
+                                ),
+                                child: (!_currentPost.isAnonymous &&
+                                        _currentPost.authorPhotoURL.isNotEmpty)
+                                    ? ClipOval(
+                                        child: Image.network(
+                                          _currentPost.authorPhotoURL,
+                                          width: 40,
+                                          height: 40,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                            Icons.person,
+                                            color: Colors.grey[600],
+                                            size: DesignTokens.icon,
+                                          ),
+                                        ),
+                                      )
+                                    : Icon(
                                         Icons.person,
                                         color: Colors.grey[600],
                                         size: DesignTokens.icon,
                                       ),
-                                    ),
-                                  )
-                                : Icon(
-                                    Icons.person,
-                                    color: Colors.grey[600],
-                                    size: DesignTokens.icon,
-                                  ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // 작성자 이름
-                              Row(
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  GestureDetector(
-                                    onTap: _openAuthorProfile,
-                                    child: Text(
-                                      _currentPost.isAnonymous ? AppLocalizations.of(context)!.anonymous : _currentPost.author,
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black,
+                                  // 작성자 이름
+                                  Row(
+                                    children: [
+                                      GestureDetector(
+                                        onTap: _openAuthorProfile,
+                                        child: Text(
+                                          _currentPost.isAnonymous
+                                              ? AppLocalizations.of(context)!
+                                                  .anonymous
+                                              : _currentPost.author,
+                                          style: const TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black,
+                                          ),
+                                        ),
                                       ),
-                                    ),
+                                      const SizedBox(width: 6),
+                                      if (_currentPost
+                                          .authorNationality.isNotEmpty)
+                                        Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 1),
+                                          child: CountryFlagCircle(
+                                            nationality:
+                                                _currentPost.authorNationality,
+                                            // 카드(`optimized_post_card.dart`)와 동일한 크기
+                                            // (CountryFlagCircle 내부에서 size * 1.2로 렌더링됨)
+                                            size: 22,
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 6),
-                                  if (_currentPost.authorNationality.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(top: 1),
-                                      child: CountryFlagCircle(
-                                        nationality: _currentPost.authorNationality,
-                                        // 카드(`optimized_post_card.dart`)와 동일한 크기
-                                        // (CountryFlagCircle 내부에서 size * 1.2로 렌더링됨)
-                                        size: 22,
-                                      ),
-                                    ),
                                 ],
                               ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // 게시글 본문 (전체 내용을 한 번에 표시)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 전체 본문 표시 (줄바꿈 포함)
+                            Text(
+                              _getUnifiedBodyText(_currentPost),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                                height: 1.35,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            // 시간 표시
+                            Text(
+                              _currentPost.getFormattedTime(context),
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // 투표형 게시글: 본문(시간) 바로 아래에 배치
+                      if (_currentPost.type == 'poll')
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: PollPostWidget(postId: _currentPost.id),
+                        ),
+
+                      // 이미지 유무에 따라 레이아웃 분기
+                      if (_currentPost.imageUrls.isNotEmpty) ...[
+                        // === 이미지가 있는 경우: 제목 → 이미지 → 좋아요 → 본문 ===
+                        // 게시글 이미지 (3:4 비율 - 전체 너비, 좌우 여백 없음)
+                        AspectRatio(
+                          aspectRatio: 3 / 4,
+                          child: Stack(
+                            children: [
+                              PageView.builder(
+                                controller: _imagePageController,
+                                onPageChanged: (i) {
+                                  setState(() => _currentImageIndex = i);
+                                  _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
+                                  _prefetchPostImages(
+                                      initial: false, aroundIndex: i);
+                                },
+                                itemCount: _currentPost.imageUrls.length,
+                                itemBuilder: (context, index) {
+                                  final imageUrl =
+                                      _currentPost.imageUrls[index];
+                                  return GestureDetector(
+                                    onTap: () {
+                                      // 전체화면 이미지 뷰어 열기
+                                      showFullscreenImageViewer(
+                                        context,
+                                        imageUrls: _currentPost.imageUrls,
+                                        initialIndex: index,
+                                        heroTag: 'post_image_$index',
+                                      );
+                                    },
+                                    child: Hero(
+                                      tag: 'post_image_$index',
+                                      child: Container(
+                                        width: double.infinity,
+                                        height: double.infinity,
+                                        color: Colors.black,
+                                        child: _buildRetryableImage(
+                                          imageUrl,
+                                          fit:
+                                              BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
+                                          isFullScreen: false,
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              // 다중 이미지 배지: 카드와 동일한 1/N 형태로 우상단에 표시
+                              if (_currentPost.imageUrls.length > 1)
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.35),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Text(
+                                      '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                      style: const TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                        height: 1,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ),
 
-                  // 게시글 본문 (전체 내용을 한 번에 표시)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 전체 본문 표시 (줄바꿈 포함)
-                        Text(
-                          _getUnifiedBodyText(_currentPost),
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111827),
-                            height: 1.35,
-                            letterSpacing: -0.2,
+                        // 다중 이미지 페이지 인디케이터 (이미지 아래)
+                        if (_currentPost.imageUrls.length > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: _buildImageDotsIndicator(
+                              count: _currentPost.imageUrls.length,
+                            ),
                           ),
-                        ),
+                      ] else ...[
                         const SizedBox(height: 8),
-                        // 시간 표시
-                        Text(
-                          _currentPost.getFormattedTime(context),
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
                       ],
-                    ),
-                  ),
 
-                  // 투표형 게시글: 본문(시간) 바로 아래에 배치
-                  if (_currentPost.type == 'poll')
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                      child: PollPostWidget(postId: _currentPost.id),
-                    ),
+                      // 하단 메타(하트/댓글/조회 등): 항상 댓글 바로 위에 고정 배치
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          _currentPost.imageUrls.isNotEmpty
+                              ? (_currentPost.imageUrls.length > 1 ? 6 : 10)
+                              : 10,
+                          16,
+                          0,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildStatsRow(
+                              likes: _currentPost.likes,
+                              commentCount: _currentPost.commentCount,
+                              viewCount: _currentPost.viewCount,
+                              isLiked: _isLiked,
+                              likedBy: _currentPost.likedBy,
+                            ),
+                            const SizedBox(height: 8),
+                          ],
+                        ),
+                      ),
 
-                  // 이미지 유무에 따라 레이아웃 분기
-                  if (_currentPost.imageUrls.isNotEmpty) ...[
-                    // === 이미지가 있는 경우: 제목 → 이미지 → 좋아요 → 본문 ===
-                  // 게시글 이미지 (인스타그램 스타일 - 전체 너비, 좌우 여백 없음)
-                  AspectRatio(
-                    aspectRatio: 1.0, // 정사각형 비율 (인스타그램 스타일)
-                    child: Stack(
-                      children: [
-                        PageView.builder(
-                          controller: _imagePageController,
-                          onPageChanged: (i) {
-                            setState(() => _currentImageIndex = i);
-                            _showPageIndicatorTemporarily(); // 페이지 변경 시 인디케이터 표시
-                            _prefetchPostImages(initial: false, aroundIndex: i);
-                          },
-                          itemCount: _currentPost.imageUrls.length,
-                          itemBuilder: (context, index) {
-                            final imageUrl = _currentPost.imageUrls[index];
-                            return GestureDetector(
-                              onTap: () {
-                                // 전체화면 이미지 뷰어 열기
-                                showFullscreenImageViewer(
-                                  context,
-                                  imageUrls: _currentPost.imageUrls,
-                                  initialIndex: index,
-                                  heroTag: 'post_image_$index',
+                      // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
+                      SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),
+
+                      // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
+                      StreamBuilder<List<Comment>>(
+                        stream: _commentsStream,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                                  ConnectionState.waiting &&
+                              !snapshot.hasData) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16.0),
+                                child: CircularProgressIndicator(),
+                              ),
+                            );
+                          }
+
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Text(
+                                '${AppLocalizations.of(context)!.loadingComments}: ${snapshot.error}',
+                              ),
+                            );
+                          }
+
+                          // NOTE: 부모 댓글이 먼저 삭제되고 대댓글은 서버 트리거로 지워지는 동안,
+                          // "고아 대댓글"이 잠깐 남아 commentCount가 튀는 UX를 방지하기 위해
+                          // 화면에서는 부모가 존재하는 대댓글만 집계/표시한다.
+                          final rawComments = (snapshot.data ?? []).where((c) {
+                            return !ContentHideService.shouldHideComment(
+                              commentId: c.id,
+                              userId: c.userId,
+                            );
+                          }).toList();
+                          final topLevelComments =
+                              rawComments.where((c) => c.isTopLevel).toList();
+                          final topLevelIds =
+                              topLevelComments.map((c) => c.id).toSet();
+                          final allComments = rawComments
+                              .where(
+                                (c) =>
+                                    c.isTopLevel ||
+                                    (c.parentCommentId != null &&
+                                        topLevelIds
+                                            .contains(c.parentCommentId)),
+                              )
+                              .toList();
+                          final currentUser = FirebaseAuth.instance.currentUser;
+
+                          // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
+                          if (_currentPost.commentCount != allComments.length) {
+                            WidgetsBinding.instance.addPostFrameCallback((_) {
+                              if (!mounted) return;
+                              if (_currentPost.commentCount ==
+                                  allComments.length) return;
+                              setState(() {
+                                _currentPost = _currentPost.copyWith(
+                                    commentCount: allComments.length);
+                              });
+                            });
+                          }
+
+                          if (allComments.isEmpty) {
+                            return Padding(
+                              padding: const EdgeInsets.all(16.0),
+                              child: Center(
+                                  child: Text(AppLocalizations.of(context)!
+                                          .firstCommentPrompt ??
+                                      "")),
+                            );
+                          }
+
+                          // 댓글을 계층적으로 구조화
+                          // (topLevelComments는 위에서 raw 기준으로 계산)
+
+                          // 댓글 위젯을 재귀적으로 빌드하는 헬퍼 함수
+                          Widget buildCommentWidget(
+                              Comment comment, String parentTopId) {
+                            return EnhancedCommentWidget(
+                              comment: comment,
+                              replies: const [],
+                              postId: _currentPost.id,
+                              onDeleteComment: _deleteCommentWithReplies,
+                              onBlockApplied: () {
+                                if (!mounted) return;
+                                setState(() {});
+                              },
+                              isAnonymousPost: _currentPost.isAnonymous,
+                              getDisplayName: (comment) => getCommentAuthorName(
+                                  comment, currentUser?.uid),
+                              isReplyTarget:
+                                  _replyTargetCommentId == comment.id,
+                              onReplyTap: () {
+                                // 해당 댓글에 답글 달기
+                                _enterReplyMode(
+                                  parentTopId: parentTopId,
+                                  replyToUserId: comment.userId,
+                                  replyToUserName: getCommentAuthorName(
+                                      comment, currentUser?.uid),
+                                  targetCommentId: comment.id,
                                 );
                               },
-                              child: Hero(
-                                tag: 'post_image_$index',
-                                child: Container(
-                                  width: double.infinity,
-                                  height: double.infinity,
-                                  color: Colors.black,
-                                  child: _buildRetryableImage(
-                                    imageUrl,
-                                    fit: BoxFit.cover, // 이미지가 컨테이너를 완전히 채움
-                                    isFullScreen: false,
-                                  ),
-                                ),
-                              ),
+                              parentTopLevelCommentId: parentTopId,
                             );
-                          },
-                        ),
-                          // 다중 이미지 배지: 카드와 동일한 1/N 형태로 우상단에 표시
-                          if (_currentPost.imageUrls.length > 1)
-                            Positioned(
-                              top: 8,
-                              right: 8,
-                              child: Container(
-                                padding: const EdgeInsets.all(5),
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.35),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Text(
-                                  '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                    height: 1,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
+                          }
 
-                    // 다중 이미지 페이지 인디케이터 (이미지 아래)
-                    if (_currentPost.imageUrls.length > 1)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: _buildImageDotsIndicator(
-                          count: _currentPost.imageUrls.length,
-                        ),
-                      ),
+                          return ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: topLevelComments.length,
+                            itemBuilder: (context, index) {
+                              final comment = topLevelComments[index];
+                              final replies = allComments
+                                  .where((c) => c.parentCommentId == comment.id)
+                                  .toList();
 
-                  ] else ...[
-                    const SizedBox(height: 8),
-                  ],
-
-                  // 하단 메타(하트/댓글/조회 등): 항상 댓글 바로 위에 고정 배치
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      _currentPost.imageUrls.isNotEmpty
-                          ? (_currentPost.imageUrls.length > 1 ? 6 : 10)
-                          : 10,
-                      16,
-                      0,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _buildStatsRow(
-                          likes: _currentPost.likes,
-                          commentCount: _currentPost.commentCount,
-                          viewCount: _currentPost.viewCount,
-                          isLiked: _isLiked,
-                          likedBy: _currentPost.likedBy,
-                        ),
-                        const SizedBox(height: 8),
-                      ],
-                    ),
-                  ),
-
-
-                  // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
-                  SizedBox(height: _currentPost.imageUrls.isEmpty ? 8 : 16),
-
-                  // 확장된 댓글 목록 (대댓글 + 좋아요 지원)
-                  StreamBuilder<List<Comment>>(
-                    stream: _commentsStream,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting &&
-                          !snapshot.hasData) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16.0),
-                            child: CircularProgressIndicator(),
-                          ),
-                        );
-                      }
-
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            '${AppLocalizations.of(context)!.loadingComments}: ${snapshot.error}',
-                          ),
-                        );
-                      }
-
-                      // NOTE: 부모 댓글이 먼저 삭제되고 대댓글은 서버 트리거로 지워지는 동안,
-                      // "고아 대댓글"이 잠깐 남아 commentCount가 튀는 UX를 방지하기 위해
-                      // 화면에서는 부모가 존재하는 대댓글만 집계/표시한다.
-                      final rawComments = (snapshot.data ?? []).where((c) {
-                        return !ContentHideService.shouldHideComment(
-                          commentId: c.id,
-                          userId: c.userId,
-                        );
-                      }).toList();
-                      final topLevelComments =
-                          rawComments.where((c) => c.isTopLevel).toList();
-                      final topLevelIds =
-                          topLevelComments.map((c) => c.id).toSet();
-                      final allComments = rawComments
-                          .where(
-                            (c) =>
-                                c.isTopLevel ||
-                                (c.parentCommentId != null &&
-                                    topLevelIds.contains(c.parentCommentId)),
-                          )
-                          .toList();
-                      final currentUser = FirebaseAuth.instance.currentUser;
-
-                      // 댓글 수를 스트림 기준으로 정합성 유지 (무한 setState 루프 방지)
-                      if (_currentPost.commentCount != allComments.length) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          if (_currentPost.commentCount == allComments.length) return;
-                          setState(() {
-                            _currentPost =
-                                _currentPost.copyWith(commentCount: allComments.length);
-                          });
-                        });
-                      }
-
-                      if (allComments.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.all(16.0),
-                          child: Center(child: Text(AppLocalizations.of(context)!.firstCommentPrompt ?? "")),
-                        );
-                      }
-
-                      // 댓글을 계층적으로 구조화
-                      // (topLevelComments는 위에서 raw 기준으로 계산)
-                      
-                      // 댓글 위젯을 재귀적으로 빌드하는 헬퍼 함수
-                      Widget buildCommentWidget(Comment comment, String parentTopId) {
-                        return EnhancedCommentWidget(
-                          comment: comment,
-                          replies: const [],
-                          postId: _currentPost.id,
-                          onDeleteComment: _deleteCommentWithReplies,
-                          onBlockApplied: () {
-                            if (!mounted) return;
-                            setState(() {});
-                          },
-                          isAnonymousPost: _currentPost.isAnonymous,
-                          getDisplayName: (comment) => getCommentAuthorName(comment, currentUser?.uid),
-                          isReplyTarget: _replyTargetCommentId == comment.id,
-                          onReplyTap: () {
-                            // 해당 댓글에 답글 달기
-                            _enterReplyMode(
-                              parentTopId: parentTopId,
-                              replyToUserId: comment.userId,
-                              replyToUserName: getCommentAuthorName(comment, currentUser?.uid),
-                              targetCommentId: comment.id,
-                            );
-                          },
-                          parentTopLevelCommentId: parentTopId,
-                        );
-                      }
-                      
-                      return ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: topLevelComments.length,
-                        itemBuilder: (context, index) {
-                          final comment = topLevelComments[index];
-                          final replies = allComments
-                              .where((c) => c.parentCommentId == comment.id)
-                              .toList();
-                          
-                          return EnhancedCommentWidget(
-                            comment: comment,
-                            replies: replies,
-                            postId: _currentPost.id,
-                            onDeleteComment: _deleteCommentWithReplies,
-                            onBlockApplied: () {
-                              if (!mounted) return;
-                              setState(() {});
-                            },
-                            isAnonymousPost: _currentPost.isAnonymous,
-                            getDisplayName: (comment) => getCommentAuthorName(comment, currentUser?.uid),
-                            isReplyTarget: _replyTargetCommentId == comment.id,
-                            onReplyTap: () {
-                              // 최상위 댓글에 답글 달기
-                              _enterReplyMode(
-                                parentTopId: comment.id,
-                                replyToUserId: comment.userId,
-                                replyToUserName: getCommentAuthorName(comment, currentUser?.uid),
-                                targetCommentId: comment.id,
+                              return EnhancedCommentWidget(
+                                comment: comment,
+                                replies: replies,
+                                postId: _currentPost.id,
+                                onDeleteComment: _deleteCommentWithReplies,
+                                onBlockApplied: () {
+                                  if (!mounted) return;
+                                  setState(() {});
+                                },
+                                isAnonymousPost: _currentPost.isAnonymous,
+                                getDisplayName: (comment) =>
+                                    getCommentAuthorName(
+                                        comment, currentUser?.uid),
+                                isReplyTarget:
+                                    _replyTargetCommentId == comment.id,
+                                onReplyTap: () {
+                                  // 최상위 댓글에 답글 달기
+                                  _enterReplyMode(
+                                    parentTopId: comment.id,
+                                    replyToUserId: comment.userId,
+                                    replyToUserName: getCommentAuthorName(
+                                        comment, currentUser?.uid),
+                                    targetCommentId: comment.id,
+                                  );
+                                },
+                                parentTopLevelCommentId: comment.id,
+                                // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
+                                replyWidgetBuilder: (reply) =>
+                                    buildCommentWidget(reply, comment.id),
                               );
                             },
-                            parentTopLevelCommentId: comment.id,
-                            // 대댓글을 위한 빌더: 각 대댓글마다 개별 콜백 생성
-                            replyWidgetBuilder: (reply) => buildCommentWidget(reply, comment.id),
                           );
                         },
-                      );
-                    },
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
 
-          // 댓글 입력 영역 (하단 고정, overflow 방지)
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border(
-                top: BorderSide(color: Colors.grey.shade200, width: 1),
-              ),
-            ),
-            child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 대댓글 모드 상단 바 (미니멀 디자인)
-                  if (_isReplyMode)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16.0,
-                        vertical: 10.0,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.grey[50], // 매우 연한 회색 배경
-                        border: Border(
-                          bottom: BorderSide(
-                            color: Colors.grey[300]!, // 연한 회색 테두리
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.subdirectory_arrow_right, // 더 명확한 대댓글 아이콘
-                            size: 18,
-                            color: Colors.grey[700], // 검은색 계열
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              AppLocalizations.of(context)!.replyingTo(_replyToUserName ?? ''),
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.grey[800], // 검은색 계열
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: _exitReplyMode,
-                            child: Container(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.close,
-                                size: 18,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  
-                  // 입력창
-                  Padding(
-                    padding: EdgeInsets.only(
-                      left: 16.0,
-                      right: 16.0,
-                      top: 8.0,
-                      bottom: MediaQuery.of(context).viewInsets.bottom > 0 
-                          ? 8.0  // 키보드가 올라온 경우
-                          : MediaQuery.of(context).padding.bottom + 8.0,  // 하단 safe area 고려
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _commentController,
-                            focusNode: _commentFocusNode,
-                            enabled: isLoggedIn,
-                            decoration: InputDecoration(
-                              hintText: isLoggedIn 
-                                  ? (_isReplyMode 
-                                      ? (AppLocalizations.of(context)!.writeReplyHint ?? "") : AppLocalizations.of(context)!.enterComment)
-                                  : AppLocalizations.of(context)!.loginToComment,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: _isReplyMode 
-                                    ? BorderSide(color: Colors.grey[400]!, width: 1.5) // 대댓글 모드일 때 테두리 표시
-                                    : BorderSide.none,
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: _isReplyMode 
-                                    ? BorderSide(color: Colors.grey[300]!, width: 1.5)
-                                    : BorderSide.none,
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(24),
-                                borderSide: _isReplyMode 
-                                    ? BorderSide(color: Colors.blue[600]!, width: 2) // 포커스 시 파란색
-                                    : BorderSide.none,
-                              ),
-                              filled: true,
-                              fillColor: Colors.grey[100], // 더 밝은 회색 배경으로 통일
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                              isDense: true, // 높이 최소화
-                            ),
-                            minLines: 1,
-                            maxLines: 5,
-                            textInputAction: TextInputAction.send,
-                            onSubmitted: isLoggedIn ? (_) => _submitComment() : null,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                      // 입력 전송 버튼 - DM 아이콘과 구분되는 상향 화살표 버튼
-                      (isLoggedIn)
-                          ? (_isSubmittingComment
-                              ? const SizedBox(
-                                  width: 36,
-                                  height: 36,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : InkWell(
-                                  onTap: _submitComment,
-                                  customBorder: const CircleBorder(),
-                                  child: Container(
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue[600],
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Center(
-                                      child: Icon(
-                                        Icons.arrow_upward_rounded,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                                ))
-                          : const SizedBox.shrink(),
-                      ],
-                    ),
-                  ),
-                ],
-            ),
-          ),
+              // 댓글 입력 영역 (하단 고정, overflow 방지)
+              _buildCommentInputArea(isLoggedIn: isLoggedIn),
             ],
           ),
           _buildScrollToTopOverlay(),

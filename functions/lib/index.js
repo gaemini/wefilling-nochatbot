@@ -3278,7 +3278,7 @@ function toBool(v) {
     return s === 'true' || s === '1' || s === 'yes';
 }
 function buildLocalizedNotificationText(params) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
     const { lang, type, titleFallback, bodyFallback, actorName, data } = params;
     const name = safeStringLoose((_b = (_a = actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.actorName) !== null && _a !== void 0 ? _a : data === null || data === void 0 ? void 0 : data.fromName) !== null && _b !== void 0 ? _b : data === null || data === void 0 ? void 0 : data.senderName, lang === 'ko' ? '익명' : 'User');
     const meetupTitle = safeStringLoose((_c = data === null || data === void 0 ? void 0 : data.meetupTitle) !== null && _c !== void 0 ? _c : data === null || data === void 0 ? void 0 : data.title, lang === 'ko' ? '모임' : 'Meetup');
@@ -3387,6 +3387,30 @@ function buildLocalizedNotificationText(params) {
                 ? { title: '댓글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 댓글을 좋아해요.` }
                 : { title: 'New like', body: `${liker} liked your comment.` };
         }
+        case 'sharing_request': {
+            const requester = safeStringLoose((_s = data === null || data === void 0 ? void 0 : data.requesterName) !== null && _s !== void 0 ? _s : actorName, name);
+            const sharingTitle = safeStringLoose((_t = data === null || data === void 0 ? void 0 : data.postTitle) !== null && _t !== void 0 ? _t : data === null || data === void 0 ? void 0 : data.title, '');
+            if (lang === 'ko') {
+                return {
+                    title: '나눔 신청이 왔습니다',
+                    body: sharingTitle
+                        ? `${requester}님이 회원님의 나눔글 "${sharingTitle}"에 신청했어요.`
+                        : `${requester}님이 회원님의 나눔글에 신청했어요.`,
+                };
+            }
+            return {
+                title: 'Sharing request received',
+                body: sharingTitle
+                    ? `${requester} requested your sharing post "${sharingTitle}".`
+                    : `${requester} requested your sharing post.`,
+            };
+        }
+        case 'sharing_like': {
+            const liker = safeStringLoose((_u = data === null || data === void 0 ? void 0 : data.likerName) !== null && _u !== void 0 ? _u : actorName, name);
+            return lang === 'ko'
+                ? { title: '나눔글에 하트가 추가되었습니다', body: `${liker}님이 회원님의 나눔글에 하트를 눌렀어요.` }
+                : { title: 'New like', body: `${liker} liked your sharing post.` };
+        }
         case 'review_approval_request': {
             const author = safeStringLoose(actorName !== null && actorName !== void 0 ? actorName : data === null || data === void 0 ? void 0 : data.authorName, name);
             if (lang === 'ko') {
@@ -3395,23 +3419,23 @@ function buildLocalizedNotificationText(params) {
             return { title: 'Review approval requested', body: `${author} requested approval for "${meetupTitle}".` };
         }
         case 'review_comment': {
-            const commenter = safeStringLoose((_s = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _s !== void 0 ? _s : actorName, name);
+            const commenter = safeStringLoose((_v = data === null || data === void 0 ? void 0 : data.commenterName) !== null && _v !== void 0 ? _v : actorName, name);
             if (lang === 'ko') {
                 return { title: '새 댓글이 달렸습니다', body: `${commenter}님이 "${reviewTitle}"에 댓글을 남겼어요.` };
             }
             return { title: 'New comment', body: `${commenter} commented on "${reviewTitle}".` };
         }
         case 'review_like': {
-            const liker = safeStringLoose((_t = data === null || data === void 0 ? void 0 : data.likerName) !== null && _t !== void 0 ? _t : actorName, name);
+            const liker = safeStringLoose((_w = data === null || data === void 0 ? void 0 : data.likerName) !== null && _w !== void 0 ? _w : actorName, name);
             if (lang === 'ko') {
                 return { title: '좋아요가 추가되었습니다', body: `${liker}님이 "${reviewTitle}"을 좋아해요.` };
             }
             return { title: 'New like', body: `${liker} liked "${reviewTitle}".` };
         }
         case 'snack_chat_invite': {
-            const rawInviter = safeStringLoose((_u = data === null || data === void 0 ? void 0 : data.creatorName) !== null && _u !== void 0 ? _u : actorName, name);
+            const rawInviter = safeStringLoose((_x = data === null || data === void 0 ? void 0 : data.creatorName) !== null && _x !== void 0 ? _x : actorName, name);
             const inviter = rawInviter.split('|')[0].replace(/\s+님$/, '').trim() || (lang === 'ko' ? '친구' : 'User');
-            const snackChatName = safeStringLoose((_v = data === null || data === void 0 ? void 0 : data.snackChatName) !== null && _v !== void 0 ? _v : data === null || data === void 0 ? void 0 : data.title, '');
+            const snackChatName = safeStringLoose((_y = data === null || data === void 0 ? void 0 : data.snackChatName) !== null && _y !== void 0 ? _y : data === null || data === void 0 ? void 0 : data.title, '');
             if (lang === 'ko') {
                 return snackChatName
                     ? { title: '새 Snack Chat에 초대되었어요', body: `${inviter}님이 "${snackChatName}"에 초대했어요.` }

@@ -1,7 +1,6 @@
 // lib/screens/main_screen.dart
 // 앱의 메인화면 구현
-// 하단 탭 네비게이션 제공
-// 게시판, 모임, 마이페이지 화면 통합
+// 하단 탭 네비게이션 제공 (나눔 피드 / 그룹 / DM / 마이페이지)
 
 import 'dart:math' as math;
 
@@ -14,8 +13,8 @@ import '../providers/auth_provider.dart';
 import '../services/dm_service.dart';
 import '../services/notification_service.dart';
 import '../services/post_service.dart';
-import '../services/snack_chat_service.dart';
 import '../services/badge_service.dart';
+import '../services/snack_chat_service.dart';
 import '../ui/widgets/app_icon_button.dart';
 import '../utils/logger.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
@@ -24,13 +23,16 @@ import 'ad_showcase_screen.dart';
 import 'board_screen.dart';
 import 'dm_list_screen.dart';
 import 'friend_categories_screen.dart';
-import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'unified_search_screen.dart';
-import 'my_meetup_calendar_screen.dart';
 
 class MainScreen extends StatefulWidget {
+  // 하위 호환을 위해 레거시 파라미터를 받되, 현재는 단일 탭 인덱스(0/1/2/3)만 사용한다.
+  // - 0: 나눔 피드 (BoardScreen)
+  // - 1: 그룹 (FriendCategoriesScreen)
+  // - 2: DM (DMListScreen)
+  // - 3: 마이페이지 (MyPageScreen)
   final int initialTabIndex;
   final int initialGroupTabIndex;
   final String? initialMeetupId;
@@ -47,28 +49,28 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
+  static const int _kTabCount = 4;
+
   late int _selectedIndex;
   final NotificationService _notificationService = NotificationService();
   final DMService _dmService = DMService();
   final SnackChatService _snackChatService = SnackChatService();
   late VoidCallback _cleanupCallback;
-  String? _pendingMeetupId; // 알림으로 전달된 모임 ID (1회용)
   AuthProvider? _authProvider;
   late final List<Widget?> _screenCache;
-  
+
   // BoardScreen 스크롤 제어를 위한 GlobalKey
-  final GlobalKey<BoardScreenState> _boardScreenKey = GlobalKey<BoardScreenState>();
+  final GlobalKey<BoardScreenState> _boardScreenKey =
+      GlobalKey<BoardScreenState>();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
 
-    // 초기 탭 인덱스 설정
-    _selectedIndex = widget.initialTabIndex;
-    // 알림으로 넘어온 모임 ID는 최초 1회만 사용하도록 보관
-    _pendingMeetupId = widget.initialMeetupId;
-    _screenCache = List<Widget?>.filled(5, null);
+    // 초기 탭 인덱스 설정 (레거시 인덱스 대비 보정)
+    _selectedIndex = _normalizeInitialIndex(widget.initialTabIndex);
+    _screenCache = List<Widget?>.filled(_kTabCount, null);
     _ensureScreenBuilt(_selectedIndex);
 
     // 스트림 정리 콜백 등록
@@ -89,19 +91,20 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         _showSignupRequiredBanner();
       }
 
-      // Meetups 탭이 표시되고 알림 모임 ID가 남아있다면, 이번 렌더 이후에 소모 처리
-      if (_selectedIndex == 1 && _pendingMeetupId != null) {
-        // 한 번 전달 후 null로 만들어 재진입 시 자동 오픈 방지
-        setState(() {
-          _pendingMeetupId = null;
-        });
-      }
-      
       // 실시간 배지 리스너 시작 (알림/DM 변경 시 자동 업데이트)
       BadgeService.startRealtimeBadgeSync().catchError((e) {
         Logger.error('실시간 배지 동기화 시작 실패', e);
       });
     });
+  }
+
+  // 레거시 호출부(모임 탭=1 등)가 범위를 벗어나지 않도록 보정.
+  // 현재 스키마: 0=Board, 1=Groups, 2=DM, 3=MyPage.
+  int _normalizeInitialIndex(int raw) {
+    if (raw >= 0 && raw < _kTabCount) return raw;
+    // 레거시(5탭) 매핑: Board(0)/Meetup(1)/Groups(2)/MyPage(3)/DM(4)
+    if (raw == 4) return 2; // 레거시 DM
+    return 0;
   }
 
   @override
@@ -111,10 +114,10 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
 
     // 서비스 정리
     _notificationService.dispose();
-    
+
     // 실시간 배지 리스너 중지
     BadgeService.stopRealtimeBadgeSync();
-    
+
     super.dispose();
   }
 
@@ -134,27 +137,23 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       case 0:
         return BoardScreen(key: _boardScreenKey);
       case 1:
-        // 알림에서 온 모임은 최초 1회만 자동 오픈되도록 전달
-        return MeetupHomePage(initialMeetupId: _pendingMeetupId);
-      case 2:
         return FriendCategoriesScreen(
           initialTabIndex: widget.initialGroupTabIndex,
         );
+      case 2:
+        return const DMListScreen();
       case 3:
         return const MyPageScreen();
-      case 4:
-        return const DMListScreen();
       default:
         return const SizedBox.shrink();
     }
   }
 
   void _ensureScreenBuilt(int index) {
+    if (index < 0 || index >= _kTabCount) return;
     if (_screenCache[index] != null) return;
     _screenCache[index] = _buildScreenForIndex(index);
   }
-  // 프로덕션 배포: 디버그 헬퍼 제거
-  // final FirebaseDebugHelper _firebaseDebugHelper = FirebaseDebugHelper();
 
   void _onItemTapped(int index) {
     // 이미 선택된 Board 탭(index 0)을 다시 탭하면 맨 위로 스크롤
@@ -162,23 +161,12 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       _boardScreenKey.currentState?.scrollToTop();
       return;
     }
-    
+
     setState(() {
       _selectedIndex = index;
       _ensureScreenBuilt(index);
     });
 
-    // Meetups 탭으로 이동하는 순간, 아직 소모되지 않은 모임 ID가 있다면 바로 소모 처리
-    if (index == 1 && _pendingMeetupId != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _pendingMeetupId = null;
-          });
-        }
-      });
-    }
-    
     // 실시간 리스너가 배지를 자동으로 업데이트하므로 수동 호출 불필요
   }
 
@@ -327,11 +315,11 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     ),
                   ),
                 ],
+              ),
             ),
-          ),
             const Spacer(),
-            // 돋보기 아이콘 (게시글/모임 탭에서만 표시)
-            if (_selectedIndex <= 1) ...[
+            // 돋보기 아이콘 (나눔 피드 탭에서만 표시)
+            if (_selectedIndex == 0) ...[
               AppIconButton(
                 icon: Icons.search,
                 onPressed: _navigateToSearchPage,
@@ -349,20 +337,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   MyPageSettingsSheet.show(context);
                 },
                 semanticLabel: AppLocalizations.of(context)!.settings,
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 4),
-              AppIconButton(
-                icon: Icons.calendar_month_outlined,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const MyMeetupCalendarScreen(),
-                    ),
-                  );
-                },
-                semanticLabel: '내 모임 달력',
                 visualDensity: VisualDensity.compact,
               ),
               const SizedBox(width: 4),
@@ -401,61 +375,59 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
       body: IndexedStack(
         index: _selectedIndex,
         children: List.generate(
-          5,
+          _kTabCount,
           (i) => _screenCache[i] ?? const SizedBox.shrink(),
         ),
       ),
 
-      // 완전 반응형 하단 네비게이션 (갤럭시 S23 등 모든 기기 대응)
+      // 완전 반응형 하단 네비게이션 (나눔 피드 / 그룹 / DM / 마이페이지)
       bottomNavigationBar: StreamBuilder<int>(
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, dmSnapshot) {
           return StreamBuilder<int>(
-            // ✅ 즐겨찾기 스냅챗만 카운트
             stream: _snackChatService.getFavoritedUnreadCount(),
             builder: (context, scSnapshot) {
-          final l10n = AppLocalizations.of(context)!;
-          
-          if (dmSnapshot.hasError) {
-            Logger.error('DM 배지 스트림 오류', dmSnapshot.error);
-          }
+              final l10n = AppLocalizations.of(context)!;
 
-          final unreadDMCount = dmSnapshot.data ?? 0;
-          final unreadSCCount = scSnapshot.data ?? 0;
+              if (dmSnapshot.hasError) {
+                Logger.error('DM 배지 스트림 오류', dmSnapshot.error);
+              }
+              if (scSnapshot.hasError) {
+                Logger.error('스낵챗 배지 스트림 오류', scSnapshot.error);
+              }
 
-          return AdaptiveBottomNavigation(
-            selectedIndex: _selectedIndex,
-            onItemTapped: _onItemTapped,
-            items: [
-              BottomNavigationItem(
-                icon: Icons.menu,
-                selectedIcon: Icons.menu,
-                label: l10n.board,
-              ),
-              BottomNavigationItem(
-                icon: Icons.groups_outlined,
-                selectedIcon: Icons.groups,
-                label: l10n.meetup,
-              ),
-              BottomNavigationItem(
-                icon: Icons.change_history_outlined,
-                selectedIcon: Icons.change_history,
-                label: l10n.groups,
-                badgeCount: unreadSCCount,
-              ),
-              BottomNavigationItem(
-                icon: Icons.person_outline,
-                selectedIcon: Icons.person,
-                label: l10n.myPage,
-              ),
-              BottomNavigationItem(
-                icon: Icons.send_outlined,
-                selectedIcon: Icons.send_rounded,
-                label: l10n.dm,
-                badgeCount: unreadDMCount,
-              ),
-            ],
-          );
+              final unreadDMCount = dmSnapshot.data ?? 0;
+              final unreadSnackChatCount = scSnapshot.data ?? 0;
+              final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+              return AdaptiveBottomNavigation(
+                selectedIndex: _selectedIndex,
+                onItemTapped: _onItemTapped,
+                items: [
+                  BottomNavigationItem(
+                    icon: Icons.volunteer_activism_outlined,
+                    selectedIcon: Icons.volunteer_activism,
+                    label: isKo ? '나눔' : 'Sharing',
+                  ),
+                  BottomNavigationItem(
+                    icon: Icons.groups_outlined,
+                    selectedIcon: Icons.groups,
+                    label: l10n.groups,
+                    badgeCount: unreadSnackChatCount,
+                  ),
+                  BottomNavigationItem(
+                    icon: Icons.chat_bubble_outline_rounded,
+                    selectedIcon: Icons.chat_bubble_rounded,
+                    label: l10n.dm,
+                    badgeCount: unreadDMCount,
+                  ),
+                  BottomNavigationItem(
+                    icon: Icons.account_circle_outlined,
+                    selectedIcon: Icons.account_circle,
+                    label: l10n.myPage,
+                  ),
+                ],
+              );
             },
           );
         },

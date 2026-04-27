@@ -157,8 +157,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     // 선택 상태 색상: 검정(#000000)으로 고정
     const selectedColor = Color(0xFF000000);
     final unselectedColor = colorScheme.onSurface.withOpacity(0.6);
-    final isGroupsTriangle =
-        item.icon == Icons.change_history_outlined || item.selectedIcon == Icons.change_history;
+    final isGroupsTriangle = item.icon == Icons.change_history_outlined ||
+        item.selectedIcon == Icons.change_history;
     // 그룹(세모)도 다른 탭과 동일하게: 선택=검정, 비선택=회색
     final iconColor = isGroupsTriangle
         ? AppColors.friendsOnlyAccent
@@ -189,7 +189,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   child: item.iconImagePath != null
                       ? Image.asset(
                           isSelected
-                              ? (item.selectedIconImagePath ?? item.iconImagePath!)
+                              ? (item.selectedIconImagePath ??
+                                  item.iconImagePath!)
                               : item.iconImagePath!,
                           width: iconSize,
                           height: iconSize,
@@ -219,25 +220,26 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 3),
-            Flexible(
-              child: Text(
-                item.label,
-                style: TextStyle(
-                  fontSize: fontSize,
-                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                  color: isSelected ? selectedColor : unselectedColor,
-                  height: allowTwoLineLabel ? 1.2 : 1.1,
+            if (item.label.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              Flexible(
+                child: Text(
+                  item.label,
+                  style: TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                    color: isSelected ? selectedColor : unselectedColor,
+                    height: allowTwoLineLabel ? 1.2 : 1.1,
+                  ),
+                  maxLines: allowTwoLineLabel ? 2 : 1,
+                  overflow: TextOverflow.fade,
+                  textAlign: TextAlign.center,
                 ),
-                maxLines: allowTwoLineLabel ? 2 : 1,
-                overflow: TextOverflow.fade,
-                textAlign: TextAlign.center,
               ),
-            ),
+            ],
           ],
         ),
       ),
     );
   }
 }
-

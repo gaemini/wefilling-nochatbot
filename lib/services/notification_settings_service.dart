@@ -10,14 +10,15 @@ import '../utils/logger.dart';
 class NotificationSettingKeys {
   // 전체 알림 토글
   static const String allNotifications = 'all_notifications';
-  
+
   // 통합 카테고리 (사용자에게 표시되는 6개)
   static const String meetupAlerts = 'meetup_alerts'; // 모임 관련 (정원+취소+참여자)
   static const String friendAlerts = 'friend_alerts'; // 친구 관련 (요청+수락)
-  static const String postInteractions = 'post_interactions'; // 게시글 (댓글+좋아요+비공개)
+  static const String postInteractions =
+      'post_interactions'; // 게시글 (댓글+좋아요+비공개)
   static const String dmMessages = 'dm_messages'; // DM 메시지
   static const String marketing = 'marketing'; // 광고/프로모션
-  
+
   // 레거시 키 (기존 코드 호환성을 위해 유지, 내부적으로 통합 키로 매핑)
   static const String dmReceived = 'dm_received';
   static const String snackChatInvite = 'snack_chat_invite';
@@ -27,10 +28,12 @@ class NotificationSettingKeys {
   static const String meetupParticipantLeft = 'meetup_participant_left';
   static const String newComment = 'new_comment';
   static const String newLike = 'new_like';
+  static const String sharingRequest = 'sharing_request';
+  static const String sharingLike = 'sharing_like';
   static const String postPrivate = 'post_private';
   static const String friendRequest = 'friend_request';
   static const String adUpdates = 'ad_updates';
-  
+
   // 레거시 키를 통합 키로 매핑
   static String mapLegacyToUnified(String legacyKey) {
     switch (legacyKey) {
@@ -39,22 +42,24 @@ class NotificationSettingKeys {
       case meetupParticipantJoined:
       case meetupParticipantLeft:
         return meetupAlerts;
-      
+
       case friendRequest:
         return friendAlerts;
-      
+
       case newComment:
       case newLike:
+      case sharingRequest:
+      case sharingLike:
       case postPrivate:
         return postInteractions;
-      
+
       case dmReceived:
       case snackChatInvite:
         return dmMessages;
-      
+
       case adUpdates:
         return marketing;
-      
+
       default:
         return legacyKey;
     }
@@ -137,8 +142,8 @@ class NotificationSettingsService {
     // 통합 키가 없고 레거시 키가 있으면 마이그레이션
     if (!settings.containsKey(NotificationSettingKeys.meetupAlerts)) {
       // 모임 관련 알림: 하나라도 true면 true
-      final meetupValue = 
-          (settings[NotificationSettingKeys.meetupFull] ?? true) ||
+      final meetupValue = (settings[NotificationSettingKeys.meetupFull] ??
+              true) ||
           (settings[NotificationSettingKeys.meetupCancelled] ?? true) ||
           (settings[NotificationSettingKeys.meetupParticipantJoined] ?? true) ||
           (settings[NotificationSettingKeys.meetupParticipantLeft] ?? true);
@@ -147,29 +152,29 @@ class NotificationSettingsService {
     }
 
     if (!settings.containsKey(NotificationSettingKeys.friendAlerts)) {
-      settings[NotificationSettingKeys.friendAlerts] = 
+      settings[NotificationSettingKeys.friendAlerts] =
           settings[NotificationSettingKeys.friendRequest] ?? true;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.postInteractions)) {
       // 게시글 관련: 하나라도 true면 true
-      final postValue = 
+      final postValue =
           (settings[NotificationSettingKeys.newComment] ?? true) ||
-          (settings[NotificationSettingKeys.newLike] ?? true) ||
-          (settings[NotificationSettingKeys.postPrivate] ?? true);
+              (settings[NotificationSettingKeys.newLike] ?? true) ||
+              (settings[NotificationSettingKeys.postPrivate] ?? true);
       settings[NotificationSettingKeys.postInteractions] = postValue;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.dmMessages)) {
-      settings[NotificationSettingKeys.dmMessages] = 
+      settings[NotificationSettingKeys.dmMessages] =
           settings[NotificationSettingKeys.dmReceived] ?? true;
       changed = true;
     }
 
     if (!settings.containsKey(NotificationSettingKeys.marketing)) {
-      settings[NotificationSettingKeys.marketing] = 
+      settings[NotificationSettingKeys.marketing] =
           settings[NotificationSettingKeys.adUpdates] ?? true;
       changed = true;
     }
@@ -239,8 +244,9 @@ class NotificationSettingsService {
     }
 
     // 레거시 키를 통합 키로 변환
-    final unifiedKey = NotificationSettingKeys.mapLegacyToUnified(notificationType);
-    
+    final unifiedKey =
+        NotificationSettingKeys.mapLegacyToUnified(notificationType);
+
     // 통합 키로 확인
     return settings[unifiedKey] ?? true;
   }
@@ -264,8 +270,10 @@ class _FCMServiceShim {
     // ignore: avoid_print
     Logger.log('Shim subscribeToTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
+
   Future<void> unsubscribeFromTopic(String topic) async {
     // ignore: avoid_print
-    Logger.log('Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
+    Logger.log(
+        'Shim unsubscribeFromTopic($topic) 호출 - 실제 런타임에서는 FCMService로 대체');
   }
 }

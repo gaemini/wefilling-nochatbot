@@ -23,8 +23,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
   @override
   void initState() {
     super.initState();
-    _todayStream = _service.getFavoritedTodaySnackChats();
-    _allStream = _service.getFavoritedAllSnackChats();
+    _todayStream = _service.getManageableTodaySnackChats();
+    _allStream = _service.getManageableAllSnackChats();
   }
 
   @override
@@ -47,8 +47,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
             if (items.isEmpty) {
               return _SectionEmpty(
                 message: isKo
-                    ? '즐겨찾기한 활성 Snack Chat이 없어요.'
-                    : 'No favorited active Snack Chats.',
+                    ? '관리할 활성 Snack Chat이 없어요.'
+                    : 'No active Snack Chats to manage.',
               );
             }
             return Column(
@@ -66,8 +66,22 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           ),
                         );
                       },
-                      onToggleFavorite: () {
-                        _service.toggleFavorite(chat.id, !chat.isFavorited);
+                      onToggleFavorite: () async {
+                        try {
+                          await _service.toggleFavorite(
+                            chat.id,
+                            !chat.isFavoritedBy(currentUserId),
+                          );
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(isKo
+                                  ? '즐겨찾기를 변경하지 못했어요.'
+                                  : 'Could not update favorite.'),
+                            ),
+                          );
+                        }
                       },
                     ),
                   )
@@ -87,9 +101,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
             }
             if (items.isEmpty) {
               return _SectionEmpty(
-                message: isKo
-                    ? '즐겨찾기한 만료 Snack Chat이 없어요.'
-                    : 'No favorited expired Snack Chats.',
+                message:
+                    isKo ? '이전 Snack Chat이 없어요.' : 'No previous Snack Chats.',
               );
             }
             return Column(
@@ -107,8 +120,22 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           ),
                         );
                       },
-                      onToggleFavorite: () {
-                        _service.toggleFavorite(chat.id, !chat.isFavorited);
+                      onToggleFavorite: () async {
+                        try {
+                          await _service.toggleFavorite(
+                            chat.id,
+                            !chat.isFavoritedBy(currentUserId),
+                          );
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(isKo
+                                  ? '즐겨찾기를 변경하지 못했어요.'
+                                  : 'Could not update favorite.'),
+                            ),
+                          );
+                        }
                       },
                     ),
                   )

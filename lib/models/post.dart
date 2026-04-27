@@ -43,6 +43,7 @@ class PollOption {
 
 class Post {
   final String id;
+  final String collectionPath;
   final String title;
   final String content;
   final String author;
@@ -56,14 +57,17 @@ class Post {
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
-  
+  final bool schoolOnly; // Univ. 인증자 전용 나눔 글 여부
+  final bool authorHanyangVerified; // 작성자 한양메일 인증 여부
+  final String sharingLocation; // 나눔 장소/위치
+
   // 게시글 타입 (기본: text)
   final String type; // 'text' | 'poll'
 
   // 투표형 게시글 데이터 (type == 'poll'일 때 사용)
   final List<PollOption> pollOptions;
   final int pollTotalVotes;
-  
+
   // 공개 범위 관련 필드
   final String visibility; // 'public' 또는 'category'
   final bool isAnonymous; // 익명 여부
@@ -76,6 +80,7 @@ class Post {
 
   Post({
     required this.id,
+    this.collectionPath = 'posts',
     required this.title,
     required this.content,
     required this.author,
@@ -89,6 +94,9 @@ class Post {
     this.likes = 0,
     this.likedBy = const [],
     this.imageUrls = const [], // URL 변환 제거 - 원본 URL 그대로 사용
+    this.schoolOnly = false,
+    this.authorHanyangVerified = false,
+    this.sharingLocation = '',
     this.type = 'text',
     this.pollOptions = const [],
     this.pollTotalVotes = 0,
@@ -109,18 +117,17 @@ class Post {
   String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 7) {
       // 일주일 이상 지난 경우 날짜 표시
       return DateFormat('yyyy.MM.dd').format(createdAt);
     } else if (difference.inDays > 0) {
       // 복수형 처리를 위해 지역화 함수 호출 (숫자를 인자로 전달)
-        return AppLocalizations.of(context)!.daysAgo(difference.inDays);
-      } else if (difference.inHours > 0) {
-        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-      } else if (difference.inMinutes > 0) {
-        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+    } else if (difference.inHours > 0) {
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+    } else if (difference.inMinutes > 0) {
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }
@@ -169,6 +176,7 @@ class Post {
   // Post 객체 복제 메서드 (필요시 데이터 업데이트에 사용)
   Post copyWith({
     String? id,
+    String? collectionPath,
     String? title,
     String? content,
     String? author,
@@ -182,6 +190,9 @@ class Post {
     int? likes,
     List<String>? likedBy,
     List<String>? imageUrls,
+    bool? schoolOnly,
+    bool? authorHanyangVerified,
+    String? sharingLocation,
     String? type,
     List<PollOption>? pollOptions,
     int? pollTotalVotes,
@@ -192,6 +203,7 @@ class Post {
   }) {
     return Post(
       id: id ?? this.id,
+      collectionPath: collectionPath ?? this.collectionPath,
       title: title ?? this.title,
       content: content ?? this.content,
       author: author ?? this.author,
@@ -205,6 +217,10 @@ class Post {
       likes: likes ?? this.likes,
       likedBy: likedBy ?? this.likedBy,
       imageUrls: imageUrls ?? this.imageUrls,
+      schoolOnly: schoolOnly ?? this.schoolOnly,
+      authorHanyangVerified:
+          authorHanyangVerified ?? this.authorHanyangVerified,
+      sharingLocation: sharingLocation ?? this.sharingLocation,
       type: type ?? this.type,
       pollOptions: pollOptions ?? this.pollOptions,
       pollTotalVotes: pollTotalVotes ?? this.pollTotalVotes,
@@ -219,6 +235,7 @@ class Post {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
+      'collectionPath': collectionPath,
       'title': title,
       'content': content,
       'authorNickname': author,
@@ -232,6 +249,9 @@ class Post {
       'likes': likes,
       'likedBy': likedBy,
       'imageUrls': imageUrls,
+      'schoolOnly': schoolOnly,
+      'authorHanyangVerified': authorHanyangVerified,
+      'sharingLocation': sharingLocation,
       'type': type,
       'pollOptions': pollOptions.map((o) => o.toMap()).toList(),
       'pollTotalVotes': pollTotalVotes,
@@ -254,6 +274,7 @@ class Post {
 
     return Post(
       id: id,
+      collectionPath: map['collectionPath'] ?? 'posts',
       title: map['title'] ?? '',
       content: map['content'] ?? '',
       author: map['authorNickname'] ?? '익명',
@@ -269,12 +290,16 @@ class Post {
       likes: map['likes'] ?? 0,
       likedBy: List<String>.from(map['likedBy'] ?? []),
       imageUrls: List<String>.from(map['imageUrls'] ?? []),
+      schoolOnly: map['schoolOnly'] == true,
+      authorHanyangVerified: map['authorHanyangVerified'] == true,
+      sharingLocation: (map['sharingLocation'] ?? '').toString(),
       type: map['type'] ?? 'text',
       pollOptions: parsedPollOptions,
       pollTotalVotes: map['pollTotalVotes'] ?? 0,
       visibility: map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(map['visibleToCategoryIds'] ?? []),
+      visibleToCategoryIds:
+          List<String>.from(map['visibleToCategoryIds'] ?? []),
       allowedUserIds: List<String>.from(map['allowedUserIds'] ?? []),
     );
   }

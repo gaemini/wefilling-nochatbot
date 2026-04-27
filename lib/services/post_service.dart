@@ -8,6 +8,7 @@ import 'dart:io';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/post.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
@@ -17,6 +18,7 @@ import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/sharing_category.dart';
 import '../utils/logger.dart';
 
 class PostService {
@@ -28,6 +30,8 @@ class PostService {
   // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
   static const int _feedRealtimeLimit = 300;
+  static const String postsCollection = 'posts';
+  static const String sharingPostsCollection = 'sharing_posts';
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -64,10 +68,12 @@ class PostService {
     // 0) visibility filter (sync)
     final List<Post> visibilityFiltered;
     if (currentUser != null) {
-      visibilityFiltered = parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
-    } else {
       visibilityFiltered =
-          parsed.where((p) => p.visibility == 'public' || p.visibility.isEmpty).toList();
+          parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
+    } else {
+      visibilityFiltered = parsed
+          .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
+          .toList();
     }
 
     // 1) blocked filter using cached sets (sync, immediate)
@@ -76,9 +82,7 @@ class PostService {
     final blockedAnonymousPosts =
         ContentFilterService.getBlockedAnonymousPostIdsCached();
     final List<Post> fastFiltered;
-    if (blocked.isEmpty &&
-        blockedBy.isEmpty &&
-        blockedAnonymousPosts.isEmpty) {
+    if (blocked.isEmpty && blockedBy.isEmpty && blockedAnonymousPosts.isEmpty) {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered);
     } else {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered)
@@ -109,8 +113,10 @@ class PostService {
     if (!identical(controller, _postsStreamController)) return;
 
     try {
-      final nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
-          .timeout(const Duration(seconds: 2), onTimeout: () => visibilityFiltered);
+      final nonBlocked =
+          await ContentFilterService.filterPosts(visibilityFiltered).timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => visibilityFiltered);
       if (controller.isClosed) return;
       if (!identical(controller, _postsStreamController)) return;
 
@@ -133,7 +139,10 @@ class PostService {
     required String userId,
     required List<String> visibleToCategoryIds,
   }) async {
-    final ids = visibleToCategoryIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final ids = visibleToCategoryIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     if (ids.isEmpty) return false;
 
     const chunkSize = 10;
@@ -203,7 +212,46 @@ class PostService {
     }
   }
 
-  Post _buildPostFromFirestore(String id, Map<String, dynamic> data) {
+  String _collectionForPost(Post post) => post.collectionPath.trim().isEmpty
+      ? postsCollection
+      : post.collectionPath;
+
+  bool _resolveStrictHanyangVerified(Map<String, dynamic>? data) {
+    if (data == null) return false;
+    if (data['hanyangVerified'] == true) return true;
+    final email = (data['hanyangEmail'] as String?)?.trim() ?? '';
+    return email.endsWith('@hanyang.ac.kr');
+  }
+
+  Future<bool> _isCurrentUserHanyangVerified(String uid) async {
+    final doc = await _firestore.collection('users').doc(uid).get();
+    return _resolveStrictHanyangVerified(doc.data());
+  }
+
+  Future<List<String>> _uploadPostImages(List<File>? imageFiles) async {
+    if (imageFiles == null || imageFiles.isEmpty) return const [];
+
+    final futures = imageFiles.map(
+      (imageFile) => _storageService.uploadImage(imageFile),
+    );
+
+    try {
+      final results = await Future.wait(
+        futures,
+        eagerError: false,
+      );
+      return results.whereType<String>().toList();
+    } catch (e) {
+      Logger.error('이미지 병렬 업로드 중 오류: $e');
+      return const [];
+    }
+  }
+
+  Post _buildPostFromFirestore(
+    String id,
+    Map<String, dynamic> data, {
+    String collectionPath = postsCollection,
+  }) {
     DateTime createdAt = DateTime.now();
     final rawCreatedAt = data['createdAt'];
     if (rawCreatedAt is Timestamp) {
@@ -214,6 +262,7 @@ class PostService {
 
     return Post(
       id: id,
+      collectionPath: collectionPath,
       title: data['title'] ?? '',
       content: data['content'] ?? '',
       author: data['authorNickname'] ?? '익명',
@@ -227,9 +276,13 @@ class PostService {
       viewCount: data['viewCount'] ?? 0,
       likedBy: List<String>.from(data['likedBy'] ?? []),
       imageUrls: List<String>.from(data['imageUrls'] ?? []),
+      schoolOnly: data['schoolOnly'] == true,
+      authorHanyangVerified: data['authorHanyangVerified'] == true,
+      sharingLocation: (data['sharingLocation'] ?? '').toString(),
       visibility: data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+      visibleToCategoryIds:
+          List<String>.from(data['visibleToCategoryIds'] ?? []),
       allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
@@ -247,6 +300,8 @@ class PostService {
     List<String> visibleToCategoryIds = const [], // 공개할 카테고리 ID 목록
     String type = 'text', // 'text' | 'poll'
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
+    String? category, // 나눔 카테고리 (생활용품/전자기기/도서/기타 등)
+    bool schoolOnly = false, // '학교 사람들에게만' 나눔 옵션 (MVP: UI용 메타)
   }) async {
     try {
       final user = _auth.currentUser;
@@ -268,34 +323,7 @@ class PostService {
       // 게시글 작성 시간
       final now = FieldValue.serverTimestamp();
 
-      // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
-      List<String> imageUrls = [];
-      if (imageFiles != null && imageFiles.isNotEmpty) {
-        // 한번에 하나씩 순차적으로 업로드하지 않고, 병렬로 처리
-        final futures = imageFiles.map(
-          (imageFile) => _storageService.uploadImage(imageFile),
-        );
-
-        try {
-          // 모든 이미지 업로드 작업 동시 실행 후 결과 수집
-          final results = await Future.wait(
-            futures,
-            eagerError: false, // 하나가 실패해도 다른 이미지 계속 업로드
-          );
-
-          // null이 아닌 URL만 추가
-          imageUrls =
-              results.where((url) => url != null).cast<String>().toList();
-
-          // 모든 이미지 업로드에 실패한 경우
-          if (imageUrls.isEmpty && imageFiles.isNotEmpty) {
-            Logger.error('모든 이미지 업로드 실패');
-          }
-        } catch (e) {
-          Logger.error('이미지 병렬 업로드 중 오류: $e');
-          // 오류가 발생해도 게시글은 계속 생성 (이미지 없이)
-        }
-      }
+      final imageUrls = await _uploadPostImages(imageFiles);
 
       // 카테고리별 공개인 경우 allowedUserIds 계산
       List<String> allowedUserIds = [];
@@ -333,6 +361,7 @@ class PostService {
         'authorNickname': nickname,
         'authorNationality': nationality, // 작성자 국적 추가
         'authorPhotoURL': photoURL, // 작성자 프로필 사진 URL 추가
+        'authorHanyangVerified': _resolveStrictHanyangVerified(userData),
         'title': title,
         'content': content,
         'imageUrls': imageUrls,
@@ -345,6 +374,9 @@ class PostService {
         'likes': 0,
         'likedBy': [],
         'commentCount': 0,
+        if (category != null && category.trim().isNotEmpty)
+          'category': category.trim(),
+        if (schoolOnly) 'schoolOnly': true,
       };
 
       // 투표형 게시글 데이터
@@ -378,7 +410,7 @@ class PostService {
       }
 
       // Firestore에 저장
-      await _firestore.collection('posts').add(postData);
+      await _firestore.collection(postsCollection).add(postData);
 
       // 캐시 무효화 (새 게시글이 추가되었으므로 목록 캐시 삭제)
       if (CacheFeatureFlags.isPostCacheEnabled) {
@@ -388,6 +420,76 @@ class PostService {
       return true;
     } catch (e) {
       Logger.error('포스트 작성 오류: $e');
+      return false;
+    }
+  }
+
+  /// 나눔 전용 게시글 추가.
+  ///
+  /// 기존 앱이 구독하던 `posts`와 물리적으로 분리해, 업데이트하지 않은 앱에서는
+  /// 신규 나눔 데이터가 노출되지 않도록 한다.
+  Future<bool> addSharingPost({
+    required String title,
+    required String content,
+    String sharingLocation = '',
+    required String category,
+    required List<File> imageFiles,
+    required bool schoolOnly,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('로그인이 필요합니다');
+
+      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userData = userDoc.data();
+      final nickname = userData?['nickname'] ?? '익명';
+      final nationality = userData?['nationality'] ?? '';
+      final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
+      final photoURL = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
+          ? rawPhotoUrl
+          : '';
+      final authorHanyangVerified = _resolveStrictHanyangVerified(userData);
+
+      if (schoolOnly && !authorHanyangVerified) {
+        throw Exception('한양메일 인증이 필요합니다');
+      }
+
+      final imageUrls = await _uploadPostImages(imageFiles);
+      if (imageUrls.isEmpty) {
+        throw Exception('이미지 업로드에 실패했습니다');
+      }
+
+      final now = FieldValue.serverTimestamp();
+      await _firestore.collection(sharingPostsCollection).add({
+        'schemaVersion': 2,
+        'postType': 'sharing',
+        'userId': user.uid,
+        'authorNickname': nickname,
+        'authorNationality': nationality,
+        'authorPhotoURL': photoURL,
+        'authorHanyangVerified': authorHanyangVerified,
+        'title': title.trim(),
+        'content': content.trim(),
+        'sharingLocation': sharingLocation.trim(),
+        'category': category.trim(),
+        'imageUrls': imageUrls,
+        'createdAt': now,
+        'updatedAt': now,
+        'visibility': 'public',
+        'isAnonymous': false,
+        'visibleToCategoryIds': const <String>[],
+        'allowedUserIds': const <String>[],
+        'schoolOnly': schoolOnly,
+        'likes': 0,
+        'likedBy': const <String>[],
+        'commentCount': 0,
+        'viewCount': 0,
+        'type': 'text',
+      });
+
+      return true;
+    } catch (e) {
+      Logger.error('나눔 글 작성 오류: $e');
       return false;
     }
   }
@@ -405,7 +507,8 @@ class PostService {
       final user = _auth.currentUser;
       if (user == null) return null;
 
-      final postRef = _firestore.collection('posts').doc(post.id);
+      final postRef =
+          _firestore.collection(_collectionForPost(post)).doc(post.id);
       final postDoc = await postRef.get();
       if (!postDoc.exists) return null;
 
@@ -417,22 +520,28 @@ class PostService {
 
       // 투표 게시글은 투표가 진행된 이후에는 수정 불가 (공정성)
       final type = (data['type'] ?? 'text').toString();
-      final pollTotalVotes = (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+      final pollTotalVotes =
+          (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
       if (type == 'poll' && pollTotalVotes > 0) {
         Logger.error('포스트 수정 실패: 투표가 진행된 포스트는 수정할 수 없습니다.');
         return null;
       }
 
       final originalUrls = List<String>.from(data['imageUrls'] ?? const []);
-      final keptSet = keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
-      final removedUrls = originalUrls.where((u) => !keptSet.contains(u)).toList(growable: false);
+      final keptSet =
+          keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+      final removedUrls = originalUrls
+          .where((u) => !keptSet.contains(u))
+          .toList(growable: false);
 
       // 신규 이미지 업로드 (병렬)
       final uploadedUrls = <String>[];
       if (newImageFiles != null && newImageFiles.isNotEmpty) {
-        final futures = newImageFiles.map((f) => _storageService.uploadImage(f));
+        final futures =
+            newImageFiles.map((f) => _storageService.uploadImage(f));
         final results = await Future.wait(futures, eagerError: false);
-        uploadedUrls.addAll(results.whereType<String>().where((u) => u.trim().isNotEmpty));
+        uploadedUrls.addAll(
+            results.whereType<String>().where((u) => u.trim().isNotEmpty));
       }
 
       // 최대 10장 제한 (안전)
@@ -440,7 +549,8 @@ class PostService {
         ...keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty),
         ...uploadedUrls,
       ];
-      final finalImageUrls = merged.length > 10 ? merged.take(10).toList() : merged;
+      final finalImageUrls =
+          merged.length > 10 ? merged.take(10).toList() : merged;
 
       await postRef.update({
         'content': content,
@@ -462,8 +572,12 @@ class PostService {
       }
 
       // 최신 데이터 반환
-      final refreshed = await getPostById(post.id);
-      return refreshed ?? post.copyWith(content: content, imageUrls: finalImageUrls);
+      final refreshed = await getPostById(
+        post.id,
+        collectionPath: _collectionForPost(post),
+      );
+      return refreshed ??
+          post.copyWith(content: content, imageUrls: finalImageUrls);
     } catch (e) {
       Logger.error('포스트 수정 오류: $e');
       return null;
@@ -519,8 +633,9 @@ class PostService {
           throw Exception('선택지를 찾을 수 없습니다');
         }
 
-        final currentTotal =
-            (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+        final currentTotal = (data['pollTotalVotes'] is int)
+            ? (data['pollTotalVotes'] as int)
+            : 0;
 
         tx.update(postRef, {
           'pollOptions': updatedOptions,
@@ -596,34 +711,47 @@ class PostService {
       // 로그인하지 않은 경우 전체 공개 게시글만 표시
       return ContentHideService.filterPostsSync(
         posts
-          .where(
-              (post) => post.visibility == 'public' || post.visibility.isEmpty)
-          .toList(),
+            .where((post) =>
+                post.visibility == 'public' || post.visibility.isEmpty)
+            .toList(),
       );
     });
   }
 
   // 특정 게시글 가져오기
-  Future<Post?> getPostById(String postId) async {
+  Future<Post?> getPostById(
+    String postId, {
+    String collectionPath = postsCollection,
+  }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) return null;
 
-      final doc = await _firestore.collection('posts').doc(postId).get();
+      final doc = await _firestore.collection(collectionPath).doc(postId).get();
       if (!doc.exists) return null;
 
       final data = doc.data()!;
-      final post = _buildPostFromFirestore(doc.id, data);
+      final post = _buildPostFromFirestore(
+        doc.id,
+        data,
+        collectionPath: collectionPath,
+      );
 
       // 앱 레벨에서 한 번 더 접근 제어(캐시/레거시 데이터/UX 안정성)
       if (!_canUserReadPost(post, user)) {
         return null;
       }
 
+      if (post.schoolOnly && post.userId != user.uid) {
+        final verified = await _isCurrentUserHanyangVerified(user.uid);
+        if (!verified) return null;
+      }
+
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts([post]);
       if (filtered.isEmpty) return null;
-      if (ContentHideService.isHiddenPost(post.id) || ContentHideService.isHiddenUser(post.userId)) {
+      if (ContentHideService.isHiddenPost(post.id) ||
+          ContentHideService.isHiddenUser(post.userId)) {
         return null;
       }
 
@@ -634,7 +762,10 @@ class PostService {
     }
   }
 
-  Future<bool> toggleLike(String postId) async {
+  Future<bool> toggleLike(
+    String postId, {
+    String collectionPath = postsCollection,
+  }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -644,7 +775,7 @@ class PostService {
 
       // 트랜잭션 대신 더 간단한 접근 방식 사용
       // 게시글 문서 레퍼런스
-      final postRef = _firestore.collection('posts').doc(postId);
+      final postRef = _firestore.collection(collectionPath).doc(postId);
 
       // 게시글 데이터 가져오기
       final postDoc = await postRef.get();
@@ -657,7 +788,7 @@ class PostService {
       List<dynamic> likedBy = List.from(data['likedBy'] ?? []);
       bool hasLiked = likedBy.contains(user.uid);
 
-      String _previewText(String raw, {int max = 40}) {
+      String previewText(String raw, {int max = 40}) {
         final t = raw.replaceAll(RegExp(r'\s+'), ' ').trim();
         if (t.isEmpty) return '';
         return t.length <= max ? t : '${t.substring(0, max)}...';
@@ -667,10 +798,15 @@ class PostService {
       final rawContent = (data['content'] ?? '').toString();
       final postTitle = rawTitle.trim().isNotEmpty
           ? rawTitle.trim()
-          : _previewText(rawContent);
+          : previewText(rawContent);
       final authorId = data['userId'];
       final bool postIsAnonymous = data['isAnonymous'] == true;
-
+      final bool postIsSharing = collectionPath == sharingPostsCollection ||
+          data['postType'] == 'sharing';
+      final imageUrls = data['imageUrls'];
+      final thumbnailUrl = imageUrls is List && imageUrls.isNotEmpty
+          ? imageUrls.first?.toString()
+          : null;
 
       // 좋아요 토글
       if (hasLiked) {
@@ -704,6 +840,9 @@ class PostService {
             nickname,
             user.uid,
             postIsAnonymous: postIsAnonymous,
+            isSharingPost: postIsSharing,
+            collectionPath: collectionPath,
+            thumbnailUrl: thumbnailUrl,
           );
         }
       }
@@ -713,6 +852,127 @@ class PostService {
       Logger.error('좋아요 기능 오류: $e');
       return false;
     }
+  }
+
+  Stream<List<SharingPostApplication>> watchSharingApplications(
+    String postId,
+  ) {
+    if (postId.trim().isEmpty) {
+      return Stream.value(const <SharingPostApplication>[]);
+    }
+
+    return _firestore
+        .collection(sharingPostsCollection)
+        .doc(postId)
+        .collection('applications')
+        .orderBy('requestedAt')
+        .snapshots()
+        .map((snapshot) =>
+            snapshot.docs.map(SharingPostApplication.fromFirestore).toList());
+  }
+
+  Future<bool> hasRequestedSharing(String postId) async {
+    final user = _auth.currentUser;
+    if (user == null || postId.trim().isEmpty) return false;
+
+    final prefs = await SharedPreferences.getInstance();
+    final requestedIds =
+        prefs.getStringList(_sharingRequestStorageKey(user.uid)) ??
+            const <String>[];
+    if (requestedIds.contains(postId)) return true;
+
+    try {
+      final doc = await _firestore
+          .collection(sharingPostsCollection)
+          .doc(postId)
+          .collection('applications')
+          .doc(user.uid)
+          .get();
+      if (doc.exists) {
+        await _markSharingRequested(uid: user.uid, postId: postId);
+        return true;
+      }
+    } on FirebaseException catch (e) {
+      Logger.warning('나눔 신청 상태 확인 실패: ${e.code}');
+    }
+
+    return false;
+  }
+
+  String _sharingRequestStorageKey(String uid) => 'sharing_requests_v1_$uid';
+
+  Future<void> _markSharingRequested({
+    required String uid,
+    required String postId,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final key = _sharingRequestStorageKey(uid);
+    final requestedIds = (prefs.getStringList(key) ?? const <String>[]).toSet();
+    requestedIds.add(postId);
+    await prefs.setStringList(key, requestedIds.toList()..sort());
+  }
+
+  Future<bool?> requestSharing(Post post) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+    if (post.userId == user.uid) return false;
+    if (!isSharingPost(post)) return false;
+
+    final applicationRef = _firestore
+        .collection(sharingPostsCollection)
+        .doc(post.id)
+        .collection('applications')
+        .doc(user.uid);
+
+    final alreadyRequestedLocally = await hasRequestedSharing(post.id);
+    if (alreadyRequestedLocally) return false;
+
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    final userData = userDoc.data();
+    final requesterName =
+        (userData?['nickname'] ?? user.displayName ?? user.email ?? '사용자')
+            .toString()
+            .trim();
+    final requesterPhotoUrl =
+        (userData?['photoURL'] ?? userData?['photoUrl'] ?? user.photoURL ?? '')
+            .toString();
+    final requesterNationality =
+        (userData?['nationality'] ?? userData?['countryCode'] ?? '').toString();
+
+    try {
+      await applicationRef.set({
+        'postId': post.id,
+        'requesterId': user.uid,
+        'requesterName': requesterName.isEmpty ? '사용자' : requesterName,
+        'requesterPhotoUrl': requesterPhotoUrl,
+        'requesterNationality': requesterNationality,
+        'requestedAt': Timestamp.now(),
+      });
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        final alreadyRequested = await hasRequestedSharing(post.id);
+        if (alreadyRequested) {
+          await _markSharingRequested(uid: user.uid, postId: post.id);
+          return false;
+        }
+        Logger.error('나눔 신청 권한 오류: ${e.message ?? e.code}');
+      }
+      rethrow;
+    }
+
+    await _markSharingRequested(uid: user.uid, postId: post.id);
+
+    await _notificationService.sendSharingRequestNotification(
+      postId: post.id,
+      postTitle:
+          post.title.trim().isNotEmpty ? post.title.trim() : post.content,
+      postAuthorId: post.userId,
+      requesterId: user.uid,
+      requesterName: requesterName.isEmpty ? '사용자' : requesterName,
+      thumbnailUrl: post.imageUrls.isNotEmpty ? post.imageUrls.first : null,
+    );
+
+    return true;
   }
 
   /// 현재 사용자가 좋아요를 눌렀는지 확인
@@ -745,7 +1005,10 @@ class PostService {
   }
 
   // 게시글 조회수 증가 (세션당 1회만)
-  Future<void> incrementViewCount(String postId) async {
+  Future<void> incrementViewCount(
+    String postId, {
+    String collectionPath = postsCollection,
+  }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) {
@@ -758,7 +1021,7 @@ class PostService {
       }
 
       // 조회수 증가
-      await _firestore.collection('posts').doc(postId).update({
+      await _firestore.collection(collectionPath).doc(postId).update({
         'viewCount': FieldValue.increment(1),
       });
 
@@ -770,7 +1033,10 @@ class PostService {
   }
 
   // 게시글 삭제
-  Future<bool> deletePost(String postId) async {
+  Future<bool> deletePost(
+    String postId, {
+    String collectionPath = postsCollection,
+  }) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -779,7 +1045,8 @@ class PostService {
       }
 
       // 게시글 문서 가져오기
-      final postDoc = await _firestore.collection('posts').doc(postId).get();
+      final postDoc =
+          await _firestore.collection(collectionPath).doc(postId).get();
 
       // 문서가 없는 경우
       if (!postDoc.exists) {
@@ -796,7 +1063,7 @@ class PostService {
       }
 
       // 게시글 삭제
-      await _firestore.collection('posts').doc(postId).delete();
+      await _firestore.collection(collectionPath).doc(postId).delete();
 
       // 이미지가 있으면 삭제
       if (data['imageUrls'] != null) {
@@ -835,196 +1102,225 @@ class PostService {
     }
   }
 
+  Stream<List<Post>> getSharingPostsStream() {
+    return _firestore
+        .collection(sharingPostsCollection)
+        .orderBy('createdAt', descending: true)
+        .limit(_feedRealtimeLimit)
+        .snapshots()
+        .asyncMap((snapshot) async {
+      final posts = snapshot.docs.map((doc) {
+        return _buildPostFromFirestore(
+          doc.id,
+          doc.data(),
+          collectionPath: sharingPostsCollection,
+        );
+      }).toList();
+
+      final hiddenFiltered = ContentHideService.filterPostsSync(posts);
+      try {
+        return await ContentFilterService.filterPosts(hiddenFiltered)
+            .timeout(const Duration(seconds: 2), onTimeout: () {
+          Logger.warning('나눔 차단 필터 timeout → 숨김 필터만 적용');
+          return hiddenFiltered;
+        });
+      } catch (e) {
+        Logger.error('나눔 차단 필터 오류(폴백): $e');
+        return hiddenFiltered;
+      }
+    });
+  }
+
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
     if (_postsStreamCached != null) return _postsStreamCached!;
 
     _postsStreamController = StreamController<List<Post>>.broadcast(
       onListen: () {
-        // ✅ 무조건 1회는 emit해서 StreamBuilder가 waiting에 고정되지 않게 한다.
-        // (Firestore snapshots가 지연/실패하더라도 UI는 로딩 뷰에서 빠져나오게 됨)
-        scheduleMicrotask(() {
-          try {
-            _postsStreamController?.add(const <Post>[]);
-          } catch (_) {}
-        });
-
         Future<void> start() async {
           try {
             if (_debugPostsStartLogs < 1) {
               _debugPostsStartLogs++;
               Logger.log('📰 getPostsStream start()');
             }
-          Future<void> emitFiltered() async {
-            final sw = Stopwatch()..start();
-            final parsed = _lastParsedPosts ?? const <Post>[];
-            final currentUser = _auth.currentUser;
+            Future<void> emitFiltered() async {
+              final sw = Stopwatch()..start();
+              final parsed = _lastParsedPosts ?? const <Post>[];
+              final currentUser = _auth.currentUser;
 
-            // 0) visibility filter first (fast, synchronous)
-            final List<Post> visibilityFiltered;
-            if (currentUser != null) {
-              visibilityFiltered =
-                  parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
-            } else {
-              visibilityFiltered = parsed
-                  .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
-                  .toList();
-            }
+              // 0) visibility filter first (fast, synchronous)
+              final List<Post> visibilityFiltered;
+              if (currentUser != null) {
+                visibilityFiltered = parsed
+                    .where((p) => _canUserReadPost(p, currentUser))
+                    .toList();
+              } else {
+                visibilityFiltered = parsed
+                    .where(
+                        (p) => p.visibility == 'public' || p.visibility.isEmpty)
+                    .toList();
+              }
 
-            // 1) Immediately emit something so UI doesn't stick on "waiting".
-            _postsStreamController?.add(ContentHideService.filterPostsSync(visibilityFiltered));
+              // 1) Immediately emit something so UI doesn't stick on "waiting".
+              _postsStreamController
+                  ?.add(ContentHideService.filterPostsSync(visibilityFiltered));
 
-            // 2) blocked filter (can be slow/network dependent)
-            List<Post> nonBlocked = visibilityFiltered;
-            try {
-              nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
-                  .timeout(const Duration(seconds: 2), onTimeout: () {
-                Logger.warning('차단 필터 timeout → 필터 없이 표시');
-                return visibilityFiltered;
-              });
-            } catch (e) {
-              Logger.error('차단 필터 오류(폴백): $e');
-              nonBlocked = visibilityFiltered;
-            }
-
-            // 3) If changed after block-filtering, emit again.
-            if (nonBlocked.length != visibilityFiltered.length) {
-              _postsStreamController?.add(ContentHideService.filterPostsSync(nonBlocked));
-            }
-
-            if (CacheFeatureFlags.isPostCacheEnabled) {
-              unawaited(
-                _cache.savePosts(ContentHideService.filterPostsSync(nonBlocked), visibility: 'public'),
-              );
-            }
-
-            if (_debugEmitFilteredLogs < 6) {
-              _debugEmitFilteredLogs++;
-              Logger.log(
-                '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
-              );
-            }
-          }
-
-          Future<void> ensureBlockSubscriptions() async {
-            final u = _auth.currentUser;
-            final uid = u?.uid;
-
-            // 로그아웃 또는 계정 변경 시: 기존 구독 정리
-            if (uid == null || (_blockListenUid != null && _blockListenUid != uid)) {
-              await _blocksByMeSub?.cancel();
-              await _blockedBySub?.cancel();
-              _blocksByMeSub = null;
-              _blockedBySub = null;
-              _blockListenUid = null;
-            }
-
-            // 로그인 전이면 blocks 구독 없이 종료
-            if (uid == null) return;
-
-            // 이미 같은 uid로 구독 중이면 스킵
-            if (_blockListenUid == uid &&
-                _blocksByMeSub != null &&
-                _blockedBySub != null) {
-              return;
-            }
-
-            _blockListenUid = uid;
-
-            _blocksByMeSub ??= _firestore
-                .collection('blocks')
-                .where('blocker', isEqualTo: uid)
-                .snapshots()
-                .listen((snap) async {
-              // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
-              final ids = snap.docs
-                  .map((d) => (d.data()['blocked'] ?? '').toString().trim())
-                  .where((v) => v.isNotEmpty)
-                  .toSet();
-              ContentFilterService.setBlockedUserIds(ids);
-              unawaited(emitFiltered());
-            }, onError: (e) {
-              Logger.error('blocks(byMe) 스트림 오류: $e');
-              _postsStreamController?.addError(e);
-            });
-
-            _blockedBySub ??= _firestore
-                .collection('blocks')
-                .where('blocked', isEqualTo: uid)
-                .snapshots()
-                .listen((snap) async {
-              final ids = snap.docs
-                  .map((d) => (d.data()['blocker'] ?? '').toString().trim())
-                  .where((v) => v.isNotEmpty)
-                  .toSet();
-              ContentFilterService.setBlockedByUserIds(ids);
-              unawaited(emitFiltered());
-            }, onError: (e) {
-              Logger.error('blocks(blockedBy) 스트림 오류: $e');
-              _postsStreamController?.addError(e);
-            });
-          }
-
-          // posts snapshots
-          // 기존 구독이 살아 있으면 먼저 취소 (start()가 재진입될 때 중복 구독 방지)
-          await _postsSub?.cancel();
-          _postsSub = _firestore
-              .collection('posts')
-              .orderBy('createdAt', descending: true)
-              .limit(_feedRealtimeLimit)
-              .snapshots()
-              .listen((snapshot) async {
-            if (_debugPostsSnapshotLogs < 6) {
-              _debugPostsSnapshotLogs++;
-              Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
-            }
-            final posts = snapshot.docs.map((doc) {
+              // 2) blocked filter (can be slow/network dependent)
+              List<Post> nonBlocked = visibilityFiltered;
               try {
-                return _buildPostFromFirestore(doc.id, doc.data());
+                nonBlocked =
+                    await ContentFilterService.filterPosts(visibilityFiltered)
+                        .timeout(const Duration(seconds: 2), onTimeout: () {
+                  Logger.warning('차단 필터 timeout → 필터 없이 표시');
+                  return visibilityFiltered;
+                });
               } catch (e) {
-                Logger.error('포스트 파싱 오류: $e');
-                return Post(
-                  id: doc.id,
-                  title: '제목 없음',
-                  content: '내용을 불러올 수 없습니다.',
-                  author: '알 수 없음',
-                  category: '일반',
-                  createdAt: DateTime.now(),
-                  userId: '',
-                  imageUrls: [],
-                  visibility: 'public',
-                  isAnonymous: false,
-                  visibleToCategoryIds: [],
-                  likes: 0,
-                  type: 'text',
-                  pollOptions: const [],
-                  pollTotalVotes: 0,
+                Logger.error('차단 필터 오류(폴백): $e');
+                nonBlocked = visibilityFiltered;
+              }
+
+              // 3) If changed after block-filtering, emit again.
+              if (nonBlocked.length != visibilityFiltered.length) {
+                _postsStreamController
+                    ?.add(ContentHideService.filterPostsSync(nonBlocked));
+              }
+
+              if (CacheFeatureFlags.isPostCacheEnabled) {
+                unawaited(
+                  _cache.savePosts(
+                      ContentHideService.filterPostsSync(nonBlocked),
+                      visibility: 'public'),
                 );
               }
-            }).toList();
 
-            _lastParsedPosts = posts;
-            unawaited(emitFiltered());
-          }, onError: (e) {
-            // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
-            // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
-            Logger.error('포스트 스트림 오류: $e');
-            _postsStreamController?.addError(e);
-          });
+              if (_debugEmitFilteredLogs < 6) {
+                _debugEmitFilteredLogs++;
+                Logger.log(
+                  '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
+                );
+              }
+            }
 
-          // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
-          // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
-          _authSub ??= _auth.authStateChanges().listen((_) async {
-            ContentFilterService.refreshCache();
+            Future<void> ensureBlockSubscriptions() async {
+              final u = _auth.currentUser;
+              final uid = u?.uid;
+
+              // 로그아웃 또는 계정 변경 시: 기존 구독 정리
+              if (uid == null ||
+                  (_blockListenUid != null && _blockListenUid != uid)) {
+                await _blocksByMeSub?.cancel();
+                await _blockedBySub?.cancel();
+                _blocksByMeSub = null;
+                _blockedBySub = null;
+                _blockListenUid = null;
+              }
+
+              // 로그인 전이면 blocks 구독 없이 종료
+              if (uid == null) return;
+
+              // 이미 같은 uid로 구독 중이면 스킵
+              if (_blockListenUid == uid &&
+                  _blocksByMeSub != null &&
+                  _blockedBySub != null) {
+                return;
+              }
+
+              _blockListenUid = uid;
+
+              _blocksByMeSub ??= _firestore
+                  .collection('blocks')
+                  .where('blocker', isEqualTo: uid)
+                  .snapshots()
+                  .listen((snap) async {
+                // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
+                final ids = snap.docs
+                    .map((d) => (d.data()['blocked'] ?? '').toString().trim())
+                    .where((v) => v.isNotEmpty)
+                    .toSet();
+                ContentFilterService.setBlockedUserIds(ids);
+                unawaited(emitFiltered());
+              }, onError: (e) {
+                Logger.error('blocks(byMe) 스트림 오류: $e');
+                _postsStreamController?.addError(e);
+              });
+
+              _blockedBySub ??= _firestore
+                  .collection('blocks')
+                  .where('blocked', isEqualTo: uid)
+                  .snapshots()
+                  .listen((snap) async {
+                final ids = snap.docs
+                    .map((d) => (d.data()['blocker'] ?? '').toString().trim())
+                    .where((v) => v.isNotEmpty)
+                    .toSet();
+                ContentFilterService.setBlockedByUserIds(ids);
+                unawaited(emitFiltered());
+              }, onError: (e) {
+                Logger.error('blocks(blockedBy) 스트림 오류: $e');
+                _postsStreamController?.addError(e);
+              });
+            }
+
+            // posts snapshots
+            // 기존 구독이 살아 있으면 먼저 취소 (start()가 재진입될 때 중복 구독 방지)
+            await _postsSub?.cancel();
+            _postsSub = _firestore
+                .collection('posts')
+                .orderBy('createdAt', descending: true)
+                .limit(_feedRealtimeLimit)
+                .snapshots()
+                .listen((snapshot) async {
+              if (_debugPostsSnapshotLogs < 6) {
+                _debugPostsSnapshotLogs++;
+                Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
+              }
+              final posts = snapshot.docs.map((doc) {
+                try {
+                  return _buildPostFromFirestore(doc.id, doc.data());
+                } catch (e) {
+                  Logger.error('포스트 파싱 오류: $e');
+                  return Post(
+                    id: doc.id,
+                    title: '제목 없음',
+                    content: '내용을 불러올 수 없습니다.',
+                    author: '알 수 없음',
+                    category: '일반',
+                    createdAt: DateTime.now(),
+                    userId: '',
+                    imageUrls: [],
+                    visibility: 'public',
+                    isAnonymous: false,
+                    visibleToCategoryIds: [],
+                    likes: 0,
+                    type: 'text',
+                    pollOptions: const [],
+                    pollTotalVotes: 0,
+                  );
+                }
+              }).toList();
+
+              _lastParsedPosts = posts;
+              unawaited(emitFiltered());
+            }, onError: (e) {
+              // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
+              // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
+              Logger.error('포스트 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+
+            // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
+            // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
+            _authSub ??= _auth.authStateChanges().listen((_) async {
+              ContentFilterService.refreshCache();
+              await ensureBlockSubscriptions();
+              unawaited(emitFiltered());
+            }, onError: (e) {
+              Logger.error('Auth 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+
+            // 현재 상태 기준 blocks 구독 설정
             await ensureBlockSubscriptions();
-            unawaited(emitFiltered());
-          }, onError: (e) {
-            Logger.error('Auth 스트림 오류: $e');
-            _postsStreamController?.addError(e);
-          });
-
-          // 현재 상태 기준 blocks 구독 설정
-          await ensureBlockSubscriptions();
           } catch (e, st) {
             Logger.error('getPostsStream start() 실패: $e', e, st);
             try {
@@ -1096,65 +1392,93 @@ class PostService {
 
       final lowercaseQuery = query.toLowerCase();
 
-      // 기본 쿼리
-      Query<Map<String, dynamic>> queryRef =
-          _firestore.collection('posts').orderBy('createdAt', descending: true).limit(600);
-
-      // 카테고리 필터 추가
-      if (category != null && category.isNotEmpty) {
-        queryRef = queryRef.where('category', isEqualTo: category);
-      }
-
-      final snapshot = await queryRef.get();
+      final snapshots = await Future.wait([
+        _firestore
+            .collection(postsCollection)
+            .orderBy('createdAt', descending: true)
+            .limit(600)
+            .get(),
+        _firestore
+            .collection(sharingPostsCollection)
+            .orderBy('createdAt', descending: true)
+            .limit(300)
+            .get(),
+      ]);
 
       final matched = <Post>[];
+      final canonicalCategory = canonicalSharingCategory(category) ?? category;
 
-      for (final doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-          final post = _buildPostFromFirestore(doc.id, data);
+      for (final snapshot in snapshots) {
+        final collectionPath = snapshot == snapshots.first
+            ? postsCollection
+            : sharingPostsCollection;
+        for (final doc in snapshot.docs) {
+          try {
+            final data = doc.data();
+            final post = _buildPostFromFirestore(
+              doc.id,
+              data,
+              collectionPath: collectionPath,
+            );
 
-          // 🔒 검색에서도 동일한 공개범위/허용 사용자 필터 적용
-          // - 기본: allowedUserIds 기반
-          // - 보강: 레거시 데이터(allowedUserIds 누락/비어있음)는 visibleToCategoryIds 기반으로 계산
-          bool canRead = _canUserReadPost(post, user);
-          if (!canRead && post.visibility == 'category') {
-            // 작성자 본인은 항상 허용 (안전장치)
-            if (post.userId == user.uid) {
-              canRead = true;
-            } else if (post.allowedUserIds.isEmpty && post.visibleToCategoryIds.isNotEmpty) {
-              canRead = await _isUserIncludedByVisibleCategories(
-                userId: user.uid,
-                visibleToCategoryIds: post.visibleToCategoryIds,
-              );
+            if (canonicalCategory != null && canonicalCategory.isNotEmpty) {
+              final postCanonical =
+                  canonicalSharingCategory(post.category) ?? post.category;
+              if (postCanonical != canonicalCategory) continue;
             }
+
+            // 🔒 검색에서도 동일한 공개범위/허용 사용자 필터 적용
+            // - 기본: allowedUserIds 기반
+            // - 보강: 레거시 데이터(allowedUserIds 누락/비어있음)는 visibleToCategoryIds 기반으로 계산
+            bool canRead = _canUserReadPost(post, user);
+            if (!canRead && post.visibility == 'category') {
+              // 작성자 본인은 항상 허용 (안전장치)
+              if (post.userId == user.uid) {
+                canRead = true;
+              } else if (post.allowedUserIds.isEmpty &&
+                  post.visibleToCategoryIds.isNotEmpty) {
+                canRead = await _isUserIncludedByVisibleCategories(
+                  userId: user.uid,
+                  visibleToCategoryIds: post.visibleToCategoryIds,
+                );
+              }
+            }
+            if (!canRead) continue;
+
+            if (post.schoolOnly && post.userId != user.uid) {
+              final verified = await _isCurrentUserHanyangVerified(user.uid);
+              if (!verified) continue;
+            }
+
+            // 검색어와 일치하는지 확인
+            final title = (data['title'] as String? ?? '').toLowerCase();
+            final content = (data['content'] as String? ?? '').toLowerCase();
+            final author =
+                (data['authorNickname'] as String? ?? '').toLowerCase();
+            final isAnonymous = data['isAnonymous'] == true;
+
+            // ✅ 익명 글은 "작성자(아이디/닉네임)"로 어떤 경우에도 검색에 걸리면 안됨
+            // - 제목/내용 검색은 포함
+            // - 작성자 기준 검색은 비익명 글에만 허용
+            final matchesTitleOrContent = title.contains(lowercaseQuery) ||
+                content.contains(lowercaseQuery);
+            final matchesAuthor =
+                !isAnonymous && author.contains(lowercaseQuery);
+
+            if (matchesTitleOrContent || matchesAuthor) {
+              matched.add(post);
+            }
+          } catch (e) {
+            Logger.error('포스트 검색 파싱 오류: $e');
           }
-          if (!canRead) continue;
-
-          // 검색어와 일치하는지 확인
-          final title = (data['title'] as String? ?? '').toLowerCase();
-          final content = (data['content'] as String? ?? '').toLowerCase();
-          final author = (data['authorNickname'] as String? ?? '').toLowerCase();
-          final isAnonymous = data['isAnonymous'] == true;
-
-          // ✅ 익명 글은 "작성자(아이디/닉네임)"로 어떤 경우에도 검색에 걸리면 안됨
-          // - 제목/내용 검색은 포함
-          // - 작성자 기준 검색은 비익명 글에만 허용
-          final matchesTitleOrContent =
-              title.contains(lowercaseQuery) || content.contains(lowercaseQuery);
-          final matchesAuthor = !isAnonymous && author.contains(lowercaseQuery);
-
-          if (matchesTitleOrContent || matchesAuthor) {
-            matched.add(post);
-          }
-        } catch (e) {
-          Logger.error('포스트 검색 파싱 오류: $e');
         }
       }
 
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts(matched);
-      return ContentHideService.filterPostsSync(filtered);
+      final visible = ContentHideService.filterPostsSync(filtered);
+      visible.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return visible;
     } catch (e) {
       Logger.error('포스트 검색 오류: $e');
       return [];
@@ -1342,5 +1666,41 @@ class PostService {
       Logger.error('게시물 배치 업데이트 실패', e);
       return false;
     }
+  }
+}
+
+class SharingPostApplication {
+  final String id;
+  final String postId;
+  final String requesterId;
+  final String requesterName;
+  final String requesterPhotoUrl;
+  final String requesterNationality;
+  final DateTime requestedAt;
+
+  const SharingPostApplication({
+    required this.id,
+    required this.postId,
+    required this.requesterId,
+    required this.requesterName,
+    required this.requesterPhotoUrl,
+    required this.requesterNationality,
+    required this.requestedAt,
+  });
+
+  factory SharingPostApplication.fromFirestore(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data() ?? const <String, dynamic>{};
+    final timestamp = data['requestedAt'];
+    return SharingPostApplication(
+      id: doc.id,
+      postId: (data['postId'] ?? '').toString(),
+      requesterId: (data['requesterId'] ?? doc.id).toString(),
+      requesterName: (data['requesterName'] ?? '').toString(),
+      requesterPhotoUrl: (data['requesterPhotoUrl'] ?? '').toString(),
+      requesterNationality: (data['requesterNationality'] ?? '').toString(),
+      requestedAt: timestamp is Timestamp ? timestamp.toDate() : DateTime.now(),
+    );
   }
 }

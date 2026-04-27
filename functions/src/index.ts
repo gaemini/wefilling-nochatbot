@@ -3954,6 +3954,30 @@ function buildLocalizedNotificationText(params: {
         ? { title: '댓글에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 댓글을 좋아해요.` }
         : { title: 'New like', body: `${liker} liked your comment.` };
     }
+    case 'sharing_request': {
+      const requester = safeStringLoose(data?.requesterName ?? actorName, name);
+      const sharingTitle = safeStringLoose(data?.postTitle ?? data?.title, '');
+      if (lang === 'ko') {
+        return {
+          title: '나눔 신청이 왔습니다',
+          body: sharingTitle
+            ? `${requester}님이 회원님의 나눔글 "${sharingTitle}"에 신청했어요.`
+            : `${requester}님이 회원님의 나눔글에 신청했어요.`,
+        };
+      }
+      return {
+        title: 'Sharing request received',
+        body: sharingTitle
+          ? `${requester} requested your sharing post "${sharingTitle}".`
+          : `${requester} requested your sharing post.`,
+      };
+    }
+    case 'sharing_like': {
+      const liker = safeStringLoose(data?.likerName ?? actorName, name);
+      return lang === 'ko'
+        ? { title: '나눔글에 하트가 추가되었습니다', body: `${liker}님이 회원님의 나눔글에 하트를 눌렀어요.` }
+        : { title: 'New like', body: `${liker} liked your sharing post.` };
+    }
     case 'review_approval_request': {
       const author = safeStringLoose(actorName ?? data?.authorName, name);
       if (lang === 'ko') {

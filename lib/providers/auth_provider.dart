@@ -191,14 +191,14 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _userData!.containsKey('nickname') &&
       _userData!['nickname'] != null &&
       (_userData!['nickname'] as String).trim().isNotEmpty;
-  
+
   // 국적 설정 여부 (빈 문자열 제외)
   bool get hasNationality =>
       _userData != null &&
       _userData!.containsKey('nationality') &&
       _userData!['nationality'] != null &&
       (_userData!['nationality'] as String).trim().isNotEmpty;
-  
+
   // 가입 완료 여부 (signupCompleted: true 필드 기준)
   // 레거시 사용자(signupCompleted 필드 없음)는 닉네임+국적으로 판단
   bool get isSignupCompleted {
@@ -211,7 +211,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   // 프로필 완성 여부 (닉네임 + 국적 + 가입 완료 플래그)
-  bool get isProfileComplete => hasNickname && hasNationality && isSignupCompleted;
+  bool get isProfileComplete =>
+      hasNickname && hasNationality && isSignupCompleted;
 
   // 한양메일 인증 여부 (레거시 사용자 전용)
   // ⚠️ Deprecated: 신규 사용자는 이 필드가 없을 수 있음
@@ -219,13 +220,20 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       _userData != null &&
       _userData!.containsKey('emailVerified') &&
       _userData!['emailVerified'] == true;
-  
-  // 한양메일로 가입한 사용자인지 확인 (필드 존재 여부로 판단)
-  bool get isHanyangUser =>
-      _userData != null &&
-      _userData!.containsKey('hanyangEmail') &&
-      (_userData!['hanyangEmail'] as String?)?.isNotEmpty == true &&
-      (_userData!['hanyangEmail'] as String).endsWith('@hanyang.ac.kr');
+
+  // 한양 인증 사용자 여부 판단.
+  //
+  // 규칙:
+  // 1) `hanyangVerified == true`이면 true.
+  // 2) 레거시 호환: `hanyangEmail`이 @hanyang.ac.kr 도메인이면 true.
+  // 3) 위 조건에 모두 해당하지 않으면 false.
+  bool get isHanyangUser {
+    final data = _userData;
+    if (data == null) return false;
+    if (data['hanyangVerified'] == true) return true;
+    final email = (data['hanyangEmail'] as String?) ?? '';
+    return email.endsWith('@hanyang.ac.kr');
+  }
 
   // 사용자 데이터 (닉네임, 국적 등)
   Map<String, dynamic>? get userData => _userData;
@@ -679,7 +687,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       try {
         await _upsertUserDocWithFullSchema(
           user: _user!,
-          hanyangEmail: hanyangEmail,  // ✅ 한양메일 인증 사용자
+          hanyangEmail: hanyangEmail, // ✅ 한양메일 인증 사용자
           // 이메일/비밀번호 가입은 닉네임 설정 전이므로 빈값으로 통일
           nickname: '',
           nationality: '',
@@ -1014,10 +1022,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
             Logger.log("⚠️ 사용자 문서가 없습니다. 새로 생성합니다...");
             // 문서 생성 (✅ 모든 가입 경로에서 동일한 스키마)
             // ✅ hanyangEmail은 기존 데이터에서 가져오되, 없으면 null
-            final existingHanyangEmail = (_userData?['hanyangEmail'] as String?)?.trim();
+            final existingHanyangEmail =
+                (_userData?['hanyangEmail'] as String?)?.trim();
             final full = _buildFullUserDoc(
               user: _user!,
-              hanyangEmail: existingHanyangEmail,  // ✅ Optional
+              hanyangEmail: existingHanyangEmail, // ✅ Optional
               nickname: nicknameToWrite,
               nationality: nationalityToWrite,
               photoURL: newPhotoUrlStr,
@@ -1122,7 +1131,8 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
           // - 닉네임 또는 사진이 실제로 변경된 경우에만 배치 업데이트 실행
           // - 실패해도 프로필 업데이트 결과에 영향 없음
           if (nicknameChanged && nicknameAllowed || photoChanged) {
-            unawaited(_updateAllConversationsForUser(nicknameToWrite, finalPhotoURL));
+            unawaited(
+                _updateAllConversationsForUser(nicknameToWrite, finalPhotoURL));
           }
 
           return ProfileUpdateResult.success(
@@ -1759,6 +1769,22 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
         },
       );
 
+      // 클라이언트 측에서도 hanyangVerified=true를 명시 merge.
+      // (Cloud Function이 이미 기록했더라도 멱등적이므로 안전)
+      try {
+        await _firestore.collection('users').doc(_user!.uid).set(
+          {
+            'hanyangEmail': hanyangEmail,
+            'emailVerified': true,
+            'hanyangVerified': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } catch (e) {
+        Logger.error('⚠️ hanyangVerified merge 실패(무시): $e');
+      }
+
       await _loadUserData();
       return true;
     } on FirebaseFunctionsException catch (e) {
@@ -1813,7 +1839,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   // FCM 초기화 (자동 로그인/앱 재시작 시 토큰 등록 보장)
   Future<void> _initializeFCMIfNeeded() async {
     Logger.log('🔍 [FCM 진단] _initializeFCMIfNeeded 진입');
-    
+
     if (_user == null || _userData == null) {
       Logger.log('🔍 [FCM 진단] 초기화 스킵: user 또는 userData null');
       return;
@@ -1821,7 +1847,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     final uid = _user!.uid;
     Logger.log('🔍 [FCM 진단] uid: $uid');
-    
+
     if (_fcmInitializing) {
       Logger.log('ℹ️ FCM 초기화 진행 중 - 중복 진입 스킵');
       return;
@@ -1842,7 +1868,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
     _fcmInitializing = true;
     Logger.log('🔍 [FCM 진단] FCM 초기화 시작 (uid: $uid)...');
-    
+
     try {
       // locale 상태를 먼저 확정
       await _languageService.initializeLanguage();
@@ -1857,14 +1883,15 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       if (kDebugMode) {
         debugPrint('📱 FCM 초기화 시작: uid=$uid');
       }
-      
+
       Logger.log('🔍 [FCM 진단] _fcmService.initialize() 호출 직전');
       await _fcmService.initialize(uid);
       Logger.log('🔍 [FCM 진단] _fcmService.initialize() 완료');
 
       _fcmInitialized = true;
       _fcmInitializedUserId = uid;
-      Logger.log('✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
+      Logger.log(
+          '✅ [FCM 진단] FCM 초기화 완료 - uid=$uid, emailVerified=$emailVerified');
     } catch (e) {
       // 실패 시 _fcmInitialized를 false로 유지 → 다음 _initializeFCMIfNeeded() 호출 시 재시도 가능
       _fcmInitialized = false;
@@ -2031,11 +2058,11 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
 
   /// 신규 생성 시 항상 동일한 users 문서 스키마를 만든다.
   /// (이미 문서가 있으면 누락 필드만 채우고, 핵심 필드는 최신 값으로 정합성 유지)
-  /// 
+  ///
   /// ✅ hanyangEmail 파라미터: 한양메일 인증자만 전달 (null이면 일반 사용자)
   Future<void> _upsertUserDocWithFullSchema({
     required User user,
-    String? hanyangEmail,  // ✅ Optional
+    String? hanyangEmail, // ✅ Optional
     String nickname = '',
     String nationality = '',
     String photoURL = '',
@@ -2068,13 +2095,18 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       // 가입 확정에서 반드시 맞춰야 하는 핵심 필드들
       updates['uid'] = user.uid;
       updates['email'] = user.email ?? '';
-      
+
       // ✅ 한양메일 인증자만 해당 필드 업데이트
       if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
         updates['hanyangEmail'] = hanyangEmail;
         updates['emailVerified'] = true;
+        updates['hanyangVerified'] = true;
+      } else if (!data.containsKey('hanyangVerified')) {
+        // 신규 일반 가입자에게만 기본값 false를 명시적으로 기록.
+        // 이미 필드가 있는 기존 사용자는 건드리지 않는다.
+        updates['hanyangVerified'] = false;
       }
-      
+
       updates['updatedAt'] = FieldValue.serverTimestamp();
       updates['lastLogin'] = FieldValue.serverTimestamp();
 
@@ -2130,7 +2162,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   /// 누락 필드 계산: "키 자체가 없거나 null"이면 기본값을 넣는다.
-  /// 
+  ///
   /// ✅ 한양메일 필드(hanyangEmail, emailVerified)는 기본값 설정 안 함
   /// - 기존 사용자: 필드 유지
   /// - 신규 사용자: 필드 없음 (의도적)
@@ -2205,13 +2237,13 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   }
 
   /// 신규 문서 생성용: 항상 동일한 키 셋을 가진 전체 문서 생성.
-  /// 
+  ///
   /// ✅ 한양메일 필드는 optional:
   /// - hanyangEmail == null → 필드 생성 안 함 (일반 가입자)
   /// - hanyangEmail != null → 필드 생성 (한양대 학생)
   Map<String, dynamic> _buildFullUserDoc({
     required User user,
-    String? hanyangEmail,  // ✅ Optional로 변경
+    String? hanyangEmail, // ✅ Optional로 변경
     String nickname = '',
     String nationality = '',
     String photoURL = '',
@@ -2249,13 +2281,17 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
       'updatedAt': FieldValue.serverTimestamp(),
       'lastLogin': FieldValue.serverTimestamp(),
     };
-    
+
     // ✅ 한양메일 인증 사용자만 해당 필드 추가
     if (hanyangEmail != null && hanyangEmail.isNotEmpty) {
       doc['hanyangEmail'] = hanyangEmail;
       doc['emailVerified'] = true;
+      doc['hanyangVerified'] = true;
+    } else {
+      // 신규 일반 가입자: 레거시 사용자와 구분하기 위해 false를 명시적으로 기록.
+      doc['hanyangVerified'] = false;
     }
-    
+
     return doc;
   }
 
@@ -2292,10 +2328,12 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
   @override
   Future<bool> didPushRoute(String route) async => false;
   @override
-  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async => false;
+  Future<bool> didPushRouteInformation(
+          RouteInformation routeInformation) async =>
+      false;
   @override
   void didHaveMemoryPressure() {}
-  
+
   // Flutter SDK 3.x+ 새 메서드들
   @override
   void didChangeViewFocus(ViewFocusEvent event) {}

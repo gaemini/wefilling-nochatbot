@@ -142,7 +142,7 @@ class UsersRepository {
     Logger.log('🗑️ 프로필 캐시 무효화: $userId');
   }
 
-  /// 사용자 검색 (닉네임으로만)
+  /// 사용자 검색 (닉네임/표시 이름/이메일 기반)
   Future<List<UserProfile>> searchUsers(String query, {int limit = 20}) async {
     try {
       if (query.trim().isEmpty) return [];
@@ -150,17 +150,18 @@ class UsersRepository {
       final currentUid = currentUserId;
       if (currentUid == null) return [];
 
-      // 검색어 전처리 - 대소문자 구분 없이 검색
-      final normalizedQuery = query.trim().toLowerCase();
+      // 검색어 전처리 - 대소문자/공백 차이를 줄여 검색
+      final normalizedQuery = _normalizeSearchText(query);
+      final compactQuery = _compactSearchText(query);
       
-      // 가입 완료된 사용자만 검색 (signupCompleted: true)
+      // signupCompleted가 없는 레거시 사용자도 닉네임이 있으면 검색되어야 한다.
       final allUsersQuery = await _firestore
           .collection(_usersCollection)
-          .where('signupCompleted', isEqualTo: true)
-          .limit(100)
+          .limit(1000)
           .get();
 
       final matchedProfiles = <UserProfile>[];
+      final seenUserIds = <String>{};
       
       for (final doc in allUsersQuery.docs) {
         // 현재 사용자 제외
@@ -168,18 +169,33 @@ class UsersRepository {
         
         try {
           final profile = UserProfile.fromFirestore(doc);
+          final data = doc.data();
+          if (!_isSearchableUserDocument(data, profile)) continue;
+
+          final searchableTexts = _getSearchableUserTexts(data, profile);
           
-          // 닉네임을 소문자로 변환하여 검색
-          final nickname = (profile.nickname ?? '').toLowerCase();
-          
-          // 부분 문자열 매칭 (한국어 포함)
-          if (nickname.contains(normalizedQuery) ||
-              _isKoreanMatch(nickname, normalizedQuery)) {
+          if (searchableTexts.any((text) =>
+              _matchesSearchText(text, normalizedQuery, compactQuery))) {
             matchedProfiles.add(profile);
+            seenUserIds.add(profile.uid);
           }
         } catch (e) {
           Logger.error('사용자 데이터 파싱 오류: $e');
           continue;
+        }
+      }
+
+      // 친구는 signupCompleted 누락/후보 제한과 무관하게 검색 범위에 포함한다.
+      final friends = await getUserFriends(currentUid);
+      for (final friend in friends) {
+        if (friend.uid == currentUid || seenUserIds.contains(friend.uid)) {
+          continue;
+        }
+        final searchableTexts = _getSearchableUserTexts(null, friend);
+        if (searchableTexts.any((text) =>
+            _matchesSearchText(text, normalizedQuery, compactQuery))) {
+          matchedProfiles.add(friend);
+          seenUserIds.add(friend.uid);
         }
       }
 
@@ -190,12 +206,79 @@ class UsersRepository {
         return bScore.compareTo(aScore); // 내림차순 정렬
       });
 
-      // 제한된 개수만 반환
-      return matchedProfiles.take(limit).toList();
+      final limitedResults = matchedProfiles.take(limit).toList();
+      Logger.log(
+        '🔎 사용자 검색: query="$query", candidates=${allUsersQuery.docs.length}, results=${limitedResults.length}',
+      );
+      return limitedResults;
     } catch (e) {
       Logger.error('사용자 검색 오류: $e');
       return [];
     }
+  }
+
+  bool _isSearchableUserDocument(
+    Map<String, dynamic> data,
+    UserProfile profile,
+  ) {
+    if (profile.uid.isEmpty || profile.uid == 'deleted') return false;
+    final nickname = (data['nickname'] ?? profile.nickname ?? '').toString();
+    final displayName = (data['displayName'] ?? '').toString();
+    final name = (data['name'] ?? data['fullName'] ?? '').toString();
+    final hasVisibleName = [
+      nickname,
+      displayName,
+      name,
+    ].any((value) => value.trim().isNotEmpty);
+
+    // 명시적으로 가입 미완료인 빈 프로필만 제외한다. 필드가 없는 기존 사용자는 포함.
+    return data['signupCompleted'] != false || hasVisibleName;
+  }
+
+  String _normalizeSearchText(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  String _compactSearchText(String value) {
+    return _normalizeSearchText(value).replaceAll(RegExp(r'\s+'), '');
+  }
+
+  List<String> _getSearchableUserTexts(
+    Map<String, dynamic>? data,
+    UserProfile profile,
+  ) {
+    final values = <String>{
+      profile.nickname ?? '',
+      profile.displayNameOrNickname,
+      (data?['nickname'] ?? '').toString(),
+      (data?['displayName'] ?? '').toString(),
+      (data?['name'] ?? '').toString(),
+      (data?['fullName'] ?? '').toString(),
+      (data?['englishName'] ?? '').toString(),
+      (data?['englishNickname'] ?? '').toString(),
+      (data?['romanizedName'] ?? '').toString(),
+      (data?['username'] ?? '').toString(),
+      (data?['userName'] ?? '').toString(),
+      (data?['email'] ?? profile.email ?? '').toString().split('@').first,
+    };
+
+    return values
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+  }
+
+  bool _matchesSearchText(
+    String text,
+    String normalizedQuery,
+    String compactQuery,
+  ) {
+    final normalizedText = _normalizeSearchText(text);
+    final compactText = _compactSearchText(text);
+    return normalizedText.contains(normalizedQuery) ||
+        compactText.contains(compactQuery) ||
+        _isKoreanMatch(normalizedText, normalizedQuery) ||
+        _isKoreanMatch(compactText, compactQuery);
   }
 
   /// 한국어 매칭 검사 (초성, 중성, 종성 고려)
@@ -242,7 +325,9 @@ class UsersRepository {
 
   /// 검색 관련도 점수 계산
   int _getRelevanceScore(UserProfile profile, String query) {
-    final nickname = (profile.nickname ?? '').toLowerCase();
+    final nickname = _normalizeSearchText(profile.displayNameOrNickname);
+    final compactNickname = _compactSearchText(profile.displayNameOrNickname);
+    final compactQuery = _compactSearchText(query);
     
     int score = 0;
     
@@ -259,6 +344,10 @@ class UsersRepository {
     // 부분 매칭에 낮은 점수
     if (nickname.contains(query)) {
       score += 25;
+    }
+
+    if (compactNickname.contains(compactQuery)) {
+      score += 20;
     }
     
     // 한국어 초성 매칭

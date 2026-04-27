@@ -124,12 +124,12 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                       ),
                     ),
                     Padding(
-                      padding: EdgeInsets.fromLTRB(20, 14, 20, 10),
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
                       child: Row(
                         children: [
                           Text(
                             isKo ? '참여자 초대' : 'Invite Participants',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -296,7 +296,85 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   Future<void> _toggleFavorite(SnackChat room) async {
-    await _snackChatService.toggleFavorite(room.id, !room.isFavorited);
+    final isFavorite = room.isFavoritedBy(_uid);
+    if (isFavorite) {
+      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+      final confirmed = await showModalBottomSheet<bool>(
+        context: context,
+        backgroundColor: Colors.white,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 38,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE5E7EB),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    isKo ? '즐겨찾기를 취소할까요?' : 'Remove from favorites?',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF111827),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    isKo
+                        ? '취소하면 마지막 발화 기준 유지 시간이 지난 스낵챗은 목록에서 보이지 않을 수 있어요.'
+                        : 'If removed, expired Snack Chats may no longer appear in your list.',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      color: Color(0xFF6B7280),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: Text(isKo ? '유지' : 'Keep'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF111827),
+                          ),
+                          child: Text(isKo ? '취소하기' : 'Remove'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+      if (confirmed != true) return;
+    }
+    await _snackChatService.toggleFavorite(room.id, !isFavorite);
   }
 
   Future<void> _leaveRoom(SnackChat room) async {
@@ -311,8 +389,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ),
       builder: (ctx) {
         // 바텀시트는 별도 컨텍스트로 열리므로 locale을 직접 읽어 한/영 정확도 보장
-        final sheetIsKo =
-            Localizations.localeOf(ctx).languageCode == 'ko';
+        final sheetIsKo = Localizations.localeOf(ctx).languageCode == 'ko';
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
@@ -578,9 +655,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           ),
                         ),
                         Switch(
-                          value: room.isFavorited,
+                          value: room.isFavoritedBy(_uid),
                           onChanged: (_) => _toggleFavorite(room),
-                          activeColor: AppColors.pointColor,
+                          activeThumbColor: AppColors.pointColor,
                         ),
                       ],
                     ),
@@ -604,7 +681,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         Switch(
                           value: !_isMuted,
                           onChanged: (_) => _toggleMute(),
-                          activeColor: AppColors.pointColor,
+                          activeThumbColor: AppColors.pointColor,
                         ),
                       ],
                     ),
@@ -666,7 +743,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : TextButton.icon(
                                 onPressed: () => _leaveRoom(room),

@@ -16,6 +16,7 @@ import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
 import '../../services/report_service.dart';
 import '../../utils/category_label_utils.dart';
+import '../../utils/sharing_category.dart';
 import '../../services/dm_service.dart';
 import '../../services/user_info_cache_service.dart';
 import '../../widgets/country_flag_circle.dart';
@@ -35,6 +36,7 @@ class OptimizedPostCard extends StatefulWidget {
   final Post post;
   final int index;
   final VoidCallback onTap;
+
   /// 수동 새로고침 시 계산한 댓글 수를 카드에 우선 반영하기 위한 오버라이드 값
   final int? externalCommentCountOverride;
   final bool preloadImage;
@@ -247,9 +249,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
     // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
     const maxShown = 50;
-    final shownIds =
-        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
-    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+    final shownIds = orderedUnique.length > maxShown
+        ? orderedUnique.take(maxShown).toList()
+        : orderedUnique;
+    final hiddenCount =
+        orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -291,7 +295,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       ),
                       const SizedBox(height: 12),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: DesignTokens.s16),
                         child: Row(
                           children: [
                             Text.rich(
@@ -351,17 +356,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         child: FutureBuilder<List<_PostLikeUser>>(
                           future: _fetchLikeUsers(shownIds),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState != ConnectionState.done &&
+                            if (snapshot.connectionState !=
+                                    ConnectionState.done &&
                                 !snapshot.hasData) {
                               return const Center(
-                                child: CircularProgressIndicator(color: BrandColors.primary),
+                                child: CircularProgressIndicator(
+                                    color: BrandColors.primary),
                               );
                             }
-                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            final users =
+                                snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
                               return Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  padding:
+                                      const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
@@ -542,7 +551,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   Future<void> _toggleSave() async {
     if (_isLoading) return;
-    
+
     setState(() {
       _isLoading = true;
     });
@@ -554,14 +563,16 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           _isSaved = newSavedStatus;
           _isLoading = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(newSavedStatus 
+            content: Text(newSavedStatus
                 ? (AppLocalizations.of(context)!.postSaved ?? '포스트가 저장되었습니다')
-                : (AppLocalizations.of(context)!.postUnsaved ?? '포스트 저장이 취소되었습니다')),
+                : (AppLocalizations.of(context)!.postUnsaved ??
+                    '포스트 저장이 취소되었습니다')),
             duration: Duration(seconds: 1),
-            backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
+            backgroundColor:
+                newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
           ),
         );
       }
@@ -612,19 +623,94 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   // 테두리 색상 메서드 제거 - 색상으로만 구분
 
-  /// 공개 범위 인디케이터 위젯 (크고 명확하게)
-  Widget _buildVisibilityIndicator(Post post) {
-    // 친구 공개 전용 (통일된 크기)
+  /// 공개 범위/인증 인디케이터 위젯.
+  ///
+  /// - 나눔 카드이고 작성자가 한양 인증자면 'Univ.' 배지 표시
+  /// - 그 외 visibility == 'category' 인 경우 기존 친구 공개 배지 유지
+  /// - 그 외에는 표시하지 않음
+  Widget _buildVisibilityIndicator(Post post, {required bool isHanyangAuthor}) {
+    final bool showUniv =
+        isSharingPost(post) && !post.isAnonymous && isHanyangAuthor;
+
+    if (showUniv) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.pointColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: AppColors.pointColor.withOpacity(0.35),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: const [
+            Icon(Icons.school, size: 12, color: AppColors.pointColor),
+            SizedBox(width: 4),
+            Text(
+              'Univ.',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.pointColor,
+                height: 1.0,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (post.visibility == 'category') {
       return FriendsOnlyBadge(
         label: AppLocalizations.of(context)!.friendsOnly,
-        // 기존 크기 유지 (패딩 동일), 아이콘만 정삼각형으로 교체
         iconSize: DesignTokens.iconSmall,
       );
     }
 
-    // 전체 공개 (일반): 표시 안 함
     return const SizedBox.shrink();
+  }
+
+  /// 나눔 카드의 상태 배지 ('나눔 중' 고정, MVP)
+  Widget _buildSharingStatusBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.pointColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Text(
+        '나눔 중',
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1.0,
+          letterSpacing: 0.2,
+        ),
+      ),
+    );
+  }
+
+  /// 헤더 우측의 저장(찜) 토글 아이콘 버튼
+  Widget _buildSaveIconButton() {
+    return InkWell(
+      onTap: _isLoading ? null : _toggleSave,
+      borderRadius: BorderRadius.circular(18),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          _isSaved ? Icons.bookmark : Icons.bookmark_border,
+          size: 22,
+          color: _isSaved ? AppColors.pointColor : const Color(0xFF6B7280),
+          semanticLabel: _isSaved ? '저장됨' : '저장',
+        ),
+      ),
+    );
   }
 
   // 투표 배지는 제거됨: 카드 본문에 투표 항목을 직접 노출한다.
@@ -636,7 +722,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final post = widget.post;
     final unifiedText = _getUnifiedBodyText(post);
     final headlineText = unifiedText.split('\n').first.trim();
-    final hasMoreThanFirstLine = _hasMoreExplicitLines(unifiedText, maxVisibleLines: 1);
+    final hasMoreThanFirstLine =
+        _hasMoreExplicitLines(unifiedText, maxVisibleLines: 1);
 
     // 그림자 로직 제거 - 색상으로만 구분
 
@@ -668,7 +755,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     _buildAuthorInfoWithTitle(post, theme, colorScheme),
 
                     // 스크린샷처럼 이미지 카드의 텍스트는 한 줄만(제목 영역은 없고, 내용의 첫 줄만 노출)
-                    if (post.imageUrls.isNotEmpty && headlineText.isNotEmpty) ...[
+                    if (post.imageUrls.isNotEmpty &&
+                        headlineText.isNotEmpty) ...[
                       const SizedBox(height: 10),
                       _buildSmartEllipsizedText(
                         text: headlineText,
@@ -733,8 +821,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     const SizedBox(height: 8),
                     _buildPostMeta(
                       post.copyWith(
-                        commentCount:
-                            widget.externalCommentCountOverride ?? post.commentCount,
+                        commentCount: widget.externalCommentCountOverride ??
+                            post.commentCount,
                       ),
                       theme,
                       colorScheme,
@@ -796,7 +884,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
         bool fitsCandidate(String prefix) {
           final trimmedPrefix = prefix.replaceAll(RegExp(r'[ \t]+$'), '');
-          final candidate = trimmedPrefix.isEmpty ? '...' : '$trimmedPrefix$_overflowSuffix';
+          final candidate =
+              trimmedPrefix.isEmpty ? '...' : '$trimmedPrefix$_overflowSuffix';
           return !exceeds(candidate);
         }
 
@@ -822,7 +911,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           }
         }
 
-        final prefix = base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
+        final prefix =
+            base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
         final finalText = prefix.isEmpty ? '...' : '$prefix$_overflowSuffix';
 
         return Text(
@@ -852,7 +942,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   }
 
   /// 이미지가 없는 게시글(텍스트만)의 본문 미리보기: 2줄 제한 + ... 표시
-  Widget _buildTextOnlyPreview(String preview, ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildTextOnlyPreview(
+      String preview, ThemeData theme, ColorScheme colorScheme) {
     final trimmed = preview.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
@@ -882,7 +973,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   }
 
   /// 작성자 정보와 제목을 함께 빌드
-  Widget _buildAuthorInfoWithTitle(Post post, ThemeData theme, ColorScheme colorScheme) {
+  Widget _buildAuthorInfoWithTitle(
+      Post post, ThemeData theme, ColorScheme colorScheme) {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
     // 작성자 이름이 비어있거나 "Deleted"인 경우 탈퇴한 계정으로 표시
@@ -894,7 +986,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     } else {
       authorName = post.author;
     }
-    final String? authorImageUrl = isAnonymous ? null : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
+    final String? authorImageUrl = isAnonymous
+        ? null
+        : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
     final bool canOpenProfile =
         !isAnonymous && post.userId.isNotEmpty && post.userId != 'deleted';
 
@@ -904,15 +998,17 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     Widget content({
       required String resolvedNickname,
       required String resolvedPhotoURL,
+      required bool isHanyangAuthor,
     }) {
       final currentUser = FirebaseAuth.instance.currentUser;
       final canOpenActions = currentUser != null &&
           post.userId.isNotEmpty &&
           post.userId != 'deleted' &&
           post.userId != currentUser.uid;
-      final String? resolvedImageUrl = (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
-          ? resolvedPhotoURL.trim()
-          : authorImageUrl;
+      final String? resolvedImageUrl =
+          (!isAnonymous && resolvedPhotoURL.trim().isNotEmpty)
+              ? resolvedPhotoURL.trim()
+              : authorImageUrl;
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1025,12 +1121,26 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 ),
               ),
 
-              // 공개 범위 배지를 오른쪽 상단에 배치
-              _buildVisibilityIndicator(post),
+              // 공개 범위/인증 배지 + 찜 버튼을 오른쪽 상단에 배치
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildVisibilityIndicator(
+                    post,
+                    isHanyangAuthor: isHanyangAuthor,
+                  ),
+                  const SizedBox(width: 4),
+                  _buildSaveIconButton(),
+                ],
+              ),
             ],
           ),
 
-          // 제목 영역 제거 (요구사항: 제목을 없애고, 기존 title은 본문으로 인식)
+          // 나눔 카드는 상태 배지 ('나눔 중')를 헤더 바로 아래에 고정 노출
+          if (isSharingPost(post)) ...[
+            const SizedBox(height: 8),
+            Row(children: [_buildSharingStatusBadge()]),
+          ],
         ],
       );
     }
@@ -1039,6 +1149,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       return content(
         resolvedNickname: authorName,
         resolvedPhotoURL: post.authorPhotoURL,
+        isHanyangAuthor: false,
       );
     }
 
@@ -1054,9 +1165,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         final resolvedPhotoURL =
             livePhoto.isNotEmpty ? livePhoto : post.authorPhotoURL;
 
+        final isHanyang = live?.isHanyangVerified ?? false;
+
         return content(
           resolvedNickname: resolvedNickname,
           resolvedPhotoURL: resolvedPhotoURL,
+          isHanyangAuthor: isHanyang,
         );
       },
     );
@@ -1195,7 +1309,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 if (_isLikeInFlight) return;
                 _likeHoldTimer?.cancel();
                 _likeSheetOpenedByHold = false;
-                _likeHoldTimer = Timer(const Duration(milliseconds: 500), () async {
+                _likeHoldTimer =
+                    Timer(const Duration(milliseconds: 500), () async {
                   if (!mounted) return;
                   _likeSheetOpenedByHold = true;
                   await _showLikesSheetForPost();
@@ -1278,7 +1393,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       final year = dateTime.year;
       final month = dateTime.month.toString().padLeft(2, '0');
       final day = dateTime.day.toString().padLeft(2, '0');
-      
+
       // 올해 게시글이면 년도 생략
       if (year == now.year) {
         return '$month.$day';
@@ -1286,9 +1401,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         return '$year.$month.$day';
       }
     } else if (difference.inHours > 0) {
-        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-      } else if (difference.inMinutes > 0) {
-        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+    } else if (difference.inMinutes > 0) {
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow ?? "";
     }
@@ -1297,19 +1412,19 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   /// DM 버튼을 표시할지 확인
   bool _shouldShowDMButton(Post post) {
     final currentUser = FirebaseAuth.instance.currentUser;
-    
+
     // 로그인하지 않은 경우
     if (currentUser == null) return false;
-    
+
     // 본인 게시글인 경우
     if (post.userId == currentUser.uid) return false;
-    
+
     // 익명 게시글인 경우
     if (post.isAnonymous) return true; // 익명도 DM 가능 (계획 참조)
-    
+
     // 탈퇴한 계정인 경우
     if (post.author.isEmpty || post.author == 'Deleted') return false;
-    
+
     return true;
   }
 
@@ -1352,7 +1467,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
       Logger.log('  - post.author: ${post.author}');
       Logger.log('  - currentUser.uid: ${currentUser.uid}');
-      
+
       // 본인에게 DM 전송 체크 (익명 포함)
       if (post.userId == currentUser.uid) {
         Logger.log('❌ 본인 게시글에는 DM 불가');
@@ -1369,11 +1484,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(post.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
+        Logger.log(
+            '❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -1387,7 +1503,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (post.userId == 'deleted' || post.userId.isEmpty) {
         Logger.log('❌ 탈퇴했거나 삭제된 사용자');
@@ -1404,7 +1520,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // ✅ 게시글에서 DM 보내기는 "게시글에 대해 물어보는 용도"이므로,
       // - 익명 게시글만 익명 대화방(anon_*)으로 분리
       // - 그 외에는 기존 1:1 대화방을 연장선으로 재사용(보관된 방 복원 포함)
@@ -1415,10 +1531,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         postId: post.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
       );
-      
+
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
-      
+
       Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
@@ -1427,8 +1543,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = post.content.trim();
         final rawTitle = post.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
-        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
+        final base = rawContent.isNotEmpty
+            ? rawContent
+            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final originPostPreview =
+            base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1445,7 +1564,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     } catch (e) {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
-      
+
       Logger.error('❌ DM 열기 오류: $e');
       Logger.error('오류 타입: ${e.runtimeType}');
       if (mounted) {
@@ -1528,7 +1647,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     onTap: () async {
                       Navigator.pop(sheetContext);
-                      final headline = post.content.trim().split('\n').first.trim();
+                      final headline =
+                          post.content.trim().split('\n').first.trim();
                       await showReportDialog(
                         context,
                         reportedUserId: post.userId,
@@ -1556,14 +1676,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       Navigator.pop(sheetContext);
                       if (post.isAnonymous) {
                         final isKo =
-                            Localizations.localeOf(context).languageCode == 'ko';
+                            Localizations.localeOf(context).languageCode ==
+                                'ko';
                         final confirmed = await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: Text(
-                                  isKo
-                                      ? '익명 게시글 차단'
-                                      : 'Block anonymous post',
+                                  isKo ? '익명 게시글 차단' : 'Block anonymous post',
                                 ),
                                 content: Text(
                                   isKo
@@ -1586,11 +1705,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             ) ??
                             false;
                         if (!confirmed || !mounted) return;
-                        final headline = post.content
-                            .trim()
-                            .split('\n')
-                            .first
-                            .trim();
+                        final headline =
+                            post.content.trim().split('\n').first.trim();
                         final success = await ReportService.blockAnonymousPost(
                           postId: post.id,
                           titleSnapshot: headline,

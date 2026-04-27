@@ -3,11 +3,15 @@
 // 참여한 후기만 표시
 
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/dm_service.dart';
 import '../services/relationship_service.dart';
+import '../services/post_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
 import '../models/review_post.dart';
+import '../models/post.dart';
 import '../models/relationship_status.dart';
 import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart'; // 국기 위젯 추가
@@ -15,9 +19,11 @@ import '../l10n/app_localizations.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'review_detail_screen.dart';
 import 'dm_chat_screen.dart';
+import 'post_detail_screen.dart';
 import '../utils/country_flag_helper.dart';
 import '../utils/logger.dart';
 import '../ui/widgets/profile_image_viewer.dart';
+import '../ui/widgets/profile_sharing_post_card.dart';
 import 'user_friends_list_screen.dart';
 
 class FriendProfileScreen extends StatefulWidget {
@@ -26,6 +32,7 @@ class FriendProfileScreen extends StatefulWidget {
   final String? photoURL;
   final String? email;
   final String? university;
+
   /// 게시글/댓글 등 "보드 진입"에서는 비친구라도 프로필 기본정보는 보여주되,
   /// 리뷰(후기) 섹션은 숨기고 DM은 막는다.
   final bool allowNonFriendsPreview;
@@ -49,7 +56,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
   final ReviewService _reviewService = ReviewService();
   final DMService _dmService = DMService();
   final RelationshipService _relationshipService = RelationshipService();
-  
+  final PostService _postService = PostService();
+
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
   bool _isRelationshipLoading = true;
@@ -103,7 +111,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
           .collection('users')
           .doc(widget.userId)
           .get();
-      
+
       if (doc.exists && mounted) {
         setState(() {
           _userData = doc.data();
@@ -113,7 +121,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         // 탈퇴한 사용자 처리
         Logger.log('⚠️ 탈퇴한 사용자: ${widget.userId}');
         setState(() {
-          final deletedLabel = AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
+          final deletedLabel =
+              AppLocalizations.of(context)?.deletedAccount ?? '탈퇴한 계정';
           _userData = {
             'nickname': deletedLabel,
             'displayName': deletedLabel,
@@ -144,7 +153,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
     final isNonFriendPreview =
         widget.allowNonFriendsPreview && !isMe && !isFriends;
-    
+    final canViewSharingList = isMe || isFriends;
+
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.white,
@@ -162,17 +172,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               : CustomScrollView(
                   slivers: [
                     SliverToBoxAdapter(
-                      child: _buildProfileHeader(isNonFriendPreview: isNonFriendPreview),
+                      child: _buildProfileHeader(
+                          isNonFriendPreview: isNonFriendPreview),
                     ),
-                    if (!isNonFriendPreview) ...[
-                      const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                      SliverToBoxAdapter(child: _buildParticipatedReviewsHeader()),
-                      const SliverToBoxAdapter(
-                        child: Divider(height: 1, color: Color(0xFFE5E7EB)),
+                    if (canViewSharingList)
+                      SliverToBoxAdapter(
+                        child: _buildSharingPostsSection(),
                       ),
-                      _buildReviewGridSliver(),
-                    ],
-                    // 안드로이드 하단 네비게이션 바를 위한 여백 추가
                     SliverToBoxAdapter(
                       child: SizedBox(
                         height: bottomPadding > 0 ? bottomPadding + 16 : 16,
@@ -185,8 +191,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
   Widget _buildLockedProfile(AppLocalizations l10n) {
     final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest =
-        status == RelationshipStatus.none ||
+    final canRequest = status == RelationshipStatus.none ||
         status == RelationshipStatus.blockedBy;
     final isPending = status == RelationshipStatus.pendingOut;
 
@@ -249,6 +254,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     : const Icon(Icons.person_add_alt_1, size: 20),
                 label: Text(
                   isPending ? l10n.requestPending : l10n.friendRequest,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 15,
@@ -315,19 +322,48 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
     }
   }
 
+  bool _resolveHanyangVerified(Map<String, dynamic>? data) {
+    if (data == null) return false;
+    if (data['hanyangVerified'] == true) return true;
+    final email = (data['hanyangEmail'] as String?)?.trim().toLowerCase() ?? '';
+    return email.endsWith('@hanyang.ac.kr');
+  }
+
+  Widget _buildUnivBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2563EB),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: const Text(
+        'Univ.',
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+          color: Colors.white,
+          height: 1.0,
+        ),
+      ),
+    );
+  }
+
   Widget _buildProfileHeader({required bool isNonFriendPreview}) {
-    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
+    final nickname = _userData?['nickname'] ??
+        widget.nickname ??
+        AppLocalizations.of(context)!.user;
     final photoURL = _userData?['photoURL'] ?? widget.photoURL;
     final university = _userData?['university'] ?? widget.university;
     final nationality = _userData?['nationality'];
     final bio = _userData?['bio'];
+    final isHanyangVerified = _resolveHanyangVerified(_userData);
     final l10n = AppLocalizations.of(context)!;
     final currentUserId = _relationshipService.currentUserId;
     final isMe = currentUserId != null && currentUserId == widget.userId;
     final isFriends = _relationshipStatus == RelationshipStatus.friends;
     final status = _relationshipStatus ?? RelationshipStatus.none;
-    final canRequest =
-        status == RelationshipStatus.none ||
+    final canRequest = status == RelationshipStatus.none ||
         status == RelationshipStatus.blockedBy;
     final isPending = status == RelationshipStatus.pendingOut;
 
@@ -373,12 +409,13 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                       ),
                       child: photoURL != null && photoURL.isNotEmpty
                           ? ClipOval(
-                              child: Image.network(
-                                photoURL,
+                              child: CachedNetworkImage(
+                                imageUrl: photoURL,
+                                cacheManager: AppImageCacheManager.instance,
                                 width: 88,
                                 height: 88,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => const Icon(
+                                errorWidget: (_, __, ___) => const Icon(
                                   Icons.person,
                                   size: 44,
                                   color: Color(0xFF6B7280),
@@ -395,22 +432,32 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                 ),
               ),
               const SizedBox(width: 16),
-              
+
               // 사용자 정보 (오른쪽)
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      nickname,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            nickname,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF111827),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isHanyangVerified) ...[
+                          const SizedBox(width: 8),
+                          _buildUnivBadge(),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 8),
                     if (nationality != null && nationality.isNotEmpty)
@@ -423,9 +470,11 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                           const SizedBox(width: 6),
                           Flexible(
                             child: Text(
-                              CountryFlagHelper.getCountryInfo(nationality)?.getLocalizedName(
-                                Localizations.localeOf(context).languageCode
-                              ) ?? nationality,
+                              CountryFlagHelper.getCountryInfo(nationality)
+                                      ?.getLocalizedName(
+                                          Localizations.localeOf(context)
+                                              .languageCode) ??
+                                  nationality,
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 14,
@@ -481,7 +530,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               ),
             ],
           ),
-          
+
           const SizedBox(height: 20),
 
           // 통계 정보 (마이 프로필과 동일)
@@ -505,23 +554,18 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
               _buildStatItem(
-                AppLocalizations.of(context)!.joinedMeetups,
-                widget.userId,
-                cacheKey: 'friend_profile_joined_meetups',
-                isJoined: true,
-              ),
-              Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
-              _buildStatItem(
-                AppLocalizations.of(context)!.writtenPosts,
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '나눔'
+                    : 'Sharing',
                 widget.userId,
                 cacheKey: 'friend_profile_written_posts',
                 isPosts: true,
               ),
             ],
           ),
-          
+
           const SizedBox(height: 16),
-          
+
           // 보드/댓글 진입(비친구 프리뷰)에서는 DM 대신 "친구요청" 버튼을 DM 자리로 노출
           if (isNonFriendPreview)
             SizedBox(
@@ -540,6 +584,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     : const Icon(Icons.person_add_alt_1, size: 20),
                 label: Text(
                   isPending ? l10n.requestPending : l10n.friendRequest,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 15,
@@ -566,17 +612,15 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               child: ElevatedButton.icon(
                 onPressed: _openDM,
                 icon: const Icon(Icons.message, size: 20),
-                label: Flexible(
-                  child: Text(
-                    AppLocalizations.of(context)!.sendMessage,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                label: Text(
+                  AppLocalizations.of(context)!.sendMessage,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                   ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFFF3F4F6),
@@ -599,7 +643,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.grid_on_rounded, size: 20, color: AppColors.pointColor),
+          const Icon(Icons.grid_on_rounded,
+              size: 20, color: AppColors.pointColor),
           const SizedBox(width: 8),
           Text(
             AppLocalizations.of(context)!.participatedReviews,
@@ -651,7 +696,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               : isJoined
                   ? _userStatsService.getJoinedMeetupCountForUser(userId)
                   : isPosts
-                      ? _userStatsService.getUserPostCountForUser(userId)
+                      ? _userStatsService.getUserSharingPostCountForUser(userId)
                       : _userStatsService.getHostedMeetupCountForUser(userId),
           initialData: _statCountCache[cacheKey],
           builder: (context, snapshot) {
@@ -691,7 +736,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
               transitionBuilder: (child, animation) {
                 final fade = FadeTransition(opacity: animation, child: child);
                 return ScaleTransition(
-                  scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+                  scale:
+                      Tween<double>(begin: 0.98, end: 1.0).animate(animation),
                   child: fade,
                 );
               },
@@ -712,6 +758,97 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         ),
       ],
     );
+  }
+
+  Widget _buildSharingPostsSection() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return StreamBuilder<List<Post>>(
+      stream: _userStatsService.getUserSharingPostsForUser(widget.userId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting &&
+            !snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 48),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        final posts = snapshot.data ?? const <Post>[];
+        if (posts.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 64, horizontal: 24),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF3F4F6),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.volunteer_activism_outlined,
+                    size: 44,
+                    color: AppColors.pointColor,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  isKo ? '작성한 나눔이 없습니다' : 'No sharing posts yet',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        return Column(
+          children: [
+            const Divider(height: 1),
+            ...posts.map(_buildSharingPostListItem),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSharingPostListItem(Post post) {
+    return ProfileSharingPostCard(
+      post: post,
+      currentUserId: _relationshipService.currentUserId,
+      onTap: () => _openSharingPostDetail(post.id),
+    );
+  }
+
+  Future<void> _openSharingPostDetail(String postId) async {
+    try {
+      final post = await _postService.getPostById(
+        postId,
+        collectionPath: PostService.sharingPostsCollection,
+      );
+      if (!mounted) return;
+      if (post == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound)),
+        );
+        return;
+      }
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PostDetailScreen(post: post),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')),
+      );
+    }
   }
 
   Widget _buildReviewGridSliver() {
@@ -840,7 +977,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
                     )
                   : _buildReviewPlaceholder(review),
             ),
-            
+
             // 좋아요 및 댓글 수 표시
             Positioned(
               bottom: 4,
@@ -931,8 +1068,10 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
 
   /// 친구 목록 화면으로 이동
   void _navigateToFriendsList() {
-    final nickname = _userData?['nickname'] ?? widget.nickname ?? AppLocalizations.of(context)!.user;
-    
+    final nickname = _userData?['nickname'] ??
+        widget.nickname ??
+        AppLocalizations.of(context)!.user;
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -960,7 +1099,8 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(widget.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
+        Logger.log(
+            '❌ 잘못된 userId 형식: ${widget.userId} (길이: ${widget.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -972,7 +1112,7 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
         }
         return;
       }
-      
+
       // 대화방 ID 생성 (실제 생성은 메시지 전송 시)
       final conversationId = _dmService.generateConversationId(
         widget.userId,
@@ -1003,6 +1143,4 @@ class _FriendProfileScreenState extends State<FriendProfileScreen> {
       }
     }
   }
-
 }
-

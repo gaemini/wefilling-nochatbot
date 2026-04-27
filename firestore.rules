@@ -1,6 +1,25 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserExists() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function currentUserIsHanyangVerified() {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return currentUserExists()
+        && (
+          user.data.hanyangVerified == true ||
+          (user.data.hanyangEmail is string
+            && user.data.hanyangEmail.matches('.*@hanyang\\.ac\\.kr$'))
+        );
+    }
+
     // ===== 밋업(모임) 만료 판정 유틸 =====
     // - endsAt(타임스탬프)가 있으면 그 값을 우선 사용(시간까지 정확)
     // - 없으면 date(타임스탬프) + 1일(자정 기준)로 fallback
@@ -317,6 +336,74 @@ service cloud.firestore {
           && request.resource.data.optionId is string;
 
         // 수정/삭제 금지 (MVP: 투표 변경/취소 불가)
+        allow update, delete: if false;
+      }
+    }
+
+    // ===== 나눔 전용 컬렉션 =====
+    // 신규 나눔글은 기존 앱이 구독하던 posts와 분리해 업데이트 전 앱에 노출되지 않게 한다.
+    match /sharing_posts/{postId} {
+      function isSchoolOnly() {
+        return resource.data.keys().hasAny(['schoolOnly'])
+          && resource.data.schoolOnly == true;
+      }
+
+      function canReadSharingPost() {
+        return signedIn()
+          && (
+            !isSchoolOnly()
+            || request.auth.uid == resource.data.userId
+            || currentUserIsHanyangVerified()
+          );
+      }
+
+      allow read: if canReadSharingPost();
+
+      allow create: if currentUserExists()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.schemaVersion == 2
+        && request.resource.data.postType == 'sharing'
+        && request.resource.data.title is string
+        && request.resource.data.content is string
+        && request.resource.data.category is string
+        && request.resource.data.imageUrls is list
+        && request.resource.data.imageUrls.size() > 0
+        && request.resource.data.schoolOnly is bool
+        && (!request.resource.data.schoolOnly || currentUserIsHanyangVerified());
+
+      allow update: if canReadSharingPost()
+        && resource.data.userId != 'deleted'
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt', 'userId', 'postType', 'schemaVersion'])
+        && (
+          request.auth.uid == resource.data.userId
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'likedBy'])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount'])
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['commentCount'])
+        );
+
+      allow delete: if signedIn()
+        && request.auth.uid == resource.data.userId
+        && resource.data.userId != 'deleted';
+
+      match /applications/{requesterId} {
+        function parentPost() {
+          return get(/databases/$(database)/documents/sharing_posts/$(postId));
+        }
+
+        allow read: if signedIn()
+          && (
+            request.auth.uid == requesterId
+            || request.auth.uid == parentPost().data.userId
+          );
+
+        allow create: if signedIn()
+          && request.auth.uid == requesterId
+          && request.resource.data.postId == postId
+          && request.resource.data.requesterId == request.auth.uid
+          && request.resource.data.requesterName is string
+          && request.resource.data.requestedAt is timestamp
+          && request.auth.uid != parentPost().data.userId;
+
         allow update, delete: if false;
       }
     }
@@ -697,6 +784,8 @@ service cloud.firestore {
         && request.resource.data.visibleToCategoryIds is list
         && request.resource.data.createdAt is timestamp
         && request.resource.data.expiresAt is timestamp
+        && request.resource.data.retentionHours is int
+        && request.resource.data.retentionHours in [24, 48]
         && request.resource.data.lastMessage is string
         && request.resource.data.lastMessageTime is timestamp
         && request.resource.data.lastMessageSenderId == request.auth.uid
@@ -711,9 +800,11 @@ service cloud.firestore {
         // 일반 채팅 업데이트(메시지/즐겨찾기)
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'isFavorited',
+          'favoriteBy',
           'lastMessage',
           'lastMessageTime',
           'lastMessageSenderId',
+          'expiresAt',
           'unreadCount',
           'updatedAt'
         ])

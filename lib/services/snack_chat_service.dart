@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
@@ -24,6 +25,8 @@ class SnackChatService {
   // 연결 수를 줄인다.
   String? _cachedWatchUid;
   Stream<List<SnackChat>>? _cachedWatchStream;
+  final StreamController<void> _favoritePrefsChanged =
+      StreamController<void>.broadcast();
 
   Stream<List<SnackChat>> _watchMySnackChats() {
     final uid = _uid;
@@ -61,7 +64,8 @@ class SnackChatService {
             if (controller.isClosed) return;
             final items =
                 snap.docs.map((doc) => SnackChat.fromFirestore(doc)).toList();
-            items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
+            items
+                .sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
             controller.add(items);
           },
           onError: (e) {
@@ -84,40 +88,251 @@ class SnackChatService {
     return controller.stream;
   }
 
+  String _favoriteStorageKey(String uid) => 'snack_chat_favorites_v1_$uid';
+
+  Future<Set<String>> _loadLocalFavoriteIds(String uid) async {
+    final prefs = await SharedPreferences.getInstance();
+    return (prefs.getStringList(_favoriteStorageKey(uid)) ?? const <String>[])
+        .where((id) => id.trim().isNotEmpty)
+        .toSet();
+  }
+
+  Stream<Set<String>> _watchLocalFavoriteIds(String uid) {
+    late StreamController<Set<String>> controller;
+    StreamSubscription<void>? sub;
+
+    Future<void> emit() async {
+      try {
+        final ids = await _loadLocalFavoriteIds(uid);
+        if (!controller.isClosed) controller.add(ids);
+      } catch (e) {
+        Logger.error('Snack Chat 로컬 즐겨찾기 로드 실패: $e');
+        if (!controller.isClosed) controller.add(const <String>{});
+      }
+    }
+
+    controller = StreamController<Set<String>>.broadcast(
+      onListen: () {
+        emit();
+        sub = _favoritePrefsChanged.stream.listen((_) => emit());
+      },
+      onCancel: () {
+        sub?.cancel();
+        sub = null;
+      },
+    );
+
+    return controller.stream;
+  }
+
+  SnackChat _applyLocalFavorite(
+    SnackChat chat, {
+    required String uid,
+    required Set<String> favoriteIds,
+  }) {
+    final nextFavoriteBy = Map<String, bool>.from(chat.favoriteBy);
+    if (favoriteIds.contains(chat.id)) {
+      nextFavoriteBy[uid] = true;
+    } else {
+      nextFavoriteBy.remove(uid);
+    }
+    return chat.copyWith(favoriteBy: nextFavoriteBy);
+  }
+
+  Stream<List<SnackChat>> _watchMySnackChatsWithLocalFavorites() {
+    final uid = _uid;
+    if (uid == null) return Stream.value(const <SnackChat>[]);
+
+    late StreamController<List<SnackChat>> controller;
+    StreamSubscription<List<SnackChat>>? chatSub;
+    StreamSubscription<Set<String>>? favoriteSub;
+    var latestChats = const <SnackChat>[];
+    var latestFavoriteIds = const <String>{};
+
+    void emit() {
+      if (controller.isClosed) return;
+      controller.add(
+        latestChats
+            .map(
+              (chat) => _applyLocalFavorite(
+                chat,
+                uid: uid,
+                favoriteIds: latestFavoriteIds,
+              ),
+            )
+            .toList(),
+      );
+    }
+
+    controller = StreamController<List<SnackChat>>.broadcast(
+      onListen: () {
+        chatSub = _watchMySnackChats().listen((items) {
+          latestChats = items;
+          emit();
+        });
+        favoriteSub = _watchLocalFavoriteIds(uid).listen((ids) {
+          latestFavoriteIds = ids;
+          emit();
+        });
+      },
+      onCancel: () {
+        chatSub?.cancel();
+        favoriteSub?.cancel();
+      },
+    );
+
+    return controller.stream;
+  }
+
+  List<SnackChat> _sortPinnedFirst(List<SnackChat> items) {
+    final uid = _uid;
+    final sorted = [...items];
+    sorted.sort((a, b) {
+      final aFavorite = a.isFavoritedBy(uid);
+      final bFavorite = b.isFavoritedBy(uid);
+      if (aFavorite != bFavorite) {
+        return aFavorite ? -1 : 1;
+      }
+      return b.lastMessageTime.compareTo(a.lastMessageTime);
+    });
+    return sorted;
+  }
+
+  List<SnackChat> _filterActiveByRetention(
+    List<SnackChat> items, {
+    bool keepFavorited = false,
+  }) {
+    final now = DateTime.now();
+    final uid = _uid;
+    return items.where((chat) {
+      if (keepFavorited && chat.isFavoritedBy(uid)) {
+        return true;
+      }
+      return !chat.isExpired(now);
+    }).toList();
+  }
+
   List<SnackChat> _filterByToday(List<SnackChat> items, {required bool today}) {
     final now = DateTime.now();
     final startOfToday = DateTime(now.year, now.month, now.day);
     if (today) {
       // 오늘(자정 이후) 생성된 것만 Today 탭에 표시 (포스트와 동일 기준)
-      return items.where((c) => !c.createdAt.toLocal().isBefore(startOfToday)).toList();
+      return items
+          .where((c) => !c.createdAt.toLocal().isBefore(startOfToday))
+          .toList();
     }
     // 오늘 이전에 생성된 것은 All 탭에 표시
-    return items.where((c) => c.createdAt.toLocal().isBefore(startOfToday)).toList();
+    return items
+        .where((c) => c.createdAt.toLocal().isBefore(startOfToday))
+        .toList();
   }
 
   Stream<List<SnackChat>> getTodaySnackChats() {
-    return _watchMySnackChats()
-        .map((items) => _filterByToday(items, today: true));
+    return _watchMySnackChats().map(
+      (items) => _filterByToday(
+        _filterActiveByRetention(items),
+        today: true,
+      ),
+    );
   }
 
   Stream<List<SnackChat>> getAllSnackChats() {
-    return _watchMySnackChats()
-        .map((items) => _filterByToday(items, today: false));
+    return _watchMySnackChats().map(
+      (items) => _filterByToday(
+        _filterActiveByRetention(items),
+        today: false,
+      ),
+    );
+  }
+
+  Stream<List<SnackChat>> getManageableTodaySnackChats() {
+    return _watchMySnackChatsWithLocalFavorites().map(
+      (items) => _sortPinnedFirst(
+        _filterByToday(
+          _filterActiveByRetention(items, keepFavorited: true),
+          today: true,
+        ),
+      ),
+    );
+  }
+
+  Stream<List<SnackChat>> getManageableAllSnackChats() {
+    return _watchMySnackChatsWithLocalFavorites().map(
+      (items) => _sortPinnedFirst(
+        _filterByToday(
+          _filterActiveByRetention(items, keepFavorited: true),
+          today: false,
+        ),
+      ),
+    );
   }
 
   Stream<List<SnackChat>> getFavoritedTodaySnackChats() {
-    return _watchMySnackChats().map(
+    final uid = _uid;
+    return _watchMySnackChatsWithLocalFavorites().map(
       (items) => _filterByToday(items, today: true)
-          .where((c) => c.isFavorited)
+          .where((c) => c.isFavoritedBy(uid))
           .toList(),
     );
   }
 
   Stream<List<SnackChat>> getFavoritedAllSnackChats() {
-    return _watchMySnackChats().map(
+    final uid = _uid;
+    return _watchMySnackChatsWithLocalFavorites().map(
       (items) => _filterByToday(items, today: false)
-          .where((c) => c.isFavorited)
+          .where((c) => c.isFavoritedBy(uid))
           .toList(),
+    );
+  }
+
+  SnackChat? _findSharingSnackChatForPost(
+    List<SnackChat> items, {
+    required String postId,
+    required String postCollectionPath,
+  }) {
+    final normalizedPostId = postId.trim();
+    final normalizedPath = postCollectionPath.trim();
+    if (normalizedPostId.isEmpty) return null;
+
+    final matches = items.where((chat) {
+      if (!chat.isSharingOrigin) return false;
+      if (chat.sourcePostId != normalizedPostId) return false;
+      if (normalizedPath.isEmpty) return true;
+      return chat.sourceCollectionPath == normalizedPath;
+    }).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    return matches.isEmpty ? null : matches.first;
+  }
+
+  Stream<SnackChat?> watchMySharingSnackChatForPost({
+    required String postId,
+    required String postCollectionPath,
+  }) {
+    return _watchMySnackChats().map(
+      (items) => _findSharingSnackChatForPost(
+        items,
+        postId: postId,
+        postCollectionPath: postCollectionPath,
+      ),
+    );
+  }
+
+  Future<SnackChat?> getMySharingSnackChatForPost({
+    required String postId,
+    required String postCollectionPath,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return null;
+
+    final snapshot =
+        await _collection.where('participantIds', arrayContains: uid).get();
+    final items =
+        snapshot.docs.map((doc) => SnackChat.fromFirestore(doc)).toList();
+    return _findSharingSnackChatForPost(
+      items,
+      postId: postId,
+      postCollectionPath: postCollectionPath,
     );
   }
 
@@ -125,6 +340,7 @@ class SnackChatService {
     required String title,
     required List<String> participantIds,
     required List<String> visibleToCategoryIds,
+    required int retentionHours,
   }) async {
     final uid = _uid;
     if (uid == null) return null;
@@ -133,6 +349,9 @@ class SnackChatService {
     final unique = <String>{uid, ...participantIds};
     if (unique.length < 2 || unique.length > 6) {
       throw StateError('Snack Chat 참여 인원은 2~6명이어야 합니다.');
+    }
+    if (retentionHours != 24 && retentionHours != 48) {
+      throw StateError('Snack Chat 유지 시간은 24시간 또는 48시간이어야 합니다.');
     }
     // 방장은 반드시 초대 대상 모두와 친구여야 한다.
     final myFriendIds = await _getMyFriendIdSet(uid);
@@ -151,13 +370,66 @@ class SnackChatService {
       'participantIds': unique.toList(),
       'visibleToCategoryIds': visibleToCategoryIds,
       'createdAt': Timestamp.fromDate(now),
-      'expiresAt': Timestamp.fromDate(now.add(const Duration(days: 1))),
+      'expiresAt': Timestamp.fromDate(now.add(Duration(hours: retentionHours))),
+      'retentionHours': retentionHours,
       'isFavorited': false,
+      'favoriteBy': const <String, bool>{},
       'lastMessage': '',
       'lastMessageTime': Timestamp.fromDate(now),
       'lastMessageSenderId': uid,
       'unreadCount': unread,
       'updatedAt': Timestamp.fromDate(now),
+    });
+    return doc.id;
+  }
+
+  Future<String?> createSharingSnackChat({
+    required String title,
+    required String postId,
+    required String postCollectionPath,
+    required String otherUserId,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final normalizedOtherUserId = otherUserId.trim();
+    if (normalizedOtherUserId.isEmpty ||
+        normalizedOtherUserId == 'deleted' ||
+        normalizedOtherUserId == uid) {
+      return null;
+    }
+
+    final existing = await getMySharingSnackChatForPost(
+      postId: postId,
+      postCollectionPath: postCollectionPath,
+    );
+    if (existing != null) return existing.id;
+
+    final now = DateTime.now();
+    final participants = <String>{uid, normalizedOtherUserId}.toList();
+    final doc = _collection.doc();
+    final unread = <String, int>{for (final id in participants) id: 0};
+    final rawTitle = title.trim().isNotEmpty ? title.trim() : 'Sharing Chat';
+    final cleanedTitle =
+        rawTitle.length > 40 ? rawTitle.substring(0, 40) : rawTitle;
+
+    await doc.set({
+      'title': cleanedTitle,
+      'creatorId': uid,
+      'participantIds': participants,
+      'visibleToCategoryIds': const <String>[],
+      'createdAt': Timestamp.fromDate(now),
+      'expiresAt': Timestamp.fromDate(now.add(const Duration(hours: 24))),
+      'retentionHours': 24,
+      'isFavorited': false,
+      'favoriteBy': const <String, bool>{},
+      'lastMessage': '',
+      'lastMessageTime': Timestamp.fromDate(now),
+      'lastMessageSenderId': uid,
+      'unreadCount': unread,
+      'updatedAt': Timestamp.fromDate(now),
+      'sourceType': 'sharing',
+      'sourcePostId': postId,
+      'sourceCollectionPath': postCollectionPath,
     });
     return doc.id;
   }
@@ -212,10 +484,52 @@ class SnackChatService {
   }
 
   Stream<SnackChat?> watchSnackChat(String snackChatId) {
-    return _collection.doc(snackChatId).snapshots().map((doc) {
-      if (!doc.exists) return null;
-      return SnackChat.fromFirestore(doc);
-    });
+    final uid = _uid;
+    if (uid == null) {
+      return _collection.doc(snackChatId).snapshots().map((doc) {
+        if (!doc.exists) return null;
+        return SnackChat.fromFirestore(doc);
+      });
+    }
+
+    late StreamController<SnackChat?> controller;
+    StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? chatSub;
+    StreamSubscription<Set<String>>? favoriteSub;
+    SnackChat? latestChat;
+    var latestFavoriteIds = const <String>{};
+
+    void emit() {
+      if (controller.isClosed) return;
+      final chat = latestChat;
+      controller.add(
+        chat == null
+            ? null
+            : _applyLocalFavorite(
+                chat,
+                uid: uid,
+                favoriteIds: latestFavoriteIds,
+              ),
+      );
+    }
+
+    controller = StreamController<SnackChat?>.broadcast(
+      onListen: () {
+        chatSub = _collection.doc(snackChatId).snapshots().listen((doc) {
+          latestChat = doc.exists ? SnackChat.fromFirestore(doc) : null;
+          emit();
+        });
+        favoriteSub = _watchLocalFavoriteIds(uid).listen((ids) {
+          latestFavoriteIds = ids;
+          emit();
+        });
+      },
+      onCancel: () {
+        chatSub?.cancel();
+        favoriteSub?.cancel();
+      },
+    );
+
+    return controller.stream;
   }
 
   /// 최신 메시지 30개를 실시간으로 수신 (신규 메시지 즉시 반영)
@@ -329,7 +643,7 @@ class SnackChatService {
       try {
         final userDoc = await _firestore.collection('users').doc(uid).get();
         if (userDoc.exists) {
-          final data = userDoc.data() as Map<String, dynamic>?;
+          final data = userDoc.data();
           final nick = data?['nickname']?.toString().trim() ?? '';
           if (nick.isNotEmpty) senderName = nick;
         }
@@ -358,6 +672,9 @@ class SnackChatService {
         'lastMessage': previewText,
         'lastMessageTime': Timestamp.fromDate(now),
         'lastMessageSenderId': uid,
+        'expiresAt': Timestamp.fromDate(
+          now.add(Duration(hours: room.retentionHours)),
+        ),
         'unreadCount.$uid': 0,
         'updatedAt': Timestamp.fromDate(now),
       };
@@ -376,25 +693,27 @@ class SnackChatService {
     if (uid == null) return;
 
     try {
-      print('📖 [SnackChat] markAsRead 호출:');
-      print('  - snackChatId: $snackChatId');
-      print('  - uid: $uid');
-      
       await _collection.doc(snackChatId).update({
         'unreadCount.$uid': 0,
       });
-      
-      print('  ✅ markAsRead 완료');
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
     }
   }
 
   Future<void> toggleFavorite(String snackChatId, bool value) async {
-    await _collection.doc(snackChatId).update({
-      'isFavorited': value,
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    final uid = _uid;
+    if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _favoriteStorageKey(uid);
+    final ids = (prefs.getStringList(key) ?? const <String>[]).toSet();
+    if (value) {
+      ids.add(snackChatId);
+    } else {
+      ids.remove(snackChatId);
+    }
+    await prefs.setStringList(key, ids.toList()..sort());
+    _favoritePrefsChanged.add(null);
   }
 
   /// 스냅챗 알림 뮤트 토글
@@ -402,7 +721,7 @@ class SnackChatService {
     final uid = _uid;
     if (uid == null) return;
     final userRef = _firestore.collection('users').doc(uid);
-    
+
     try {
       if (mute) {
         await userRef.update({
@@ -416,7 +735,8 @@ class SnackChatService {
     } catch (e) {
       Logger.error('SnackChat 뮤트 토글 실패', e);
       // 필드가 없는 경우 생성 후 재시도
-      if (e.toString().contains('NOT_FOUND') || e.toString().contains('does not exist')) {
+      if (e.toString().contains('NOT_FOUND') ||
+          e.toString().contains('does not exist')) {
         try {
           await userRef.set({
             'mutedSnackChatIds': mute ? [snackChatId] : <String>[],
@@ -472,7 +792,7 @@ class SnackChatService {
   Stream<int> getTotalUnreadCount() {
     final uid = _uid;
     if (uid == null) return Stream.value(0);
-    return _watchMySnackChats().map((chats) {
+    return _watchMySnackChatsWithLocalFavorites().map((chats) {
       int total = 0;
       for (final chat in chats) {
         final v = chat.unreadCount[uid];
@@ -489,8 +809,8 @@ class SnackChatService {
     return _watchMySnackChats().map((chats) {
       int total = 0;
       for (final chat in chats) {
-        // 즐겨찾기된 스냅챗만 카운트
-        if (chat.isFavorited) {
+        // 현재 사용자가 즐겨찾기한 스냅챗만 카운트
+        if (chat.isFavoritedBy(uid)) {
           final v = chat.unreadCount[uid];
           if (v != null && v > 0) total += v;
         }

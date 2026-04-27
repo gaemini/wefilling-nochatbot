@@ -25,12 +25,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   final _snackChatService = SnackChatService();
   final _notificationService = NotificationService();
 
-  List<FriendCategory> _categories = const <FriendCategory>[];
   List<String> _selectedCategoryIds = <String>[];
   List<UserProfile> _candidateFriends = <UserProfile>[];
   Set<String> _selectedParticipantIds = <String>{};
   bool _isLoading = true;
   bool _isSubmitting = false;
+  int _retentionHours = 24;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -64,7 +64,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
 
     if (!mounted) return;
     setState(() {
-      _categories = categories;
       _selectedCategoryIds = allCategoryIds;
       _candidateFriends = friends;
       _isLoading = false;
@@ -210,7 +209,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                           onPressed: () =>
                               Navigator.pop(context, tempSelection),
                           child: Text(
-                            l10n.snackChatSelectionComplete(tempSelection.length),
+                            l10n.snackChatSelectionComplete(
+                                tempSelection.length),
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 16,
@@ -258,6 +258,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         title: title,
         participantIds: _selectedParticipantIds.toList(),
         visibleToCategoryIds: _selectedCategoryIds,
+        retentionHours: _retentionHours,
       );
       if (!mounted) return;
       if (id == null) {
@@ -279,7 +280,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         }
       } catch (_) {}
       if (creatorName.isEmpty) {
-        creatorName = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+        creatorName =
+            FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
       }
 
       await _notificationService.sendSnackChatInviteNotification(
@@ -292,6 +294,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         creatorId: _uid ?? '',
         creatorName: creatorName,
       );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => SnackChatScreen(snackChatId: id)),
@@ -440,47 +443,49 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   ),
                 ),
                 const SizedBox(height: 22),
+                _buildRetentionSelector(),
+                const SizedBox(height: 22),
                 _buildGuideCard(),
               ],
             ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-        child: SizedBox(
-          height: 56,
-          child: ElevatedButton.icon(
-            onPressed: _isSubmitting ? null : _create,
-            style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: AppColors.pointColor,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(999),
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+          child: SizedBox(
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: _isSubmitting ? null : _create,
+              style: ElevatedButton.styleFrom(
+                elevation: 0,
+                backgroundColor: AppColors.pointColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-            ),
-            icon: _isSubmitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.add, size: 24),
-            label: Text(
-              _isSubmitting
-                  ? AppLocalizations.of(context)!.snackChatCreating
-                  : AppLocalizations.of(context)!.snackChatCreate,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 30 / 2,
-                fontWeight: FontWeight.w800,
+              icon: _isSubmitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.add, size: 24),
+              label: Text(
+                _isSubmitting
+                    ? AppLocalizations.of(context)!.snackChatCreating
+                    : AppLocalizations.of(context)!.snackChatCreate,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 30 / 2,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -629,6 +634,90 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildRetentionSelector() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          isKo ? '유지 시간' : 'Retention Period',
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 17,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          isKo
+              ? '아무도 이야기하지 않은 시간이 지나면 목록에서 숨겨져요.'
+              : 'Chats are hidden after this much inactive time.',
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF6B7280),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(child: _buildRetentionOption(24)),
+            const SizedBox(width: 10),
+            Expanded(child: _buildRetentionOption(48)),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRetentionOption(int hours) {
+    final selected = _retentionHours == hours;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => setState(() => _retentionHours = hours),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 58,
+        decoration: BoxDecoration(
+          color: selected
+              ? AppColors.pointColor.withValues(alpha: 0.12)
+              : const Color(0xFFF7F9FC),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: selected ? AppColors.pointColor : const Color(0xFFE5E7EB),
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              size: 20,
+              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isKo ? '$hours시간' : '$hours hours',
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color:
+                    selected ? AppColors.pointColor : const Color(0xFF374151),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

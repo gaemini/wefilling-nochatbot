@@ -31,14 +31,15 @@ class CreateMeetupReviewScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CreateMeetupReviewScreen> createState() => _CreateMeetupReviewScreenState();
+  State<CreateMeetupReviewScreen> createState() =>
+      _CreateMeetupReviewScreenState();
 }
 
 class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   final MeetupService _meetupService = MeetupService();
   final TextEditingController _contentController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
-  
+
   List<File> _selectedImages = []; // 최대 5장
   List<String> _imageUrls = []; // 기존 이미지 URL들
   bool _isLoading = false;
@@ -51,11 +52,13 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     if (widget.existingContent != null) {
       _contentController.text = widget.existingContent!;
     }
-    
+
     // 여러 이미지 URL 로드 (우선순위: existingImageUrls > existingImageUrl)
-    if (widget.existingImageUrls != null && widget.existingImageUrls!.isNotEmpty) {
+    if (widget.existingImageUrls != null &&
+        widget.existingImageUrls!.isNotEmpty) {
       _imageUrls = List<String>.from(widget.existingImageUrls!);
-    } else if (widget.existingImageUrl != null && widget.existingImageUrl!.isNotEmpty) {
+    } else if (widget.existingImageUrl != null &&
+        widget.existingImageUrl!.isNotEmpty) {
       _imageUrls = [widget.existingImageUrl!];
     }
   }
@@ -93,8 +96,11 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
       if (pickedFiles.isNotEmpty) {
         // 최대 개수만큼만 추가
-        final filesToAdd = pickedFiles.take(remainingSlots).map((xFile) => File(xFile.path)).toList();
-        
+        final filesToAdd = pickedFiles
+            .take(remainingSlots)
+            .map((xFile) => File(xFile.path))
+            .toList();
+
         setState(() {
           _selectedImages.addAll(filesToAdd);
         });
@@ -143,7 +149,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       // 새로 선택한 이미지들 업로드
       for (int i = 0; i < _selectedImages.length; i++) {
         final file = _selectedImages[i];
-        final fileName = 'review_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+        final fileName =
+            'review_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('meetup_reviews')
@@ -274,27 +281,32 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           if (requestSent) {
             AppSnackBar.show(
               context,
-              message: AppLocalizations.of(context)!.reviewCreatedAndRequestsSent(participantIds.length) ?? "",
+              message: AppLocalizations.of(context)!
+                      .reviewCreatedAndRequestsSent(participantIds.length) ??
+                  "",
               type: AppSnackBarType.success,
             );
           } else {
             AppSnackBar.show(
               context,
-              message: AppLocalizations.of(context)!.reviewCreatedButNotificationFailed ?? "",
+              message: AppLocalizations.of(context)!
+                      .reviewCreatedButNotificationFailed ??
+                  "",
               type: AppSnackBarType.warning,
             );
           }
-          
+
           // 후기 작성 완료 후 My Page 탭으로 이동
           Navigator.of(context).popUntil((route) => route.isFirst);
-          
+
           // MainScreen의 탭을 My Page로 변경
           final mainScreenContext = Navigator.of(context).context;
           if (mainScreenContext.mounted) {
             // MainScreen에 접근하여 탭 변경
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => MainScreen(initialTabIndex: 2), // My Page 탭
+                builder: (context) =>
+                    MainScreen(initialTabIndex: 3), // My Page 탭
               ),
             );
           }
@@ -318,7 +330,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     }
   }
 
-  Widget _buildImageTile({File? imageFile, String? imageUrl, required VoidCallback onRemove}) {
+  Widget _buildImageTile(
+      {File? imageFile, String? imageUrl, required VoidCallback onRemove}) {
     return Stack(
       children: [
         Container(
@@ -388,7 +401,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditMode = widget.existingReviewId != null;
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -400,7 +413,9 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          isEditMode ? (AppLocalizations.of(context)!.reviewEditTitle ?? "") : AppLocalizations.of(context)!.reviewWriteTitle,
+          isEditMode
+              ? (AppLocalizations.of(context)!.reviewEditTitle ?? "")
+              : AppLocalizations.of(context)!.reviewWriteTitle,
           style: TypographyStyles.headlineMedium.copyWith(
             color: const Color(0xFF111827),
           ),
@@ -464,12 +479,13 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  
+
                   // 이미지 그리드
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       crossAxisSpacing: 8,
                       mainAxisSpacing: 8,
@@ -483,7 +499,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           onRemove: () => _removeImage(index, isUrl: true),
                         );
                       }
-                      
+
                       // 새로 선택한 이미지 표시
                       final fileIndex = index - _imageUrls.length;
                       if (fileIndex < _selectedImages.length) {
@@ -492,7 +508,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           onRemove: () => _removeImage(fileIndex, isUrl: false),
                         );
                       }
-                      
+
                       // 추가 버튼
                       if (index < maxImages) {
                         return GestureDetector(
@@ -526,7 +542,7 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                           ),
                         );
                       }
-                      
+
                       return const SizedBox.shrink();
                     },
                   ),
@@ -559,7 +575,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: DesignTokens.radiusM,
-                        borderSide: BorderSide(color: BrandColors.primary, width: 2),
+                        borderSide:
+                            BorderSide(color: BrandColors.primary, width: 2),
                       ),
                       filled: true,
                       fillColor: BrandColors.neutral50,
@@ -599,21 +616,22 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         ],
                       ),
                     ),
-                  
+
                   // 하단 여백 (버튼 높이 + 여백)
                   const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
-          
+
           // 고정된 하단 버튼 영역
           Container(
             padding: EdgeInsets.only(
               left: 16,
               right: 16,
               top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 16, // 시스템 네비게이션 바 고려
+              bottom:
+                  MediaQuery.of(context).padding.bottom + 16, // 시스템 네비게이션 바 고려
             ),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -646,11 +664,16 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
                         width: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
                     : Text(
-                        isEditMode ? (AppLocalizations.of(context)!.reviewEditTitle ?? "") : AppLocalizations.of(context)!.requestReviewAcceptance,
+                        isEditMode
+                            ? (AppLocalizations.of(context)!.reviewEditTitle ??
+                                "")
+                            : AppLocalizations.of(context)!
+                                .requestReviewAcceptance,
                         style: TypographyStyles.buttonText.copyWith(
                           color: Colors.white,
                         ),
@@ -663,4 +686,3 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     );
   }
 }
-

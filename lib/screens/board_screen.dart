@@ -61,9 +61,16 @@ class BoardScreenState extends State<BoardScreen>
   List<Post>? _cachedFeedPosts;
   String? _activeSharingGatePostId;
 
+  // 나눔 스트림 인스턴스 고정 (매 빌드마다 새 Firestore 구독 생성 방지)
+  Stream<List<Post>>? _sharingPostsStream;
+
+  // 로컬에서 삭제 확정된 게시글 ID (스트림 갱신 전 즉시 UI 반영용)
+  final Set<String> _locallyDeletedPostIds = {};
+
   @override
   void initState() {
     super.initState();
+    _sharingPostsStream = _postService.getSharingPostsStream();
     _loadCachedData();
   }
 
@@ -260,7 +267,7 @@ class BoardScreenState extends State<BoardScreen>
 
   Widget _buildSharingStreamTab() {
     return StreamBuilder<List<Post>>(
-      stream: _postService.getSharingPostsStream(),
+      stream: _sharingPostsStream,
       builder: (context, snapshot) => _buildSharingTab(snapshot),
     );
   }
@@ -346,12 +353,29 @@ class BoardScreenState extends State<BoardScreen>
         (_cachedSharingPosts == null || _cachedSharingPosts!.isEmpty);
 
     final snapshotPosts = snapshot.data;
-    final posts = (snapshotPosts != null && snapshotPosts.isNotEmpty)
-        ? snapshotPosts
-        : (_cachedSharingPosts ?? snapshotPosts ?? const <Post>[]);
 
-    if (snapshot.hasData && posts.isNotEmpty) {
-      _cachedSharingPosts = posts;
+    // 스트림에서 데이터를 받은 경우 항상 스트림 데이터 우선 사용 (빈 리스트 포함)
+    // 초기 로딩 중(아직 한 번도 데이터 못 받은 경우)에만 캐시 폴백
+    final bool hasReceivedStreamData = snapshot.hasData;
+    final rawPosts = hasReceivedStreamData
+        ? snapshotPosts!
+        : (_cachedSharingPosts ?? const <Post>[]);
+
+    // 스트림이 아직 삭제 이벤트를 받기 전에도 즉시 UI에서 제거
+    final posts = _locallyDeletedPostIds.isEmpty
+        ? rawPosts
+        : rawPosts
+            .where((p) => !_locallyDeletedPostIds.contains(p.id))
+            .toList();
+
+    // 스트림 데이터로 캐시 갱신 (삭제 반영을 위해 빈 리스트도 저장)
+    if (snapshot.hasData) {
+      _cachedSharingPosts = snapshotPosts;
+      // 스트림이 최신 상태를 반영했으면 로컬 삭제 ID 정리
+      if (_locallyDeletedPostIds.isNotEmpty) {
+        final streamIds = snapshotPosts!.map((p) => p.id).toSet();
+        _locallyDeletedPostIds.removeWhere((id) => !streamIds.contains(id));
+      }
     }
 
     if (!_didAutoRefreshSharingCommentCounts && posts.isNotEmpty) {
@@ -382,12 +406,13 @@ class BoardScreenState extends State<BoardScreen>
         (_cachedFeedPosts == null || _cachedFeedPosts!.isEmpty);
 
     final snapshotPosts = snapshot.data;
-    final sourcePosts = (snapshotPosts != null && snapshotPosts.isNotEmpty)
-        ? snapshotPosts
-        : (_cachedFeedPosts ?? snapshotPosts ?? const <Post>[]);
+    final bool hasFeedStreamData = snapshot.hasData;
+    final sourcePosts = hasFeedStreamData
+        ? snapshotPosts!
+        : (_cachedFeedPosts ?? const <Post>[]);
     final posts = sourcePosts.where((p) => !isSharingPost(p)).toList();
 
-    if (snapshot.hasData && posts.isNotEmpty) {
+    if (snapshot.hasData) {
       _cachedFeedPosts = posts;
     }
 
@@ -542,6 +567,7 @@ class BoardScreenState extends State<BoardScreen>
   }
 
   Widget _buildSharingEmpty() {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 80),
       child: Column(
@@ -551,9 +577,9 @@ class BoardScreenState extends State<BoardScreen>
           const Icon(Icons.volunteer_activism_outlined,
               size: 64, color: Color(0xFF9CA3AF)),
           const SizedBox(height: 16),
-          const Text(
-            '아직 나눔이 없어요',
-            style: TextStyle(
+          Text(
+            isKo ? '아직 나눔이 없어요' : 'No sharing posts yet',
+            style: const TextStyle(
               fontFamily: 'Pretendard',
               fontSize: 16,
               fontWeight: FontWeight.w700,
@@ -561,19 +587,13 @@ class BoardScreenState extends State<BoardScreen>
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '처음 나눔 글을 등록해보세요.',
-            style: TextStyle(
+          Text(
+            isKo ? '처음 나눔 글을 등록해보세요.' : 'Be the first to post a sharing item.',
+            style: const TextStyle(
               fontFamily: 'Pretendard',
               fontSize: 14,
               color: Color(0xFF6B7280),
             ),
-          ),
-          const SizedBox(height: 20),
-          ElevatedButton.icon(
-            onPressed: _openCreateSharingPost,
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('나눔 글 쓰기'),
           ),
         ],
       ),
@@ -1107,10 +1127,24 @@ class BoardScreenState extends State<BoardScreen>
 
   /// 게시글 상세 화면으로 이동
   void _navigateToPostDetail(Post post) async {
-    await Navigator.push<bool>(
+    final result = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (context) => PostDetailScreen(post: post)),
     );
+
+    // 게시글이 삭제된 경우 즉시 로컬에서 제거 (실시간 스트림 갱신 전에도 목록 반영)
+    if (result == true && mounted) {
+      setState(() {
+        if (isSharingPost(post)) {
+          _locallyDeletedPostIds.add(post.id);
+          _cachedSharingPosts =
+              _cachedSharingPosts?.where((p) => p.id != post.id).toList();
+        } else {
+          _cachedFeedPosts =
+              _cachedFeedPosts?.where((p) => p.id != post.id).toList();
+        }
+      });
+    }
   }
 
   void _openCreatePost() {

@@ -258,7 +258,9 @@ class _LoginScreenState extends State<LoginScreen>
                                     FittedBox(
                                       fit: BoxFit.scaleDown,
                                       child: Text(
-                                        '버리긴 아깝고 팔긴 귀찮을 때, 우리 학교 무료 나눔 Wefilling',
+                                        Localizations.localeOf(context).languageCode == 'ko'
+                                            ? '버리긴 아깝고 팔긴 귀찮을 때, 우리 학교 무료 나눔 Wefilling'
+                                            : 'Free campus sharing — too good to toss, too easy to give.',
                                         maxLines: 1,
                                         style: TextStyle(
                                           fontSize: isVeryShort ? 15 : 18,

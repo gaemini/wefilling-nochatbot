@@ -1669,7 +1669,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Sign in with your Google account\nand enjoy various features.';
 
   @override
-  String get googleLogin => 'Sign in with Google';
+  String get googleLogin => 'Log in with Google';
 
   @override
   String get loggingIn => 'Signing in...';
@@ -1689,7 +1689,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get continueWithGoogle => 'Continue with Google';
 
   @override
-  String get appleLogin => 'Sign in with Apple';
+  String get appleLogin => 'Log in with Apple';
 
   @override
   String get continueWithApple => 'Continue with Apple';

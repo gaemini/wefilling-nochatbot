@@ -1055,6 +1055,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final auth = Provider.of<app_auth.AuthProvider>(context, listen: false);
     if (auth.isHanyangUser) return;
 
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -1063,22 +1064,24 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.school, color: AppColors.pointColor),
-              SizedBox(width: 8),
+              const Icon(Icons.school, color: AppColors.pointColor),
+              const SizedBox(width: 8),
               Text(
-                '한양 인증 필요',
-                style: TextStyle(
+                isKo ? '한양 인증 필요' : 'Hanyang Verification Required',
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontWeight: FontWeight.w700,
                 ),
               ),
             ],
           ),
-          content: const Text(
-            '이 나눔 글의 상세 내용과 작성자를 확인하려면\n한양메일 인증이 필요합니다.',
-            style: TextStyle(
+          content: Text(
+            isKo
+                ? '이 나눔 글의 상세 내용과 작성자를 확인하려면\n한양메일 인증이 필요합니다.'
+                : 'Hanyang email verification is required\nto view the details and requester of this sharing post.',
+            style: const TextStyle(
               fontFamily: 'Pretendard',
               height: 1.4,
             ),
@@ -1089,7 +1092,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 Navigator.of(dialogContext).pop();
                 if (mounted) Navigator.of(context).pop();
               },
-              child: const Text('취소'),
+              child: Text(isKo ? '취소' : 'Cancel'),
             ),
             FilledButton(
               onPressed: () {
@@ -1102,7 +1105,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   ),
                 );
               },
-              child: const Text('인증하기'),
+              child: Text(isKo ? '인증하기' : 'Verify'),
             ),
           ],
         );
@@ -2263,7 +2266,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final title = post.title.trim();
     if (title.isNotEmpty) return title;
     final headline = _splitHeadlineAndBody(post.content).headline;
-    return headline.isNotEmpty ? headline : '나눔 글';
+    if (headline.isNotEmpty) return headline;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return isKo ? '나눔 글' : 'Sharing Post';
   }
 
   Widget _buildSharingDetailScaffold({required bool isLoggedIn}) {

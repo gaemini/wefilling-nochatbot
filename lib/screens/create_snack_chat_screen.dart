@@ -316,7 +316,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         foregroundColor: const Color(0xFF005BAC),
-        titleSpacing: 0,
+        centerTitle: true,
         title: Text(
           l10n.createSnackChat,
           style: const TextStyle(

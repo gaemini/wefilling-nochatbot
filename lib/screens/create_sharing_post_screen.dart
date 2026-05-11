@@ -123,28 +123,25 @@ class _CreateSharingPostScreenState extends State<CreateSharingPostScreen> {
     final title = _titleController.text.trim();
     final content = _contentController.text.trim();
     final location = _locationController.text.trim();
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     if (title.isEmpty) {
-      _showSnack(
-        Localizations.localeOf(context).languageCode == 'ko'
-            ? '제목을 입력해주세요.'
-            : 'Please enter a title.',
-      );
+      _showSnack(isKo ? '제목을 입력해주세요.' : 'Please enter a title.');
       return;
     }
     if (location.isEmpty) {
-      _showSnack(
-        Localizations.localeOf(context).languageCode == 'ko'
-            ? '위치를 입력해주세요.'
-            : 'Please enter a location.',
-      );
+      _showSnack(isKo ? '위치를 입력해주세요.' : 'Please enter a location.');
       return;
     }
     if (_selectedAssets.isEmpty) {
-      _showSnack('사진을 1장 이상 첨부해주세요.');
+      _showSnack(
+        isKo ? '사진을 1장 이상 첨부해주세요.' : 'Please attach at least one photo.',
+      );
       return;
     }
     if (_isResolvingImages) {
-      _showSnack('선택한 사진을 준비 중이에요.');
+      _showSnack(
+        isKo ? '선택한 사진을 준비 중이에요.' : 'Preparing selected photos…',
+      );
       return;
     }
     if (_selectedImages.length != _selectedAssets.length) {
@@ -164,13 +161,18 @@ class _CreateSharingPostScreenState extends State<CreateSharingPostScreen> {
     if (!mounted) return;
     setState(() => _isSubmitting = false);
     if (!success) {
-      _showSnack('나눔 글을 등록하지 못했어요.', isError: true);
+      _showSnack(
+        isKo ? '나눔 글을 등록하지 못했어요.' : 'Failed to post the sharing item.',
+        isError: true,
+      );
       return;
     }
     widget.onPostCreated();
     Navigator.of(context).pop();
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('나눔 글이 등록되었습니다.')),
+      SnackBar(
+        content: Text(isKo ? '나눔 글이 등록되었습니다.' : 'Sharing post has been published.'),
+      ),
     );
   }
 

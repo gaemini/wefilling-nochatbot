@@ -264,6 +264,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get createPost => '포스트 작성';
 
   @override
+  String get createPostSheetDesc => '사진과 글을 올려 자유롭게 공유하세요.';
+
+  @override
   String get newPost => '새 포스트 작성';
 
   @override
@@ -273,10 +276,26 @@ class AppLocalizationsKo extends AppLocalizations {
   String get createSnackChat => 'Snack Chat 만들기';
 
   @override
+  String get createSnackChatSheetDesc => '오늘 가볍게 대화할 Snack Chat을 시작하세요.';
+
+  @override
   String get snackChatRoomTitle => '방 제목';
 
   @override
   String get snackChatRoomTitleHint => '대화의 주제를 입력해주세요';
+
+  @override
+  String get snackChatVisibilityDuration => '유지 시간';
+
+  @override
+  String get snackChatVisibilityDurationHint =>
+      '마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.';
+
+  @override
+  String get snackChatDuration24Hours => '24시간';
+
+  @override
+  String get snackChatDuration48Hours => '48시간';
 
   @override
   String get snackChatSelectParticipants => '참여자 선택';
@@ -2521,7 +2540,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get titleMinLengthError => '제목은 최소 2자 이상이어야 합니다';
 
   @override
-  String get addImage => '이미지 추가';
+  String get addImage => '추가하기';
 
   @override
   String get tapToSelectFromGallery => '탭하여 갤러리에서 선택';
@@ -2814,6 +2833,59 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postImageUploading => '이미지를 업로드 중입니다. 잠시만 기다려주세요...';
 
   @override
+  String get postComposeImageRequired => '이미지 첨부';
+
+  @override
+  String get postComposeImageHelper => '최대 15장까지 첨부할 수 있어요.';
+
+  @override
+  String get postComposeVisibilityPrompt => '공개 대상을 선택해주세요.';
+
+  @override
+  String get postVisibilityPublicTitle => '모두에게 공개';
+
+  @override
+  String get postVisibilityPublicDescription => '모든 사용자가 게시글을 볼 수 있습니다';
+
+  @override
+  String get postVisibilityGroupTitle => '그룹 선택';
+
+  @override
+  String get postVisibilityGroupDescription => '선택한 그룹 친구에게만 공개됩니다';
+
+  @override
+  String get postVisibilityNoGroupsSelected => '선택된 그룹이 없습니다';
+
+  @override
+  String postVisibilityGroupsSelected(int count) {
+    return '$count개 그룹 선택됨';
+  }
+
+  @override
+  String get postSelectImageRequired => '이미지를 첨부해주세요.';
+
+  @override
+  String get postEnterContentRequired => '내용을 입력해주세요.';
+
+  @override
+  String get postDraftIncompleteMessage => '내용이나 이미지를 먼저 추가해주세요.';
+
+  @override
+  String get postPreparingImages => '선택한 사진을 준비 중이에요. 잠시만 기다려주세요.';
+
+  @override
+  String get postSelectedPeopleTitle => '선택된 사람들';
+
+  @override
+  String get postSelectedPeopleEmpty => '선택된 사람이 없습니다.';
+
+  @override
+  String get postAudienceTitle => '공개 대상';
+
+  @override
+  String get postAudienceSubtitle => '프로필을 누르면 상대방 정보를 확인할 수 있어요.';
+
+  @override
   String totalImageSizeWarning(String sizeMB) {
     return '경고: 총 이미지 크기가 ${sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.';
   }
@@ -2855,4 +2927,10 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get termsAgreementDescription => '서비스를 이용하기 전에\n약관에 동의해주세요.';
+
+  @override
+  String get snackChatUnfavoriteTitle => '즐겨찾기 해제';
+
+  @override
+  String get snackChatUnfavoriteMessage => '이 Snack Chat을 즐겨찾기에서 해제할까요?';
 }

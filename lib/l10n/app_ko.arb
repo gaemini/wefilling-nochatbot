@@ -85,11 +85,17 @@
   "post": "포스트",
   "posts": "포스트",
   "createPost": "포스트 작성",
+  "createPostSheetDesc": "사진과 글을 올려 자유롭게 공유하세요.",
   "newPost": "새 포스트 작성",
   "newPostCreation": "새 포스트 작성",
   "createSnackChat": "Snack Chat 만들기",
+  "createSnackChatSheetDesc": "오늘 가볍게 대화할 Snack Chat을 시작하세요.",
   "snackChatRoomTitle": "방 제목",
   "snackChatRoomTitleHint": "대화의 주제를 입력해주세요",
+  "snackChatVisibilityDuration": "유지 시간",
+  "snackChatVisibilityDurationHint": "마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.",
+  "snackChatDuration24Hours": "24시간",
+  "snackChatDuration48Hours": "48시간",
   "snackChatSelectParticipants": "참여자 선택",
   "snackChatParticipantLimit": "최대 6명까지 친구를 초대할 수 있습니다",
   "snackChatMe": "나",
@@ -1299,6 +1305,31 @@
   "categorySelectAtLeastOne": "카테고리를 최소 1개 이상 선택해주세요.",
   "groupSelectAtLeastOne": "그룹을 최소 1개 이상 선택해주세요.",
   "postImageUploading": "이미지를 업로드 중입니다. 잠시만 기다려주세요...",
+  "postComposeImageRequired": "이미지 첨부",
+  "postComposeImageHelper": "최대 15장까지 첨부할 수 있어요.",
+  "addImage": "추가하기",
+  "postComposeVisibilityPrompt": "공개 대상을 선택해주세요.",
+  "postVisibilityPublicTitle": "모두에게 공개",
+  "postVisibilityPublicDescription": "모든 사용자가 게시글을 볼 수 있습니다",
+  "postVisibilityGroupTitle": "그룹 선택",
+  "postVisibilityGroupDescription": "선택한 그룹 친구에게만 공개됩니다",
+  "postVisibilityNoGroupsSelected": "선택된 그룹이 없습니다",
+  "postVisibilityGroupsSelected": "{count}개 그룹 선택됨",
+  "@postVisibilityGroupsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "postSelectImageRequired": "이미지를 첨부해주세요.",
+  "postEnterContentRequired": "내용을 입력해주세요.",
+  "postDraftIncompleteMessage": "내용이나 이미지를 먼저 추가해주세요.",
+  "postPreparingImages": "선택한 사진을 준비 중이에요. 잠시만 기다려주세요.",
+  "postSelectedPeopleTitle": "선택된 사람들",
+  "postSelectedPeopleEmpty": "선택된 사람이 없습니다.",
+  "postAudienceTitle": "공개 대상",
+  "postAudienceSubtitle": "프로필을 누르면 상대방 정보를 확인할 수 있어요.",
   "totalImageSizeWarning": "경고: 총 이미지 크기가 {sizeMB}MB입니다. 포스트 등록에 시간이 걸릴 수 있습니다.",
   "@totalImageSizeWarning": {
     "placeholders": {
@@ -1331,5 +1362,7 @@
   "exit": "나가기",
   "stay": "머무르기",
   "termsAgreementTitle": "약관 동의",
-  "termsAgreementDescription": "서비스를 이용하기 전에\n약관에 동의해주세요."
+  "termsAgreementDescription": "서비스를 이용하기 전에\n약관에 동의해주세요.",
+  "snackChatUnfavoriteTitle": "즐겨찾기 해제",
+  "snackChatUnfavoriteMessage": "이 Snack Chat을 즐겨찾기에서 해제할까요?"
 }

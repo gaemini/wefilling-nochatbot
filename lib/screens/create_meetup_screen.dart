@@ -428,54 +428,62 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          l10n.exitMeetupCreation,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF111827),
-          ),
-        ),
-        content: Text(
-          l10n.exitMeetupCreationMessage,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF6B7280),
-          ),
-        ),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: Text(
-              l10n.stay,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF6B7280),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.exitMeetupCreation,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF111827),
+                ),
               ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(
-              l10n.exit,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: AppColors.pointColor,
+              const SizedBox(height: 8),
+              Text(
+                l10n.exitMeetupCreationMessage,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                  color: Color(0xFF6B7280),
+                ),
               ),
-            ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppButton(
+                      label: l10n.stay,
+                      onPressed: () => Navigator.of(context).pop(false),
+                      variant: AppButtonVariant.outline,
+                      size: AppButtonSize.m,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: AppButton(
+                      label: l10n.exit,
+                      onPressed: () => Navigator.of(context).pop(true),
+                      size: AppButtonSize.m,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
     
@@ -1149,13 +1157,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
             ),
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
                 child: Row(
                   children: [
-                    // 취소 버튼
                     Expanded(
-                      flex: 1,
-                      child: AppButton(
+                      child: _buildBottomActionButton(
                         label: AppLocalizations.of(context)!.cancel,
                         onPressed: _isSubmitting
                             ? null
@@ -1165,14 +1171,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                   _closeScreen(shouldSaveAutofill: false);
                                 }
                               },
-                        variant: AppButtonVariant.outline,
+                        isPrimary: false,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    // 생성 버튼
+                    const SizedBox(width: 10),
                     Expanded(
                       flex: 2,
-                      child: AppButton(
+                      child: _buildBottomActionButton(
                         label: AppLocalizations.of(context)!.createAction,
                         onPressed: _isSubmitting
                             ? null
@@ -1316,6 +1321,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                                 }
                               },
                         isLoading: _isSubmitting,
+                        isPrimary: true,
                       ),
                     ),
                   ],
@@ -1325,6 +1331,72 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           ),
         ],
       ),
+      ),
+    );
+  }
+
+  Widget _buildBottomActionButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required bool isPrimary,
+    bool isLoading = false,
+  }) {
+    final isDisabled = onPressed == null || isLoading;
+    final backgroundColor = isPrimary
+        ? (isDisabled ? const Color(0xFFCBDCF4) : const Color(0xFF5B8DEF))
+        : Colors.white;
+    final borderColor = isPrimary
+        ? Colors.transparent
+        : (isDisabled ? const Color(0xFFD8DEE8) : const Color(0xFFB9C2D0));
+    final textColor = isPrimary
+        ? Colors.white
+        : (isDisabled ? const Color(0xFFA8B0BE) : const Color(0xFF4A5B78));
+
+    return SizedBox(
+      height: 52,
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: isDisabled ? null : onPressed,
+          borderRadius: BorderRadius.circular(16),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor, width: isPrimary ? 0 : 1.2),
+              boxShadow: isPrimary
+                  ? const [
+                      BoxShadow(
+                        color: Color(0x1A5B8DEF),
+                        blurRadius: 14,
+                        offset: Offset(0, 6),
+                      ),
+                    ]
+                  : const [],
+            ),
+            child: Center(
+              child: isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
+                      ),
+                    ),
+            ),
+          ),
+        ),
       ),
     );
   }

@@ -11,8 +11,9 @@ class SnackChat {
   final List<String> participantIds;
   final List<String> visibleToCategoryIds;
   final DateTime createdAt;
+  final int activeDurationHours;
   final DateTime expiresAt;
-  final bool isFavorited;
+  final List<String> favoriteUserIds;
   final String lastMessage;
   final DateTime lastMessageTime;
   final String lastMessageSenderId;
@@ -26,8 +27,9 @@ class SnackChat {
     required this.participantIds,
     required this.visibleToCategoryIds,
     required this.createdAt,
+    required this.activeDurationHours,
     required this.expiresAt,
-    required this.isFavorited,
+    required this.favoriteUserIds,
     required this.lastMessage,
     required this.lastMessageTime,
     required this.lastMessageSenderId,
@@ -40,6 +42,15 @@ class SnackChat {
   bool isExpired([DateTime? now]) {
     final base = now ?? DateTime.now();
     return expiresAt.isBefore(base);
+  }
+
+  bool isHardExpired([DateTime? now]) {
+    return false;
+  }
+
+  bool isFavoritedBy(String? userId) {
+    if (userId == null || userId.isEmpty) return false;
+    return favoriteUserIds.contains(userId);
   }
 
   int getMyUnreadCount(String currentUserId) {
@@ -66,9 +77,25 @@ class SnackChat {
               .toList() ??
           const <String>[],
       createdAt: parseDate(data['createdAt'], DateTime.now()),
+      activeDurationHours: (() {
+        final raw = data['activeDurationHours'];
+        if (raw is int && (raw == 24 || raw == 48)) return raw;
+        final createdAt = parseDate(data['createdAt'], DateTime.now());
+        final expiresAt = parseDate(
+          data['expiresAt'],
+          createdAt.add(const Duration(days: 1)),
+        );
+        final diff = expiresAt.difference(createdAt).inHours;
+        return diff >= 48 ? 48 : 24;
+      })(),
       expiresAt:
           parseDate(data['expiresAt'], DateTime.now().add(const Duration(days: 1))),
-      isFavorited: data['isFavorited'] == true,
+      favoriteUserIds: (data['favoriteUserIds'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          ((data['isFavorited'] == true && (data['creatorId'] ?? '').toString().isNotEmpty)
+              ? <String>[(data['creatorId'] ?? '').toString()]
+              : const <String>[]),
       lastMessage: (data['lastMessage'] ?? '').toString(),
       lastMessageTime: parseDate(data['lastMessageTime'], DateTime.now()),
       lastMessageSenderId: (data['lastMessageSenderId'] ?? '').toString(),
@@ -84,8 +111,9 @@ class SnackChat {
       'participantIds': participantIds,
       'visibleToCategoryIds': visibleToCategoryIds,
       'createdAt': Timestamp.fromDate(createdAt),
+      'activeDurationHours': activeDurationHours,
       'expiresAt': Timestamp.fromDate(expiresAt),
-      'isFavorited': isFavorited,
+      'favoriteUserIds': favoriteUserIds,
       'lastMessage': lastMessage,
       'lastMessageTime': Timestamp.fromDate(lastMessageTime),
       'lastMessageSenderId': lastMessageSenderId,
@@ -96,7 +124,7 @@ class SnackChat {
 
   SnackChat copyWith({
     String? title,
-    bool? isFavorited,
+    List<String>? favoriteUserIds,
     String? lastMessage,
     DateTime? lastMessageTime,
     String? lastMessageSenderId,
@@ -110,8 +138,9 @@ class SnackChat {
       participantIds: participantIds,
       visibleToCategoryIds: visibleToCategoryIds,
       createdAt: createdAt,
+      activeDurationHours: activeDurationHours,
       expiresAt: expiresAt,
-      isFavorited: isFavorited ?? this.isFavorited,
+      favoriteUserIds: favoriteUserIds ?? this.favoriteUserIds,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,

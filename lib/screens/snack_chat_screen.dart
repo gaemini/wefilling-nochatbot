@@ -849,7 +849,8 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   }
 
   void _handlePushBackNavigation(SnackChat room) {
-    if (room.isFavorited) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    if (room.isFavoritedBy(currentUserId)) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
           builder: (_) => MainScreen(initialGroupTabIndex: 1),

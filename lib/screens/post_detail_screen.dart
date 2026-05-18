@@ -83,6 +83,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   static const int _maxRetryCount = 3; // 최대 재시도 횟수
   static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
   bool _didPrefetchImages = false;
+  Future<List<_PostAudienceUser>>? _audienceUsersFuture;
   
   static const Map<String, String> _imageHttpHeaders = {
     'User-Agent':
@@ -118,6 +119,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _validateAccessAndRefreshPost();
     });
+    _audienceUsersFuture = _loadAudienceUsers(_currentPost);
     
     // 디버그용: 이미지 URL 확인
     if (kDebugMode) {
@@ -172,6 +174,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         _isAuthor = user != null && refreshed.userId == user.uid;
         _isLiked = user != null && refreshed.likedBy.contains(user.uid);
         _accessValidated = true;
+        _audienceUsersFuture = _loadAudienceUsers(refreshed);
       });
 
       // 작성자 글에는 북마크 UI가 없으므로 저장 상태 조회 불필요
@@ -979,6 +982,87 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return ordered;
   }
 
+  Future<List<String>> _resolveAudienceUserIds(Post post) async {
+    if (post.visibility != 'category') return const <String>[];
+
+    final audience = <String>{};
+
+    if (post.allowedUserIds.isNotEmpty) {
+      for (final uid in post.allowedUserIds) {
+        final trimmed = uid.trim();
+        if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
+          continue;
+        }
+        audience.add(trimmed);
+      }
+      return audience.toList(growable: false);
+    }
+
+    if (post.visibleToCategoryIds.isEmpty) return const <String>[];
+
+    for (final categoryId in post.visibleToCategoryIds) {
+      final trimmedCategoryId = categoryId.trim();
+      if (trimmedCategoryId.isEmpty) continue;
+      final snap = await _firestore
+          .collection('friend_categories')
+          .doc(trimmedCategoryId)
+          .get();
+      final friendIds = List<String>.from(snap.data()?['friendIds'] ?? const []);
+      for (final uid in friendIds) {
+        final trimmed = uid.trim();
+        if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
+          continue;
+        }
+        audience.add(trimmed);
+      }
+    }
+
+    return audience.toList(growable: false);
+  }
+
+  Future<List<_PostAudienceUser>> _loadAudienceUsers(Post post) async {
+    final userIds = await _resolveAudienceUserIds(post);
+    if (userIds.isEmpty) return const <_PostAudienceUser>[];
+
+    final resultById = <String, _PostAudienceUser>{};
+    const chunkSize = 10;
+
+    for (var index = 0; index < userIds.length; index += chunkSize) {
+      final chunk = userIds.sublist(
+        index,
+        (index + chunkSize) > userIds.length ? userIds.length : (index + chunkSize),
+      );
+
+      final snap = await _firestore
+          .collection('users')
+          .where(FieldPath.documentId, whereIn: chunk)
+          .get();
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final nickname = (data['nickname'] ?? '').toString().trim();
+        final photoURL = (data['photoURL'] ?? '').toString().trim();
+        final photoVersion = (data['photoVersion'] is int)
+            ? data['photoVersion'] as int
+            : int.tryParse('${data['photoVersion'] ?? 0}') ?? 0;
+
+        resultById[doc.id] = _PostAudienceUser(
+          uid: doc.id,
+          nickname: nickname.isEmpty ? 'User' : nickname,
+          photoURL: photoURL,
+          photoVersion: photoVersion,
+        );
+      }
+    }
+
+    final ordered = <_PostAudienceUser>[];
+    for (final uid in userIds) {
+      final user = resultById[uid];
+      if (user != null) ordered.add(user);
+    }
+    return ordered;
+  }
+
   // 조회수 증가 메서드
   Future<void> _incrementViewCount() async {
     try {
@@ -1142,6 +1226,30 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
   }
 
+  void _openUserProfile({
+    required String userId,
+    required String nickname,
+    required String photoURL,
+  }) {
+    final me = FirebaseAuth.instance.currentUser?.uid;
+    if (me != null && userId == me) {
+      _openMyPageWithBottomNav();
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FriendProfileScreen(
+          userId: userId,
+          nickname: nickname,
+          photoURL: photoURL,
+          allowNonFriendsPreview: true,
+        ),
+      ),
+    );
+  }
+
   void _openAuthorProfile() {
     // 익명/탈퇴 계정은 프로필 접근 불가
     if (_currentPost.isAnonymous) return;
@@ -1153,16 +1261,121 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       return;
     }
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => FriendProfileScreen(
-          userId: _currentPost.userId,
-          nickname: _currentPost.author,
-          photoURL: _currentPost.authorPhotoURL,
-          allowNonFriendsPreview: true,
+    _openUserProfile(
+      userId: _currentPost.userId,
+      nickname: _currentPost.author,
+      photoURL: _currentPost.authorPhotoURL,
+    );
+  }
+
+  Widget _buildAudienceAvatarItem(_PostAudienceUser user) {
+    return GestureDetector(
+      onTap: () => _openUserProfile(
+        userId: user.uid,
+        nickname: user.nickname,
+        photoURL: user.photoURL,
+      ),
+      child: SizedBox(
+        width: 78,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            UserAvatar(
+              uid: user.uid,
+              photoUrl: user.photoURL,
+              photoVersion: user.photoVersion,
+              isAnonymous: false,
+              size: 56,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              user.nickname,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _buildAudienceSection() {
+    if (_currentPost.visibility != 'category') {
+      return const SizedBox.shrink();
+    }
+
+    final l10n = AppLocalizations.of(context)!;
+
+    return FutureBuilder<List<_PostAudienceUser>>(
+      future: _audienceUsersFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done && !snapshot.hasData) {
+          return const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SizedBox(
+              height: 88,
+              child: Center(
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final audienceUsers = snapshot.data ?? const <_PostAudienceUser>[];
+        if (audienceUsers.isEmpty) return const SizedBox.shrink();
+
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.postAudienceTitle,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF374151),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                l10n.postAudienceSubtitle,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (var index = 0; index < audienceUsers.length; index++) ...[
+                      _buildAudienceAvatarItem(audienceUsers[index]),
+                      if (index != audienceUsers.length - 1)
+                        const SizedBox(width: 14),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -2333,6 +2546,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       ],
                     ),
                   ),
+                  _buildAudienceSection(),
 
 
                   // 댓글 섹션 헤더에서 "Comments" 텍스트 제거 (요구사항)
@@ -2667,5 +2881,20 @@ class _PostLikeUser {
     required this.photoURL,
     required this.photoVersion,
     required this.nationality,
+  });
+}
+
+@immutable
+class _PostAudienceUser {
+  final String uid;
+  final String nickname;
+  final String photoURL;
+  final int photoVersion;
+
+  const _PostAudienceUser({
+    required this.uid,
+    required this.nickname,
+    required this.photoURL,
+    required this.photoVersion,
   });
 }

@@ -85,11 +85,17 @@
   "post": "Post",
   "posts": "Posts",
   "createPost": "Create Post",
+  "createPostSheetDesc": "Share photos and writing freely.",
   "newPost": "New Post",
   "newPostCreation": "New Post",
   "createSnackChat": "Create Snack Chat",
+  "createSnackChatSheetDesc": "Start a casual Snack Chat for today.",
   "snackChatRoomTitle": "Room Title",
   "snackChatRoomTitleHint": "Enter a topic for the chat",
+  "snackChatVisibilityDuration": "Visibility Duration",
+  "snackChatVisibilityDurationHint": "The chat stays visible for 24 or 48 hours from the last message.",
+  "snackChatDuration24Hours": "24 hours",
+  "snackChatDuration48Hours": "48 hours",
   "snackChatSelectParticipants": "Select Participants",
   "snackChatParticipantLimit": "You can invite up to 6 people",
   "snackChatMe": "Me",
@@ -1303,6 +1309,31 @@
   "categorySelectAtLeastOne": "Please select at least one category.",
   "groupSelectAtLeastOne": "Please select at least one group.",
   "postImageUploading": "Uploading images. Please wait...",
+  "postComposeImageRequired": "Attach images",
+  "postComposeImageHelper": "You can attach up to 15 images.",
+  "addImage": "Add",
+  "postComposeVisibilityPrompt": "Choose who can see this post.",
+  "postVisibilityPublicTitle": "Visible to everyone",
+  "postVisibilityPublicDescription": "All users can view this post",
+  "postVisibilityGroupTitle": "Select groups",
+  "postVisibilityGroupDescription": "Only friends in selected groups can view this post",
+  "postVisibilityNoGroupsSelected": "No groups selected",
+  "postVisibilityGroupsSelected": "{count} groups selected",
+  "@postVisibilityGroupsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "postSelectImageRequired": "Please attach an image.",
+  "postEnterContentRequired": "Please enter some content.",
+  "postDraftIncompleteMessage": "Add content or images before continuing.",
+  "postPreparingImages": "Preparing selected photos. Please wait a moment.",
+  "postSelectedPeopleTitle": "Selected people",
+  "postSelectedPeopleEmpty": "No people selected.",
+  "postAudienceTitle": "Visible to",
+  "postAudienceSubtitle": "Tap a profile to see who this person is.",
   "totalImageSizeWarning": "Warning: Total image size is {sizeMB}MB. Posting may take a while.",
   "@totalImageSizeWarning": {
     "placeholders": {
@@ -1335,5 +1366,7 @@
   "exit": "Exit",
   "stay": "Stay",
   "termsAgreementTitle": "Terms Agreement",
-  "termsAgreementDescription": "Please agree to the terms\nbefore using the service."
+  "termsAgreementDescription": "Please agree to the terms\nbefore using the service.",
+  "snackChatUnfavoriteTitle": "Remove favorite",
+  "snackChatUnfavoriteMessage": "Remove this Snack Chat from favorites?"
 }

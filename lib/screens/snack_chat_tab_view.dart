@@ -27,6 +27,42 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     _allStream = _service.getFavoritedAllSnackChats();
   }
 
+  Future<bool> _confirmUnfavorite() async {
+    final l10n = AppLocalizations.of(context)!;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(l10n.snackChatUnfavoriteTitle),
+          content: Text(l10n.snackChatUnfavoriteMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<void> _handleToggleFavorite(SnackChat chat, String? currentUserId) async {
+    final nextValue = !chat.isFavoritedBy(currentUserId);
+    if (!nextValue) {
+      final confirmed = await _confirmUnfavorite();
+      if (!confirmed) return;
+    }
+    await _service.toggleFavorite(chat.id, nextValue);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -67,7 +103,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         );
                       },
                       onToggleFavorite: () {
-                        _service.toggleFavorite(chat.id, !chat.isFavorited);
+                        _handleToggleFavorite(chat, currentUserId);
                       },
                     ),
                   )
@@ -108,7 +144,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         );
                       },
                       onToggleFavorite: () {
-                        _service.toggleFavorite(chat.id, !chat.isFavorited);
+                        _handleToggleFavorite(chat, currentUserId);
                       },
                     ),
                   )

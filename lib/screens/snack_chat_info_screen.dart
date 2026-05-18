@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../constants/app_constants.dart';
+import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
@@ -296,7 +297,35 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   Future<void> _toggleFavorite(SnackChat room) async {
-    await _snackChatService.toggleFavorite(room.id, !room.isFavorited);
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final nextValue = !room.isFavoritedBy(currentUserId);
+    if (!nextValue) {
+      final l10n = AppLocalizations.of(context)!;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: Text(l10n.snackChatUnfavoriteTitle),
+            content: Text(l10n.snackChatUnfavoriteMessage),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(l10n.cancel),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: Text(l10n.confirm),
+              ),
+            ],
+          );
+        },
+      );
+      if ((confirmed ?? false) == false) return;
+    }
+    await _snackChatService.toggleFavorite(room.id, nextValue);
   }
 
   Future<void> _leaveRoom(SnackChat room) async {
@@ -578,7 +607,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           ),
                         ),
                         Switch(
-                          value: room.isFavorited,
+                          value: room.isFavoritedBy(FirebaseAuth.instance.currentUser?.uid),
                           onChanged: (_) => _toggleFavorite(room),
                           activeColor: AppColors.pointColor,
                         ),

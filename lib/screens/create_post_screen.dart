@@ -1,21 +1,19 @@
-// 모임 생성 화면
-// 모임 정보 입력 및 저장
-
 import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
-import '../providers/auth_provider.dart';
-import '../services/post_service.dart';
+
 import '../constants/app_constants.dart';
-import '../models/friend_category.dart';
-import '../services/friend_category_service.dart';
 import '../l10n/app_localizations.dart';
-import '../utils/logger.dart';
-import '../widgets/friend_category_selector.dart';
+import '../models/friend_category.dart';
+import '../models/user_profile.dart';
+import '../repositories/users_repository.dart';
+import '../services/friend_category_service.dart';
+import '../services/post_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
+import '../utils/logger.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -26,333 +24,181 @@ class CreatePostScreen extends StatefulWidget {
   State<CreatePostScreen> createState() => _CreatePostScreenState();
 }
 
-class _CreatePostScreenState extends State<CreatePostScreen>
-    with SingleTickerProviderStateMixin {
+class _CreatePostScreenState extends State<CreatePostScreen> {
   final _contentController = TextEditingController();
-  final _formKey = GlobalKey<FormState>();
   final _contentFocusNode = FocusNode();
-  final _scrollController = ScrollController();
-  final _step1ScrollController = ScrollController();
+  final _composeScrollController = ScrollController();
+  final _visibilityScrollController = ScrollController();
   final List<File> _selectedImages = [];
   final List<AssetEntity> _selectedAssets = [];
   final PostService _postService = PostService();
   final List<TextEditingController> _pollOptionControllers = [];
-  final GlobalKey _categorySectionKey = GlobalKey();
-  final GlobalKey _contentSectionKey = GlobalKey();
-  final GlobalKey _imagesSectionKey = GlobalKey();
-  final GlobalKey _pollOptionsSectionKey = GlobalKey();
-  late final TabController _tabController;
-
-  // 친구 카테고리 관련
   final _friendCategoryService = FriendCategoryService();
-  List<FriendCategory> _friendCategories = [];
+  final _usersRepository = UsersRepository();
+
   StreamSubscription<List<FriendCategory>>? _categoriesSubscription;
+  List<FriendCategory> _friendCategories = [];
+  List<UserProfile> _selectedAudienceUsers = [];
+  bool _isLoadingAudienceUsers = false;
+  int _audienceLoadSeq = 0;
 
   bool _isSubmitting = false;
-  bool _canSubmit = false;
+  bool _isForwardTransition = true;
   bool _canProceed = false;
-  int _stepIndex = 0; // 0: Content, 1: Visibility (UI/PopScope 상태용)
-  bool _didDismissKeyboardOnTabDrag = false; // 가로 스와이프 시작 시 1회만 키보드 내림
-  bool _isResolvingSelectedImages = false; // Asset -> File 변환 중 (업로드/용량 체크용)
+  bool _isResolvingSelectedImages = false;
+  int _stepIndex = 0;
 
-  // 공개 범위 설정
-  String _visibility =
-      'category'; // 'public' 또는 'category' (기본: 그룹별 공개 - 내부 값은 레거시 유지)
-  bool _isAnonymous = false; // 익명 여부
-  List<String> _selectedCategoryIds = []; // 선택된 그룹(친구 카테고리) ID 목록
-  bool _showCategoryRequiredHint = false; // 그룹 선택 필수 강조 표시
+  String _visibility = 'public';
+  bool _isAnonymous = false;
+  List<String> _selectedCategoryIds = [];
+  bool _showCategoryRequiredHint = false;
 
-  // 게시글 타입 (일반/투표)
-  String _postType = 'text'; // 'text' | 'poll'
+  String _postType = 'text';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // 텍스트 컨트롤러에 리스너 추가
-    _contentController.addListener(_checkCanSubmit);
-    // 포커스 노드에 리스너 추가
+    _contentController.addListener(_checkCanProceed);
     _contentFocusNode.addListener(() {
-      setState(() {}); // 포커스 상태가 변경되면 화면 갱신
+      if (mounted) setState(() {});
     });
-
-    // 친구 카테고리 로드
     _loadFriendCategories();
-
-    // 투표 선택지 기본 2개 생성
     _ensureMinimumPollOptions();
-
-    // 탭 전환: 순서 없이 자유롭게 이동 가능 (요청사항)
-    _tabController.addListener(() {
-      if (!mounted) return;
-      final idx = _tabController.index;
-      if (_stepIndex != idx) {
-        // Content ↔ Visibility 전환 시 키보드가 남아 UX가 깨지는 문제 방지
-        _dismissKeyboard();
-        setState(() {
-          _stepIndex = idx;
-        });
-      }
-    });
-  }
-
-  void _dismissKeyboard() {
-    // 일부 상황에서 FocusScope.unfocus()만으로 포커스가 남는 경우가 있어 보강
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (!mounted) return;
-    FocusScope.of(context).unfocus();
-  }
-
-  void _ensureMinimumPollOptions() {
-    if (_pollOptionControllers.isNotEmpty) return;
-    for (int i = 0; i < 2; i++) {
-      final c = TextEditingController();
-      c.addListener(_checkCanSubmit);
-      _pollOptionControllers.add(c);
-    }
-    _checkCanSubmit();
-  }
-
-  List<String> _getCleanedPollOptions() {
-    return _pollOptionControllers
-        .map((c) => c.text.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
-  }
-
-  // 친구 카테고리 로드
-  void _loadFriendCategories() {
-    _categoriesSubscription?.cancel();
-    _categoriesSubscription =
-        _friendCategoryService.getCategoriesStream().listen((categories) {
-      if (mounted) {
-        setState(() {
-          _friendCategories = categories;
-        });
-      }
-    });
-  }
-
-  // 제목과 본문이 모두 입력되었는지 확인
-  void _checkCanSubmit() {
-    final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final pollOptions = _getCleanedPollOptions();
-
-    setState(() {
-      if (_postType == 'poll') {
-        // 투표: 질문(본문) + 선택지 2개(고정) 필수, 이미지 첨부는 선택
-        _canProceed = contentNotEmpty && pollOptions.length == 2;
-        _canSubmit = _canProceed;
-      } else {
-        // 일반글: 텍스트가 있거나 이미지가 있으면 등록 가능
-        _canProceed = (contentNotEmpty || _selectedAssets.isNotEmpty);
-        _canSubmit = _canProceed;
-      }
-    });
+    _checkCanProceed();
   }
 
   @override
   void dispose() {
     _contentController.dispose();
     _contentFocusNode.dispose();
-    _scrollController.dispose();
-    _step1ScrollController.dispose();
-    _tabController.dispose();
-    for (final c in _pollOptionControllers) {
-      c.dispose();
+    _composeScrollController.dispose();
+    _visibilityScrollController.dispose();
+    for (final controller in _pollOptionControllers) {
+      controller.dispose();
     }
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
   }
 
+  void _loadFriendCategories() {
+    _categoriesSubscription?.cancel();
+    _categoriesSubscription =
+        _friendCategoryService.getCategoriesStream().listen((categories) {
+      if (!mounted) return;
+      setState(() {
+        _friendCategories = categories;
+      });
+      if (_selectedCategoryIds.isNotEmpty) {
+        _refreshSelectedAudienceUsers();
+      }
+    });
+  }
+
+  void _ensureMinimumPollOptions() {
+    if (_pollOptionControllers.isNotEmpty) return;
+    for (var index = 0; index < 2; index++) {
+      final controller = TextEditingController();
+      controller.addListener(_checkCanProceed);
+      _pollOptionControllers.add(controller);
+    }
+  }
+
+  List<String> _getCleanedPollOptions() {
+    return _pollOptionControllers
+        .map((controller) => controller.text.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+  }
+
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (!mounted) return;
+    FocusScope.of(context).unfocus();
+  }
+
+  void _checkCanProceed() {
+    final contentNotEmpty = _contentController.text.trim().isNotEmpty;
+    final hasImages = _selectedAssets.isNotEmpty;
+    final hasValidPoll = _getCleanedPollOptions().length == 2;
+
+    final canProceed = _postType == 'poll'
+        ? contentNotEmpty && hasValidPoll
+        : contentNotEmpty || hasImages;
+
+    if (!mounted) return;
+    setState(() {
+      _canProceed = canProceed;
+    });
+  }
+
   void _setPostType(String value) {
     if (_postType == value) return;
     setState(() {
       _postType = value;
-      if (value == 'poll') {
-        _ensureMinimumPollOptions();
-      }
     });
-    _checkCanSubmit();
+    _checkCanProceed();
   }
 
-  void _setVisibility(String value) {
-    if (_visibility == value) return;
+  Set<String> _selectedAudienceIds() {
+    final selectedSet = _selectedCategoryIds.toSet();
+    final ids = <String>{};
+    for (final category in _friendCategories) {
+      if (!selectedSet.contains(category.id)) continue;
+      ids.addAll(category.friendIds);
+    }
+    return ids;
+  }
+
+  Future<void> _refreshSelectedAudienceUsers() async {
+    final currentSeq = ++_audienceLoadSeq;
+    final audienceIds = _selectedAudienceIds().toList();
+
+    if (audienceIds.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _selectedAudienceUsers = [];
+        _isLoadingAudienceUsers = false;
+      });
+      return;
+    }
+
+    if (!mounted) return;
     setState(() {
-      _visibility = value;
-      _showCategoryRequiredHint = false;
-      // 카테고리 공개에서는 익명 옵션을 허용하지 않음(기존 동작 유지)
-      if (value == 'category') {
-        _isAnonymous = false;
-      }
+      _isLoadingAudienceUsers = true;
     });
-    _checkCanSubmit();
-  }
 
-  Widget _buildPostTypeSegmentedControl() {
-    final l10n = AppLocalizations.of(context)!;
-
-    const selectedBg = Color(0xFF6CCFF6);
-    const selectedText = Color(0xFF111827);
-    const unselectedText = Color(0xFF111827);
-    const dividerColor = Color(0xFFD1D5DB);
-
-    Widget item({
-      required String value,
-      required String label,
-    }) {
-      final isSelected = _postType == value;
-
-      return Expanded(
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _setPostType(value),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
-              height: 38, // Content/Visibility 탭과 동일한 높이
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isSelected ? selectedBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? selectedText : unselectedText,
-                  height: 1.1,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            item(
-              value: 'text',
-              label: l10n.postTypeTextLabel,
-            ),
-            const VerticalDivider(
-              width: 10,
-              thickness: 1,
-              color: dividerColor,
-            ),
-            item(
-              value: 'poll',
-              label: l10n.postTypePollLabel,
-            ),
-          ],
-        ),
-      ),
+    final profiles = await _usersRepository.getUserProfilesBatch(audienceIds);
+    profiles.sort(
+      (left, right) =>
+          left.displayNameOrNickname.compareTo(right.displayNameOrNickname),
     );
-  }
 
-  Widget _buildVisibilitySegmentedControl() {
-    final l10n = AppLocalizations.of(context)!;
-
-    const selectedBg = Color(0xFF6CCFF6);
-    const selectedText = Color(0xFF111827);
-    const unselectedText = Color(0xFF111827);
-    const dividerColor = Color(0xFFD1D5DB);
-
-    Widget item({
-      required String value,
-      required String label,
-    }) {
-      final isSelected = _visibility == value;
-
-      return Expanded(
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: () => _setVisibility(value),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOut,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: isSelected ? selectedBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? selectedText : unselectedText,
-                  height: 1.1,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            item(
-              value: 'public',
-              label: l10n.publicPost ?? "",
-            ),
-            const VerticalDivider(
-              width: 10,
-              thickness: 1,
-              color: dividerColor,
-            ),
-            item(
-              value: 'category',
-              label: l10n.groups,
-            ),
-          ],
-        ),
-      ),
-    );
+    if (!mounted || currentSeq != _audienceLoadSeq) return;
+    setState(() {
+      _selectedAudienceUsers = profiles;
+      _isLoadingAudienceUsers = false;
+    });
   }
 
   Future<List<File>> _resolveSelectedAssetFiles() async {
     if (_selectedAssets.isEmpty) return const <File>[];
-    final futures = _selectedAssets.map((asset) async {
-      try {
-        final origin = await asset.originFile;
-        if (origin != null) return origin;
-        return await asset.file;
-      } catch (_) {
-        return null;
-      }
-    }).toList(growable: false);
-    final resolved = await Future.wait(futures);
+    final resolved = await Future.wait(
+      _selectedAssets.map((asset) async {
+        try {
+          final origin = await asset.originFile;
+          return origin ?? await asset.file;
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
     return resolved.whereType<File>().toList(growable: false);
   }
 
   Future<void> _syncSelectedImagesFromAssets() async {
     if (!mounted) return;
+
     if (_selectedAssets.isEmpty) {
       setState(() {
         _selectedImages.clear();
@@ -361,9 +207,13 @@ class _CreatePostScreenState extends State<CreatePostScreen>
       return;
     }
 
-    setState(() => _isResolvingSelectedImages = true);
+    setState(() {
+      _isResolvingSelectedImages = true;
+    });
+
     final files = await _resolveSelectedAssetFiles();
     if (!mounted) return;
+
     setState(() {
       _selectedImages
         ..clear()
@@ -373,21 +223,17 @@ class _CreatePostScreenState extends State<CreatePostScreen>
   }
 
   Future<void> _selectImages() async {
-    // 기존 선택이 유지된 채로 다시 열리게 하려면 `selectedAssets`를 넘겨야 함
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        // ✅ 최대 15장 제한
         maxAssets: 15,
-        // ✅ 드래그로 다중 선택 비활성화 (탭으로만 선택)
         dragToSelect: false,
       ),
     );
 
-    if (!mounted) return;
-    if (pickedAssets == null) return; // 취소
+    if (!mounted || pickedAssets == null) return;
 
     setState(() {
       _selectedAssets
@@ -395,51 +241,42 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         ..addAll(pickedAssets.take(15));
     });
 
-    // 업로드/용량 체크용 파일 리스트 동기화
     await _syncSelectedImagesFromAssets();
-
-    // 이미지 선택 후 용량 확인 및 경고
     await _checkImagesSize();
-
-    // 이미지 선택만으로도 등록 가능 상태가 바뀔 수 있음
-    _checkCanSubmit();
+    _checkCanProceed();
   }
 
-  // 이미지 용량 체크
   Future<void> _checkImagesSize() async {
     if (_selectedImages.isEmpty) return;
-    int totalSize = 0;
+
+    var totalSize = 0;
     for (final image in _selectedImages) {
       totalSize += await image.length();
     }
 
-    // 총 용량이 10MB를 초과하면 경고
     final sizeInMB = totalSize / (1024 * 1024);
-    if (sizeInMB > 10) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              AppLocalizations.of(context)!
-                  .totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
-            ),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 5),
-          ),
-        );
-      }
-    }
+    if (!mounted || sizeInMB <= 10) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          AppLocalizations.of(context)!
+              .totalImageSizeWarning(sizeInMB.toStringAsFixed(1)),
+        ),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 
   Future<void> _previewSelectedImages({int initialIndex = 0}) async {
-    if (!mounted) return;
-    if (_selectedAssets.isEmpty) return;
-    // 미리보기는 File 기반 뷰어를 사용하므로, 필요 시 변환 동기화
+    if (!mounted || _selectedAssets.isEmpty) return;
+
     if (_selectedImages.length != _selectedAssets.length) {
       await _syncSelectedImagesFromAssets();
     }
-    if (!mounted) return;
-    if (_selectedImages.isEmpty) return;
+    if (!mounted || _selectedImages.isEmpty) return;
+
     await showFullscreenFileImageViewer(
       context,
       imageFiles: List<File>.unmodifiable(_selectedImages),
@@ -449,16 +286,45 @@ class _CreatePostScreenState extends State<CreatePostScreen>
     );
   }
 
+  Future<void> _removeImage(int index) async {
+    setState(() {
+      if (index >= 0 && index < _selectedAssets.length) {
+        _selectedAssets.removeAt(index);
+      }
+    });
+    await _syncSelectedImagesFromAssets();
+    _checkCanProceed();
+  }
+
+  Future<void> _goToStep(int index) async {
+    _dismissKeyboard();
+    if (!mounted) return;
+    setState(() {
+      _isForwardTransition = index > _stepIndex;
+      _stepIndex = index;
+    });
+  }
+
+  Future<void> _goToVisibilityStep() async {
+    final l10n = AppLocalizations.of(context)!;
+
+    if (!_canProceed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.postDraftIncompleteMessage)),
+      );
+      return;
+    }
+
+    await _goToStep(1);
+  }
+
   Future<bool> _confirmSubmitPost() async {
     if (!mounted) return false;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
 
-    // 다른 주요 확인 다이얼로그(DM 나가기 등)와 톤 통일
     HapticFeedback.mediumImpact();
+    final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final bodyText = isKo ? '포스트를 등록할까요?' : 'Do you want to post this?';
-
-    final cancelLabel = AppLocalizations.of(context)!.cancel;
-    final confirmLabel = AppLocalizations.of(context)!.registration;
 
     final result = await showDialog<bool>(
       context: context,
@@ -473,6 +339,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
           actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
           content: Text(
             bodyText,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               fontFamily: 'Pretendard',
               fontSize: 16,
@@ -480,28 +347,23 @@ class _CreatePostScreenState extends State<CreatePostScreen>
               color: Color(0xFF111827),
               height: 1.35,
             ),
-            textAlign: TextAlign.center,
           ),
           actions: [
             Row(
               children: [
                 Expanded(
                   child: TextButton(
-                    onPressed: () {
-                      HapticFeedback.lightImpact();
-                      Navigator.of(dialogContext).pop(false);
-                    },
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade300, width: 1),
+                        side: BorderSide(color: Colors.grey.shade300),
                       ),
-                      backgroundColor: Colors.white,
                       foregroundColor: const Color(0xFF6B7280),
                     ),
                     child: Text(
-                      cancelLabel,
+                      l10n.cancel,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,
@@ -513,10 +375,7 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
-                      HapticFeedback.heavyImpact();
-                      Navigator.of(dialogContext).pop(true);
-                    },
+                    onPressed: () => Navigator.of(dialogContext).pop(true),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       backgroundColor: AppColors.pointColor,
@@ -525,10 +384,9 @@ class _CreatePostScreenState extends State<CreatePostScreen>
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      disabledBackgroundColor: const Color(0xFFE5E7EB),
                     ),
                     child: Text(
-                      confirmLabel,
+                      l10n.registration,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 14,
@@ -543,1069 +401,975 @@ class _CreatePostScreenState extends State<CreatePostScreen>
         );
       },
     );
+
     return result ?? false;
   }
 
-  Future<void> _goToStep(int index) async {
-    final next = index.clamp(0, 1);
-    if (!mounted) return;
-    _dismissKeyboard();
-    _tabController.animateTo(next);
-  }
-
-  // 슬라이드/탭 기반 전환이라 별도 Next 버튼은 사용하지 않음
-
   Future<void> _submitPost() async {
-    // 그룹(visibility == 'category') 공개인 경우 그룹 선택 여부 확인
+    final l10n = AppLocalizations.of(context)!;
+
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
       setState(() {
         _showCategoryRequiredHint = true;
       });
-      HapticFeedback.selectionClick();
-      // 해당 섹션으로 자동 스크롤 (사용자 인지 강화)
-      final ctx = _categorySectionKey.currentContext;
-      if (ctx != null) {
-        await Scrollable.ensureVisible(
-          ctx,
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOut,
-          alignment: 0.1,
-        );
-      } else if (_scrollController.hasClients) {
-        // 키가 아직 attach되지 않은 경우: 상단(공개범위 영역)으로 최대한 이동
-        await _scrollController.animateTo(
-          0,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.groupSelectAtLeastOne),
-          backgroundColor: Colors.orange,
-          duration: const Duration(seconds: 3),
-        ),
+        SnackBar(content: Text(l10n.groupSelectAtLeastOne)),
+      );
+      await _visibilityScrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOut,
       );
       return;
     }
 
-    if (_formKey.currentState!.validate()) {
-      if (_isResolvingSelectedImages) {
+    if (_isResolvingSelectedImages) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.postPreparingImages)),
+      );
+      return;
+    }
+
+    final confirmed = await _confirmSubmitPost();
+    if (!mounted || !confirmed) return;
+
+    if (_selectedAssets.isNotEmpty &&
+        _selectedImages.length != _selectedAssets.length) {
+      await _syncSelectedImagesFromAssets();
+    }
+    if (!mounted) return;
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      if (_selectedAssets.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              Localizations.localeOf(context).languageCode == 'ko'
-                  ? '선택한 사진을 준비 중이에요. 잠시만 기다려주세요.'
-                  : 'Preparing selected photos. Please wait a moment.',
-            ),
-            duration: const Duration(seconds: 2),
+            content: Text(l10n.postImageUploading),
+            duration: const Duration(seconds: 5),
           ),
+        );
+      }
+
+      final success = await _postService.addPost(
+        '',
+        _contentController.text.trim(),
+        imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
+        visibility: _visibility,
+        isAnonymous: _isAnonymous,
+        visibleToCategoryIds: _selectedCategoryIds,
+        type: _postType,
+        pollOptions: _postType == 'poll' ? _getCleanedPollOptions() : const [],
+      );
+
+      if (!mounted) return;
+
+      if (success) {
+        widget.onPostCreated();
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.postCreated)),
         );
         return;
       }
-      // ✅ 이미지 미리보기 확인 대신, "정말 게시글을 등록할지" 확인 다이얼로그를 노출한다.
-      final confirmed = await _confirmSubmitPost();
-      if (!mounted) return;
-      if (!confirmed) return;
 
-      // 업로드 직전에는 파일 리스트가 반드시 필요하므로 최종 동기화
-      if (_selectedAssets.isNotEmpty &&
-          _selectedImages.length != _selectedAssets.length) {
-        await _syncSelectedImagesFromAssets();
-      }
+      throw Exception('포스트 등록 실패');
+    } catch (error) {
+      Logger.error('포스트 작성 오류: $error');
       if (!mounted) return;
-
       setState(() {
-        _isSubmitting = true;
+        _isSubmitting = false;
       });
-
-      try {
-        // Firebase에 게시글 저장
-        // AuthProvider는 작성자/권한 등 내부 로직에 사용될 수 있어 유지하되,
-        // 이 화면에서는 userData를 직접 사용하지 않는다.
-        Provider.of<AuthProvider>(context, listen: false);
-
-        // 이미지가 있는 경우 프로그레스 다이얼로그 표시
-        if (_selectedAssets.isNotEmpty) {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(AppLocalizations.of(context)!.postImageUploading),
-                duration: const Duration(seconds: 5),
-              ),
-            );
-          }
-        }
-
-        // PostService를 사용하여 게시글 저장
-        final success = await _postService.addPost(
-          '', // 제목 입력 제거
-          _contentController.text.trim(),
-          imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
-          visibility: _visibility,
-          isAnonymous: _isAnonymous,
-          visibleToCategoryIds: _selectedCategoryIds,
-          type: _postType,
-          pollOptions:
-              _postType == 'poll' ? _getCleanedPollOptions() : const [],
-        );
-
-        if (success) {
-          // 게시글 추가 완료 후 콜백 호출
-          widget.onPostCreated();
-
-          // 화면 닫기
-          if (mounted) {
-            Navigator.of(context).pop();
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                  content: Text(AppLocalizations.of(context)!.postCreated)),
-            );
-          }
-        } else {
-          throw Exception("포스트 등록 실패");
-        }
-      } catch (e) {
-        Logger.error('포스트 작성 오류: $e');
-        if (mounted) {
-          setState(() {
-            _isSubmitting = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text(AppLocalizations.of(context)!.postCreateFailed ?? ""),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(l10n.postCreateFailed),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
-  Color _getAvatarColor(String text) {
-    if (text.isEmpty) return Colors.grey;
-    final colors = [
-      Colors.blue.shade700,
-      Colors.purple.shade700,
-      Colors.green.shade700,
-      Colors.orange.shade700,
-      Colors.pink.shade700,
-      Colors.teal.shade700,
-    ];
+  Widget _buildPostTypeSegmentedControl() {
+    final l10n = AppLocalizations.of(context)!;
 
-    // 이름의 첫 글자 아스키 코드를 기준으로 색상 결정
-    final index = text.codeUnitAt(0) % colors.length;
-    return colors[index];
-  }
+    Widget item({
+      required String value,
+      required String label,
+    }) {
+      final isSelected = _postType == value;
 
-  // 선택한 이미지 삭제 (Asset 기준)
-  Future<void> _removeImage(int index) async {
-    setState(() {
-      if (index >= 0 && index < _selectedAssets.length) {
-        _selectedAssets.removeAt(index);
-      }
-    });
-    await _syncSelectedImagesFromAssets();
-    _checkCanSubmit();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // AuthProvider는 익명/공개범위 등 동작에 사용되므로 유지 (상단 Author UI는 제거)
-    Provider.of<AuthProvider>(context);
-
-    return PopScope(
-      canPop: _stepIndex == 0,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        if (_stepIndex == 1) {
-          await _goToStep(0);
-        }
-      },
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          centerTitle: false,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-            onPressed: () async {
-              if (_stepIndex == 1) {
-                await _goToStep(0);
-                return;
-              }
-              Navigator.pop(context);
-            },
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => _setPostType(value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF6CCFF6) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: isSelected
+                    ? const Color(0xFF111827)
+                    : const Color(0xFF6B7280),
+              ),
+            ),
           ),
-          title: Text(
-            AppLocalizations.of(context)!.newPostCreation ?? "",
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          item(value: 'text', label: l10n.postTypeTextLabel),
+          item(value: 'poll', label: l10n.postTypePollLabel),
+        ],
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildComposeAppBar() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.white,
+      centerTitle: true,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        icon: const Icon(Icons.close, color: Color(0xFF111827), size: 30),
+        onPressed: () => Navigator.of(context).pop(),
+      ),
+      title: Text(
+        l10n.newPostCreation,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF111827),
+        ),
+      ),
+      actions: [
+        IconButton(
+          onPressed: (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
+          icon: Icon(
+            Icons.arrow_forward_rounded,
+            size: 32,
+            color: (_canProceed && !_isSubmitting)
+                ? const Color(0xFF111827)
+                : const Color(0xFFD1D5DB),
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildVisibilityAppBar() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      surfaceTintColor: Colors.white,
+      centerTitle: true,
+      automaticallyImplyLeading: false,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back, color: Color(0xFF111827), size: 30),
+        onPressed: _isSubmitting ? null : () => _goToStep(0),
+      ),
+      title: Text(
+        l10n.newPostCreation,
+        style: const TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF111827),
+        ),
+      ),
+      actions: [
+        TextButton.icon(
+          onPressed: _isSubmitting ? null : _submitPost,
+          icon: _isSubmitting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.check_rounded),
+          label: Text(
+            l10n.registration,
             style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.pointColor,
+          ),
+        ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildSectionLabel(String text, {String? trailing}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
               color: Color(0xFF111827),
             ),
           ),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(54), // 높이 조정 (48 → 54)
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              alignment: Alignment.center,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 360),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF3F4F6), // gray-100
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: const Color(0xFFE5E7EB)), // gray-200
-                    ),
-                    padding: const EdgeInsets.all(4),
-                    child: TabBar(
-                      controller: _tabController,
-                      isScrollable: false,
-                      dividerColor: Colors.transparent,
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      indicator: BoxDecoration(
-                        color: const Color(0xFF6CCFF6), // 하늘색으로 변경
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.06),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      labelStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                      ),
-                      unselectedLabelStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      labelColor: const Color(0xFF111827),
-                      unselectedLabelColor: const Color(0xFF6B7280),
-                      splashBorderRadius: BorderRadius.circular(10),
-                      onTap: (_) => _dismissKeyboard(),
-                      tabs: [
-                        Tab(
-                          height: 38, // 탭 높이를 38로 명시
-                          child: Center(
-                            child: Text(AppLocalizations.of(context)!.content),
-                          ),
-                        ),
-                        Tab(
-                          height: 38, // 탭 높이를 38로 명시
-                          child: Center(
-                            child: Text(
-                                AppLocalizations.of(context)!.visibilityScope),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+        ),
+        if (trailing != null)
+          Text(
+            trailing,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
             ),
           ),
-          actions: [
-            TextButton.icon(
-              onPressed: (_canSubmit && !_isSubmitting) ? _submitPost : null,
-              icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.check_rounded),
-              label: Text(
-                AppLocalizations.of(context)!.registration,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.pointColor,
+      ],
+    );
+  }
+
+  Widget _buildAddImageTile(AppLocalizations l10n) {
+    return GestureDetector(
+      onTap: _selectImages,
+      child: Container(
+        width: 110,
+        height: 110,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: const Color(0xFFD1D5DB),
+            width: 1.5,
+            strokeAlign: BorderSide.strokeAlignInside,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.add_a_photo_outlined,
+                color: Color(0xFF6B7280), size: 30),
+            const SizedBox(height: 8),
+            Text(
+              l10n.addImage,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF9CA3AF),
               ),
             ),
-            const SizedBox(width: 6),
           ],
         ),
-        resizeToAvoidBottomInset: true,
-        bottomNavigationBar: null,
-        body: Form(
-          key: _formKey,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              // TabBarView(PageView) 가로 스와이프 시작 시점에 키보드를 즉시 내린다.
-              if (notification.metrics.axis == Axis.horizontal) {
-                final isUserDragStart =
-                    notification is ScrollStartNotification ||
-                        (notification is ScrollUpdateNotification &&
-                            notification.dragDetails != null);
-                if (isUserDragStart && !_didDismissKeyboardOnTabDrag) {
-                  _didDismissKeyboardOnTabDrag = true;
-                  _dismissKeyboard();
-                } else if (notification is ScrollEndNotification) {
-                  _didDismissKeyboardOnTabDrag = false;
-                }
-              }
-              return false; // 다른 리스너/스크롤 동작에 영향 없음
-            },
-            child: TabBarView(
-              controller: _tabController,
-              physics: const BouncingScrollPhysics(),
-              children: [
-                SingleChildScrollView(
-                  controller: _step1ScrollController,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: EdgeInsets.only(
-                    left: 16.0,
-                    right: 16.0,
-                    top: 12.0,
-                    bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 작성 타입 선택 (일반/투표)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 6),
-                        margin: const EdgeInsets.only(bottom: 12.0),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              AppLocalizations.of(context)!
-                                  .postTypeSectionTitle,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF111827),
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            _buildPostTypeSegmentedControl(),
-                          ],
-                        ),
-                      ),
+      ),
+    );
+  }
 
-                      // 이미지
-                      Container(
-                        key: _imagesSectionKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 이미지 첨부 버튼: 바깥 카드(테두리) 제거해서 이중 테두리 방지
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 12.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: Semantics(
-                                          button: true,
-                                          label: AppLocalizations.of(context)!
-                                                  .imageAttachment ??
-                                              "",
-                                          child: AnimatedContainer(
-                                            duration: const Duration(
-                                                milliseconds: 160),
-                                            curve: Curves.easeOut,
-                                            decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              border: Border.all(
-                                                color: _selectedAssets
-                                                        .isNotEmpty
-                                                    ? AppColors.pointColor
-                                                    : const Color(0xFFE5E7EB),
-                                                width:
-                                                    _selectedAssets.isNotEmpty
-                                                        ? 1.4
-                                                        : 1,
-                                              ),
-                                            ),
-                                            child: Material(
-                                              color: Colors.transparent,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                              child: InkWell(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                                onTap: _selectImages,
-                                                child: Padding(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 12,
-                                                  ),
-                                                  child: Row(
-                                                    children: [
-                                                      Container(
-                                                        width: 34,
-                                                        height: 34,
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          color: AppColors
-                                                              .pointColor
-                                                              .withValues(
-                                                                  alpha: 0.12),
-                                                          borderRadius:
-                                                              BorderRadius
-                                                                  .circular(10),
-                                                        ),
-                                                        child: Icon(
-                                                          Icons.image_outlined,
-                                                          size: 18,
-                                                          color: AppColors
-                                                              .pointColor,
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 10),
-                                                      Expanded(
-                                                        child: Column(
-                                                          crossAxisAlignment:
-                                                              CrossAxisAlignment
-                                                                  .start,
-                                                          children: [
-                                                            Text(
-                                                              AppLocalizations.of(
-                                                                          context)!
-                                                                      .imageAttachment ??
-                                                                  "",
-                                                              style:
-                                                                  const TextStyle(
-                                                                fontFamily:
-                                                                    'Pretendard',
-                                                                fontSize: 14,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w800,
-                                                                color: Color(
-                                                                    0xFF111827),
-                                                              ),
-                                                            ),
-                                                            const SizedBox(
-                                                                height: 2),
-                                                            Text(
-                                                              _selectedAssets
-                                                                      .isNotEmpty
-                                                                  ? (Localizations.localeOf(context)
-                                                                              .languageCode ==
-                                                                          'ko'
-                                                                      ? '${_selectedAssets.length}/15장 선택됨'
-                                                                      : '${_selectedAssets.length}/15 selected')
-                                                                  : (Localizations.localeOf(context)
-                                                                              .languageCode ==
-                                                                          'ko'
-                                                                      ? '최대 15장까지 선택할 수 있어요'
-                                                                      : 'You can select up to 15 images'),
-                                                              style:
-                                                                  const TextStyle(
-                                                                fontFamily:
-                                                                    'Pretendard',
-                                                                fontSize: 12,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w600,
-                                                                color: Color(
-                                                                    0xFF6B7280),
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const Icon(
-                                                        Icons
-                                                            .chevron_right_rounded,
-                                                        color:
-                                                            Color(0xFF9CA3AF),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      if (_selectedAssets.isNotEmpty) ...[
-                                        const SizedBox(width: 10),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 6),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.pointColor
-                                                .withValues(alpha: 0.10),
-                                            borderRadius:
-                                                BorderRadius.circular(999),
-                                            border: Border.all(
-                                              color: AppColors.pointColor
-                                                  .withValues(alpha: 0.35),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '${_selectedAssets.length}/15',
-                                            style: const TextStyle(
-                                              fontFamily: 'Pretendard',
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF111827),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                  if (_selectedAssets.isNotEmpty) ...[
-                                    const SizedBox(height: 12),
-                                    SizedBox(
-                                      height: 112,
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: _selectedAssets.length,
-                                        itemBuilder: (context, index) {
-                                          final asset = _selectedAssets[index];
-                                          return GestureDetector(
-                                            onTap: () => _previewSelectedImages(
-                                                initialIndex: index),
-                                            child: Container(
-                                              margin: const EdgeInsets.only(
-                                                  right: 8.0),
-                                              width: 96,
-                                              height: 96,
-                                              decoration: BoxDecoration(
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                                border: Border.all(
-                                                    color: const Color(
-                                                        0xFFE5E7EB)),
-                                              ),
-                                              child: Stack(
-                                                children: [
-                                                  ClipRRect(
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            10),
-                                                    child: Image(
-                                                      image:
-                                                          AssetEntityImageProvider(
-                                                        asset,
-                                                        isOriginal: false,
-                                                        thumbnailSize:
-                                                            const ThumbnailSize
-                                                                .square(256),
-                                                      ),
-                                                      width: 96,
-                                                      height: 96,
-                                                      fit: BoxFit.cover,
-                                                    ),
-                                                  ),
-                                                  Positioned(
-                                                    top: 6,
-                                                    right: 6,
-                                                    child: GestureDetector(
-                                                      behavior: HitTestBehavior
-                                                          .opaque,
-                                                      onTap: () =>
-                                                          _removeImage(index),
-                                                      child: Container(
-                                                        padding:
-                                                            const EdgeInsets
-                                                                .all(5),
-                                                        decoration:
-                                                            const BoxDecoration(
-                                                          color: Color(
-                                                              0xCC111827), // gray-900 80%
-                                                          shape:
-                                                              BoxShape.circle,
-                                                        ),
-                                                        child: const Icon(
-                                                          Icons.close_rounded,
-                                                          color: Colors.white,
-                                                          size: 16,
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      if (_postType == 'poll') ...[
-                        Container(
-                          key: _pollOptionsSectionKey,
-                          padding: const EdgeInsets.all(16),
-                          margin: const EdgeInsets.only(bottom: 12.0),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                AppLocalizations.of(context)!.pollOptionsTitle,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111827),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ...List.generate(_pollOptionControllers.length,
-                                  (index) {
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 10),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextField(
-                                          controller:
-                                              _pollOptionControllers[index],
-                                          decoration: InputDecoration(
-                                            hintText:
-                                                AppLocalizations.of(context)!
-                                                    .pollOptionHint(index + 1),
-                                            border: OutlineInputBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(10),
-                                              borderSide: const BorderSide(
-                                                  color: Color(0xFFE5E7EB)),
-                                            ),
-                                            contentPadding:
-                                                const EdgeInsets.symmetric(
-                                                    horizontal: 12,
-                                                    vertical: 10),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }),
-                              const SizedBox(height: 2),
-                              Text(
-                                AppLocalizations.of(context)!
-                                    .postTypePollHelper,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF6B7280),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-
-                      Container(
-                        key: _contentSectionKey,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _contentFocusNode.hasFocus
-                                ? AppColors.pointColor
-                                : const Color(0xFFE5E7EB),
-                            width: _contentFocusNode.hasFocus ? 2 : 1,
-                          ),
-                          color: Colors.white,
-                        ),
-                        child: TextField(
-                          controller: _contentController,
-                          focusNode: _contentFocusNode,
-                          decoration: InputDecoration(
-                            hintText: _postType == 'poll'
-                                ? AppLocalizations.of(context)!.pollQuestionHint
-                                : AppLocalizations.of(context)!.enterContent,
-                            hintStyle: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w400,
-                              color: Color(0xFF9CA3AF),
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.all(16),
-                            fillColor: Colors.transparent,
-                            filled: true,
-                          ),
-                          maxLines: null,
-                          textAlignVertical: TextAlignVertical.top,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF111827),
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+  Widget _buildImagePlaceholderStrip() {
+    return Expanded(
+      child: Container(
+        height: 110,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: List.generate(
+            3,
+            (index) => Expanded(
+              child: Container(
+                margin: EdgeInsets.only(right: index == 2 ? 0 : 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                SingleChildScrollView(
-                  controller: _scrollController,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.only(
-                    left: 16.0,
-                    right: 16.0,
-                    top: 12.0,
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        bottom: MediaQuery.of(context).viewInsets.bottom + 16.0,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // 공개 범위 선택
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 6),
-                            margin: const EdgeInsets.only(bottom: 16.0),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // 탭에 이미 Visibility가 있으므로, 섹션 내부 타이틀은 제거
-                                _buildVisibilitySegmentedControl(),
-
-                                if (_visibility == 'public') ...[
-                                  const SizedBox(height: 8),
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      // 카테고리 안내 박스와 톤/규격 통일 (amber)
-                                      color: const Color(0xFFFFFBEB), // amber-50
-                                      borderRadius: BorderRadius.circular(10),
-                                      border: Border.all(
-                                          color:
-                                              const Color(0xFFFDE68A)), // amber-200
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        const Icon(
-                                          Icons.info_outline,
-                                          size: 18,
-                                          color: Color(0xFFB45309), // amber-700
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            _isAnonymous
-                                                ? (AppLocalizations.of(context)!
-                                                        .postAnonymously ??
-                                                    "")
-                                                : AppLocalizations.of(context)!
-                                                    .authorAndCommenterInfo,
-                                            style: const TextStyle(
-                                              fontFamily: 'Pretendard',
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w600,
-                                              color: Color(0xFF92400E), // amber-800
-                                              height: 1.25,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  // 익명 옵션: 왼쪽 체크 + 카드 톤 통일
-                                  Container(
-                                    margin: const EdgeInsets.only(top: 10),
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                          color: const Color(0xFFE5E7EB)),
-                                    ),
-                                    child: Semantics(
-                                      container: true,
-                                      button: true,
-                                      checked: _isAnonymous,
-                                      label: AppLocalizations.of(context)!
-                                          .postAnonymously,
-                                      child: Material(
-                                        color: Colors.transparent,
-                                        borderRadius: BorderRadius.circular(12),
-                                        child: InkWell(
-                                          borderRadius: BorderRadius.circular(12),
-                                          onTap: () {
-                                            setState(() {
-                                              _isAnonymous = !_isAnonymous;
-                                            });
-                                          },
-                                          child: Padding(
-                                            padding: const EdgeInsets.symmetric(
-                                                horizontal: 12, vertical: 10),
-                                            child: Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.only(top: 2),
-                                                  child: IgnorePointer(
-                                                    ignoring: true,
-                                                    child: Checkbox(
-                                                      value: _isAnonymous,
-                                                      onChanged: (_) {},
-                                                      activeColor:
-                                                          AppColors.pointColor,
-                                                      materialTapTargetSize:
-                                                          MaterialTapTargetSize
-                                                              .shrinkWrap,
-                                                      visualDensity:
-                                                          const VisualDensity(
-                                                              horizontal: -4,
-                                                              vertical: -4),
-                                                    ),
-                                                  ),
-                                                ),
-                                                const SizedBox(width: 10),
-                                                Expanded(
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment.start,
-                                                    children: [
-                                                      Text(
-                                                        AppLocalizations.of(
-                                                                context)!
-                                                            .postAnonymously,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Pretendard',
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          color: Color(0xFF111827),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 4),
-                                                      Text(
-                                                        AppLocalizations.of(
-                                                                context)!
-                                                            .idWillBeShown,
-                                                        style: const TextStyle(
-                                                          fontFamily: 'Pretendard',
-                                                          fontSize: 12,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                          color: Color(0xFF6B7280),
-                                                        ),
-                                                      ),
-                                                    ],
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-
-                                if (_visibility == 'category')
-                                  Container(
-                                    key: _categorySectionKey,
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const SizedBox(height: 8),
-                                        Row(
-                                          children: [
-                                            Text(
-                                              AppLocalizations.of(context)!
-                                                  .selectGroupRequired,
-                                              style: TextStyle(
-                                                fontFamily: 'Pretendard',
-                                                fontSize: 14,
-                                                fontWeight: FontWeight.w700,
-                                                color: (_showCategoryRequiredHint &&
-                                                        _selectedCategoryIds
-                                                            .isEmpty)
-                                                    ? const Color(0xFFB91C1C)
-                                                    : const Color(0xFF111827),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                  horizontal: 8, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color:
-                                                    (_selectedCategoryIds.isEmpty)
-                                                        ? const Color(0xFFFEE2E2)
-                                                        : const Color(0xFFDCFCE7),
-                                                borderRadius:
-                                                    BorderRadius.circular(999),
-                                              ),
-                                              child: Text(
-                                                '${_selectedCategoryIds.length}${AppLocalizations.of(context)!.selectedCount}',
-                                                style: TextStyle(
-                                                  fontFamily: 'Pretendard',
-                                                  fontSize: 12,
-                                                  fontWeight: FontWeight.w700,
-                                                  color:
-                                                      (_selectedCategoryIds.isEmpty)
-                                                          ? const Color(0xFF991B1B)
-                                                          : const Color(0xFF166534),
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        const SizedBox(height: 10),
-                                        Container(
-                                          padding: const EdgeInsets.all(12),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFFFFBEB),
-                                            borderRadius: BorderRadius.circular(10),
-                                            border: Border.all(
-                                                color: const Color(0xFFFDE68A)),
-                                          ),
-                                          child: Row(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const Icon(
-                                                Icons.info_outline,
-                                                size: 18,
-                                                color: Color(0xFFB45309),
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Expanded(
-                                                child: Text(
-                                                  AppLocalizations.of(context)!
-                                                      .selectedGroupOnlyPost,
-                                                  style: const TextStyle(
-                                                    fontFamily: 'Pretendard',
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Color(0xFF92400E),
-                                                    height: 1.25,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        AnimatedContainer(
-                                          duration:
-                                              const Duration(milliseconds: 220),
-                                          padding: const EdgeInsets.all(10),
-                                          decoration: BoxDecoration(
-                                            color: (_showCategoryRequiredHint &&
-                                                    _selectedCategoryIds.isEmpty)
-                                                ? const Color(0xFFFFF1F2)
-                                                : Colors.transparent,
-                                            borderRadius: BorderRadius.circular(12),
-                                            // 카테고리 목록을 감싸는 "안쪽 선" 제거:
-                                            // - 평상시에는 border 자체를 없애고
-                                            // - 선택 필수 경고 상태에서만 강조 테두리를 노출한다.
-                                            border: (_showCategoryRequiredHint &&
-                                                    _selectedCategoryIds.isEmpty)
-                                                ? Border.all(
-                                                    color: const Color(0xFFFCA5A5),
-                                                    width: 1.5,
-                                                  )
-                                                : null,
-                                          ),
-                                          child: FriendCategorySelector(
-                                            categories: _friendCategories,
-                                            selectedCategoryIds:
-                                                _selectedCategoryIds,
-                                            selectedColor: AppColors.pointColor,
-                                            style: FriendCategorySelectorStyle.list,
-                                            onSelectionChanged: (newSelection) {
-                                              setState(() {
-                                                _selectedCategoryIds = newSelection;
-                                                if (newSelection.isNotEmpty) {
-                                                  _showCategoryRequiredHint = false;
-                                                }
-                                              });
-                                              _checkCanSubmit();
-                                            },
-                                          ),
-                                        ),
-                                        if (_selectedCategoryIds.isEmpty &&
-                                            _friendCategories.isNotEmpty)
-                                          Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 8.0),
-                                            child: Text(
-                                              AppLocalizations.of(context)!
-                                                  .groupSelectAtLeastOne,
-                                              style: const TextStyle(
-                                                color: Color(0xFFB91C1C),
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                                fontFamily: 'Pretendard',
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
       ),
     );
   }
-}
 
-// Draft 요약 UI는 Visibility 탭에서 제거함
+  Widget _buildSelectedImagesStrip() {
+    return Expanded(
+      child: SizedBox(
+        height: 110,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _selectedAssets.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (context, index) {
+            final asset = _selectedAssets[index];
+            return GestureDetector(
+              onTap: () => _previewSelectedImages(initialIndex: index),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image(
+                      image: AssetEntityImageProvider(
+                        asset,
+                        isOriginal: false,
+                        thumbnailSize: const ThumbnailSize.square(256),
+                      ),
+                      width: 110,
+                      height: 110,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => _removeImage(index),
+                      child: Container(
+                        width: 26,
+                        height: 26,
+                        decoration: const BoxDecoration(
+                          color: Color(0xCC111827),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPollOptionsSection() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.pollOptionsTitle,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...List.generate(_pollOptionControllers.length, (index) {
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: TextField(
+                controller: _pollOptionControllers[index],
+                decoration: InputDecoration(
+                  hintText: l10n.pollOptionHint(index + 1),
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    color: Color(0xFF9CA3AF),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: AppColors.pointColor),
+                  ),
+                ),
+              ),
+            );
+          }),
+          Text(
+            l10n.postTypePollHelper,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF6B7280),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComposeBody() {
+    final l10n = AppLocalizations.of(context)!;
+    final imageLabel = l10n.imageAttachment;
+
+    return SingleChildScrollView(
+      controller: _composeScrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 12,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildPostTypeSegmentedControl(),
+          const SizedBox(height: 24),
+          _buildSectionLabel(
+            imageLabel,
+            trailing: '${_selectedAssets.length}/15',
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildAddImageTile(l10n),
+              const SizedBox(width: 14),
+              _selectedAssets.isEmpty
+                  ? _buildImagePlaceholderStrip()
+                  : _buildSelectedImagesStrip(),
+            ],
+          ),
+          if (_postType == 'text') ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.postComposeImageHelper,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ],
+          const SizedBox(height: 28),
+          if (_postType == 'poll') ...[
+            _buildPollOptionsSection(),
+            const SizedBox(height: 24),
+          ],
+          _buildSectionLabel(l10n.content),
+          const SizedBox(height: 14),
+          Container(
+            constraints: const BoxConstraints(minHeight: 360),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _contentFocusNode.hasFocus
+                    ? AppColors.pointColor
+                    : const Color(0xFFD1D5DB),
+                width: _contentFocusNode.hasFocus ? 1.5 : 1,
+              ),
+            ),
+            child: TextField(
+              controller: _contentController,
+              focusNode: _contentFocusNode,
+              maxLines: null,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: InputDecoration(
+                hintText: _postType == 'poll'
+                    ? l10n.pollQuestionHint
+                    : l10n.enterContent,
+                hintStyle: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 16,
+                  fontWeight: FontWeight.w400,
+                  color: Color(0xFF9CA3AF),
+                ),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.all(16),
+              ),
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF111827),
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVisibilityOption({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBackground,
+    required String title,
+    required String description,
+    required bool selected,
+    required VoidCallback onTap,
+    Widget? child,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Color(0xFFF3F4F6)),
+          ),
+        ),
+        child: Column(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: iconBackground,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(icon, color: iconColor, size: 18),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF111827),
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B7280),
+                          height: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.pointColor
+                          : const Color(0xFFD1D5DB),
+                      width: 2.5,
+                    ),
+                  ),
+                  child: selected
+                      ? const Center(
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: AppColors.pointColor,
+                              ),
+                            ),
+                          ),
+                        )
+                      : null,
+                ),
+              ],
+            ),
+            if (child != null) ...[
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.only(left: 46),
+                child: child,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAnonymousToggle() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.postAnonymously,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                l10n.idWillBeShown,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B7280),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Switch(
+          value: _isAnonymous,
+          onChanged: (value) {
+            setState(() {
+              _isAnonymous = value;
+            });
+          },
+          activeThumbColor: Colors.white,
+          activeTrackColor: AppColors.pointColor,
+          inactiveThumbColor: Colors.white,
+          inactiveTrackColor: const Color(0xFF9CA3AF),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupSelectionButton(FriendCategory category) {
+    final isSelected = _selectedCategoryIds.contains(category.id);
+
+    return GestureDetector(
+      onTap: () {
+        final nextSelection = List<String>.from(_selectedCategoryIds);
+        if (isSelected) {
+          nextSelection.remove(category.id);
+        } else {
+          nextSelection.add(category.id);
+        }
+
+        setState(() {
+          _selectedCategoryIds = nextSelection;
+          if (nextSelection.isNotEmpty) {
+            _showCategoryRequiredHint = false;
+          }
+        });
+        _refreshSelectedAudienceUsers();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        height: 58,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF4F8EDB) : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF111827) : const Color(0xFF111827),
+            width: 1.6,
+          ),
+        ),
+        child: Text(
+          category.name,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: isSelected ? Colors.white : const Color(0xFF111827),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedAudienceNames(AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.postSelectedPeopleTitle,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF111827),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(minHeight: 96),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFD1D5DB)),
+          ),
+          child: _isLoadingAudienceUsers
+              ? const Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : _selectedAudienceUsers.isEmpty
+                  ? Text(
+                      l10n.postSelectedPeopleEmpty,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                    )
+                  : Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
+                      children: _selectedAudienceUsers
+                          .map(
+                            (user) => Text(
+                              user.displayNameOrNickname,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                              ),
+                            ),
+                          )
+                          .toList(growable: false),
+                    ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupSelectionSection() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_friendCategories.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: _selectedCategoryIds.isEmpty
+                  ? const Color(0xFFF3F4F6)
+                  : const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              _selectedCategoryIds.isEmpty
+                  ? l10n.postVisibilityNoGroupsSelected
+                  : l10n.postVisibilityGroupsSelected(_selectedCategoryIds.length),
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _selectedCategoryIds.isEmpty
+                    ? const Color(0xFF6B7280)
+                    : AppColors.pointColor,
+              ),
+            ),
+          ),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(2),
+          decoration: BoxDecoration(
+            color: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
+                ? const Color(0xFFFFF1F2)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
+                ? Border.all(color: const Color(0xFFFCA5A5), width: 1.2)
+                : null,
+          ),
+          child: Column(
+            children: [
+              for (var index = 0; index < _friendCategories.length; index++) ...[
+                _buildGroupSelectionButton(_friendCategories[index]),
+                if (index != _friendCategories.length - 1)
+                  const SizedBox(height: 10),
+              ],
+            ],
+          ),
+        ),
+        if (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              l10n.groupSelectAtLeastOne,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFFB91C1C),
+              ),
+            ),
+          ),
+        const SizedBox(height: 18),
+        _buildSelectedAudienceNames(l10n),
+      ],
+    );
+  }
+
+  Widget _buildVisibilityBody() {
+    final l10n = AppLocalizations.of(context)!;
+
+    return SingleChildScrollView(
+      controller: _visibilityScrollController,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 18,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.postComposeVisibilityPrompt,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF111827),
+            ),
+          ),
+          const SizedBox(height: 22),
+          _buildVisibilityOption(
+            icon: Icons.public,
+            iconColor: AppColors.pointColor,
+            iconBackground: const Color(0xFFEFF6FF),
+            title: l10n.postVisibilityPublicTitle,
+            description: l10n.postVisibilityPublicDescription,
+            selected: _visibility == 'public',
+            onTap: () {
+              setState(() {
+                _visibility = 'public';
+                _showCategoryRequiredHint = false;
+              });
+            },
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 46, top: 10, bottom: 14),
+            child: _buildAnonymousToggle(),
+          ),
+          _buildVisibilityOption(
+            icon: Icons.change_history_rounded,
+            iconColor: const Color(0xFFEF4444),
+            iconBackground: const Color(0xFFFFF1F2),
+            title: l10n.postVisibilityGroupTitle,
+            description: l10n.postVisibilityGroupDescription,
+            selected: _visibility == 'category',
+            onTap: () {
+              setState(() {
+                _visibility = 'category';
+              });
+            },
+            child: _visibility == 'category' ? _buildGroupSelectionSection() : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedBody() {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      transitionBuilder: (child, animation) {
+        final beginOffset =
+            Offset(_isForwardTransition ? 0.12 : -0.12, 0);
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: beginOffset,
+            end: Offset.zero,
+          ).animate(animation),
+          child: FadeTransition(opacity: animation, child: child),
+        );
+      },
+      child: KeyedSubtree(
+        key: ValueKey(_stepIndex),
+        child: _stepIndex == 0 ? _buildComposeBody() : _buildVisibilityBody(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: _stepIndex == 0 && !_isSubmitting,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || _isSubmitting) return;
+        if (_stepIndex == 1) {
+          await _goToStep(0);
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
+        body: _buildAnimatedBody(),
+      ),
+    );
+  }
+}

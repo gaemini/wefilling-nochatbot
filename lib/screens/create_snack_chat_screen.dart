@@ -25,10 +25,10 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   final _snackChatService = SnackChatService();
   final _notificationService = NotificationService();
 
-  List<FriendCategory> _categories = const <FriendCategory>[];
   List<String> _selectedCategoryIds = <String>[];
   List<UserProfile> _candidateFriends = <UserProfile>[];
   Set<String> _selectedParticipantIds = <String>{};
+  int _activeDurationHours = 24;
   bool _isLoading = true;
   bool _isSubmitting = false;
 
@@ -64,7 +64,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
 
     if (!mounted) return;
     setState(() {
-      _categories = categories;
       _selectedCategoryIds = allCategoryIds;
       _candidateFriends = friends;
       _isLoading = false;
@@ -258,6 +257,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         title: title,
         participantIds: _selectedParticipantIds.toList(),
         visibleToCategoryIds: _selectedCategoryIds,
+        activeDurationHours: _activeDurationHours,
       );
       if (!mounted) return;
       if (id == null) {
@@ -292,6 +292,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         creatorId: _uid ?? '',
         creatorName: creatorName,
       );
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => SnackChatScreen(snackChatId: id)),
@@ -367,6 +368,38 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       counterText: '',
                     ),
                   ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  l10n.snackChatVisibilityDuration,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 34 / 2,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.snackChatVisibilityDurationHint,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDurationOption(24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildDurationOption(48),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 28),
                 Row(
@@ -489,6 +522,50 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   List<UserProfile> get _selectedParticipants => _candidateFriends
       .where((friend) => _selectedParticipantIds.contains(friend.uid))
       .toList();
+
+  Widget _buildDurationOption(int hours) {
+    final selected = _activeDurationHours == hours;
+    final label = hours == 24
+        ? AppLocalizations.of(context)!.snackChatDuration24Hours
+        : AppLocalizations.of(context)!.snackChatDuration48Hours;
+    return GestureDetector(
+      onTap: () => setState(() => _activeDurationHours = hours),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEAF3FF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
+            width: selected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                color:
+                    selected ? AppColors.pointColor : const Color(0xFF111827),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSelfSlot() {
     final me = FirebaseAuth.instance.currentUser;

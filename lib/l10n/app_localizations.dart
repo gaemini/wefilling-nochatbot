@@ -608,6 +608,12 @@ abstract class AppLocalizations {
   /// **'포스트 작성'**
   String get createPost;
 
+  /// No description provided for @createPostSheetDesc.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진과 글을 올려 자유롭게 공유하세요.'**
+  String get createPostSheetDesc;
+
   /// No description provided for @newPost.
   ///
   /// In ko, this message translates to:
@@ -626,6 +632,12 @@ abstract class AppLocalizations {
   /// **'Snack Chat 만들기'**
   String get createSnackChat;
 
+  /// No description provided for @createSnackChatSheetDesc.
+  ///
+  /// In ko, this message translates to:
+  /// **'오늘 가볍게 대화할 Snack Chat을 시작하세요.'**
+  String get createSnackChatSheetDesc;
+
   /// No description provided for @snackChatRoomTitle.
   ///
   /// In ko, this message translates to:
@@ -637,6 +649,30 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'대화의 주제를 입력해주세요'**
   String get snackChatRoomTitleHint;
+
+  /// No description provided for @snackChatVisibilityDuration.
+  ///
+  /// In ko, this message translates to:
+  /// **'유지 시간'**
+  String get snackChatVisibilityDuration;
+
+  /// No description provided for @snackChatVisibilityDurationHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.'**
+  String get snackChatVisibilityDurationHint;
+
+  /// No description provided for @snackChatDuration24Hours.
+  ///
+  /// In ko, this message translates to:
+  /// **'24시간'**
+  String get snackChatDuration24Hours;
+
+  /// No description provided for @snackChatDuration48Hours.
+  ///
+  /// In ko, this message translates to:
+  /// **'48시간'**
+  String get snackChatDuration48Hours;
 
   /// No description provided for @snackChatSelectParticipants.
   ///
@@ -4859,7 +4895,7 @@ abstract class AppLocalizations {
   /// No description provided for @addImage.
   ///
   /// In ko, this message translates to:
-  /// **'이미지 추가'**
+  /// **'추가하기'**
   String get addImage;
 
   /// No description provided for @tapToSelectFromGallery.
@@ -5402,6 +5438,108 @@ abstract class AppLocalizations {
   /// **'이미지를 업로드 중입니다. 잠시만 기다려주세요...'**
   String get postImageUploading;
 
+  /// No description provided for @postComposeImageRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지 첨부'**
+  String get postComposeImageRequired;
+
+  /// No description provided for @postComposeImageHelper.
+  ///
+  /// In ko, this message translates to:
+  /// **'최대 15장까지 첨부할 수 있어요.'**
+  String get postComposeImageHelper;
+
+  /// No description provided for @postComposeVisibilityPrompt.
+  ///
+  /// In ko, this message translates to:
+  /// **'공개 대상을 선택해주세요.'**
+  String get postComposeVisibilityPrompt;
+
+  /// No description provided for @postVisibilityPublicTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'모두에게 공개'**
+  String get postVisibilityPublicTitle;
+
+  /// No description provided for @postVisibilityPublicDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'모든 사용자가 게시글을 볼 수 있습니다'**
+  String get postVisibilityPublicDescription;
+
+  /// No description provided for @postVisibilityGroupTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 선택'**
+  String get postVisibilityGroupTitle;
+
+  /// No description provided for @postVisibilityGroupDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 그룹 친구에게만 공개됩니다'**
+  String get postVisibilityGroupDescription;
+
+  /// No description provided for @postVisibilityNoGroupsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택된 그룹이 없습니다'**
+  String get postVisibilityNoGroupsSelected;
+
+  /// No description provided for @postVisibilityGroupsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}개 그룹 선택됨'**
+  String postVisibilityGroupsSelected(int count);
+
+  /// No description provided for @postSelectImageRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'이미지를 첨부해주세요.'**
+  String get postSelectImageRequired;
+
+  /// No description provided for @postEnterContentRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'내용을 입력해주세요.'**
+  String get postEnterContentRequired;
+
+  /// No description provided for @postDraftIncompleteMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'내용이나 이미지를 먼저 추가해주세요.'**
+  String get postDraftIncompleteMessage;
+
+  /// No description provided for @postPreparingImages.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 사진을 준비 중이에요. 잠시만 기다려주세요.'**
+  String get postPreparingImages;
+
+  /// No description provided for @postSelectedPeopleTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택된 사람들'**
+  String get postSelectedPeopleTitle;
+
+  /// No description provided for @postSelectedPeopleEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택된 사람이 없습니다.'**
+  String get postSelectedPeopleEmpty;
+
+  /// No description provided for @postAudienceTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'공개 대상'**
+  String get postAudienceTitle;
+
+  /// No description provided for @postAudienceSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'프로필을 누르면 상대방 정보를 확인할 수 있어요.'**
+  String get postAudienceSubtitle;
+
   /// No description provided for @totalImageSizeWarning.
   ///
   /// In ko, this message translates to:
@@ -5473,6 +5611,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'서비스를 이용하기 전에\n약관에 동의해주세요.'**
   String get termsAgreementDescription;
+
+  /// No description provided for @snackChatUnfavoriteTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'즐겨찾기 해제'**
+  String get snackChatUnfavoriteTitle;
+
+  /// No description provided for @snackChatUnfavoriteMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'이 Snack Chat을 즐겨찾기에서 해제할까요?'**
+  String get snackChatUnfavoriteMessage;
 }
 
 class _AppLocalizationsDelegate

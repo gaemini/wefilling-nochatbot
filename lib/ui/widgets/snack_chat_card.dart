@@ -25,13 +25,14 @@ class SnackChatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final l10n = AppLocalizations.of(context)!;
+    final isFavorited = snackChat.isFavoritedBy(currentUserId);
     final unreadCount = currentUserId != null
         ? snackChat.getMyUnreadCount(currentUserId!)
         : 0;
     final hasUnread = unreadCount > 0;
     final accentColor = hasUnread
         ? const Color(0xFF3B82F6)
-        : snackChat.isFavorited
+        : isFavorited
             ? const Color(0xFFF59E0B)
             : const Color(0xFFD1D5DB);
     final rawLastMessage = snackChat.lastMessage.trim();
@@ -130,11 +131,11 @@ class SnackChatCard extends StatelessWidget {
                             child: Padding(
                               padding: const EdgeInsets.all(4),
                               child: Icon(
-                                snackChat.isFavorited
+                                isFavorited
                                     ? Icons.star
                                     : Icons.star_border,
                                 size: 20,
-                                color: snackChat.isFavorited
+                                color: isFavorited
                                     ? const Color(0xFFF59E0B)
                                     : const Color(0xFF9CA3AF),
                               ),

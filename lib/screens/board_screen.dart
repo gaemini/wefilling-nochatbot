@@ -7,25 +7,21 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
-import '../models/snack_chat.dart';
 import '../constants/app_constants.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
 import '../services/meetup_service.dart';
 import '../services/content_filter_service.dart';
-import '../services/snack_chat_service.dart';
 import '../ui/widgets/app_fab.dart';
 import '../ui/widgets/empty_state.dart';
 import '../ui/widgets/skeletons.dart';
 import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/board_meetup_card.dart';
-import '../ui/widgets/snack_chat_card.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'create_post_screen.dart';
 import 'create_snack_chat_screen.dart';
 import 'post_detail_screen.dart';
 import 'meetup_detail_screen.dart';
-import 'snack_chat_screen.dart';
 import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
@@ -42,20 +38,12 @@ class BoardScreenState extends State<BoardScreen>
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
-  final SnackChatService _snackChatService = SnackChatService();
   late TabController _tabController;
   Timer? _midnightTimer;
   late final Stream<List<Meetup>> _todayMeetupsStream;
-  late final Stream<List<SnackChat>> _todaySnackChatsStream;
-  late final Stream<List<SnackChat>> _allSnackChatsStream;
 
   List<Meetup>? _cachedTodayMeetups;
   DateTime? _lastNonEmptyMeetupsAt;
-
-  List<SnackChat>? _cachedTodaySnackChats;
-
-  Set<String> _mutedSnackChatIds = {};
-  StreamSubscription<Set<String>>? _mutedSnackChatSub;
 
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
@@ -118,11 +106,6 @@ class BoardScreenState extends State<BoardScreen>
     // - 약속 날짜가 오늘인 모임
     // 만 노출한다. (필터링은 MeetupService.getTodayTabMeetups에서 강제)
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
-    _todaySnackChatsStream = _snackChatService.getTodaySnackChats();
-    _allSnackChatsStream = _snackChatService.getAllSnackChats();
-    _mutedSnackChatSub = _snackChatService.watchMutedSnackChatIds().listen((ids) {
-      if (mounted) setState(() => _mutedSnackChatIds = ids);
-    });
     
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
   }
@@ -268,7 +251,6 @@ class BoardScreenState extends State<BoardScreen>
   void dispose() {
     Logger.log('🔄 BoardScreen dispose 시작');
     _midnightTimer?.cancel();
-    _mutedSnackChatSub?.cancel();
     if (_controllersInitialized) {
       // 마지막 상태 저장
       try {
@@ -845,56 +827,48 @@ class BoardScreenState extends State<BoardScreen>
 
   /// 전체 게시글 탭 (posts 스트림은 build()에서 1회 구독)
   Widget _buildAllPostsTab(AsyncSnapshot<List<Post>> snapshot) {
-    return StreamBuilder<List<SnackChat>>(
-      stream: _allSnackChatsStream,
-      builder: (context, snackSnapshot) {
-        final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData &&
-            _cachedAllPosts == null;
+    final bool isLoading = snapshot.connectionState == ConnectionState.waiting &&
+        !snapshot.hasData &&
+        _cachedAllPosts == null;
 
-        final bool isError =
-            snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
+    final bool isError =
+        snapshot.hasError && (_cachedAllPosts == null || _cachedAllPosts!.isEmpty);
 
-        final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
-        final posts = sourcePosts.where(_isPostInAllTab).toList();
+    final sourcePosts = snapshot.data ?? _cachedAllPosts ?? const <Post>[];
+    final posts = sourcePosts.where(_isPostInAllTab).toList();
 
-        if (snapshot.hasData) {
-          _cachedAllPosts = posts;
-        }
+    if (snapshot.hasData) {
+      _cachedAllPosts = posts;
+    }
 
-        if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
-          _didAutoRefreshAllCommentCounts = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted) return;
-            _refreshCommentCountsForPosts(posts, silent: true);
-          });
-        }
+    if (!_didAutoRefreshAllCommentCounts && posts.isNotEmpty) {
+      _didAutoRefreshAllCommentCounts = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _refreshCommentCountsForPosts(posts, silent: true);
+      });
+    }
 
-        final allSnackChats = snackSnapshot.data ?? const <SnackChat>[];
+    final List<dynamic> allItems = <dynamic>[...posts]
+      ..sort((a, b) =>
+          _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
 
-        // Posts와 SnackChats를 합쳐서 날짜 기준으로 정렬
-        final List<dynamic> allItems = <dynamic>[
-          ...posts,
-          ...allSnackChats,
-        ]..sort((a, b) =>
-            _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
+    final grouped = (!isLoading && !isError && allItems.isNotEmpty)
+        ? _groupItemsByDate(allItems)
+        : const <Map<String, dynamic>>[];
 
-        final grouped = (!isLoading && !isError && allItems.isNotEmpty)
-            ? _groupItemsByDate(allItems)
-            : const <Map<String, dynamic>>[];
+    final int bodyCount;
+    if (isLoading) {
+      bodyCount = 5;
+    } else if (isError) {
+      bodyCount = 1;
+    } else if (allItems.isEmpty) {
+      bodyCount = 1;
+    } else {
+      bodyCount = _calculateAllItemCount(grouped) - 1; // minus banner
+    }
 
-        final int bodyCount;
-        if (isLoading) {
-          bodyCount = 5;
-        } else if (isError) {
-          bodyCount = 1;
-        } else if (allItems.isEmpty) {
-          bodyCount = 1;
-        } else {
-          bodyCount = _calculateAllItemCount(grouped) - 1; // minus banner
-        }
-
-        return RefreshIndicator(
+    return RefreshIndicator(
           color: AppColors.pointColor,
           backgroundColor: Colors.white,
           onRefresh: () async {
@@ -958,8 +932,6 @@ class BoardScreenState extends State<BoardScreen>
             },
           ),
         );
-      },
-    );
   }
 
   Widget _buildTodayUnifiedList({
@@ -1014,24 +986,11 @@ class BoardScreenState extends State<BoardScreen>
             ? 2
             : (todayMeetups.isNotEmpty ? todayMeetups.length : 1);
 
-        return StreamBuilder<List<SnackChat>>(
-          stream: _todaySnackChatsStream,
-          builder: (context, snackSnapshot) {
-            if (snackSnapshot.hasData) {
-              _cachedTodaySnackChats = snackSnapshot.data;
-            }
-            final isSnackLoading =
-                snackSnapshot.connectionState == ConnectionState.waiting &&
-                    _cachedTodaySnackChats == null;
-            final todaySnackChats = _cachedTodaySnackChats ?? const <SnackChat>[];
+        final List<dynamic> todayCombined = <dynamic>[...todayPosts]
+          ..sort((a, b) =>
+              _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
 
-            final List<dynamic> todayCombined = <dynamic>[
-              ...todayPosts,
-              ...todaySnackChats,
-            ]..sort((a, b) =>
-                _getTodayCombinedCreatedAt(b).compareTo(_getTodayCombinedCreatedAt(a)));
-
-            final postsCount = (isPostsLoading || isSnackLoading)
+            final postsCount = isPostsLoading
                 ? 3
                 : (isPostsError ? 1 : (todayCombined.isNotEmpty ? todayCombined.length : 1));
 
@@ -1183,7 +1142,7 @@ class BoardScreenState extends State<BoardScreen>
               i -= 1;
 
                   // 4) posts list/skeleton/error/empty
-                  if (isPostsLoading || isSnackLoading) {
+                  if (isPostsLoading) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   child: _buildPostSkeleton(),
@@ -1226,25 +1185,10 @@ class BoardScreenState extends State<BoardScreen>
                       contentPadding: _boardPostCardContentPadding,
                     );
                   }
-                  if (item is SnackChat) {
-                    return SnackChatCard(
-                      key: ValueKey(item.id),
-                      snackChat: item,
-                      currentUserId: FirebaseAuth.instance.currentUser?.uid,
-                      isMuted: _mutedSnackChatIds.contains(item.id),
-                      onTap: () => _navigateToSnackChat(item),
-                      onLongPress: () => _showSnackChatMuteSheet(item),
-                      onToggleFavorite: () {
-                        _snackChatService.toggleFavorite(item.id, !item.isFavorited);
-                      },
-                    );
-                  }
                   return const SizedBox.shrink();
                 },
               ),
             );
-          },
-        );
       },
     );
   }
@@ -1396,7 +1340,7 @@ class BoardScreenState extends State<BoardScreen>
       }
       currentIndex++;
       
-      // 아이템들 (Post 또는 SnackChat)
+      // 아이템들 (Post)
       for (int i = 0; i < groupItems.length; i++) {
         if (currentIndex == adjustedIndex) {
           final item = groupItems[i];
@@ -1410,18 +1354,6 @@ class BoardScreenState extends State<BoardScreen>
               preloadImage: i < 3,
               margin: _boardPostCardMargin,
               contentPadding: _boardPostCardContentPadding,
-            );
-          } else if (item is SnackChat) {
-            return SnackChatCard(
-              key: ValueKey('snack_${item.id}'),
-              snackChat: item,
-              currentUserId: FirebaseAuth.instance.currentUser?.uid,
-              isMuted: _mutedSnackChatIds.contains(item.id),
-              onTap: () => _navigateToSnackChat(item),
-              onLongPress: () => _showSnackChatMuteSheet(item),
-              onToggleFavorite: () {
-                _snackChatService.toggleFavorite(item.id, !item.isFavorited);
-              },
             );
           }
         }
@@ -1446,114 +1378,124 @@ class BoardScreenState extends State<BoardScreen>
 
   DateTime _getTodayCombinedCreatedAt(dynamic item) {
     if (item is Post) return item.createdAt;
-    if (item is SnackChat) return item.createdAt;
     return DateTime.fromMillisecondsSinceEpoch(0);
-  }
-
-  void _navigateToSnackChat(SnackChat snackChat) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => SnackChatScreen(snackChatId: snackChat.id),
-      ),
-    );
-  }
-
-  void _showSnackChatMuteSheet(SnackChat snackChat) {
-    final isMuted = _mutedSnackChatIds.contains(snackChat.id);
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(height: 8),
-              Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFD1D5DB),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: Icon(
-                  isMuted ? Icons.notifications_active_outlined : Icons.notifications_off_outlined,
-                  color: isMuted ? const Color(0xFF3B82F6) : const Color(0xFF6B7280),
-                ),
-                title: Text(
-                  isMuted
-                      ? (isKo ? '알림 켜기' : 'Unmute notifications')
-                      : (isKo ? '알림 끄기' : 'Mute notifications'),
-                  style: const TextStyle(fontFamily: 'Pretendard', fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _snackChatService.toggleMuteSnackChat(snackChat.id, !isMuted);
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   void _openCreateEntrySheet() {
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: false,
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.article_outlined),
-                title: Text(AppLocalizations.of(context)!.createPost),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => CreatePostScreen(
-                        onPostCreated: () {
-                          setState(() {});
-                        },
-                      ),
-                    ),
-                  );
-                },
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Material(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              clipBehavior: Clip.antiAlias,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildCreateSheetAction(
+                    icon: Icons.article_outlined,
+                    title: AppLocalizations.of(context)!.createPost,
+                    subtitle: AppLocalizations.of(context)!.createPostSheetDesc,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CreatePostScreen(
+                            onPostCreated: () {
+                              setState(() {});
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  _buildCreateSheetAction(
+                    icon: Icons.forum_outlined,
+                    title: AppLocalizations.of(context)!.createSnackChat,
+                    subtitle:
+                        AppLocalizations.of(context)!.createSnackChatSheetDesc,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CreateSnackChatScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.chat_bubble_outline),
-                title: Text(AppLocalizations.of(context)!.createSnackChat),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateSnackChatScreen(),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCreateSheetAction({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF3F7FF),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: AppColors.pointColor, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1B2330),
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.25,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFF9CA3AF),
+              size: 24,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1592,7 +1534,7 @@ class BoardScreenState extends State<BoardScreen>
   }
 
 
-  /// 날짜별로 Post+SnackChat 혼합 아이템 그룹화 (All 탭용)
+  /// 날짜별 게시글 그룹화 (All 탭용)
   List<Map<String, dynamic>> _groupItemsByDate(List<dynamic> items) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);

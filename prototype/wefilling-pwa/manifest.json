@@ -1,0 +1,18 @@
+{
+  "name": "Wefilling",
+  "short_name": "Wefilling",
+  "description": "학교 기반 무료 나눔과 가벼운 소통",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#DEEFFF",
+  "theme_color": "#4990E2",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "assets/wefilling-mark.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

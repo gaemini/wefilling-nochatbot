@@ -268,6 +268,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get createPost => 'Create Post';
 
   @override
+  String get createPostSheetDesc => 'Share photos and writing freely.';
+
+  @override
   String get newPost => 'New Post';
 
   @override
@@ -277,10 +280,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get createSnackChat => 'Create Snack Chat';
 
   @override
+  String get createSnackChatSheetDesc => 'Start a casual Snack Chat for today.';
+
+  @override
   String get snackChatRoomTitle => 'Room Title';
 
   @override
   String get snackChatRoomTitleHint => 'Enter a topic for the chat';
+
+  @override
+  String get snackChatVisibilityDuration => 'Visibility Duration';
+
+  @override
+  String get snackChatVisibilityDurationHint =>
+      'The chat stays visible for 24 or 48 hours from the last message.';
+
+  @override
+  String get snackChatDuration24Hours => '24 hours';
+
+  @override
+  String get snackChatDuration48Hours => '48 hours';
 
   @override
   String get snackChatSelectParticipants => 'Select Participants';
@@ -2591,7 +2610,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get titleMinLengthError => 'Title must be at least 2 characters';
 
   @override
-  String get addImage => 'Add Image';
+  String get addImage => 'Add';
 
   @override
   String get tapToSelectFromGallery => 'Tap to select from gallery';
@@ -2908,6 +2927,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postImageUploading => 'Uploading images. Please wait...';
 
   @override
+  String get postComposeImageRequired => 'Attach images';
+
+  @override
+  String get postComposeImageHelper => 'You can attach up to 15 images.';
+
+  @override
+  String get postComposeVisibilityPrompt => 'Choose who can see this post.';
+
+  @override
+  String get postVisibilityPublicTitle => 'Visible to everyone';
+
+  @override
+  String get postVisibilityPublicDescription => 'All users can view this post';
+
+  @override
+  String get postVisibilityGroupTitle => 'Select groups';
+
+  @override
+  String get postVisibilityGroupDescription =>
+      'Only friends in selected groups can view this post';
+
+  @override
+  String get postVisibilityNoGroupsSelected => 'No groups selected';
+
+  @override
+  String postVisibilityGroupsSelected(int count) {
+    return '$count groups selected';
+  }
+
+  @override
+  String get postSelectImageRequired => 'Please attach an image.';
+
+  @override
+  String get postEnterContentRequired => 'Please enter some content.';
+
+  @override
+  String get postDraftIncompleteMessage =>
+      'Add content or images before continuing.';
+
+  @override
+  String get postPreparingImages =>
+      'Preparing selected photos. Please wait a moment.';
+
+  @override
+  String get postSelectedPeopleTitle => 'Selected people';
+
+  @override
+  String get postSelectedPeopleEmpty => 'No people selected.';
+
+  @override
+  String get postAudienceTitle => 'Visible to';
+
+  @override
+  String get postAudienceSubtitle => 'Tap a profile to see who this person is.';
+
+  @override
   String totalImageSizeWarning(String sizeMB) {
     return 'Warning: Total image size is ${sizeMB}MB. Posting may take a while.';
   }
@@ -2951,4 +3026,11 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get termsAgreementDescription =>
       'Please agree to the terms\nbefore using the service.';
+
+  @override
+  String get snackChatUnfavoriteTitle => 'Remove favorite';
+
+  @override
+  String get snackChatUnfavoriteMessage =>
+      'Remove this Snack Chat from favorites?';
 }

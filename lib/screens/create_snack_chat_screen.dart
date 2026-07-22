@@ -28,9 +28,9 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   List<String> _selectedCategoryIds = <String>[];
   List<UserProfile> _candidateFriends = <UserProfile>[];
   Set<String> _selectedParticipantIds = <String>{};
+  int _activeDurationHours = 24;
   bool _isLoading = true;
   bool _isSubmitting = false;
-  int _retentionHours = 24;
 
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -209,8 +209,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                           onPressed: () =>
                               Navigator.pop(context, tempSelection),
                           child: Text(
-                            l10n.snackChatSelectionComplete(
-                                tempSelection.length),
+                            l10n.snackChatSelectionComplete(tempSelection.length),
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 16,
@@ -258,7 +257,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         title: title,
         participantIds: _selectedParticipantIds.toList(),
         visibleToCategoryIds: _selectedCategoryIds,
-        retentionHours: _retentionHours,
+        activeDurationHours: _activeDurationHours,
       );
       if (!mounted) return;
       if (id == null) {
@@ -280,8 +279,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         }
       } catch (_) {}
       if (creatorName.isEmpty) {
-        creatorName =
-            FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
+        creatorName = FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
       }
 
       await _notificationService.sendSnackChatInviteNotification(
@@ -316,7 +314,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         elevation: 0,
         surfaceTintColor: Colors.white,
         foregroundColor: const Color(0xFF005BAC),
-        centerTitle: true,
+        titleSpacing: 0,
         title: Text(
           l10n.createSnackChat,
           style: const TextStyle(
@@ -370,6 +368,38 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       counterText: '',
                     ),
                   ),
+                ),
+                const SizedBox(height: 28),
+                Text(
+                  l10n.snackChatVisibilityDuration,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 34 / 2,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.snackChatVisibilityDurationHint,
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF6B7280),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildDurationOption(24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildDurationOption(48),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 28),
                 Row(
@@ -443,49 +473,47 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                   ),
                 ),
                 const SizedBox(height: 22),
-                _buildRetentionSelector(),
-                const SizedBox(height: 22),
                 _buildGuideCard(),
               ],
             ),
       bottomNavigationBar: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-          child: SizedBox(
-            height: 56,
-            child: ElevatedButton.icon(
-              onPressed: _isSubmitting ? null : _create,
-              style: ElevatedButton.styleFrom(
-                elevation: 0,
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(999),
-                ),
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+        child: SizedBox(
+          height: 56,
+          child: ElevatedButton.icon(
+            onPressed: _isSubmitting ? null : _create,
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              backgroundColor: AppColors.pointColor,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(999),
               ),
-              icon: _isSubmitting
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.add, size: 24),
-              label: Text(
-                _isSubmitting
-                    ? AppLocalizations.of(context)!.snackChatCreating
-                    : AppLocalizations.of(context)!.snackChatCreate,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 30 / 2,
-                  fontWeight: FontWeight.w800,
-                ),
+            ),
+            icon: _isSubmitting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.add, size: 24),
+            label: Text(
+              _isSubmitting
+                  ? AppLocalizations.of(context)!.snackChatCreating
+                  : AppLocalizations.of(context)!.snackChatCreate,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 30 / 2,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
+        ),
         ),
       ),
     );
@@ -494,6 +522,50 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   List<UserProfile> get _selectedParticipants => _candidateFriends
       .where((friend) => _selectedParticipantIds.contains(friend.uid))
       .toList();
+
+  Widget _buildDurationOption(int hours) {
+    final selected = _activeDurationHours == hours;
+    final label = hours == 24
+        ? AppLocalizations.of(context)!.snackChatDuration24Hours
+        : AppLocalizations.of(context)!.snackChatDuration48Hours;
+    return GestureDetector(
+      onTap: () => setState(() => _activeDurationHours = hours),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFEAF3FF) : Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
+            width: selected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              selected
+                  ? Icons.radio_button_checked_rounded
+                  : Icons.radio_button_off_rounded,
+              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                color:
+                    selected ? AppColors.pointColor : const Color(0xFF111827),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildSelfSlot() {
     final me = FirebaseAuth.instance.currentUser;
@@ -634,90 +706,6 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildRetentionSelector() {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          isKo ? '유지 시간' : 'Retention Period',
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          isKo
-              ? '아무도 이야기하지 않은 시간이 지나면 목록에서 숨겨져요.'
-              : 'Chats are hidden after this much inactive time.',
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF6B7280),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(child: _buildRetentionOption(24)),
-            const SizedBox(width: 10),
-            Expanded(child: _buildRetentionOption(48)),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRetentionOption(int hours) {
-    final selected = _retentionHours == hours;
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => setState(() => _retentionHours = hours),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 58,
-        decoration: BoxDecoration(
-          color: selected
-              ? AppColors.pointColor.withValues(alpha: 0.12)
-              : const Color(0xFFF7F9FC),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: selected ? AppColors.pointColor : const Color(0xFFE5E7EB),
-            width: selected ? 1.5 : 1,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              selected
-                  ? Icons.radio_button_checked_rounded
-                  : Icons.radio_button_off_rounded,
-              size: 20,
-              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              isKo ? '$hours시간' : '$hours hours',
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color:
-                    selected ? AppColors.pointColor : const Color(0xFF374151),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

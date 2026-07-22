@@ -11,18 +11,14 @@ class SnackChat {
   final List<String> participantIds;
   final List<String> visibleToCategoryIds;
   final DateTime createdAt;
+  final int activeDurationHours;
   final DateTime expiresAt;
-  final int retentionHours;
-  final bool isFavorited;
-  final Map<String, bool> favoriteBy;
+  final List<String> favoriteUserIds;
   final String lastMessage;
   final DateTime lastMessageTime;
   final String lastMessageSenderId;
   final Map<String, int> unreadCount;
   final DateTime updatedAt;
-  final String sourceType;
-  final String sourcePostId;
-  final String sourceCollectionPath;
 
   const SnackChat({
     required this.id,
@@ -31,35 +27,30 @@ class SnackChat {
     required this.participantIds,
     required this.visibleToCategoryIds,
     required this.createdAt,
+    required this.activeDurationHours,
     required this.expiresAt,
-    required this.retentionHours,
-    required this.isFavorited,
-    this.favoriteBy = const <String, bool>{},
+    required this.favoriteUserIds,
     required this.lastMessage,
     required this.lastMessageTime,
     required this.lastMessageSenderId,
     required this.unreadCount,
     required this.updatedAt,
-    this.sourceType = '',
-    this.sourcePostId = '',
-    this.sourceCollectionPath = '',
   });
 
   int get participantCount => participantIds.length;
 
   bool isExpired([DateTime? now]) {
     final base = now ?? DateTime.now();
-    return activityExpiresAt.isBefore(base);
+    return expiresAt.isBefore(base);
   }
 
-  DateTime get activityExpiresAt =>
-      lastMessageTime.add(Duration(hours: retentionHours));
-
-  bool get isSharingOrigin => sourceType == 'sharing';
+  bool isHardExpired([DateTime? now]) {
+    return false;
+  }
 
   bool isFavoritedBy(String? userId) {
     if (userId == null || userId.isEmpty) return false;
-    return favoriteBy[userId] == true;
+    return favoriteUserIds.contains(userId);
   }
 
   int getMyUnreadCount(String currentUserId) {
@@ -78,32 +69,38 @@ class SnackChat {
       id: doc.id,
       title: (data['title'] ?? '').toString(),
       creatorId: (data['creatorId'] ?? '').toString(),
-      participantIds: (data['participantIds'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const <String>[],
+      participantIds:
+          (data['participantIds'] as List?)?.map((e) => e.toString()).toList() ??
+              const <String>[],
       visibleToCategoryIds: (data['visibleToCategoryIds'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
           const <String>[],
       createdAt: parseDate(data['createdAt'], DateTime.now()),
-      expiresAt: parseDate(
-          data['expiresAt'], DateTime.now().add(const Duration(days: 1))),
-      retentionHours:
-          (data['retentionHours'] is int) ? data['retentionHours'] as int : 24,
-      isFavorited: data['isFavorited'] == true,
-      favoriteBy: (data['favoriteBy'] as Map?)?.map(
-            (key, value) => MapEntry(key.toString(), value == true),
-          ) ??
-          const <String, bool>{},
+      activeDurationHours: (() {
+        final raw = data['activeDurationHours'];
+        if (raw is int && (raw == 24 || raw == 48)) return raw;
+        final createdAt = parseDate(data['createdAt'], DateTime.now());
+        final expiresAt = parseDate(
+          data['expiresAt'],
+          createdAt.add(const Duration(days: 1)),
+        );
+        final diff = expiresAt.difference(createdAt).inHours;
+        return diff >= 48 ? 48 : 24;
+      })(),
+      expiresAt:
+          parseDate(data['expiresAt'], DateTime.now().add(const Duration(days: 1))),
+      favoriteUserIds: (data['favoriteUserIds'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          ((data['isFavorited'] == true && (data['creatorId'] ?? '').toString().isNotEmpty)
+              ? <String>[(data['creatorId'] ?? '').toString()]
+              : const <String>[]),
       lastMessage: (data['lastMessage'] ?? '').toString(),
       lastMessageTime: parseDate(data['lastMessageTime'], DateTime.now()),
       lastMessageSenderId: (data['lastMessageSenderId'] ?? '').toString(),
       unreadCount: Map<String, int>.from(data['unreadCount'] ?? const {}),
       updatedAt: parseDate(data['updatedAt'], DateTime.now()),
-      sourceType: (data['sourceType'] ?? '').toString(),
-      sourcePostId: (data['sourcePostId'] ?? '').toString(),
-      sourceCollectionPath: (data['sourceCollectionPath'] ?? '').toString(),
     );
   }
 
@@ -114,31 +111,25 @@ class SnackChat {
       'participantIds': participantIds,
       'visibleToCategoryIds': visibleToCategoryIds,
       'createdAt': Timestamp.fromDate(createdAt),
+      'activeDurationHours': activeDurationHours,
       'expiresAt': Timestamp.fromDate(expiresAt),
-      'retentionHours': retentionHours,
-      'isFavorited': isFavorited,
-      'favoriteBy': favoriteBy,
+      'favoriteUserIds': favoriteUserIds,
       'lastMessage': lastMessage,
       'lastMessageTime': Timestamp.fromDate(lastMessageTime),
       'lastMessageSenderId': lastMessageSenderId,
       'unreadCount': unreadCount,
       'updatedAt': Timestamp.fromDate(updatedAt),
-      'sourceType': sourceType,
-      'sourcePostId': sourcePostId,
-      'sourceCollectionPath': sourceCollectionPath,
     };
   }
 
   SnackChat copyWith({
     String? title,
-    bool? isFavorited,
-    Map<String, bool>? favoriteBy,
+    List<String>? favoriteUserIds,
     String? lastMessage,
     DateTime? lastMessageTime,
     String? lastMessageSenderId,
     Map<String, int>? unreadCount,
     DateTime? updatedAt,
-    int? retentionHours,
   }) {
     return SnackChat(
       id: id,
@@ -147,18 +138,14 @@ class SnackChat {
       participantIds: participantIds,
       visibleToCategoryIds: visibleToCategoryIds,
       createdAt: createdAt,
+      activeDurationHours: activeDurationHours,
       expiresAt: expiresAt,
-      retentionHours: retentionHours ?? this.retentionHours,
-      isFavorited: isFavorited ?? this.isFavorited,
-      favoriteBy: favoriteBy ?? this.favoriteBy,
+      favoriteUserIds: favoriteUserIds ?? this.favoriteUserIds,
       lastMessage: lastMessage ?? this.lastMessage,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
       unreadCount: unreadCount ?? this.unreadCount,
       updatedAt: updatedAt ?? this.updatedAt,
-      sourceType: sourceType,
-      sourcePostId: sourcePostId,
-      sourceCollectionPath: sourceCollectionPath,
     );
   }
 

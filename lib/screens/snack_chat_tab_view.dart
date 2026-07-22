@@ -23,8 +23,45 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
   @override
   void initState() {
     super.initState();
-    _todayStream = _service.getManageableTodaySnackChats();
-    _allStream = _service.getManageableAllSnackChats();
+    _todayStream = _service.getFavoritedTodaySnackChats();
+    _allStream = _service.getFavoritedAllSnackChats();
+  }
+
+  Future<bool> _confirmUnfavorite() async {
+    final l10n = AppLocalizations.of(context)!;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(l10n.snackChatUnfavoriteTitle),
+          content: Text(l10n.snackChatUnfavoriteMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+    return result ?? false;
+  }
+
+  Future<void> _handleToggleFavorite(
+      SnackChat chat, String? currentUserId) async {
+    final nextValue = !chat.isFavoritedBy(currentUserId);
+    if (!nextValue) {
+      final confirmed = await _confirmUnfavorite();
+      if (!confirmed) return;
+    }
+    await _service.toggleFavorite(chat.id, nextValue);
   }
 
   @override
@@ -33,7 +70,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 96),
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         _SectionTitle(title: l10n.today),
         StreamBuilder<List<SnackChat>>(
@@ -47,8 +84,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
             if (items.isEmpty) {
               return _SectionEmpty(
                 message: isKo
-                    ? '관리할 활성 Snack Chat이 없어요.'
-                    : 'No active Snack Chats to manage.',
+                    ? '즐겨찾기한 활성 Snack Chat이 없어요.'
+                    : 'No favorited active Snack Chats.',
               );
             }
             return Column(
@@ -66,22 +103,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           ),
                         );
                       },
-                      onToggleFavorite: () async {
-                        try {
-                          await _service.toggleFavorite(
-                            chat.id,
-                            !chat.isFavoritedBy(currentUserId),
-                          );
-                        } catch (_) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(isKo
-                                  ? '즐겨찾기를 변경하지 못했어요.'
-                                  : 'Could not update favorite.'),
-                            ),
-                          );
-                        }
+                      onToggleFavorite: () {
+                        _handleToggleFavorite(chat, currentUserId);
                       },
                     ),
                   )
@@ -101,8 +124,9 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
             }
             if (items.isEmpty) {
               return _SectionEmpty(
-                message:
-                    isKo ? '이전 Snack Chat이 없어요.' : 'No previous Snack Chats.',
+                message: isKo
+                    ? '즐겨찾기한 만료 Snack Chat이 없어요.'
+                    : 'No favorited expired Snack Chats.',
               );
             }
             return Column(
@@ -120,22 +144,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                           ),
                         );
                       },
-                      onToggleFavorite: () async {
-                        try {
-                          await _service.toggleFavorite(
-                            chat.id,
-                            !chat.isFavoritedBy(currentUserId),
-                          );
-                        } catch (_) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(isKo
-                                  ? '즐겨찾기를 변경하지 못했어요.'
-                                  : 'Could not update favorite.'),
-                            ),
-                          );
-                        }
+                      onToggleFavorite: () {
+                        _handleToggleFavorite(chat, currentUserId);
                       },
                     ),
                   )

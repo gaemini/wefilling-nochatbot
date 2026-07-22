@@ -2,11 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/snack_chat.dart';
+import '../../design/tokens.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
   final VoidCallback onTap;
-  final Future<void> Function()? onToggleFavorite;
+  final VoidCallback? onToggleFavorite;
   final VoidCallback? onLongPress;
   final String? currentUserId;
   final bool isMuted;
@@ -25,10 +26,11 @@ class SnackChatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final l10n = AppLocalizations.of(context)!;
-    final unreadCount =
-        currentUserId != null ? snackChat.getMyUnreadCount(currentUserId!) : 0;
-    final hasUnread = unreadCount > 0;
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
+    final unreadCount = currentUserId != null
+        ? snackChat.getMyUnreadCount(currentUserId!)
+        : 0;
+    final hasUnread = unreadCount > 0;
     final accentColor = hasUnread
         ? const Color(0xFF3B82F6)
         : isFavorited
@@ -39,27 +41,26 @@ class SnackChatCard extends StatelessWidget {
         ? (isKo ? '[이미지]' : '[Image]')
         : rawLastMessage;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      margin: EdgeInsets.zero,
       child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
+        color: BrandColors.surface,
+        borderRadius: BorderRadius.zero,
         child: InkWell(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.zero,
           onTap: onTap,
           onLongPress: onLongPress,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(
+              DesignTokens.s20,
+              DesignTokens.s12,
+              DesignTokens.s20,
+              DesignTokens.s8,
+            ),
+            decoration: const BoxDecoration(
+              color: BrandColors.surface,
+              border: Border(
+                bottom: BorderSide(color: BrandColors.divider),
+              ),
             ),
             child: Stack(
               children: [
@@ -125,22 +126,15 @@ class SnackChatCard extends StatelessWidget {
                               ),
                             ),
                           InkWell(
-                            onTap: () async {
-                              if (onToggleFavorite == null) return;
-                              if (!isFavorited) {
-                                await onToggleFavorite!();
-                                return;
-                              }
-                              final confirmed =
-                                  await _confirmFavoriteCancel(context);
-                              if (confirmed == true) await onToggleFavorite!();
-                            },
-                            borderRadius: BorderRadius.circular(18),
+                            onTap: onToggleFavorite,
+                            borderRadius: BorderRadius.circular(12),
                             child: Padding(
-                              padding: const EdgeInsets.all(5),
+                              padding: const EdgeInsets.all(4),
                               child: Icon(
-                                isFavorited ? Icons.star : Icons.star_border,
-                                size: 28,
+                                isFavorited
+                                    ? Icons.star
+                                    : Icons.star_border,
+                                size: 20,
                                 color: isFavorited
                                     ? const Color(0xFFF59E0B)
                                     : const Color(0xFF9CA3AF),
@@ -211,115 +205,6 @@ class SnackChatCard extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-
-  Future<bool?> _confirmFavoriteCancel(BuildContext context) {
-    final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    return showModalBottomSheet<bool>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 38,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE5E7EB),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7ED),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        Icons.star_rounded,
-                        color: Color(0xFFF59E0B),
-                        size: 26,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        isKo ? '즐겨찾기를 취소할까요?' : 'Remove from favorites?',
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  isKo
-                      ? '취소하면 마지막 발화 기준 유지 시간이 지난 스낵챗은 목록에서 보이지 않을 수 있어요.'
-                      : 'If removed, expired Snack Chats may no longer appear in your list.',
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF6B7280),
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF374151),
-                          side: const BorderSide(color: Color(0xFFD1D5DB)),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(isKo ? '유지' : 'Keep'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: const Color(0xFF111827),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Text(isKo ? '취소하기' : 'Remove'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

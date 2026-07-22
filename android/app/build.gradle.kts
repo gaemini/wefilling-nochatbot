@@ -5,6 +5,8 @@ val keystorePropertiesFile = rootProject.file("key.properties")
 val keystoreProperties = Properties()
 if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+} else {
+    logger.warn("WARNING: android/key.properties not found. Release signing will fail.")
 }
 
 plugins {
@@ -41,12 +43,22 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias = keystoreProperties["keyAlias"] as String
-                keyPassword = keystoreProperties["keyPassword"] as String
-                storeFile = file(keystoreProperties["storeFile"] as String)
-                storePassword = keystoreProperties["storePassword"] as String
+            if (!keystorePropertiesFile.exists()) {
+                error("android/key.properties not found. Create it with storeFile, storePassword, keyAlias, keyPassword.")
             }
+            val storeFilePath = keystoreProperties["storeFile"] as String?
+                ?: error("storeFile missing in key.properties")
+            val resolvedStoreFile = file(storeFilePath)
+            if (!resolvedStoreFile.exists()) {
+                error("Keystore file not found: $storeFilePath")
+            }
+            keyAlias = keystoreProperties["keyAlias"] as String?
+                ?: error("keyAlias missing in key.properties")
+            keyPassword = keystoreProperties["keyPassword"] as String?
+                ?: error("keyPassword missing in key.properties")
+            storeFile = resolvedStoreFile
+            storePassword = keystoreProperties["storePassword"] as String?
+                ?: error("storePassword missing in key.properties")
         }
     }
 

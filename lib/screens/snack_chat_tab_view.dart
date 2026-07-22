@@ -54,7 +54,8 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     return result ?? false;
   }
 
-  Future<void> _handleToggleFavorite(SnackChat chat, String? currentUserId) async {
+  Future<void> _handleToggleFavorite(
+      SnackChat chat, String? currentUserId) async {
     final nextValue = !chat.isFavoritedBy(currentUserId);
     if (!nextValue) {
       final confirmed = await _confirmUnfavorite();
@@ -69,7 +70,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(0, 8, 0, 96),
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         _SectionTitle(title: l10n.today),
         StreamBuilder<List<SnackChat>>(

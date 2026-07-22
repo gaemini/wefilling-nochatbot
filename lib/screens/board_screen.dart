@@ -50,11 +50,10 @@ class BoardScreenState extends State<BoardScreen>
   bool _didAutoRefreshTodayCommentCounts = false;
   bool _didAutoRefreshAllCommentCounts = false;
 
-  // 게시글 카드 외부 여백: 좌우 없음, 카드 간 위아래 구분을 위한 작은 여백만
-  static const EdgeInsets _boardPostCardMargin =
-      EdgeInsets.symmetric(horizontal: 0, vertical: 4);
-  // 카드 내부 패딩(기본 12 유지, 필요 시 여기서만 조정)
-  static const EdgeInsets _boardPostCardContentPadding = EdgeInsets.all(12);
+  // 일반 게시물은 그림자 대신 콘텐츠 여백과 divider로 구분한다.
+  static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
+  static const EdgeInsets _boardPostCardContentPadding =
+      EdgeInsets.fromLTRB(20, 20, 20, 24);
   
   // 스크롤 위치 복원을 위한 ScrollController들
   late final ScrollController _todayScrollController;

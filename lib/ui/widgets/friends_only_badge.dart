@@ -10,6 +10,10 @@ class FriendsOnlyBadge extends StatelessWidget {
   final EdgeInsetsGeometry padding;
   final double iconSize;
   final double radius;
+  final double fontSize;
+  final double gap;
+  final FontWeight fontWeight;
+  final Color? foregroundColor;
 
   const FriendsOnlyBadge({
     super.key,
@@ -17,12 +21,16 @@ class FriendsOnlyBadge extends StatelessWidget {
     this.padding = const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     this.iconSize = 15,
     this.radius = 16,
+    this.fontSize = 12,
+    this.gap = 6,
+    this.fontWeight = FontWeight.w700,
+    this.foregroundColor,
   });
 
   @override
   Widget build(BuildContext context) {
     // 배경 제거: 글씨와 아이콘만 표시
-    const fg = AppColors.friendsOnlyAccent;
+    final fg = foregroundColor ?? AppColors.friendsOnlyAccent;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -32,13 +40,13 @@ class FriendsOnlyBadge extends StatelessWidget {
           color: fg,
           size: iconSize,
         ),
-        const SizedBox(width: 6),
+        SizedBox(width: gap),
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+            fontSize: fontSize,
+            fontWeight: fontWeight,
             color: fg,
             height: 1,
             letterSpacing: -0.1,
@@ -48,4 +56,3 @@ class FriendsOnlyBadge extends StatelessWidget {
     );
   }
 }
-

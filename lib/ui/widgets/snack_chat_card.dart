@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../../models/snack_chat.dart';
+import '../../design/tokens.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
@@ -40,27 +41,26 @@ class SnackChatCard extends StatelessWidget {
         ? (isKo ? '[이미지]' : '[Image]')
         : rawLastMessage;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      margin: EdgeInsets.zero,
       child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
+        color: BrandColors.surface,
+        borderRadius: BorderRadius.zero,
         child: InkWell(
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.zero,
           onTap: onTap,
           onLongPress: onLongPress,
           child: Container(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: const Color(0xFFE5E7EB)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+            padding: const EdgeInsets.fromLTRB(
+              DesignTokens.s20,
+              DesignTokens.s12,
+              DesignTokens.s20,
+              DesignTokens.s8,
+            ),
+            decoration: const BoxDecoration(
+              color: BrandColors.surface,
+              border: Border(
+                bottom: BorderSide(color: BrandColors.divider),
+              ),
             ),
             child: Stack(
               children: [

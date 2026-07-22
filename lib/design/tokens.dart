@@ -159,6 +159,12 @@ extension DesignTokensExtension on BuildContext {
 
 /// 브랜드 컬러 시스템 - 인스타그램 영감 + 독창적 팔레트
 class BrandColors {
+  // Semantic roles used by content-first feed cards.
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color divider = Color(0xFFECECEF);
+  static const Color imagePlaceholder = Color(0xFFF4F4F5);
+  static const Color iconDefault = Color(0xFF71717A);
+
   // === 2024-2025 트렌드 Primary Colors (Instagram-inspired) ===
   // 인스타그램의 그라디언트에서 영감을 받은 모던한 색상
   static const Color primary = Color(0xFF6366F1); // 모던 인디고 (Instagram의 보라색 계열)

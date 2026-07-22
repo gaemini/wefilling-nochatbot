@@ -107,7 +107,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB),
+      backgroundColor: BrandColors.surface,
       appBar: AppBar(
         toolbarHeight: 0,
         elevation: 0,
@@ -202,6 +202,12 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: const BoxDecoration(
+              color: BrandColors.surface,
+              border: Border(
+                bottom: BorderSide(color: BrandColors.divider),
+              ),
+            ),
             child: Text(
               isKo
                   ? '그룹을 통해 공개범위를 설정하세요.'
@@ -217,7 +223,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           Expanded(
             child: ListView.builder(
               padding: EdgeInsets.only(
-                top: 8,
                 bottom: bottomPadding > 0 ? bottomPadding + 90 : 90,
               ),
               itemCount: _categories.length,
@@ -238,25 +243,18 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     final iconName = _normalizeIconName(category.iconName);
     final l10n = AppLocalizations.of(context)!;
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: DesignTokens.radiusM,
-        border: Border.all(
-          color: const Color(0xFFF3F4F6),
-          width: 1,
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        color: BrandColors.surface,
+        border: Border(
+          bottom: BorderSide(color: BrandColors.divider),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: _safeColorWithOpacity(Colors.black, 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: DesignTokens.s20,
+          vertical: DesignTokens.s8,
+        ),
         // 아이콘만 보이도록 (배경/테두리 제거) - 크기만 유지
         leading: SizedBox(
           width: 46,

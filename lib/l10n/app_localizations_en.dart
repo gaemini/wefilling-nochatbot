@@ -84,6 +84,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get myPage => 'My Page';
 
   @override
+  String get snackChat => 'Snack Chat';
+
+  @override
+  String get snackChatTabSemantic => 'Snack Chat tab';
+
+  @override
+  String get groupsTabSemantic => 'Groups tab';
+
+  @override
+  String get groupNoFriendsSelected => 'Selected friends will appear here.';
+
+  @override
+  String get groupNoSearchResults => 'No friends found.';
+
+  @override
+  String get groupRemoveFriendHint => 'Double tap to remove from this group.';
+
+  @override
   String get home => 'Home';
 
   @override
@@ -289,23 +307,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snackChatRoomTitleHint => 'Enter a topic for the chat';
 
   @override
-  String get snackChatVisibilityDuration => 'Visibility Duration';
+  String get snackChatVisibilityDuration => 'Chat duration';
 
   @override
   String get snackChatVisibilityDurationHint =>
-      'The chat stays visible for 24 or 48 hours from the last message.';
+      'Choose whether the chat ends after 24 hours or stays open.';
 
   @override
   String get snackChatDuration24Hours => '24 hours';
 
   @override
-  String get snackChatDuration48Hours => '48 hours';
+  String get snackChatDurationNoEnd => 'No end';
 
   @override
   String get snackChatSelectParticipants => 'Select Participants';
 
   @override
-  String get snackChatParticipantLimit => 'You can invite up to 6 people';
+  String get snackChatParticipantLimit =>
+      'Invite any friends you want to include';
+
+  @override
+  String snackChatParticipantCount(int count) {
+    return '$count participants';
+  }
 
   @override
   String get snackChatMe => 'Me';
@@ -317,6 +341,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snackChatInviteFriends => 'Invite Friends';
 
   @override
+  String get snackChatInviteStepTitle => 'Invite friends';
+
+  @override
+  String get snackChatInviteStepHint =>
+      'Choose at least one friend to join the chat.';
+
+  @override
+  String get snackChatSelectedFriends => 'Selected friends';
+
+  @override
+  String get snackChatNoFriendsSelected => 'Selected friends will appear here.';
+
+  @override
+  String get snackChatFriendList => 'Friends';
+
+  @override
+  String get snackChatDragForFriends => 'Drag to see more';
+
+  @override
+  String get snackChatDetailsStepTitle => 'Set up the room';
+
+  @override
+  String snackChatDetailsStepHint(int count) {
+    return 'Create a room for $count participants.';
+  }
+
+  @override
   String snackChatSelectionComplete(int count) {
     return '$count selected';
   }
@@ -326,7 +377,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get snackChatMaxParticipants =>
-      'You can select up to 6 participants (including yourself).';
+      'Select the friends you want to invite.';
 
   @override
   String get snackChatEnterTitle => 'Please enter a Snack Chat title.';
@@ -351,7 +402,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get snackChatGuideDesc =>
-      'A casual social chat space\nfor up to 6 people.';
+      'A casual social chat space\nfor you and your friends.';
 
   @override
   String get editPost => 'Edit Post';
@@ -3020,4 +3071,86 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get snackChatUnfavoriteMessage =>
       'Remove this Snack Chat from favorites?';
+
+  @override
+  String get postCategoriesTitle => 'Categories';
+
+  @override
+  String get postCategoriesSubtitle => 'Explore new stories by topic.';
+
+  @override
+  String get postCategorySelectTitle => 'Post category';
+
+  @override
+  String get postCategorySelectAction => 'Select category';
+
+  @override
+  String get postCategoryRequired => 'Please select a post category.';
+
+  @override
+  String postCategoryEmpty(String category) {
+    return 'There are no posts in $category yet.';
+  }
+
+  @override
+  String get postCategoryEmptySubtitle => 'Be the first to share something.';
+
+  @override
+  String get postCategoryCreateAction => 'Create post';
+
+  @override
+  String get postCategoryStyle => 'Style';
+
+  @override
+  String get postCategoryStyleDescription => 'Fashion, beauty & items';
+
+  @override
+  String get postCategoryCreate => 'Create';
+
+  @override
+  String get postCategoryCreateDescription => 'Art, design & crafts';
+
+  @override
+  String get postCategoryPhoto => 'Photo';
+
+  @override
+  String get postCategoryPhotoDescription => 'Photos, video & cameras';
+
+  @override
+  String get postCategoryContent => 'Content';
+
+  @override
+  String get postCategoryContentDescription => 'Music, film & series';
+
+  @override
+  String get postCategoryCafe => 'Cafe';
+
+  @override
+  String get postCategoryCafeDescription => 'Cafes, desserts & spaces';
+
+  @override
+  String get postCategoryBooksWriting => 'Books & Writing';
+
+  @override
+  String get postCategoryBooksWritingDescription => 'Reading, writing & quotes';
+
+  @override
+  String get postCategoryTravelLocal => 'Travel & Local';
+
+  @override
+  String get postCategoryTravelLocalDescription =>
+      'Travel, neighborhoods & places';
+
+  @override
+  String get postCategoryGlobal => 'Global';
+
+  @override
+  String get postCategoryGlobalDescription => 'Languages, culture & students';
+
+  @override
+  String get postCategoryOther => 'Other';
+
+  @override
+  String get postCategoryOtherDescription =>
+      'Legacy posts and open conversation';
 }

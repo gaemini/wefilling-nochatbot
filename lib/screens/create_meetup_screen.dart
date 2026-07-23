@@ -26,12 +26,14 @@ class CreateMeetupScreen extends StatefulWidget {
   final int initialDayIndex;
   final DateTime? initialDate; // 선택된 실제 날짜 추가
   final Function(int, Meetup) onCreateMeetup;
+  final FriendCategory? initialAudienceCategory;
 
   const CreateMeetupScreen({
     super.key,
     required this.initialDayIndex,
     this.initialDate, // 옵셔널로 추가
     required this.onCreateMeetup,
+    this.initialAudienceCategory,
   });
 
   @override
@@ -584,6 +586,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     final initial = (widget.initialDate ?? DateTime.now()).toLocal();
     _selectedDay = DateTime(initial.year, initial.month, initial.day);
     _focusedDay = _selectedDay;
+
+    final initialAudienceCategory = widget.initialAudienceCategory;
+    if (initialAudienceCategory != null) {
+      _visibility = 'category';
+      _selectedCategoryIds = <String>[initialAudienceCategory.id];
+    }
     
     // 친구 카테고리 로드
     _loadFriendCategories();

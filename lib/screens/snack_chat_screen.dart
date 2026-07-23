@@ -58,7 +58,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   DateTime? _oldestMessageTime;
   bool _hasMore = true;
   bool _isLoadingMore = false;
-  bool _isInitialLoading = true;  // 초기 로딩 상태 추가
+  bool _isInitialLoading = true; // 초기 로딩 상태 추가
 
   @override
   void initState() {
@@ -90,15 +90,14 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   }
 
   void _subscribeToMessages() {
-    _msgSub = _snackChatService
-        .watchMessages(widget.snackChatId)
-        .listen((incoming) {
+    _msgSub =
+        _snackChatService.watchMessages(widget.snackChatId).listen((incoming) {
       if (!mounted) return;
       _scheduleMarkAsRead();
       setState(() {
         // 초기 로딩 완료
         _isInitialLoading = false;
-        
+
         for (final m in incoming) {
           if (!_messageIds.contains(m.id)) {
             _messageIds.add(m.id);
@@ -127,15 +126,16 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       if (data == null) return;
       final unreadMap = data['unreadCount'] as Map<String, dynamic>? ?? {};
       final myUnread = unreadMap[uid];
-      final v = myUnread is int ? myUnread : (myUnread is num ? myUnread.toInt() : 0);
-      
+      final v =
+          myUnread is int ? myUnread : (myUnread is num ? myUnread.toInt() : 0);
+
       // 🔍 디버깅: unreadCount 값 로깅
       print('🔔 [SnackChat] Room 문서 업데이트 감지:');
       print('  - snackChatId: ${widget.snackChatId}');
       print('  - myUnread: $v');
       print('  - lastMessage: ${data['lastMessage']}');
       print('  - lastMessageSenderId: ${data['lastMessageSenderId']}');
-      
+
       if (v > 0) {
         print('  ⚠️ unreadCount > 0 감지, markAsRead 예약');
         _scheduleMarkAsRead();
@@ -186,9 +186,8 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       return _senderNameCache[senderId]!;
     }
     final userInfo = await _userInfoCache.getUserInfo(senderId);
-    final name = (userInfo?.nickname.isNotEmpty == true)
-        ? userInfo!.nickname
-        : senderId;
+    final name =
+        (userInfo?.nickname.isNotEmpty == true) ? userInfo!.nickname : senderId;
     _senderNameCache[senderId] = name;
     return name;
   }
@@ -284,222 +283,232 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
             }
           },
           child: Scaffold(
-          backgroundColor: const Color(0xFFFF9A47),
-          appBar: AppBar(
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.white,
-            centerTitle: true,
-            titleSpacing: 0,
-            title: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Text(
-                  room.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+            backgroundColor: const Color(0xFFFF9A47),
+            appBar: AppBar(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.white,
+              centerTitle: true,
+              titleSpacing: 0,
+              title: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text(
+                    room.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-                Text(
-                  isKo
-                      ? '${room.participantCount}명 참여'
-                      : '${room.participantCount} Participants',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    color: Color(0xFF6B7280),
+                  Text(
+                    isKo
+                        ? '${room.participantCount}명 참여'
+                        : '${room.participantCount} Participants',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 12,
+                      color: Color(0xFF6B7280),
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                IconButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            SnackChatInfoScreen(snackChatId: room.id),
+                      ),
+                    );
+                  },
+                  icon: const Icon(
+                    Icons.menu,
+                    color: AppColors.pointColor,
                   ),
                 ),
               ],
             ),
-            actions: [
-              IconButton(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => SnackChatInfoScreen(snackChatId: room.id),
-                    ),
-                  );
-                },
-                icon: const Icon(
-                  Icons.menu,
-                  color: AppColors.pointColor,
-                ),
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              Expanded(
-                child: _isInitialLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _messages.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.chat_bubble_outline,
-                                  size: 64,
-                                  color: Colors.grey.shade300,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  isKo
-                                      ? '아직 메시지가 없습니다.\n첫 메시지를 보내보세요!'
-                                      : 'No messages yet.\nSend the first message!',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 14,
-                                    color: Colors.grey.shade500,
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            controller: _scrollController,
-                            reverse: true,
-                            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                            itemCount: _messages.length + (_hasMore ? 1 : 0),
-                            itemBuilder: (context, index) {
-                              // 맨 아래(오래된 쪽)에 로딩 인디케이터
-                              if (index == _messages.length) {
-                                return Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(vertical: 12),
-                                  child: Center(
-                                    child: _isLoadingMore
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                                strokeWidth: 2),
-                                          )
-                                        : const SizedBox.shrink(),
-                                  ),
-                                );
-                              }
-                              final msg = _messages[index];
-                              final isMe = msg.senderId == _uid;
-                              
-                              // 날짜 구분선 표시 여부
-                              final bool showDateDivider = _shouldShowDateDivider(index);
-                              
-                              // 시간 표시 로직
-                              final String timeText = _formatTime(msg.createdAt);
-                              
-                              // ✅ 시간 표시 로직: 이전 메시지와 시간이 다르거나 발신자가 다를 때만 표시
-                              bool showTimeText = false;
-                              if (index > 0) {
-                                final prevMsg = _messages[index - 1];
-                                final String prevTimeText = _formatTime(prevMsg.createdAt);
-                                // 시간이 바뀌거나 발신자가 바뀌면 시간 표시
-                                showTimeText = timeText != prevTimeText || prevMsg.senderId != msg.senderId;
-                              } else {
-                                // 가장 최근 메시지는 항상 시간 표시
-                                showTimeText = true;
-                              }
-                              
-                              // ✅ 이름 표시 로직: 이전 메시지와 발신자가 다르면 이름 표시
-                              final bool showSenderName = index == _messages.length - 1 || // 맨 처음 메시지
-                                  _messages[index + 1].senderId != msg.senderId; // 이전 메시지가 다른 사용자
-                              
-                              return Column(
+            body: Column(
+              children: [
+                Expanded(
+                  child: _isInitialLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _messages.isEmpty
+                          ? Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  // 날짜 구분선
-                                  if (showDateDivider) _buildDateDivider(msg.createdAt),
-                                  // 메시지 버블
-                                  _buildMessageBubble(
-                                    message: msg,
-                                    isMe: isMe,
-                                    timeText: timeText,
-                                    showTimeText: showTimeText,
-                                    showSenderName: showSenderName,
+                                  Icon(
+                                    Icons.chat_bubble_outline,
+                                    size: 64,
+                                    color: Colors.grey.shade300,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    isKo
+                                        ? '아직 메시지가 없습니다.\n첫 메시지를 보내보세요!'
+                                        : 'No messages yet.\nSend the first message!',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      color: Colors.grey.shade500,
+                                      height: 1.5,
+                                    ),
                                   ),
                                 ],
-                              );
-                            },
-                          ),
-              ),
-              // 하단 입력창 영역 (흰색 배경)
-              Container(
-                color: Colors.white,
-                child: SafeArea(
-                  top: false,
-                  child: Container(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                    color: Colors.white,
-                    child: Row(
-                    children: [
-                      IconButton(
-                        onPressed: _isUploadingImage ? null : _pickAndSendImage,
-                        icon: _isUploadingImage
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.add_circle, size: 30),
-                        color: AppColors.pointColor,
-                        tooltip: isKo ? '이미지 첨부' : 'Attach image',
-                      ),
-                      Expanded(
-                        child: TextField(
-                          controller: _messageController,
-                          maxLines: 4,
-                          minLines: 1,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _send(),
-                          decoration: InputDecoration(
-                            hintText:
-                                isKo ? '메시지를 입력하세요...' : 'Type a message...',
-                            filled: true,
-                            fillColor: const Color(0xFFF3F4F6),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(24),
-                              borderSide: BorderSide.none,
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              reverse: true,
+                              padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                              itemCount: _messages.length + (_hasMore ? 1 : 0),
+                              itemBuilder: (context, index) {
+                                // 맨 아래(오래된 쪽)에 로딩 인디케이터
+                                if (index == _messages.length) {
+                                  return Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12),
+                                    child: Center(
+                                      child: _isLoadingMore
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2),
+                                            )
+                                          : const SizedBox.shrink(),
+                                    ),
+                                  );
+                                }
+                                final msg = _messages[index];
+                                final isMe = msg.senderId == _uid;
+
+                                // 날짜 구분선 표시 여부
+                                final bool showDateDivider =
+                                    _shouldShowDateDivider(index);
+
+                                // 시간 표시 로직
+                                final String timeText =
+                                    _formatTime(msg.createdAt);
+
+                                // ✅ 시간 표시 로직: 이전 메시지와 시간이 다르거나 발신자가 다를 때만 표시
+                                bool showTimeText = false;
+                                if (index > 0) {
+                                  final prevMsg = _messages[index - 1];
+                                  final String prevTimeText =
+                                      _formatTime(prevMsg.createdAt);
+                                  // 시간이 바뀌거나 발신자가 바뀌면 시간 표시
+                                  showTimeText = timeText != prevTimeText ||
+                                      prevMsg.senderId != msg.senderId;
+                                } else {
+                                  // 가장 최근 메시지는 항상 시간 표시
+                                  showTimeText = true;
+                                }
+
+                                // ✅ 이름 표시 로직: 이전 메시지와 발신자가 다르면 이름 표시
+                                final bool showSenderName =
+                                    index == _messages.length - 1 || // 맨 처음 메시지
+                                        _messages[index + 1].senderId !=
+                                            msg.senderId; // 이전 메시지가 다른 사용자
+
+                                return Column(
+                                  children: [
+                                    // 날짜 구분선
+                                    if (showDateDivider)
+                                      _buildDateDivider(msg.createdAt),
+                                    // 메시지 버블
+                                    _buildMessageBubble(
+                                      message: msg,
+                                      isMe: isMe,
+                                      timeText: timeText,
+                                      showTimeText: showTimeText,
+                                      showSenderName: showSenderName,
+                                    ),
+                                  ],
+                                );
+                              },
                             ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
+                ),
+                // 하단 입력창 영역 (흰색 배경)
+                Container(
+                  color: Colors.white,
+                  child: SafeArea(
+                    top: false,
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                      color: Colors.white,
+                      child: Row(
+                        children: [
+                          IconButton(
+                            onPressed:
+                                _isUploadingImage ? null : _pickAndSendImage,
+                            icon: _isUploadingImage
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.add_circle, size: 30),
+                            color: AppColors.pointColor,
+                            tooltip: isKo ? '이미지 첨부' : 'Attach image',
+                          ),
+                          Expanded(
+                            child: TextField(
+                              controller: _messageController,
+                              maxLines: 4,
+                              minLines: 1,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _send(),
+                              decoration: InputDecoration(
+                                hintText: isKo
+                                    ? '메시지를 입력하세요...'
+                                    : 'Type a message...',
+                                filled: true,
+                                fillColor: const Color(0xFFF3F4F6),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide.none,
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
+                              ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: 8),
+                          FloatingActionButton.small(
+                            onPressed: _isSending ? null : _send,
+                            backgroundColor: AppColors.pointColor,
+                            child: _isSending
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.send_rounded,
+                                    color: Colors.white),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      FloatingActionButton.small(
-                        onPressed: _isSending ? null : _send,
-                        backgroundColor: AppColors.pointColor,
-                        child: _isSending
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.send_rounded,
-                                color: Colors.white),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      );
+        );
       },
     );
   }
@@ -762,10 +771,10 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     }
     final currentMsg = _messages[index];
     final prevMsg = _messages[index + 1]; // reverse=true이므로 index+1이 더 오래된 메시지
-    
+
     final currentDate = currentMsg.createdAt.toLocal();
     final prevDate = prevMsg.createdAt.toLocal();
-    
+
     // 날짜가 다르면 구분선 표시
     return currentDate.year != prevDate.year ||
         currentDate.month != prevDate.month ||
@@ -777,12 +786,12 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     final local = dateTime.toLocal();
     final now = DateTime.now();
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    
+
     String dateText;
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = today.subtract(const Duration(days: 1));
     final messageDate = DateTime(local.year, local.month, local.day);
-    
+
     if (messageDate == today) {
       dateText = isKo ? '오늘' : 'Today';
     } else if (messageDate == yesterday) {
@@ -799,7 +808,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
             : '${_getMonthName(local.month)} ${local.day}, ${local.year}';
       }
     }
-    
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
@@ -842,8 +851,18 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   String _getMonthName(int month) {
     const months = [
-      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
     ];
     return months[month - 1];
   }
@@ -853,7 +872,9 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     if (room.isFavoritedBy(currentUserId)) {
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(
-          builder: (_) => MainScreen(initialGroupTabIndex: 1),
+          builder: (_) => MainScreen(
+            initialGroupTabIndex: snackChatTabIndex,
+          ),
         ),
         (route) => false,
       );

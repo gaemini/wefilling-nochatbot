@@ -8,17 +8,26 @@ import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../models/friend_category.dart';
+import '../models/post_category.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/friend_category_service.dart';
 import '../services/post_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
+import '../ui/widgets/post_category_selector.dart';
 import '../utils/logger.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
+  final PostCategory? initialCategory;
+  final FriendCategory? initialAudienceCategory;
 
-  const CreatePostScreen({super.key, required this.onPostCreated});
+  const CreatePostScreen({
+    super.key,
+    required this.onPostCreated,
+    this.initialCategory,
+    this.initialAudienceCategory,
+  });
 
   @override
   State<CreatePostScreen> createState() => _CreatePostScreenState();
@@ -32,7 +41,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   final List<File> _selectedImages = [];
   final List<AssetEntity> _selectedAssets = [];
   final PostService _postService = PostService();
-  final List<TextEditingController> _pollOptionControllers = [];
   final _friendCategoryService = FriendCategoryService();
   final _usersRepository = UsersRepository();
 
@@ -52,18 +60,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   bool _isAnonymous = false;
   List<String> _selectedCategoryIds = [];
   bool _showCategoryRequiredHint = false;
-
-  String _postType = 'text';
+  PostCategory? _selectedPostCategory;
+  bool _showPostCategoryRequiredHint = false;
 
   @override
   void initState() {
     super.initState();
+    _selectedPostCategory = widget.initialCategory;
+    final initialAudienceCategory = widget.initialAudienceCategory;
+    if (initialAudienceCategory != null) {
+      _visibility = 'category';
+      _selectedCategoryIds = <String>[initialAudienceCategory.id];
+    }
     _contentController.addListener(_checkCanProceed);
     _contentFocusNode.addListener(() {
       if (mounted) setState(() {});
     });
     _loadFriendCategories();
-    _ensureMinimumPollOptions();
     _checkCanProceed();
   }
 
@@ -73,9 +86,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     _contentFocusNode.dispose();
     _composeScrollController.dispose();
     _visibilityScrollController.dispose();
-    for (final controller in _pollOptionControllers) {
-      controller.dispose();
-    }
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
     super.dispose();
@@ -95,22 +105,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
   }
 
-  void _ensureMinimumPollOptions() {
-    if (_pollOptionControllers.isNotEmpty) return;
-    for (var index = 0; index < 2; index++) {
-      final controller = TextEditingController();
-      controller.addListener(_checkCanProceed);
-      _pollOptionControllers.add(controller);
-    }
-  }
-
-  List<String> _getCleanedPollOptions() {
-    return _pollOptionControllers
-        .map((controller) => controller.text.trim())
-        .where((value) => value.isNotEmpty)
-        .toList();
-  }
-
   void _dismissKeyboard() {
     FocusManager.instance.primaryFocus?.unfocus();
     if (!mounted) return;
@@ -120,24 +114,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   void _checkCanProceed() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
     final hasImages = _selectedAssets.isNotEmpty;
-    final hasValidPoll = _getCleanedPollOptions().length == 2;
-
-    final canProceed = _postType == 'poll'
-        ? contentNotEmpty && hasValidPoll
-        : contentNotEmpty || hasImages;
+    final canProceed =
+        _selectedPostCategory != null && (contentNotEmpty || hasImages);
 
     if (!mounted) return;
     setState(() {
       _canProceed = canProceed;
     });
-  }
-
-  void _setPostType(String value) {
-    if (_postType == value) return;
-    setState(() {
-      _postType = value;
-    });
-    _checkCanProceed();
   }
 
   Set<String> _selectedAudienceIds() {
@@ -408,6 +391,23 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Future<void> _submitPost() async {
     final l10n = AppLocalizations.of(context)!;
 
+    if (_selectedPostCategory == null) {
+      setState(() => _showPostCategoryRequiredHint = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.postCategoryRequired)),
+      );
+      await _goToStep(0);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_composeScrollController.hasClients) return;
+        _composeScrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      });
+      return;
+    }
+
     if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
       setState(() {
         _showCategoryRequiredHint = true;
@@ -456,12 +456,13 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       final success = await _postService.addPost(
         '',
         _contentController.text.trim(),
+        categoryKey: _selectedPostCategory!.key,
         imageFiles: _selectedImages.isNotEmpty ? _selectedImages : null,
         visibility: _visibility,
         isAnonymous: _isAnonymous,
         visibleToCategoryIds: _selectedCategoryIds,
-        type: _postType,
-        pollOptions: _postType == 'poll' ? _getCleanedPollOptions() : const [],
+        type: 'text',
+        pollOptions: const [],
       );
 
       if (!mounted) return;
@@ -491,57 +492,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     }
   }
 
-  Widget _buildPostTypeSegmentedControl() {
-    final l10n = AppLocalizations.of(context)!;
-
-    Widget item({
-      required String value,
-      required String label,
-    }) {
-      final isSelected = _postType == value;
-
-      return Expanded(
-        child: GestureDetector(
-          onTap: () => _setPostType(value),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            height: 38,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF6CCFF6) : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: isSelected
-                    ? const Color(0xFF111827)
-                    : const Color(0xFF6B7280),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          item(value: 'text', label: l10n.postTypeTextLabel),
-          item(value: 'poll', label: l10n.postTypePollLabel),
-        ],
-      ),
-    );
-  }
-
   PreferredSizeWidget _buildComposeAppBar() {
     final l10n = AppLocalizations.of(context)!;
 
@@ -566,7 +516,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       ),
       actions: [
         IconButton(
-          onPressed: (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
+          onPressed:
+              (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
           icon: Icon(
             Icons.arrow_forward_rounded,
             size: 32,
@@ -703,18 +654,24 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           borderRadius: BorderRadius.circular(16),
         ),
         child: Row(
-          children: List.generate(
-            3,
-            (index) => Expanded(
-              child: Container(
-                margin: EdgeInsets.only(right: index == 2 ? 0 : 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+          children: [
+            for (var index = 0; index < 3; index++) ...[
+              if (index > 0) const SizedBox(width: 10),
+              Expanded(
+                child: Align(
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            ],
+          ],
         ),
       ),
     );
@@ -776,74 +733,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     );
   }
 
-  Widget _buildPollOptionsSection() {
-    final l10n = AppLocalizations.of(context)!;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l10n.pollOptionsTitle,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ...List.generate(_pollOptionControllers.length, (index) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: TextField(
-                controller: _pollOptionControllers[index],
-                decoration: InputDecoration(
-                  hintText: l10n.pollOptionHint(index + 1),
-                  hintStyle: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    color: Color(0xFF9CA3AF),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 14,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: AppColors.pointColor),
-                  ),
-                ),
-              ),
-            );
-          }),
-          Text(
-            l10n.postTypePollHelper,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildComposeBody() {
     final l10n = AppLocalizations.of(context)!;
     final imageLabel = l10n.imageAttachment;
@@ -860,7 +749,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPostTypeSegmentedControl(),
+          PostCategorySelector(
+            selected: _selectedPostCategory,
+            showError: _showPostCategoryRequiredHint,
+            onChanged: (category) {
+              setState(() {
+                _selectedPostCategory = category;
+                _showPostCategoryRequiredHint = false;
+              });
+              _checkCanProceed();
+            },
+          ),
           const SizedBox(height: 24),
           _buildSectionLabel(
             imageLabel,
@@ -877,23 +776,17 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                   : _buildSelectedImagesStrip(),
             ],
           ),
-          if (_postType == 'text') ...[
-            const SizedBox(height: 8),
-            Text(
-              l10n.postComposeImageHelper,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF6B7280),
-              ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.postComposeImageHelper,
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF6B7280),
             ),
-          ],
+          ),
           const SizedBox(height: 28),
-          if (_postType == 'poll') ...[
-            _buildPollOptionsSection(),
-            const SizedBox(height: 24),
-          ],
           _buildSectionLabel(l10n.content),
           const SizedBox(height: 14),
           Container(
@@ -914,9 +807,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               maxLines: null,
               textAlignVertical: TextAlignVertical.top,
               decoration: InputDecoration(
-                hintText: _postType == 'poll'
-                    ? l10n.pollQuestionHint
-                    : l10n.enterContent,
+                hintText: l10n.enterContent,
                 hintStyle: const TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 16,
@@ -1121,7 +1012,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           color: isSelected ? const Color(0xFF4F8EDB) : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isSelected ? const Color(0xFF111827) : const Color(0xFF111827),
+            color:
+                isSelected ? const Color(0xFF111827) : const Color(0xFF111827),
             width: 1.6,
           ),
         ),
@@ -1220,7 +1112,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
             child: Text(
               _selectedCategoryIds.isEmpty
                   ? l10n.postVisibilityNoGroupsSelected
-                  : l10n.postVisibilityGroupsSelected(_selectedCategoryIds.length),
+                  : l10n.postVisibilityGroupsSelected(
+                      _selectedCategoryIds.length),
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12,
@@ -1245,7 +1138,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
           ),
           child: Column(
             children: [
-              for (var index = 0; index < _friendCategories.length; index++) ...[
+              for (var index = 0;
+                  index < _friendCategories.length;
+                  index++) ...[
                 _buildGroupSelectionButton(_friendCategories[index]),
                 if (index != _friendCategories.length - 1)
                   const SizedBox(height: 10),
@@ -1327,7 +1222,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
                 _visibility = 'category';
               });
             },
-            child: _visibility == 'category' ? _buildGroupSelectionSection() : null,
+            child: _visibility == 'category'
+                ? _buildGroupSelectionSection()
+                : null,
           ),
         ],
       ),
@@ -1338,8 +1235,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 220),
       transitionBuilder: (child, animation) {
-        final beginOffset =
-            Offset(_isForwardTransition ? 0.12 : -0.12, 0);
+        final beginOffset = Offset(_isForwardTransition ? 0.12 : -0.12, 0);
         return SlideTransition(
           position: Tween<Offset>(
             begin: beginOffset,
@@ -1367,7 +1263,8 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.white,
-        appBar: _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
+        appBar:
+            _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
         body: _buildAnimatedBody(),
       ),
     );

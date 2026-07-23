@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import '../l10n/app_localizations.dart';
 
 class SnackChat {
+  static final DateTime noExpirationDate = DateTime.utc(9999, 12, 31);
+
   final String id;
   final String title;
   final String creatorId;
@@ -35,11 +37,16 @@ class SnackChat {
     required this.lastMessageSenderId,
     required this.unreadCount,
     required this.updatedAt,
-  });
+  }) : assert(
+          activeDurationHours == 0 || activeDurationHours == 24,
+          'Snack Chat duration must be 0 or 24 hours.',
+        );
 
   int get participantCount => participantIds.length;
+  bool get hasNoExpiration => activeDurationHours == 0;
 
   bool isExpired([DateTime? now]) {
+    if (hasNoExpiration) return false;
     final base = now ?? DateTime.now();
     return expiresAt.isBefore(base);
   }
@@ -69,9 +76,10 @@ class SnackChat {
       id: doc.id,
       title: (data['title'] ?? '').toString(),
       creatorId: (data['creatorId'] ?? '').toString(),
-      participantIds:
-          (data['participantIds'] as List?)?.map((e) => e.toString()).toList() ??
-              const <String>[],
+      participantIds: (data['participantIds'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const <String>[],
       visibleToCategoryIds: (data['visibleToCategoryIds'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -79,21 +87,19 @@ class SnackChat {
       createdAt: parseDate(data['createdAt'], DateTime.now()),
       activeDurationHours: (() {
         final raw = data['activeDurationHours'];
-        if (raw is int && (raw == 24 || raw == 48)) return raw;
-        final createdAt = parseDate(data['createdAt'], DateTime.now());
-        final expiresAt = parseDate(
-          data['expiresAt'],
-          createdAt.add(const Duration(days: 1)),
-        );
-        final diff = expiresAt.difference(createdAt).inHours;
-        return diff >= 48 ? 48 : 24;
+        return raw == 0 ? 0 : 24;
       })(),
-      expiresAt:
-          parseDate(data['expiresAt'], DateTime.now().add(const Duration(days: 1))),
+      expiresAt: parseDate(
+        data['expiresAt'],
+        data['activeDurationHours'] == 0
+            ? noExpirationDate
+            : DateTime.now().add(const Duration(days: 1)),
+      ),
       favoriteUserIds: (data['favoriteUserIds'] as List?)
               ?.map((e) => e.toString())
               .toList() ??
-          ((data['isFavorited'] == true && (data['creatorId'] ?? '').toString().isNotEmpty)
+          ((data['isFavorited'] == true &&
+                  (data['creatorId'] ?? '').toString().isNotEmpty)
               ? <String>[(data['creatorId'] ?? '').toString()]
               : const <String>[]),
       lastMessage: (data['lastMessage'] ?? '').toString(),

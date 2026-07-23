@@ -7,7 +7,9 @@ import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/post.dart';
+import '../models/post_category.dart';
 import '../services/post_service.dart';
+import '../ui/widgets/post_category_selector.dart';
 
 class EditPostScreen extends StatefulWidget {
   final Post post;
@@ -32,6 +34,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   bool _isSubmitting = false;
   bool _isResolvingSelectedImages = false;
   bool _canSubmit = false;
+  late PostCategory _selectedPostCategory;
 
   bool get _isPollLocked =>
       widget.post.type == 'poll' && (widget.post.pollTotalVotes > 0);
@@ -40,6 +43,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   void initState() {
     super.initState();
     _keptImageUrls = List<String>.from(widget.post.imageUrls);
+    _selectedPostCategory = widget.post.postCategory;
     _contentController.text = widget.post.content;
     _contentController.addListener(_checkCanSubmit);
     _checkCanSubmit();
@@ -56,8 +60,10 @@ class _EditPostScreenState extends State<EditPostScreen> {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
     final hasAnyImage = _keptImageUrls.isNotEmpty || _selectedAssets.isNotEmpty;
 
-    final can =
-        !_isSubmitting && !_isResolvingSelectedImages && !_isPollLocked && (contentNotEmpty || hasAnyImage);
+    final can = !_isSubmitting &&
+        !_isResolvingSelectedImages &&
+        !_isPollLocked &&
+        (contentNotEmpty || hasAnyImage);
     if (can != _canSubmit && mounted) {
       setState(() => _canSubmit = can);
     } else {
@@ -153,7 +159,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
     try {
       // 업로드 직전 파일 리스트 동기화(안전)
-      if (_selectedAssets.isNotEmpty && _selectedImages.length != _selectedAssets.length) {
+      if (_selectedAssets.isNotEmpty &&
+          _selectedImages.length != _selectedAssets.length) {
         await _syncSelectedImagesFromAssets();
       }
       if (!mounted) return;
@@ -161,8 +168,11 @@ class _EditPostScreenState extends State<EditPostScreen> {
       final updated = await _postService.updatePost(
         post: widget.post,
         content: _contentController.text.trim(),
+        categoryKey: _selectedPostCategory.key,
         keptImageUrls: List<String>.from(_keptImageUrls),
-        newImageFiles: _selectedImages.isNotEmpty ? List<File>.from(_selectedImages) : null,
+        newImageFiles: _selectedImages.isNotEmpty
+            ? List<File>.from(_selectedImages)
+            : null,
       );
 
       if (!mounted) return;
@@ -225,10 +235,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
                         width: 96,
                         height: 96,
                         fit: BoxFit.cover,
-                        placeholder: (_, __) => Container(color: const Color(0xFFF3F4F6)),
+                        placeholder: (_, __) =>
+                            Container(color: const Color(0xFFF3F4F6)),
                         errorWidget: (_, __, ___) => Container(
                           color: const Color(0xFFF3F4F6),
-                          child: const Center(child: Icon(Icons.broken_image_outlined)),
+                          child: const Center(
+                              child: Icon(Icons.broken_image_outlined)),
                         ),
                       ),
                     ),
@@ -237,7 +249,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       right: 6,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: _isSubmitting ? null : () => _removeExistingUrl(index),
+                        onTap: _isSubmitting
+                            ? null
+                            : () => _removeExistingUrl(index),
                         child: Container(
                           padding: const EdgeInsets.all(5),
                           decoration: const BoxDecoration(
@@ -303,7 +317,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       right: 6,
                       child: GestureDetector(
                         behavior: HitTestBehavior.opaque,
-                        onTap: _isSubmitting ? null : () => _removeNewAsset(index),
+                        onTap:
+                            _isSubmitting ? null : () => _removeNewAsset(index),
                         child: Container(
                           padding: const EdgeInsets.all(5),
                           decoration: const BoxDecoration(
@@ -401,6 +416,15 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   ),
                 ),
               const SizedBox(height: 12),
+              PostCategorySelector(
+                selected: _selectedPostCategory,
+                enabled: !_isSubmitting && !_isPollLocked,
+                onChanged: (category) {
+                  setState(() => _selectedPostCategory = category);
+                  _checkCanSubmit();
+                },
+              ),
+              const SizedBox(height: 16),
               Container(
                 height: 220,
                 decoration: BoxDecoration(
@@ -438,7 +462,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: (_isSubmitting || _isPollLocked) ? null : _selectImages,
+                      onPressed: (_isSubmitting || _isPollLocked)
+                          ? null
+                          : _selectImages,
                       icon: const Icon(Icons.image_outlined),
                       label: Text(
                         l10n.imageAttachment,
@@ -450,14 +476,17 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: const Color(0xFF111827),
                         side: const BorderSide(color: Color(0xFFE5E7EB)),
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(
+                            vertical: 12, horizontal: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF3F4F6),
                       borderRadius: BorderRadius.circular(999),
@@ -484,4 +513,3 @@ class _EditPostScreenState extends State<EditPostScreen> {
     );
   }
 }
-

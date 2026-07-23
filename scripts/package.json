@@ -4,6 +4,9 @@
   "description": "Firebase setup scripts for Wefilling",
   "scripts": {
     "add-drinks": "node add_drinks_places.js",
+    "migrate-post-category:dry-run": "node migrate_post_category.js",
+    "migrate-post-category:apply": "node migrate_post_category.js --apply",
+    "test-post-category-migration": "node --test migrate_post_category.test.js",
     "setup-places": "node setup_recommended_places.js"
   },
   "dependencies": {

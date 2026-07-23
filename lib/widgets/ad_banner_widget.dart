@@ -3,12 +3,10 @@
 
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/ad_banner.dart';
 import '../services/ad_banner_service.dart';
 import '../screens/ad_showcase_screen.dart';
-import '../utils/logger.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 
@@ -101,30 +99,6 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     super.dispose();
   }
 
-  Future<void> _openUrl(String url) async {
-    try {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        _showMessage('링크를 열 수 없습니다');
-      }
-    } catch (e) {
-      _showMessage('오류가 발생했습니다');
-    }
-  }
-
-  void _showMessage(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     if (!mounted || _banners.isEmpty) {
@@ -132,8 +106,8 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
     }
 
     return Container(
-      height: 156,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      height: 116,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: const BoxDecoration(
         color: BrandColors.surface,
       ),
@@ -166,24 +140,15 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
           // 페이지 인디케이터
           if (_banners.length > 1)
             Positioned(
-              bottom: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.6),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${_currentIndex + 1}/${_banners.length}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+              top: 0,
+              right: 2,
+              child: Text(
+                '${_currentIndex + 1}/${_banners.length}',
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  color: Color(0xFF6B7280),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
@@ -212,12 +177,12 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
                     imageUrl: banner.imageUrl!,
-                    width: 100,
-                    height: 100,
+                    width: 84,
+                    height: 84,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      width: 100,
-                      height: 100,
+                      width: 84,
+                      height: 84,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
                         borderRadius: BorderRadius.circular(12),
@@ -241,7 +206,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                 )
               : _buildIconPlaceholder(),
 
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
 
           // 텍스트 영역
           Expanded(
@@ -257,7 +222,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                         banner.title,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 16,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
                         ),
@@ -290,14 +255,14 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                   ],
                 ),
 
-                const SizedBox(height: 6),
+                const SizedBox(height: 4),
 
                 // 설명
                 Text(
                   banner.description,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey[600],
                     height: 1.4,
@@ -315,7 +280,7 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
           Icon(
             Icons.arrow_forward_ios,
             color: Colors.grey[400],
-            size: 18,
+            size: 16,
           ),
         ],
       ),
@@ -325,20 +290,20 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   /// 이미지가 없을 때 표시할 아이콘 플레이스홀더
   Widget _buildIconPlaceholder() {
     return Container(
-      width: 100,
-      height: 100,
+      width: 84,
+      height: 84,
       decoration: BoxDecoration(
-        color: AppColors.pointColor.withOpacity(0.1),
+        color: AppColors.pointColor.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: AppColors.pointColor.withOpacity(0.2),
+          color: AppColors.pointColor.withValues(alpha: 0.2),
           width: 2,
         ),
       ),
-      child: Icon(
+      child: const Icon(
         Icons.campaign_rounded,
         color: AppColors.pointColor,
-        size: 48,
+        size: 40,
       ),
     );
   }

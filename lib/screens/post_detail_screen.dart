@@ -13,6 +13,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/post.dart';
+import '../constants/app_constants.dart';
 import '../models/comment.dart';
 import '../services/post_service.dart';
 import '../services/comment_service.dart';
@@ -58,7 +59,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   final TextEditingController _commentController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _commentFocusNode = FocusNode();
-  
+
   // "맨 위로" 버튼 노출 상태 (상세 화면에서 글/댓글이 길 때 UX 개선)
   bool _showScrollToTop = false;
   static const double _scrollToTopShowOffset = 520;
@@ -72,7 +73,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   bool _isTogglingSave = false;
   late Post _currentPost;
   bool _accessValidated = false;
-  final PageController _imagePageController = PageController(initialPage: 0, keepPage: false);
+  final PageController _imagePageController =
+      PageController(initialPage: 0, keepPage: false);
   int _currentImageIndex = 0;
 
   // 이미지 재시도 관련 상태
@@ -82,13 +84,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   static const int _maxPrefetchImages = 6; // 한 화면에서 병렬 프리패치 상한
   bool _didPrefetchImages = false;
   Future<List<_PostAudienceUser>>? _audienceUsersFuture;
-  
+
   static const Map<String, String> _imageHttpHeaders = {
     'User-Agent':
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
     'Accept': 'image/*',
   };
-  
+
   // 익명 번호 매핑 (userId -> 익명번호)
   final Map<String, int> _anonymousUserMap = {};
 
@@ -118,21 +120,21 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _validateAccessAndRefreshPost();
     });
     _audienceUsersFuture = _loadAudienceUsers(_currentPost);
-    
+
     // 디버그용: 이미지 URL 확인
     if (kDebugMode) {
       _logImageUrls();
     }
-    
+
     // 댓글 스트림 구독: 댓글 수를 실시간으로 UI에 반영
     // ⚠️ 주의: asBroadcastStream + 선구독(카운트) + 후구독(UI) 조합은
     // 첫 스냅샷이 UI에 전달되지 않아 StreamBuilder가 무한 로딩에 빠질 수 있음.
     // → 단일 구독(StreamBuilder)로만 사용하고, 카운트는 builder에서 동기화.
     _commentsStream = _commentService.getCommentsWithReplies(_currentPost.id);
-    
+
     // 스크롤 상태 감지 → "맨 위로" 버튼 자연스러운 노출/숨김
     _scrollController.addListener(_handleScrollChanged);
-    
+
     // 여러 이미지는 진입 시 병렬 프리패치로 "넘길 때 바로 보이게" 최적화
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _prefetchPostImages(initial: true);
@@ -220,7 +222,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final reportedUserId = _currentPost.userId.trim();
-    if (reportedUserId.isEmpty || reportedUserId == 'deleted' || reportedUserId == currentUser.uid) {
+    if (reportedUserId.isEmpty ||
+        reportedUserId == 'deleted' ||
+        reportedUserId == currentUser.uid) {
       return;
     }
 
@@ -284,7 +288,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success) {
         // 포스트 상세 화면을 닫고 이전 화면(포스트 목록)으로 돌아가기
         Navigator.of(context).pop();
-        
+
         // 성공 메시지 표시
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -298,9 +302,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              isKo
-                  ? '익명 게시글 차단에 실패했습니다.'
-                  : 'Failed to block anonymous post.',
+              isKo ? '익명 게시글 차단에 실패했습니다.' : 'Failed to block anonymous post.',
             ),
             backgroundColor: Colors.red,
           ),
@@ -310,7 +312,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final targetUserId = _currentPost.userId.trim();
-    if (targetUserId.isEmpty || targetUserId == 'deleted' || targetUserId == currentUser.uid) {
+    if (targetUserId.isEmpty ||
+        targetUserId == 'deleted' ||
+        targetUserId == currentUser.uid) {
       return;
     }
 
@@ -325,11 +329,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     );
 
     if (!mounted) return;
-    if (result != null && result is Map<String, dynamic> && result['success'] == true) {
+    if (result != null &&
+        result is Map<String, dynamic> &&
+        result['success'] == true) {
       Navigator.of(context).pop();
     }
   }
-  
+
   @override
   void dispose() {
     _likeHoldTimer?.cancel();
@@ -346,8 +352,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!_scrollController.hasClients) return;
 
     final offset = _scrollController.offset;
-    final shouldShow =
-        _showScrollToTop ? offset > _scrollToTopHideOffset : offset > _scrollToTopShowOffset;
+    final shouldShow = _showScrollToTop
+        ? offset > _scrollToTopHideOffset
+        : offset > _scrollToTopShowOffset;
 
     if (shouldShow != _showScrollToTop) {
       setState(() => _showScrollToTop = shouldShow);
@@ -401,7 +408,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       height: 44,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(999),
-                        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                        border: Border.all(
+                            color: const Color(0xFFE5E7EB), width: 1),
                       ),
                       child: const Icon(
                         Icons.keyboard_arrow_up_rounded,
@@ -418,7 +426,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       ),
     );
   }
-  
+
   /// 다중 이미지 인디케이터(이미지 아래 점/바)
   /// - 점 크기는 고정, 활성 점만 좌우로 이동 (더 자연스러운 UX)
   Widget _buildImageDotsIndicator({
@@ -454,7 +462,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                       return Container(
                         width: dotSize,
                         height: dotSize,
-                        margin: EdgeInsets.only(right: i == count - 1 ? 0 : dotGap),
+                        margin:
+                            EdgeInsets.only(right: i == count - 1 ? 0 : dotGap),
                         decoration: const BoxDecoration(
                           color: inactiveColor,
                           shape: BoxShape.circle,
@@ -588,9 +597,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
     const maxShown = 50;
-    final shownIds =
-        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
-    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+    final shownIds = orderedUnique.length > maxShown
+        ? orderedUnique.take(maxShown).toList()
+        : orderedUnique;
+    final hiddenCount =
+        orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -693,7 +704,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         child: FutureBuilder<List<_PostLikeUser>>(
                           future: _fetchLikeUsers(shownIds),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState != ConnectionState.done &&
+                            if (snapshot.connectionState !=
+                                    ConnectionState.done &&
                                 !snapshot.hasData) {
                               return const Center(
                                 child: CircularProgressIndicator(
@@ -701,11 +713,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                 ),
                               );
                             }
-                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            final users =
+                                snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
                               return Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  padding:
+                                      const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
@@ -767,7 +781,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                                             fontFamily: 'Pretendard',
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
-                                          )).copyWith(color: const Color(0xFF111827)),
+                                          )).copyWith(
+                                              color: const Color(0xFF111827)),
                                         ),
                                       ),
                                       if (u.nationality != null) ...[
@@ -867,7 +882,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           .collection('friend_categories')
           .doc(trimmedCategoryId)
           .get();
-      final friendIds = List<String>.from(snap.data()?['friendIds'] ?? const []);
+      final friendIds =
+          List<String>.from(snap.data()?['friendIds'] ?? const []);
       for (final uid in friendIds) {
         final trimmed = uid.trim();
         if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
@@ -890,7 +906,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     for (var index = 0; index < userIds.length; index += chunkSize) {
       final chunk = userIds.sublist(
         index,
-        (index + chunkSize) > userIds.length ? userIds.length : (index + chunkSize),
+        (index + chunkSize) > userIds.length
+            ? userIds.length
+            : (index + chunkSize),
       );
 
       final snap = await _firestore
@@ -955,7 +973,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       Logger.log('  - post.userId: ${_currentPost.userId}');
       Logger.log('  - post.isAnonymous: ${_currentPost.isAnonymous}');
       Logger.log('  - currentUser.uid: ${currentUser.uid}');
-      
+
       // 본인에게 DM 전송 체크 (익명 포함)
       if (_currentPost.userId == currentUser.uid) {
         Logger.log('❌ 본인 게시글에는 DM 불가');
@@ -972,7 +990,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       }
 
       // 친구가 아니면 DM 불가 (친구에게만 메시지)
-      final status = await RelationshipService().getRelationshipStatus(_currentPost.userId);
+      final status = await RelationshipService()
+          .getRelationshipStatus(_currentPost.userId);
       if (status != RelationshipStatus.friends) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -995,11 +1014,12 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(_currentPost.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
+        Logger.log(
+            '❌ 잘못된 userId 형식: ${_currentPost.userId} (길이: ${_currentPost.userId.length}자)');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -1011,7 +1031,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (_currentPost.userId == 'deleted' || _currentPost.userId.isEmpty) {
         Logger.log('❌ 탈퇴했거나 삭제된 사용자');
@@ -1026,7 +1046,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         }
         return;
       }
-      
+
       // ✅ UX 개선: 기존 대화방이 있으면 "그 방의 연장선"으로 DM 전송
       // - 익명 게시글은 실명 대화와 분리(기존 정책 유지)
       // - 전체공개/카테고리 등은 기존 1:1 방(uidA_uidB)로 통일
@@ -1038,17 +1058,23 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         postId: _currentPost.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
       );
-      
-      Logger.log('✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
+
+      Logger.log(
+          '✅ DM conversation ID 생성: $conversationId (익명: $shouldUseAnonymousChat)');
 
       if (mounted) {
-        final originPostImageUrl =
-            (_currentPost.imageUrls.isNotEmpty ? _currentPost.imageUrls.first : '').trim();
+        final originPostImageUrl = (_currentPost.imageUrls.isNotEmpty
+                ? _currentPost.imageUrls.first
+                : '')
+            .trim();
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = _currentPost.content.trim();
         final rawTitle = _currentPost.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
-        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
+        final base = rawContent.isNotEmpty
+            ? rawContent
+            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final originPostPreview =
+            base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1176,7 +1202,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return FutureBuilder<List<_PostAudienceUser>>(
       future: _audienceUsersFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done && !snapshot.hasData) {
+        if (snapshot.connectionState != ConnectionState.done &&
+            !snapshot.hasData) {
           return const Padding(
             padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
             child: SizedBox(
@@ -1224,7 +1251,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
-                    for (var index = 0; index < audienceUsers.length; index++) ...[
+                    for (var index = 0;
+                        index < audienceUsers.length;
+                        index++) ...[
                       _buildAudienceAvatarItem(audienceUsers[index]),
                       if (index != audienceUsers.length - 1)
                         const SizedBox(width: 14),
@@ -1276,7 +1305,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       final newSavedStatus = await _postService.toggleSavePost(widget.post.id);
-      
+
       if (mounted) {
         setState(() {
           _isSaved = newSavedStatus;
@@ -1285,9 +1314,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              newSavedStatus ? (AppLocalizations.of(context)!.postSaved ?? "") : AppLocalizations.of(context)!.postUnsaved
-            ),
+            content: Text(newSavedStatus
+                ? (AppLocalizations.of(context)!.postSaved ?? "")
+                : AppLocalizations.of(context)!.postUnsaved),
             backgroundColor: newSavedStatus ? Colors.green : Colors.grey,
             duration: Duration(seconds: 1),
           ),
@@ -1298,7 +1327,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         setState(() {
           _isTogglingSave = false;
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(AppLocalizations.of(context)!.error ?? ""),
@@ -1507,7 +1536,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!isLoggedIn || user == null) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.loginToComment ?? "")));
+      ).showSnackBar(SnackBar(
+          content: Text(AppLocalizations.of(context)!.loginToComment ?? "")));
       return;
     }
 
@@ -1540,22 +1570,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         // 실패 시 UI 롤백
         setState(() {
           _isLiked = !_isLiked;
-        // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
-        if (_isLiked) {
-          _currentPost = _currentPost.copyWith(
-            likes: _currentPost.likes + 1,
-            likedBy: [..._currentPost.likedBy, user.uid],
-          );
-        } else {
-          _currentPost = _currentPost.copyWith(
-            likes: _currentPost.likes - 1,
-            likedBy: _currentPost.likedBy.where((id) => id != user.uid).toList(),
-          );
-        }
+          // 좋아요 수와 목록 롤백 - copyWith 사용하여 모든 필드 보존
+          if (_isLiked) {
+            _currentPost = _currentPost.copyWith(
+              likes: _currentPost.likes + 1,
+              likedBy: [..._currentPost.likedBy, user.uid],
+            );
+          } else {
+            _currentPost = _currentPost.copyWith(
+              likes: _currentPost.likes - 1,
+              likedBy:
+                  _currentPost.likedBy.where((id) => id != user.uid).toList(),
+            );
+          }
 
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
+          ).showSnackBar(SnackBar(
+              content:
+                  Text(AppLocalizations.of(context)!.commentLikeFailed ?? "")));
         });
       }
 
@@ -1568,7 +1601,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -1616,11 +1650,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         Navigator.of(context).pop(true); // true를 반환하여 삭제되었음을 알림
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleted ?? "")));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)!.postDeleted ?? "")));
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.postDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.postDeleteFailed ?? "")));
         setState(() {
           _isDeleting = false;
         });
@@ -1629,7 +1666,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
         setState(() {
           _isDeleting = false;
         });
@@ -1651,7 +1689,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       _replyToUserName = replyToUserName;
       _replyTargetCommentId = targetCommentId;
     });
-    
+
     // 입력창으로 포커스 및 스크롤 이동
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToInputAndFocus();
@@ -1703,7 +1741,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     try {
       final bool success;
-      
+
       if (_isReplyMode) {
         // 대댓글 작성
         success = await _commentService.addComment(
@@ -1713,7 +1751,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
         );
-        Logger.log('💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
+        Logger.log(
+            '💬 대댓글 작성 완료 (parent: $_replyParentTopLevelId, replyTo: $_replyToUserId)');
       } else {
         // 일반 댓글 작성
         success = await _commentService.addComment(widget.post.id, content);
@@ -1731,7 +1770,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
       if (success && mounted) {
         _commentController.clear();
-        
+
         // 대댓글 모드 종료
         if (_isReplyMode) {
           _exitReplyMode();
@@ -1747,14 +1786,17 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentSubmitFailed ?? "")));
       }
     } catch (e) {
       Logger.error('❌ 댓글 작성 오류: $e');
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     } finally {
       if (mounted) {
@@ -1767,16 +1809,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   // 댓글 삭제 (대댓글 포함)
   Future<void> _deleteCommentWithReplies(String commentId) async {
-    final success = await _commentService.deleteCommentWithReplies(commentId, _currentPost.id);
-    
+    final success = await _commentService.deleteCommentWithReplies(
+        commentId, _currentPost.id);
+
     if (success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
+        SnackBar(
+            content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")),
       );
       await _refreshPost();
     } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")),
+        SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")),
       );
     }
   }
@@ -1792,24 +1838,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       if (success && mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
+        ).showSnackBar(SnackBar(
+            content: Text(AppLocalizations.of(context)!.commentDeleted ?? "")));
 
         // 게시글 정보 새로고침 (댓글 수 업데이트)
         await _refreshPost();
       } else if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
+        ).showSnackBar(SnackBar(
+            content:
+                Text(AppLocalizations.of(context)!.commentDeleteFailed ?? "")));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: $e')));
+        ).showSnackBar(SnackBar(
+            content: Text('${AppLocalizations.of(context)!.error}: $e')));
       }
     }
   }
-
 
   // 알림 시간 포맷팅
   String _formatNotificationTime(DateTime dateTime) {
@@ -1844,7 +1893,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   void _logImageUrls() {
     // 로깅 제거 (필요시 디버거 사용)
   }
-  
+
   /// 익명 게시글의 댓글 작성자 표시명 생성
   /// - 글쓴이: "글쓴이"
   /// - 다른 사람: "익명1", "익명2", ... (같은 사람은 같은 번호)
@@ -1853,19 +1902,20 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     if (!_currentPost.isAnonymous) {
       return comment.authorNickname;
     }
-    
+
     // 익명 게시글인 경우
     // 글쓴이인 경우
     if (comment.userId == _currentPost.userId) {
       return AppLocalizations.of(context)!.author ?? "";
     }
-    
+
     // 다른 사람인 경우 익명 번호 할당
     if (!_anonymousUserMap.containsKey(comment.userId)) {
       _anonymousUserMap[comment.userId] = _anonymousUserMap.length + 1;
     }
-    
-    return AppLocalizations.of(context)!.anonymousUser('${_anonymousUserMap[comment.userId]}');
+
+    return AppLocalizations.of(context)!
+        .anonymousUser('${_anonymousUserMap[comment.userId]}');
   }
 
   // 이미지 로딩 재시도 로직
@@ -1905,7 +1955,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     });
   }
 
-  Future<void> _prefetchPostImages({required bool initial, int? aroundIndex}) async {
+  Future<void> _prefetchPostImages(
+      {required bool initial, int? aroundIndex}) async {
     if (!mounted) return;
     final urls = _currentPost.imageUrls;
     if (urls.length <= 1) return;
@@ -1944,7 +1995,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   // 이미지 로딩 성공 처리
   void _onImageLoadSuccess(String imageUrl) {
     if (_imageRetryCount.containsKey(imageUrl)) {
-      Logger.log('✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
+      Logger.log(
+          '✅ 이미지 로딩 성공: $imageUrl (${_imageRetryCount[imageUrl]}회 재시도 후)');
       setState(() {
         _imageRetryCount.remove(imageUrl);
         _imageRetrying.remove(imageUrl);
@@ -2051,7 +2103,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                retryCount >= _maxRetryCount ? Icons.error_outline : Icons.broken_image,
+                retryCount >= _maxRetryCount
+                    ? Icons.error_outline
+                    : Icons.broken_image,
                 color: Colors.grey[600],
                 size: isFullScreen ? 32 : 24,
               ),
@@ -2088,7 +2142,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.blue.shade600,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: const Size(0, 0),
                   ),
                 ),
@@ -2110,11 +2165,29 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            DesignTokens.s20,
+            DesignTokens.s16,
+            DesignTokens.s20,
+            0,
+          ),
+          child: Text(
+            _currentPost.postCategory.label(l10n),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.pointColor,
+              height: 1.2,
+            ),
+          ),
+        ),
         if (hasTitle || hasBody)
           Padding(
             padding: const EdgeInsets.fromLTRB(
               DesignTokens.s20,
-              DesignTokens.s16,
+              DesignTokens.s8,
               DesignTokens.s20,
               0,
             ),

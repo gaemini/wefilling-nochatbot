@@ -312,7 +312,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           ),
                                         ),
                                         SizedBox(height: isVeryShort ? 14 : 20),
-                                        AppButton(
+                                        _LoginMethodButton(
                                           label: AppLocalizations.of(context)!.appleLogin,
                                           onPressed: authProvider.isLoading
                                               ? null
@@ -320,8 +320,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                     context,
                                                     authProvider,
                                                   ),
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
+                                          backgroundColor: const Color(0xFFF3F4F6),
+                                          foregroundColor: const Color(0xFF111827),
                                           leading: Icon(
                                             Icons.apple,
                                             size: isVeryShort ? 19 : 20,
@@ -329,7 +329,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           ),
                                         ),
                                         SizedBox(height: buttonGap),
-                                        AppButton(
+                                        _LoginMethodButton(
                                           label: AppLocalizations.of(context)!.googleLogin,
                                           onPressed: authProvider.isLoading
                                               ? null
@@ -337,8 +337,8 @@ class _LoginScreenState extends State<LoginScreen>
                                                     context,
                                                     authProvider,
                                                   ),
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
+                                          backgroundColor: const Color(0xFFF3F4F6),
+                                          foregroundColor: const Color(0xFF111827),
                                           leading: Image.asset(
                                             'assets/icons/google_logo.png',
                                             width: isVeryShort ? 18 : 20,
@@ -355,7 +355,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           ),
                                         ),
                                         SizedBox(height: buttonGap),
-                                        AppButton(
+                                        _LoginMethodButton(
                                           label: AppLocalizations.of(context)!.emailLogin,
                                           onPressed: authProvider.isLoading
                                               ? null
@@ -367,12 +367,12 @@ class _LoginScreenState extends State<LoginScreen>
                                                     ),
                                                   );
                                                 },
-                                          variant: AppButtonVariant.outline,
-                                          size: AppButtonSize.m,
+                                          backgroundColor: const Color(0xFFF3F4F6),
+                                          foregroundColor: const Color(0xFF111827),
                                           leading: Icon(
                                             Icons.email_outlined,
                                             size: isVeryShort ? 18 : 19,
-                                            color: Colors.black87,
+                                            color: const Color(0xFF374151),
                                           ),
                                         ),
                                         SizedBox(height: isVeryShort ? 8 : 12),
@@ -562,10 +562,23 @@ class _LoginScreenState extends State<LoginScreen>
               },
             ),
             const SizedBox(height: 20),
-            AppButton(
-              label: currentLocale == 'ko' ? '취소' : 'Cancel',
-              onPressed: () => Navigator.pop(dialogContext),
-              variant: AppButtonVariant.outline,
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF6B7280),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                ),
+                child: Text(
+                  currentLocale == 'ko' ? '취소' : 'Cancel',
+                  style: const TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -1003,6 +1016,65 @@ class _LoginScreenState extends State<LoginScreen>
   }
 }
 
+class _LoginMethodButton extends StatelessWidget {
+  final String label;
+  final VoidCallback? onPressed;
+  final Widget leading;
+  final Color backgroundColor;
+  final Color foregroundColor;
+
+  const _LoginMethodButton({
+    required this.label,
+    required this.onPressed,
+    required this.leading,
+    required this.backgroundColor,
+    required this.foregroundColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
+          disabledBackgroundColor: backgroundColor.withValues(alpha: 0.45),
+          disabledForegroundColor: foregroundColor.withValues(alpha: 0.55),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            leading,
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // Google 로고를 그리는 CustomPainter
 class GoogleLogoPainter extends CustomPainter {
   @override
@@ -1099,19 +1171,14 @@ class _LanguageOption extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        child: Container(
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: isSelected 
-                ? const Color(0xFF6CCFF6).withOpacity(0.08) 
-                : const Color(0xFFF9FAFB),
+            color: isSelected
+                ? const Color(0xFFE8F6FC)
+                : const Color(0xFFF5F6F8),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isSelected 
-                  ? const Color(0xFF6CCFF6) 
-                  : const Color(0xFFE5E7EB),
-              width: isSelected ? 2 : 1,
-            ),
           ),
           child: Row(
             children: [
@@ -1126,29 +1193,14 @@ class _LanguageOption extends StatelessWidget {
                   ),
                 ),
               ),
-              AnimatedContainer(
+              AnimatedOpacity(
                 duration: const Duration(milliseconds: 180),
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isSelected 
-                      ? const Color(0xFF6CCFF6) 
-                      : Colors.transparent,
-                  border: Border.all(
-                    color: isSelected
-                        ? const Color(0xFF6CCFF6)
-                        : const Color(0xFFD1D5DB),
-                    width: 2,
-                  ),
+                opacity: isSelected ? 1 : 0,
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  size: 23,
+                  color: Color(0xFF4DBCE8),
                 ),
-                child: isSelected
-                    ? const Icon(
-                        Icons.check,
-                        size: 14,
-                        color: Colors.white,
-                      )
-                    : null,
               ),
             ],
           ),

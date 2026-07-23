@@ -81,6 +81,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get myPage => '내 정보';
 
   @override
+  String get snackChat => '스낵챗';
+
+  @override
+  String get snackChatTabSemantic => '스낵챗 탭';
+
+  @override
+  String get groupsTabSemantic => '그룹 탭';
+
+  @override
+  String get groupNoFriendsSelected => '선택한 친구가 여기에 표시됩니다.';
+
+  @override
+  String get groupNoSearchResults => '검색 결과가 없습니다.';
+
+  @override
+  String get groupRemoveFriendHint => '두 번 탭하여 이 그룹에서 제외합니다.';
+
+  @override
   String get home => '홈';
 
   @override
@@ -288,20 +306,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatVisibilityDuration => '유지 시간';
 
   @override
-  String get snackChatVisibilityDurationHint =>
-      '마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.';
+  String get snackChatVisibilityDurationHint => '24시간 후 종료하거나 계속 유지할 수 있습니다.';
 
   @override
   String get snackChatDuration24Hours => '24시간';
 
   @override
-  String get snackChatDuration48Hours => '48시간';
+  String get snackChatDurationNoEnd => '종료 없음';
 
   @override
   String get snackChatSelectParticipants => '참여자 선택';
 
   @override
-  String get snackChatParticipantLimit => '최대 6명까지 친구를 초대할 수 있습니다';
+  String get snackChatParticipantLimit => '함께할 친구를 자유롭게 초대하세요';
+
+  @override
+  String snackChatParticipantCount(int count) {
+    return '$count명 참여';
+  }
 
   @override
   String get snackChatMe => '나';
@@ -313,6 +335,32 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatInviteFriends => '친구 초대';
 
   @override
+  String get snackChatInviteStepTitle => '친구 초대';
+
+  @override
+  String get snackChatInviteStepHint => '함께할 친구를 한 명 이상 선택해주세요.';
+
+  @override
+  String get snackChatSelectedFriends => '선택한 친구';
+
+  @override
+  String get snackChatNoFriendsSelected => '선택한 친구가 여기에 표시됩니다.';
+
+  @override
+  String get snackChatFriendList => '친구 목록';
+
+  @override
+  String get snackChatDragForFriends => '드래그해서 더 보기';
+
+  @override
+  String get snackChatDetailsStepTitle => '방 설정';
+
+  @override
+  String snackChatDetailsStepHint(int count) {
+    return '$count명이 함께할 방을 만들어보세요.';
+  }
+
+  @override
   String snackChatSelectionComplete(int count) {
     return '$count명 선택 완료';
   }
@@ -321,7 +369,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatNoFriendsToInvite => '초대 가능한 친구가 없습니다.';
 
   @override
-  String get snackChatMaxParticipants => '참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.';
+  String get snackChatMaxParticipants => '초대할 친구를 선택해주세요.';
 
   @override
   String get snackChatEnterTitle => 'Snack Chat 제목을 입력해주세요.';
@@ -345,7 +393,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatGuideTitle => '즐거운 스낵 챗을\n시작해보세요';
 
   @override
-  String get snackChatGuideDesc => '최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.';
+  String get snackChatGuideDesc => '친구들과 가볍게\n즐기는 소셜 채팅 공간입니다.';
 
   @override
   String get editPost => '포스트 수정';
@@ -2933,4 +2981,84 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get snackChatUnfavoriteMessage => '이 Snack Chat을 즐겨찾기에서 해제할까요?';
+
+  @override
+  String get postCategoriesTitle => '카테고리';
+
+  @override
+  String get postCategoriesSubtitle => '관심 있는 주제에서 새로운 이야기를 찾아보세요.';
+
+  @override
+  String get postCategorySelectTitle => '게시글 카테고리';
+
+  @override
+  String get postCategorySelectAction => '카테고리 선택';
+
+  @override
+  String get postCategoryRequired => '게시글 카테고리를 선택해 주세요.';
+
+  @override
+  String postCategoryEmpty(String category) {
+    return '아직 $category 카테고리에 글이 없어요.';
+  }
+
+  @override
+  String get postCategoryEmptySubtitle => '첫 번째 기록을 남겨보세요.';
+
+  @override
+  String get postCategoryCreateAction => '글 작성하기';
+
+  @override
+  String get postCategoryStyle => '스타일';
+
+  @override
+  String get postCategoryStyleDescription => '패션·뷰티·아이템';
+
+  @override
+  String get postCategoryCreate => '크리에이트';
+
+  @override
+  String get postCategoryCreateDescription => '그림·디자인·공예';
+
+  @override
+  String get postCategoryPhoto => '사진';
+
+  @override
+  String get postCategoryPhotoDescription => '사진·영상·카메라';
+
+  @override
+  String get postCategoryContent => '콘텐츠';
+
+  @override
+  String get postCategoryContentDescription => '음악·영화·드라마';
+
+  @override
+  String get postCategoryCafe => '카페';
+
+  @override
+  String get postCategoryCafeDescription => '카페·디저트·공간';
+
+  @override
+  String get postCategoryBooksWriting => '책·글';
+
+  @override
+  String get postCategoryBooksWritingDescription => '독서·글쓰기·문장';
+
+  @override
+  String get postCategoryTravelLocal => '여행·로컬';
+
+  @override
+  String get postCategoryTravelLocalDescription => '여행·동네·장소';
+
+  @override
+  String get postCategoryGlobal => '글로벌';
+
+  @override
+  String get postCategoryGlobalDescription => '언어·문화·유학생';
+
+  @override
+  String get postCategoryOther => '기타';
+
+  @override
+  String get postCategoryOtherDescription => '기존 글과 자유로운 이야기';
 }

@@ -22,9 +22,16 @@ import 'snack_chat_tab_view.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
 
+/// Stable internal tab mapping used by direct-entry routes.
+const int snackChatTabIndex = 0;
+const int groupsTabIndex = 1;
+
 class FriendCategoriesScreen extends StatefulWidget {
   final int initialTabIndex;
-  const FriendCategoriesScreen({super.key, this.initialTabIndex = 0});
+  const FriendCategoriesScreen({
+    super.key,
+    this.initialTabIndex = snackChatTabIndex,
+  });
 
   @override
   State<FriendCategoriesScreen> createState() => _FriendCategoriesScreenState();
@@ -54,7 +61,10 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     _tabController = TabController(
       length: 2,
       vsync: this,
-      initialIndex: widget.initialTabIndex.clamp(0, 1),
+      initialIndex: widget.initialTabIndex.clamp(
+        snackChatTabIndex,
+        groupsTabIndex,
+      ),
     );
     _tabController.addListener(() {
       if (mounted) setState(() {});
@@ -116,13 +126,42 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           preferredSize: const Size.fromHeight(52),
           child: TabBar(
             controller: _tabController,
-            indicatorColor: AppColors.pointColor,
-            indicatorWeight: 2.5,
-            labelColor: AppColors.pointColor,
+            indicator: const UnderlineTabIndicator(
+              borderSide: BorderSide(
+                color: AppColors.pointColor,
+                width: 2.5,
+              ),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(2)),
+            ),
+            labelColor: const Color(0xFF111827),
             unselectedLabelColor: const Color(0xFF9CA3AF),
+            labelStyle: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontWeight: FontWeight.w600,
+            ),
+            unselectedLabelStyle: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontWeight: FontWeight.w500,
+            ),
             tabs: [
-              Tab(text: l10n.groups),
-              const Tab(text: 'Snack Chat'),
+              Tab(
+                child: Semantics(
+                  label: l10n.snackChatTabSemantic,
+                  selected: _tabController.index == snackChatTabIndex,
+                  button: true,
+                  excludeSemantics: true,
+                  child: Text(l10n.snackChat),
+                ),
+              ),
+              Tab(
+                child: Semantics(
+                  label: l10n.groupsTabSemantic,
+                  selected: _tabController.index == groupsTabIndex,
+                  button: true,
+                  excludeSemantics: true,
+                  child: Text(l10n.groups),
+                ),
+              ),
             ],
           ),
         ),
@@ -130,13 +169,13 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
       body: TabBarView(
         controller: _tabController,
         children: [
-          _buildGroupsTab(),
           const SnackChatTabView(),
+          _buildGroupsTab(),
         ],
       ),
-      floatingActionButton: _tabController.index == 0
-          ? _buildCategoryFab()
-          : _buildSnackChatFab(),
+      floatingActionButton: _tabController.index == snackChatTabIndex
+          ? _buildSnackChatFab()
+          : _buildCategoryFab(),
     );
   }
 
@@ -182,8 +221,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         child: AppEmptyState(
           icon: IconStyles.group,
           title: AppLocalizations.of(context)!.createFirstCategory,
-          description: AppLocalizations.of(context)!
-              .createFirstCategoryDescription,
+          description:
+              AppLocalizations.of(context)!.createFirstCategoryDescription,
           illustration: const Center(
             child: CategoryShapesIllustration(),
           ),
@@ -209,9 +248,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               ),
             ),
             child: Text(
-              isKo
-                  ? '그룹을 통해 공개범위를 설정하세요.'
-                  : 'Set visibility through groups.',
+              isKo ? '그룹을 통해 공개범위를 설정하세요.' : 'Set visibility through groups.',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 14,
@@ -758,7 +795,8 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
     super.didUpdateWidget(oldWidget);
     final newKey = '${widget.category.id}_${widget.category.friendIds.length}';
     if (oldWidget.category.id != widget.category.id ||
-        oldWidget.category.friendIds.length != widget.category.friendIds.length) {
+        oldWidget.category.friendIds.length !=
+            widget.category.friendIds.length) {
       _count = widget.cache[newKey] ?? widget.category.friendIds.length;
       if (!widget.cache.containsKey(newKey)) {
         _fetchAndCache();

@@ -242,6 +242,42 @@ abstract class AppLocalizations {
   /// **'내 정보'**
   String get myPage;
 
+  /// No description provided for @snackChat.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗'**
+  String get snackChat;
+
+  /// No description provided for @snackChatTabSemantic.
+  ///
+  /// In ko, this message translates to:
+  /// **'스낵챗 탭'**
+  String get snackChatTabSemantic;
+
+  /// No description provided for @groupsTabSemantic.
+  ///
+  /// In ko, this message translates to:
+  /// **'그룹 탭'**
+  String get groupsTabSemantic;
+
+  /// No description provided for @groupNoFriendsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구가 여기에 표시됩니다.'**
+  String get groupNoFriendsSelected;
+
+  /// No description provided for @groupNoSearchResults.
+  ///
+  /// In ko, this message translates to:
+  /// **'검색 결과가 없습니다.'**
+  String get groupNoSearchResults;
+
+  /// No description provided for @groupRemoveFriendHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'두 번 탭하여 이 그룹에서 제외합니다.'**
+  String get groupRemoveFriendHint;
+
   /// No description provided for @home.
   ///
   /// In ko, this message translates to:
@@ -659,7 +695,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatVisibilityDurationHint.
   ///
   /// In ko, this message translates to:
-  /// **'마지막 대화 기준으로 24시간 또는 48시간 동안 노출됩니다.'**
+  /// **'24시간 후 종료하거나 계속 유지할 수 있습니다.'**
   String get snackChatVisibilityDurationHint;
 
   /// No description provided for @snackChatDuration24Hours.
@@ -668,11 +704,11 @@ abstract class AppLocalizations {
   /// **'24시간'**
   String get snackChatDuration24Hours;
 
-  /// No description provided for @snackChatDuration48Hours.
+  /// No description provided for @snackChatDurationNoEnd.
   ///
   /// In ko, this message translates to:
-  /// **'48시간'**
-  String get snackChatDuration48Hours;
+  /// **'종료 없음'**
+  String get snackChatDurationNoEnd;
 
   /// No description provided for @snackChatSelectParticipants.
   ///
@@ -683,8 +719,14 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatParticipantLimit.
   ///
   /// In ko, this message translates to:
-  /// **'최대 6명까지 친구를 초대할 수 있습니다'**
+  /// **'함께할 친구를 자유롭게 초대하세요'**
   String get snackChatParticipantLimit;
+
+  /// No description provided for @snackChatParticipantCount.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명 참여'**
+  String snackChatParticipantCount(int count);
 
   /// No description provided for @snackChatMe.
   ///
@@ -704,6 +746,54 @@ abstract class AppLocalizations {
   /// **'친구 초대'**
   String get snackChatInviteFriends;
 
+  /// No description provided for @snackChatInviteStepTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 초대'**
+  String get snackChatInviteStepTitle;
+
+  /// No description provided for @snackChatInviteStepHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'함께할 친구를 한 명 이상 선택해주세요.'**
+  String get snackChatInviteStepHint;
+
+  /// No description provided for @snackChatSelectedFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구'**
+  String get snackChatSelectedFriends;
+
+  /// No description provided for @snackChatNoFriendsSelected.
+  ///
+  /// In ko, this message translates to:
+  /// **'선택한 친구가 여기에 표시됩니다.'**
+  String get snackChatNoFriendsSelected;
+
+  /// No description provided for @snackChatFriendList.
+  ///
+  /// In ko, this message translates to:
+  /// **'친구 목록'**
+  String get snackChatFriendList;
+
+  /// No description provided for @snackChatDragForFriends.
+  ///
+  /// In ko, this message translates to:
+  /// **'드래그해서 더 보기'**
+  String get snackChatDragForFriends;
+
+  /// No description provided for @snackChatDetailsStepTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'방 설정'**
+  String get snackChatDetailsStepTitle;
+
+  /// No description provided for @snackChatDetailsStepHint.
+  ///
+  /// In ko, this message translates to:
+  /// **'{count}명이 함께할 방을 만들어보세요.'**
+  String snackChatDetailsStepHint(int count);
+
   /// No description provided for @snackChatSelectionComplete.
   ///
   /// In ko, this message translates to:
@@ -719,7 +809,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatMaxParticipants.
   ///
   /// In ko, this message translates to:
-  /// **'참여자는 최대 6명(본인 포함)까지 선택할 수 있습니다.'**
+  /// **'초대할 친구를 선택해주세요.'**
   String get snackChatMaxParticipants;
 
   /// No description provided for @snackChatEnterTitle.
@@ -767,7 +857,7 @@ abstract class AppLocalizations {
   /// No description provided for @snackChatGuideDesc.
   ///
   /// In ko, this message translates to:
-  /// **'최대 6명과 함께 가볍게\n즐기는 소셜 채팅 공간입니다.'**
+  /// **'친구들과 가볍게\n즐기는 소셜 채팅 공간입니다.'**
   String get snackChatGuideDesc;
 
   /// No description provided for @editPost.
@@ -5623,6 +5713,162 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'이 Snack Chat을 즐겨찾기에서 해제할까요?'**
   String get snackChatUnfavoriteMessage;
+
+  /// No description provided for @postCategoriesTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리'**
+  String get postCategoriesTitle;
+
+  /// No description provided for @postCategoriesSubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'관심 있는 주제에서 새로운 이야기를 찾아보세요.'**
+  String get postCategoriesSubtitle;
+
+  /// No description provided for @postCategorySelectTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 카테고리'**
+  String get postCategorySelectTitle;
+
+  /// No description provided for @postCategorySelectAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'카테고리 선택'**
+  String get postCategorySelectAction;
+
+  /// No description provided for @postCategoryRequired.
+  ///
+  /// In ko, this message translates to:
+  /// **'게시글 카테고리를 선택해 주세요.'**
+  String get postCategoryRequired;
+
+  /// No description provided for @postCategoryEmpty.
+  ///
+  /// In ko, this message translates to:
+  /// **'아직 {category} 카테고리에 글이 없어요.'**
+  String postCategoryEmpty(String category);
+
+  /// No description provided for @postCategoryEmptySubtitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'첫 번째 기록을 남겨보세요.'**
+  String get postCategoryEmptySubtitle;
+
+  /// No description provided for @postCategoryCreateAction.
+  ///
+  /// In ko, this message translates to:
+  /// **'글 작성하기'**
+  String get postCategoryCreateAction;
+
+  /// No description provided for @postCategoryStyle.
+  ///
+  /// In ko, this message translates to:
+  /// **'스타일'**
+  String get postCategoryStyle;
+
+  /// No description provided for @postCategoryStyleDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'패션·뷰티·아이템'**
+  String get postCategoryStyleDescription;
+
+  /// No description provided for @postCategoryCreate.
+  ///
+  /// In ko, this message translates to:
+  /// **'크리에이트'**
+  String get postCategoryCreate;
+
+  /// No description provided for @postCategoryCreateDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'그림·디자인·공예'**
+  String get postCategoryCreateDescription;
+
+  /// No description provided for @postCategoryPhoto.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진'**
+  String get postCategoryPhoto;
+
+  /// No description provided for @postCategoryPhotoDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'사진·영상·카메라'**
+  String get postCategoryPhotoDescription;
+
+  /// No description provided for @postCategoryContent.
+  ///
+  /// In ko, this message translates to:
+  /// **'콘텐츠'**
+  String get postCategoryContent;
+
+  /// No description provided for @postCategoryContentDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'음악·영화·드라마'**
+  String get postCategoryContentDescription;
+
+  /// No description provided for @postCategoryCafe.
+  ///
+  /// In ko, this message translates to:
+  /// **'카페'**
+  String get postCategoryCafe;
+
+  /// No description provided for @postCategoryCafeDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'카페·디저트·공간'**
+  String get postCategoryCafeDescription;
+
+  /// No description provided for @postCategoryBooksWriting.
+  ///
+  /// In ko, this message translates to:
+  /// **'책·글'**
+  String get postCategoryBooksWriting;
+
+  /// No description provided for @postCategoryBooksWritingDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'독서·글쓰기·문장'**
+  String get postCategoryBooksWritingDescription;
+
+  /// No description provided for @postCategoryTravelLocal.
+  ///
+  /// In ko, this message translates to:
+  /// **'여행·로컬'**
+  String get postCategoryTravelLocal;
+
+  /// No description provided for @postCategoryTravelLocalDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'여행·동네·장소'**
+  String get postCategoryTravelLocalDescription;
+
+  /// No description provided for @postCategoryGlobal.
+  ///
+  /// In ko, this message translates to:
+  /// **'글로벌'**
+  String get postCategoryGlobal;
+
+  /// No description provided for @postCategoryGlobalDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'언어·문화·유학생'**
+  String get postCategoryGlobalDescription;
+
+  /// No description provided for @postCategoryOther.
+  ///
+  /// In ko, this message translates to:
+  /// **'기타'**
+  String get postCategoryOther;
+
+  /// No description provided for @postCategoryOtherDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'기존 글과 자유로운 이야기'**
+  String get postCategoryOtherDescription;
 }
 
 class _AppLocalizationsDelegate

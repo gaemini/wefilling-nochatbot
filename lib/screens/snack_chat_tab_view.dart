@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../services/snack_chat_service.dart';
+import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../ui/widgets/snack_chat_card.dart';
 import 'snack_chat_screen.dart';
 
@@ -19,39 +20,18 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
   final SnackChatService _service = SnackChatService();
   late final Stream<List<SnackChat>> _todayStream;
   late final Stream<List<SnackChat>> _allStream;
+  late final Stream<Set<String>> _mutedIdsStream;
 
   @override
   void initState() {
     super.initState();
-    _todayStream = _service.getFavoritedTodaySnackChats();
-    _allStream = _service.getFavoritedAllSnackChats();
+    _todayStream = _service.getTodaySnackChats();
+    _allStream = _service.getAllSnackChats();
+    _mutedIdsStream = _service.watchMutedSnackChatIds();
   }
 
   Future<bool> _confirmUnfavorite() async {
-    final l10n = AppLocalizations.of(context)!;
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(l10n.snackChatUnfavoriteTitle),
-          content: Text(l10n.snackChatUnfavoriteMessage),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(l10n.cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(l10n.confirm),
-            ),
-          ],
-        );
-      },
-    );
-    return result ?? false;
+    return showSnackChatUnfavoriteSheet(context);
   }
 
   Future<void> _handleToggleFavorite(
@@ -69,91 +49,100 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    return ListView(
-      padding: const EdgeInsets.only(bottom: 96),
-      children: [
-        _SectionTitle(title: l10n.today),
-        StreamBuilder<List<SnackChat>>(
-          stream: _todayStream,
-          builder: (context, snapshot) {
-            final items = snapshot.data ?? const <SnackChat>[];
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const _SectionLoading();
-            }
-            if (items.isEmpty) {
-              return _SectionEmpty(
-                message: isKo
-                    ? '즐겨찾기한 활성 Snack Chat이 없어요.'
-                    : 'No favorited active Snack Chats.',
-              );
-            }
-            return Column(
-              children: items
-                  .map(
-                    (chat) => SnackChatCard(
-                      snackChat: chat,
-                      currentUserId: currentUserId,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                SnackChatScreen(snackChatId: chat.id),
-                          ),
-                        );
-                      },
-                      onToggleFavorite: () {
-                        _handleToggleFavorite(chat, currentUserId);
-                      },
-                    ),
-                  )
-                  .toList(),
-            );
-          },
-        ),
-        const SizedBox(height: 10),
-        _SectionTitle(title: l10n.all),
-        StreamBuilder<List<SnackChat>>(
-          stream: _allStream,
-          builder: (context, snapshot) {
-            final items = snapshot.data ?? const <SnackChat>[];
-            if (snapshot.connectionState == ConnectionState.waiting &&
-                !snapshot.hasData) {
-              return const _SectionLoading();
-            }
-            if (items.isEmpty) {
-              return _SectionEmpty(
-                message: isKo
-                    ? '즐겨찾기한 만료 Snack Chat이 없어요.'
-                    : 'No favorited expired Snack Chats.',
-              );
-            }
-            return Column(
-              children: items
-                  .map(
-                    (chat) => SnackChatCard(
-                      snackChat: chat,
-                      currentUserId: currentUserId,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                SnackChatScreen(snackChatId: chat.id),
-                          ),
-                        );
-                      },
-                      onToggleFavorite: () {
-                        _handleToggleFavorite(chat, currentUserId);
-                      },
-                    ),
-                  )
-                  .toList(),
-            );
-          },
-        ),
-      ],
+    return StreamBuilder<Set<String>>(
+      stream: _mutedIdsStream,
+      initialData: const <String>{},
+      builder: (context, mutedSnapshot) {
+        final mutedIds = mutedSnapshot.data ?? const <String>{};
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 96),
+          children: [
+            _SectionTitle(title: l10n.today),
+            StreamBuilder<List<SnackChat>>(
+              stream: _todayStream,
+              builder: (context, snapshot) {
+                final items = snapshot.data ?? const <SnackChat>[];
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const _SectionLoading();
+                }
+                if (items.isEmpty) {
+                  return _SectionEmpty(
+                    message: isKo
+                        ? '진행 중인 Snack Chat이 없어요.'
+                        : 'No active Snack Chats.',
+                  );
+                }
+                return Column(
+                  children: items
+                      .map(
+                        (chat) => SnackChatCard(
+                          snackChat: chat,
+                          currentUserId: currentUserId,
+                          isMuted: mutedIds.contains(chat.id),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    SnackChatScreen(snackChatId: chat.id),
+                              ),
+                            );
+                          },
+                          onToggleFavorite: () {
+                            _handleToggleFavorite(chat, currentUserId);
+                          },
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            _SectionTitle(title: l10n.all),
+            StreamBuilder<List<SnackChat>>(
+              stream: _allStream,
+              builder: (context, snapshot) {
+                final items = snapshot.data ?? const <SnackChat>[];
+                if (snapshot.connectionState == ConnectionState.waiting &&
+                    !snapshot.hasData) {
+                  return const _SectionLoading();
+                }
+                if (items.isEmpty) {
+                  return _SectionEmpty(
+                    message: isKo
+                        ? '보관된 Snack Chat이 없어요.'
+                        : 'No archived Snack Chats.',
+                  );
+                }
+                return Column(
+                  children: items
+                      .map(
+                        (chat) => SnackChatCard(
+                          snackChat: chat,
+                          currentUserId: currentUserId,
+                          isMuted: mutedIds.contains(chat.id),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    SnackChatScreen(snackChatId: chat.id),
+                              ),
+                            );
+                          },
+                          onToggleFavorite: () {
+                            _handleToggleFavorite(chat, currentUserId);
+                          },
+                        ),
+                      )
+                      .toList(),
+                );
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

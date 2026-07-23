@@ -8,6 +8,7 @@ import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
 import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
+import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../utils/country_flag_helper.dart';
 import 'friend_profile_screen.dart';
 
@@ -87,18 +88,6 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       return;
     }
 
-    final remaining = 6 - room.participantCount;
-    if (remaining <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isKo ? '참여 인원은 최대 6명입니다.' : 'Maximum participants is 6.',
-          ),
-        ),
-      );
-      return;
-    }
-
     final selected = <String>{};
     final result = await showModalBottomSheet<Set<String>>(
       context: context,
@@ -125,12 +114,12 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                       ),
                     ),
                     Padding(
-                      padding: EdgeInsets.fromLTRB(20, 14, 20, 10),
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 10),
                       child: Row(
                         children: [
                           Text(
                             isKo ? '참여자 초대' : 'Invite Participants',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -152,18 +141,6 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               if (checked) {
                                 setSheetState(
                                     () => selected.remove(friend.uid));
-                                return;
-                              }
-                              if (selected.length >= remaining) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      isKo
-                                          ? '최대 $remaining명까지 선택할 수 있습니다.'
-                                          : 'You can select up to $remaining people.',
-                                    ),
-                                  ),
-                                );
                                 return;
                               }
                               setSheetState(() => selected.add(friend.uid));
@@ -300,30 +277,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final nextValue = !room.isFavoritedBy(currentUserId);
     if (!nextValue) {
-      final l10n = AppLocalizations.of(context)!;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: Text(l10n.snackChatUnfavoriteTitle),
-            content: Text(l10n.snackChatUnfavoriteMessage),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: Text(l10n.cancel),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: Text(l10n.confirm),
-              ),
-            ],
-          );
-        },
-      );
-      if ((confirmed ?? false) == false) return;
+      final confirmed = await showSnackChatUnfavoriteSheet(context);
+      if (!confirmed) return;
     }
     await _snackChatService.toggleFavorite(room.id, nextValue);
   }
@@ -340,8 +295,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
       ),
       builder: (ctx) {
         // 바텀시트는 별도 컨텍스트로 열리므로 locale을 직접 읽어 한/영 정확도 보장
-        final sheetIsKo =
-            Localizations.localeOf(ctx).languageCode == 'ko';
+        final sheetIsKo = Localizations.localeOf(ctx).languageCode == 'ko';
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
@@ -488,6 +442,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final l10n = AppLocalizations.of(context)!;
     return StreamBuilder<SnackChat?>(
       stream: _snackChatService.watchSnackChat(widget.snackChatId),
       builder: (context, snap) {
@@ -568,15 +523,39 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                isKo
-                                    ? '${room.participantCount}명 참여'
-                                    : '${room.participantCount} Participants',
+                                l10n.snackChatParticipantCount(
+                                  room.participantCount,
+                                ),
                                 style: const TextStyle(
                                   fontFamily: 'Pretendard',
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
                                   color: Color(0xFF6B7280),
                                 ),
+                              ),
+                              const SizedBox(height: 5),
+                              Row(
+                                children: [
+                                  Icon(
+                                    room.hasNoExpiration
+                                        ? Icons.all_inclusive_rounded
+                                        : Icons.schedule_rounded,
+                                    size: 14,
+                                    color: AppColors.pointColor,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    room.hasNoExpiration
+                                        ? l10n.snackChatDurationNoEnd
+                                        : l10n.snackChatDuration24Hours,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.pointColor,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
@@ -607,9 +586,10 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           ),
                         ),
                         Switch(
-                          value: room.isFavoritedBy(FirebaseAuth.instance.currentUser?.uid),
+                          value: room.isFavoritedBy(
+                              FirebaseAuth.instance.currentUser?.uid),
                           onChanged: (_) => _toggleFavorite(room),
-                          activeColor: AppColors.pointColor,
+                          activeThumbColor: AppColors.pointColor,
                         ),
                       ],
                     ),
@@ -633,7 +613,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                         Switch(
                           value: !_isMuted,
                           onChanged: (_) => _toggleMute(),
-                          activeColor: AppColors.pointColor,
+                          activeThumbColor: AppColors.pointColor,
                         ),
                       ],
                     ),
@@ -695,7 +675,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
                               )
                             : TextButton.icon(
                                 onPressed: () => _leaveRoom(room),

@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../providers/settings_provider.dart';
 import '../l10n/app_localizations.dart';
+import 'post_category.dart';
 
 class PollOption {
   final String id;
@@ -49,6 +50,7 @@ class Post {
   final String authorNationality; // 작성자 국적
   final String authorPhotoURL; // 작성자 프로필 사진 URL
   final String category; // 카테고리
+  final String categoryKey; // 안정적인 Post 카테고리 저장 key
   final DateTime createdAt;
   final String userId;
   final int commentCount;
@@ -56,14 +58,14 @@ class Post {
   final int likes; // 좋아요 수
   final List<String> likedBy; // 좋아요 누른 사용자 ID 목록
   final List<String> imageUrls; // 이미지 URL 목록
-  
+
   // 게시글 타입 (기본: text)
   final String type; // 'text' | 'poll'
 
   // 투표형 게시글 데이터 (type == 'poll'일 때 사용)
   final List<PollOption> pollOptions;
   final int pollTotalVotes;
-  
+
   // 공개 범위 관련 필드
   final String visibility; // 'public' 또는 'category'
   final bool isAnonymous; // 익명 여부
@@ -81,7 +83,8 @@ class Post {
     required this.author,
     this.authorNationality = '', // 국적 정보 (기본값은 빈 문자열)
     this.authorPhotoURL = '', // 프로필 사진 URL (기본값은 빈 문자열)
-    this.category = '일반', // 카테고리 (기본값은 '일반')
+    this.category = '일반', // 레거시 필드 호환
+    String? categoryKey,
     required this.createdAt,
     required this.userId,
     this.commentCount = 0,
@@ -96,7 +99,9 @@ class Post {
     this.isAnonymous = false, // 익명 여부 (기본값: 실명)
     this.visibleToCategoryIds = const [], // 공개할 카테고리 목록 (기본값: 빈 리스트)
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
-  });
+  }) : categoryKey = PostCategory.fromKey(categoryKey).key;
+
+  PostCategory get postCategory => PostCategory.fromKey(categoryKey);
 
   // 모델 디버깅을 위한 문자열 표현
   @override
@@ -109,18 +114,17 @@ class Post {
   String getFormattedTime(BuildContext context) {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
-    final locale = Localizations.localeOf(context).languageCode;
 
     if (difference.inDays > 7) {
       // 일주일 이상 지난 경우 날짜 표시
       return DateFormat('yyyy.MM.dd').format(createdAt);
     } else if (difference.inDays > 0) {
       // 복수형 처리를 위해 지역화 함수 호출 (숫자를 인자로 전달)
-        return AppLocalizations.of(context)!.daysAgo(difference.inDays);
-      } else if (difference.inHours > 0) {
-        return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
-      } else if (difference.inMinutes > 0) {
-        return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
+      return AppLocalizations.of(context)!.daysAgo(difference.inDays);
+    } else if (difference.inHours > 0) {
+      return AppLocalizations.of(context)!.hoursAgo(difference.inHours);
+    } else if (difference.inMinutes > 0) {
+      return AppLocalizations.of(context)!.minutesAgo(difference.inMinutes);
     } else {
       return AppLocalizations.of(context)!.justNow;
     }
@@ -175,6 +179,7 @@ class Post {
     String? authorNationality,
     String? authorPhotoURL,
     String? category,
+    String? categoryKey,
     DateTime? createdAt,
     String? userId,
     int? commentCount,
@@ -198,6 +203,7 @@ class Post {
       authorNationality: authorNationality ?? this.authorNationality,
       authorPhotoURL: authorPhotoURL ?? this.authorPhotoURL,
       category: category ?? this.category,
+      categoryKey: categoryKey ?? this.categoryKey,
       createdAt: createdAt ?? this.createdAt,
       userId: userId ?? this.userId,
       commentCount: commentCount ?? this.commentCount,
@@ -225,6 +231,7 @@ class Post {
       'authorNationality': authorNationality,
       'authorPhotoURL': authorPhotoURL,
       'category': category,
+      'categoryKey': categoryKey,
       'createdAt': createdAt.millisecondsSinceEpoch,
       'userId': userId,
       'commentCount': commentCount,
@@ -260,6 +267,7 @@ class Post {
       authorNationality: map['authorNationality'] ?? '',
       authorPhotoURL: map['authorPhotoURL'] ?? '',
       category: map['category'] ?? '일반',
+      categoryKey: map['categoryKey']?.toString(),
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
@@ -274,7 +282,8 @@ class Post {
       pollTotalVotes: map['pollTotalVotes'] ?? 0,
       visibility: map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(map['visibleToCategoryIds'] ?? []),
+      visibleToCategoryIds:
+          List<String>.from(map['visibleToCategoryIds'] ?? []),
       allowedUserIds: List<String>.from(map['allowedUserIds'] ?? []),
     );
   }

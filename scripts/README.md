@@ -20,6 +20,29 @@ npm install
 
 ## 사용 방법
 
+### 기존 Post 카테고리 마이그레이션
+
+Application Default Credentials 또는 `GOOGLE_APPLICATION_CREDENTIALS`를 설정한 뒤
+반드시 dry-run 결과를 먼저 확인합니다. 스크립트는 `categoryKey` 필드가 아예 없는
+`posts` 문서만 `other`로 갱신하며, 문서 ID와 다른 필드는 변경하지 않습니다.
+
+```bash
+cd scripts
+npm run migrate-post-category:dry-run
+npm run migrate-post-category:apply
+npm run migrate-post-category:dry-run
+```
+
+다른 프로젝트를 명시하려면 다음처럼 실행합니다.
+
+```bash
+node migrate_post_category.js --project=PROJECT_ID
+node migrate_post_category.js --project=PROJECT_ID --apply
+```
+
+마지막 dry-run에서 `Missing categoryKey: 0`과 `Writes performed: 0`이 나오면
+적용 및 멱등성 검증이 완료된 것입니다. 한 번에 읽고 쓰는 문서는 최대 400개입니다.
+
 ### 추천 장소 데이터 설정
 
 ```bash

@@ -1,6 +1,20 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function isValidPostCategoryKey(value) {
+      return value is string && value in [
+        'style',
+        'create',
+        'photo',
+        'content',
+        'cafe',
+        'books_writing',
+        'travel_local',
+        'global',
+        'other'
+      ];
+    }
+
     // ===== 밋업(모임) 만료 판정 유틸 =====
     // - endsAt(타임스탬프)가 있으면 그 값을 우선 사용(시간까지 정확)
     // - 없으면 date(타임스탬프) + 1일(자정 기준)로 fallback
@@ -244,7 +258,9 @@ service cloud.firestore {
       allow create: if request.auth != null
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.emailVerified == true
-        && request.resource.data.userId == request.auth.uid;
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['categoryKey'])
+        && isValidPostCategoryKey(request.resource.data.categoryKey);
       
       // 게시글 수정: 작성자만 가능 또는 좋아요/조회수 필드만 변경하는 경우 읽기 권한이 있는 사용자 가능
       // userId='deleted'는 수정 불가 (탈퇴한 사용자 게시글 보호)
@@ -257,6 +273,10 @@ service cloud.firestore {
            (request.auth.uid == resource.data.userId || 
             (resource.data.keys().hasAny(['allowedUserIds']) && request.auth.uid in resource.data.allowedUserIds)))
         ) &&
+        // categoryKey를 변경할 때만 taxonomy를 검증합니다. 레거시 문서의
+        // 좋아요/조회수 업데이트는 마이그레이션 전에도 계속 허용됩니다.
+        (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['categoryKey']) ||
+         isValidPostCategoryKey(request.resource.data.categoryKey)) &&
         // createdAt 필드는 절대 수정 불가
         (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdAt'])) &&
         (request.auth.uid == resource.data.userId ||
@@ -689,7 +709,7 @@ service cloud.firestore {
         return isSignedIn() && request.auth.uid == resource.data.creatorId;
       }
 
-      // 생성: 로그인 사용자만, creatorId 일치, 참여자 2~6명(본인 포함)
+      // 생성: 로그인 사용자만, creatorId 일치, 참여자 최소 2명(상한 없음)
       allow create: if isSignedIn()
         && request.resource.data.creatorId == request.auth.uid
         && request.resource.data.title is string
@@ -698,9 +718,10 @@ service cloud.firestore {
         && request.resource.data.participantIds is list
         && request.auth.uid in request.resource.data.participantIds
         && request.resource.data.participantIds.size() >= 2
-        && request.resource.data.participantIds.size() <= 6
         && request.resource.data.visibleToCategoryIds is list
         && request.resource.data.createdAt is timestamp
+        && request.resource.data.activeDurationHours is int
+        && request.resource.data.activeDurationHours in [0, 24]
         && request.resource.data.expiresAt is timestamp
         && request.resource.data.lastMessage is string
         && request.resource.data.lastMessageTime is timestamp
@@ -714,14 +735,26 @@ service cloud.firestore {
       // 수정: 참여자만 + 허용 필드만 변경
       allow update: if isParticipant() && (
         // 일반 채팅 업데이트(메시지/즐겨찾기)
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'isFavorited',
-          'lastMessage',
-          'lastMessageTime',
-          'lastMessageSenderId',
-          'unreadCount',
-          'updatedAt'
-        ])
+        (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'isFavorited',
+            'favoriteBy',
+            'favoriteUserIds',
+            'lastMessage',
+            'lastMessageTime',
+            'lastMessageSenderId',
+            'expiresAt',
+            'unreadCount',
+            'updatedAt'
+          ])
+          && (
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['expiresAt'])
+            || (
+              resource.data.activeDurationHours != 0
+              && request.resource.data.expiresAt is timestamp
+            )
+          )
+        )
         // 방장만 참여자 초대 가능(참여자 목록 증가)
         || (
           isCreator()
@@ -732,7 +765,6 @@ service cloud.firestore {
           ])
           && request.resource.data.participantIds is list
           && request.resource.data.participantIds.size() >= resource.data.participantIds.size()
-          && request.resource.data.participantIds.size() <= 6
         )
         // 방장이 아닌 참여자 나가기 (본인만 제거, 크기 1 감소)
         || (

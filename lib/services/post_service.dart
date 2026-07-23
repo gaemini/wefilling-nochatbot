@@ -9,6 +9,7 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
+import '../models/post_category.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 import 'content_filter_service.dart';
@@ -18,6 +19,18 @@ import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
 import '../utils/profile_photo_policy.dart';
 import '../utils/logger.dart';
+
+class PostCategoryPage {
+  const PostCategoryPage({
+    required this.posts,
+    required this.cursor,
+    required this.hasMore,
+  });
+
+  final List<Post> posts;
+  final DocumentSnapshot<Map<String, dynamic>>? cursor;
+  final bool hasMore;
+}
 
 class PostService {
   static final PostService instance = PostService._internal();
@@ -35,6 +48,7 @@ class PostService {
   final StorageService _storageService = StorageService();
   final PostCacheManager _cache = PostCacheManager();
   final ViewHistoryService _viewHistory = ViewHistoryService();
+  final Map<String, PostCategoryPage> _categoryFirstPageCache = {};
 
   // Feed stream caching:
   // BoardScreen uses the same PostService instance for multiple tabs.
@@ -64,10 +78,12 @@ class PostService {
     // 0) visibility filter (sync)
     final List<Post> visibilityFiltered;
     if (currentUser != null) {
-      visibilityFiltered = parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
-    } else {
       visibilityFiltered =
-          parsed.where((p) => p.visibility == 'public' || p.visibility.isEmpty).toList();
+          parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
+    } else {
+      visibilityFiltered = parsed
+          .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
+          .toList();
     }
 
     // 1) blocked filter using cached sets (sync, immediate)
@@ -76,9 +92,7 @@ class PostService {
     final blockedAnonymousPosts =
         ContentFilterService.getBlockedAnonymousPostIdsCached();
     final List<Post> fastFiltered;
-    if (blocked.isEmpty &&
-        blockedBy.isEmpty &&
-        blockedAnonymousPosts.isEmpty) {
+    if (blocked.isEmpty && blockedBy.isEmpty && blockedAnonymousPosts.isEmpty) {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered);
     } else {
       fastFiltered = ContentHideService.filterPostsSync(visibilityFiltered)
@@ -109,8 +123,10 @@ class PostService {
     if (!identical(controller, _postsStreamController)) return;
 
     try {
-      final nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
-          .timeout(const Duration(seconds: 2), onTimeout: () => visibilityFiltered);
+      final nonBlocked =
+          await ContentFilterService.filterPosts(visibilityFiltered).timeout(
+              const Duration(seconds: 2),
+              onTimeout: () => visibilityFiltered);
       if (controller.isClosed) return;
       if (!identical(controller, _postsStreamController)) return;
 
@@ -133,7 +149,10 @@ class PostService {
     required String userId,
     required List<String> visibleToCategoryIds,
   }) async {
-    final ids = visibleToCategoryIds.map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final ids = visibleToCategoryIds
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     if (ids.isEmpty) return false;
 
     const chunkSize = 10;
@@ -220,6 +239,7 @@ class PostService {
       authorNationality: data['authorNationality'] ?? '알 수 없음',
       authorPhotoURL: data['authorPhotoURL'] ?? '',
       category: data['category'] ?? '일반',
+      categoryKey: data['categoryKey']?.toString(),
       createdAt: createdAt,
       userId: data['userId'] ?? '',
       commentCount: data['commentCount'] ?? 0,
@@ -229,7 +249,8 @@ class PostService {
       imageUrls: List<String>.from(data['imageUrls'] ?? []),
       visibility: data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
-      visibleToCategoryIds: List<String>.from(data['visibleToCategoryIds'] ?? []),
+      visibleToCategoryIds:
+          List<String>.from(data['visibleToCategoryIds'] ?? []),
       allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
@@ -241,6 +262,7 @@ class PostService {
   Future<bool> addPost(
     String title,
     String content, {
+    required String categoryKey,
     List<File>? imageFiles,
     String visibility = 'public', // 공개 범위
     bool isAnonymous = false, // 익명 여부
@@ -249,6 +271,10 @@ class PostService {
     List<String> pollOptions = const [], // type == 'poll'일 때만 사용
   }) async {
     try {
+      if (!PostCategory.isSupportedKey(categoryKey)) {
+        throw ArgumentError.value(categoryKey, 'categoryKey');
+      }
+
       final user = _auth.currentUser;
       if (user == null) {
         throw Exception('로그인이 필요합니다');
@@ -335,6 +361,7 @@ class PostService {
         'authorPhotoURL': photoURL, // 작성자 프로필 사진 URL 추가
         'title': title,
         'content': content,
+        'categoryKey': categoryKey,
         'imageUrls': imageUrls,
         'createdAt': now,
         'updatedAt': now,
@@ -384,6 +411,7 @@ class PostService {
       if (CacheFeatureFlags.isPostCacheEnabled) {
         _cache.invalidate();
       }
+      _categoryFirstPageCache.clear();
 
       return true;
     } catch (e) {
@@ -393,15 +421,18 @@ class PostService {
   }
 
   /// 게시글 수정 (작성자만 가능)
-  /// - content 및 imageUrls만 수정 (공개범위/익명 등은 유지)
+  /// - content, categoryKey 및 imageUrls만 수정 (공개범위/익명 등은 유지)
   /// - 기존 이미지 제거/신규 이미지 업로드를 지원
   Future<Post?> updatePost({
     required Post post,
     required String content,
+    required String categoryKey,
     required List<String> keptImageUrls,
     List<File>? newImageFiles,
   }) async {
     try {
+      if (!PostCategory.isSupportedKey(categoryKey)) return null;
+
       final user = _auth.currentUser;
       if (user == null) return null;
 
@@ -417,22 +448,28 @@ class PostService {
 
       // 투표 게시글은 투표가 진행된 이후에는 수정 불가 (공정성)
       final type = (data['type'] ?? 'text').toString();
-      final pollTotalVotes = (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+      final pollTotalVotes =
+          (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
       if (type == 'poll' && pollTotalVotes > 0) {
         Logger.error('포스트 수정 실패: 투표가 진행된 포스트는 수정할 수 없습니다.');
         return null;
       }
 
       final originalUrls = List<String>.from(data['imageUrls'] ?? const []);
-      final keptSet = keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
-      final removedUrls = originalUrls.where((u) => !keptSet.contains(u)).toList(growable: false);
+      final keptSet =
+          keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty).toSet();
+      final removedUrls = originalUrls
+          .where((u) => !keptSet.contains(u))
+          .toList(growable: false);
 
       // 신규 이미지 업로드 (병렬)
       final uploadedUrls = <String>[];
       if (newImageFiles != null && newImageFiles.isNotEmpty) {
-        final futures = newImageFiles.map((f) => _storageService.uploadImage(f));
+        final futures =
+            newImageFiles.map((f) => _storageService.uploadImage(f));
         final results = await Future.wait(futures, eagerError: false);
-        uploadedUrls.addAll(results.whereType<String>().where((u) => u.trim().isNotEmpty));
+        uploadedUrls.addAll(
+            results.whereType<String>().where((u) => u.trim().isNotEmpty));
       }
 
       // 최대 10장 제한 (안전)
@@ -440,10 +477,12 @@ class PostService {
         ...keptImageUrls.map((e) => e.trim()).where((e) => e.isNotEmpty),
         ...uploadedUrls,
       ];
-      final finalImageUrls = merged.length > 10 ? merged.take(10).toList() : merged;
+      final finalImageUrls =
+          merged.length > 10 ? merged.take(10).toList() : merged;
 
       await postRef.update({
         'content': content,
+        'categoryKey': categoryKey,
         'imageUrls': finalImageUrls,
         'updatedAt': FieldValue.serverTimestamp(),
       });
@@ -460,10 +499,16 @@ class PostService {
         _cache.invalidate(key: post.id);
         _cache.invalidate();
       }
+      _categoryFirstPageCache.clear();
 
       // 최신 데이터 반환
       final refreshed = await getPostById(post.id);
-      return refreshed ?? post.copyWith(content: content, imageUrls: finalImageUrls);
+      return refreshed ??
+          post.copyWith(
+            content: content,
+            categoryKey: categoryKey,
+            imageUrls: finalImageUrls,
+          );
     } catch (e) {
       Logger.error('포스트 수정 오류: $e');
       return null;
@@ -519,8 +564,9 @@ class PostService {
           throw Exception('선택지를 찾을 수 없습니다');
         }
 
-        final currentTotal =
-            (data['pollTotalVotes'] is int) ? (data['pollTotalVotes'] as int) : 0;
+        final currentTotal = (data['pollTotalVotes'] is int)
+            ? (data['pollTotalVotes'] as int)
+            : 0;
 
         tx.update(postRef, {
           'pollOptions': updatedOptions,
@@ -596,9 +642,9 @@ class PostService {
       // 로그인하지 않은 경우 전체 공개 게시글만 표시
       return ContentHideService.filterPostsSync(
         posts
-          .where(
-              (post) => post.visibility == 'public' || post.visibility.isEmpty)
-          .toList(),
+            .where((post) =>
+                post.visibility == 'public' || post.visibility.isEmpty)
+            .toList(),
       );
     });
   }
@@ -623,7 +669,8 @@ class PostService {
       // 차단/차단당함 콘텐츠 제거
       final filtered = await ContentFilterService.filterPosts([post]);
       if (filtered.isEmpty) return null;
-      if (ContentHideService.isHiddenPost(post.id) || ContentHideService.isHiddenUser(post.userId)) {
+      if (ContentHideService.isHiddenPost(post.id) ||
+          ContentHideService.isHiddenUser(post.userId)) {
         return null;
       }
 
@@ -670,7 +717,6 @@ class PostService {
           : _previewText(rawContent);
       final authorId = data['userId'];
       final bool postIsAnonymous = data['isAnonymous'] == true;
-
 
       // 좋아요 토글
       if (hasLiked) {
@@ -810,6 +856,7 @@ class PostService {
       if (CacheFeatureFlags.isPostCacheEnabled) {
         _cache.invalidate(key: postId);
       }
+      _categoryFirstPageCache.clear();
 
       return true;
     } catch (e) {
@@ -835,6 +882,96 @@ class PostService {
     }
   }
 
+  /// 카테고리별 최신 게시글 페이지를 가져옵니다.
+  ///
+  /// `other`는 운영 마이그레이션 전에도 categoryKey가 없는 레거시 글을
+  /// 누락시키지 않도록 createdAt 페이지를 제한적으로 스캔합니다. 다른
+  /// 카테고리는 복합 index를 사용하는 strict query를 적용합니다.
+  Future<PostCategoryPage> getPostsByCategoryPage({
+    required PostCategory category,
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    int pageSize = 20,
+    bool forceRefresh = false,
+  }) async {
+    final normalizedPageSize = pageSize.clamp(1, 50);
+    final cacheKey = '${_auth.currentUser?.uid ?? 'guest'}:${category.key}';
+    if (startAfter == null && !forceRefresh) {
+      final cached = _categoryFirstPageCache[cacheKey];
+      if (cached != null) return cached;
+    }
+
+    final rawDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+    DocumentSnapshot<Map<String, dynamic>>? cursor = startAfter;
+    var hasMore = true;
+
+    if (category == PostCategory.other) {
+      // Bounded compatibility scan. In normal legacy data the first chunk is
+      // mostly missing categoryKey and fills the page immediately.
+      const maxChunksPerPage = 4;
+      final chunkSize = (normalizedPageSize * 2).clamp(20, 100);
+      for (var chunk = 0;
+          chunk < maxChunksPerPage &&
+              rawDocs.length < normalizedPageSize &&
+              hasMore;
+          chunk++) {
+        Query<Map<String, dynamic>> query = _firestore
+            .collection('posts')
+            .orderBy('createdAt', descending: true)
+            .limit(chunkSize);
+        if (cursor != null) query = query.startAfterDocument(cursor);
+
+        final snapshot = await query.get();
+        if (snapshot.docs.isEmpty) {
+          hasMore = false;
+          break;
+        }
+        cursor = snapshot.docs.last;
+        hasMore = snapshot.docs.length == chunkSize;
+        for (final doc in snapshot.docs) {
+          if (PostCategory.fromKey(doc.data()['categoryKey']) == category) {
+            rawDocs.add(doc);
+            if (rawDocs.length == normalizedPageSize) break;
+          }
+        }
+      }
+    } else {
+      Query<Map<String, dynamic>> query = _firestore
+          .collection('posts')
+          .where('categoryKey', isEqualTo: category.key)
+          .orderBy('createdAt', descending: true)
+          .limit(normalizedPageSize);
+      if (cursor != null) query = query.startAfterDocument(cursor);
+      final snapshot = await query.get();
+      rawDocs.addAll(snapshot.docs);
+      if (snapshot.docs.isNotEmpty) cursor = snapshot.docs.last;
+      hasMore = snapshot.docs.length == normalizedPageSize;
+    }
+
+    final parsed = rawDocs
+        .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
+        .where((post) => _canUserReadPost(post, _auth.currentUser))
+        .where(
+          (post) =>
+              !ContentHideService.isHiddenPost(post.id) &&
+              !ContentHideService.isHiddenUser(post.userId),
+        )
+        .toList(growable: false);
+    final nonBlocked = await ContentFilterService.filterPosts(parsed);
+    final page = PostCategoryPage(
+      posts: ContentHideService.filterPostsSync(nonBlocked),
+      cursor: cursor,
+      hasMore: hasMore,
+    );
+
+    if (startAfter == null) _categoryFirstPageCache[cacheKey] = page;
+    return page;
+  }
+
+  void clearCategoryCache(PostCategory category) {
+    final suffix = ':${category.key}';
+    _categoryFirstPageCache.removeWhere((key, _) => key.endsWith(suffix));
+  }
+
   // 게시글 스트림 가져오기
   Stream<List<Post>> getPostsStream() {
     if (_postsStreamCached != null) return _postsStreamCached!;
@@ -855,174 +992,182 @@ class PostService {
               _debugPostsStartLogs++;
               Logger.log('📰 getPostsStream start()');
             }
-          Future<void> emitFiltered() async {
-            final sw = Stopwatch()..start();
-            final parsed = _lastParsedPosts ?? const <Post>[];
-            final currentUser = _auth.currentUser;
+            Future<void> emitFiltered() async {
+              final sw = Stopwatch()..start();
+              final parsed = _lastParsedPosts ?? const <Post>[];
+              final currentUser = _auth.currentUser;
 
-            // 0) visibility filter first (fast, synchronous)
-            final List<Post> visibilityFiltered;
-            if (currentUser != null) {
-              visibilityFiltered =
-                  parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
-            } else {
-              visibilityFiltered = parsed
-                  .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
-                  .toList();
-            }
+              // 0) visibility filter first (fast, synchronous)
+              final List<Post> visibilityFiltered;
+              if (currentUser != null) {
+                visibilityFiltered = parsed
+                    .where((p) => _canUserReadPost(p, currentUser))
+                    .toList();
+              } else {
+                visibilityFiltered = parsed
+                    .where(
+                        (p) => p.visibility == 'public' || p.visibility.isEmpty)
+                    .toList();
+              }
 
-            // 1) Immediately emit something so UI doesn't stick on "waiting".
-            _postsStreamController?.add(ContentHideService.filterPostsSync(visibilityFiltered));
+              // 1) Immediately emit something so UI doesn't stick on "waiting".
+              _postsStreamController
+                  ?.add(ContentHideService.filterPostsSync(visibilityFiltered));
 
-            // 2) blocked filter (can be slow/network dependent)
-            List<Post> nonBlocked = visibilityFiltered;
-            try {
-              nonBlocked = await ContentFilterService.filterPosts(visibilityFiltered)
-                  .timeout(const Duration(seconds: 2), onTimeout: () {
-                Logger.warning('차단 필터 timeout → 필터 없이 표시');
-                return visibilityFiltered;
-              });
-            } catch (e) {
-              Logger.error('차단 필터 오류(폴백): $e');
-              nonBlocked = visibilityFiltered;
-            }
-
-            // 3) If changed after block-filtering, emit again.
-            if (nonBlocked.length != visibilityFiltered.length) {
-              _postsStreamController?.add(ContentHideService.filterPostsSync(nonBlocked));
-            }
-
-            if (CacheFeatureFlags.isPostCacheEnabled) {
-              unawaited(
-                _cache.savePosts(ContentHideService.filterPostsSync(nonBlocked), visibility: 'public'),
-              );
-            }
-
-            if (_debugEmitFilteredLogs < 6) {
-              _debugEmitFilteredLogs++;
-              Logger.log(
-                '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
-              );
-            }
-          }
-
-          Future<void> ensureBlockSubscriptions() async {
-            final u = _auth.currentUser;
-            final uid = u?.uid;
-
-            // 로그아웃 또는 계정 변경 시: 기존 구독 정리
-            if (uid == null || (_blockListenUid != null && _blockListenUid != uid)) {
-              await _blocksByMeSub?.cancel();
-              await _blockedBySub?.cancel();
-              _blocksByMeSub = null;
-              _blockedBySub = null;
-              _blockListenUid = null;
-            }
-
-            // 로그인 전이면 blocks 구독 없이 종료
-            if (uid == null) return;
-
-            // 이미 같은 uid로 구독 중이면 스킵
-            if (_blockListenUid == uid &&
-                _blocksByMeSub != null &&
-                _blockedBySub != null) {
-              return;
-            }
-
-            _blockListenUid = uid;
-
-            _blocksByMeSub ??= _firestore
-                .collection('blocks')
-                .where('blocker', isEqualTo: uid)
-                .snapshots()
-                .listen((snap) async {
-              // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
-              final ids = snap.docs
-                  .map((d) => (d.data()['blocked'] ?? '').toString().trim())
-                  .where((v) => v.isNotEmpty)
-                  .toSet();
-              ContentFilterService.setBlockedUserIds(ids);
-              unawaited(emitFiltered());
-            }, onError: (e) {
-              Logger.error('blocks(byMe) 스트림 오류: $e');
-              _postsStreamController?.addError(e);
-            });
-
-            _blockedBySub ??= _firestore
-                .collection('blocks')
-                .where('blocked', isEqualTo: uid)
-                .snapshots()
-                .listen((snap) async {
-              final ids = snap.docs
-                  .map((d) => (d.data()['blocker'] ?? '').toString().trim())
-                  .where((v) => v.isNotEmpty)
-                  .toSet();
-              ContentFilterService.setBlockedByUserIds(ids);
-              unawaited(emitFiltered());
-            }, onError: (e) {
-              Logger.error('blocks(blockedBy) 스트림 오류: $e');
-              _postsStreamController?.addError(e);
-            });
-          }
-
-          // posts snapshots
-          _postsSub = _firestore
-              .collection('posts')
-              .orderBy('createdAt', descending: true)
-              .limit(_feedRealtimeLimit)
-              .snapshots()
-              .listen((snapshot) async {
-            if (_debugPostsSnapshotLogs < 6) {
-              _debugPostsSnapshotLogs++;
-              Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
-            }
-            final posts = snapshot.docs.map((doc) {
+              // 2) blocked filter (can be slow/network dependent)
+              List<Post> nonBlocked = visibilityFiltered;
               try {
-                return _buildPostFromFirestore(doc.id, doc.data());
+                nonBlocked =
+                    await ContentFilterService.filterPosts(visibilityFiltered)
+                        .timeout(const Duration(seconds: 2), onTimeout: () {
+                  Logger.warning('차단 필터 timeout → 필터 없이 표시');
+                  return visibilityFiltered;
+                });
               } catch (e) {
-                Logger.error('포스트 파싱 오류: $e');
-                return Post(
-                  id: doc.id,
-                  title: '제목 없음',
-                  content: '내용을 불러올 수 없습니다.',
-                  author: '알 수 없음',
-                  category: '일반',
-                  createdAt: DateTime.now(),
-                  userId: '',
-                  imageUrls: [],
-                  visibility: 'public',
-                  isAnonymous: false,
-                  visibleToCategoryIds: [],
-                  likes: 0,
-                  type: 'text',
-                  pollOptions: const [],
-                  pollTotalVotes: 0,
+                Logger.error('차단 필터 오류(폴백): $e');
+                nonBlocked = visibilityFiltered;
+              }
+
+              // 3) If changed after block-filtering, emit again.
+              if (nonBlocked.length != visibilityFiltered.length) {
+                _postsStreamController
+                    ?.add(ContentHideService.filterPostsSync(nonBlocked));
+              }
+
+              if (CacheFeatureFlags.isPostCacheEnabled) {
+                unawaited(
+                  _cache.savePosts(
+                      ContentHideService.filterPostsSync(nonBlocked),
+                      visibility: 'public'),
                 );
               }
-            }).toList();
 
-            _lastParsedPosts = posts;
-            unawaited(emitFiltered());
-          }, onError: (e) {
-            // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
-            // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
-            Logger.error('포스트 스트림 오류: $e');
-            _postsStreamController?.addError(e);
-          });
+              if (_debugEmitFilteredLogs < 6) {
+                _debugEmitFilteredLogs++;
+                Logger.log(
+                  '📰 emitFiltered done: parsed=${parsed.length} visible=${visibilityFiltered.length} final=${nonBlocked.length} (${sw.elapsedMilliseconds}ms)',
+                );
+              }
+            }
 
-          // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
-          // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
-          _authSub ??= _auth.authStateChanges().listen((_) async {
-            ContentFilterService.refreshCache();
+            Future<void> ensureBlockSubscriptions() async {
+              final u = _auth.currentUser;
+              final uid = u?.uid;
+
+              // 로그아웃 또는 계정 변경 시: 기존 구독 정리
+              if (uid == null ||
+                  (_blockListenUid != null && _blockListenUid != uid)) {
+                await _blocksByMeSub?.cancel();
+                await _blockedBySub?.cancel();
+                _blocksByMeSub = null;
+                _blockedBySub = null;
+                _blockListenUid = null;
+              }
+
+              // 로그인 전이면 blocks 구독 없이 종료
+              if (uid == null) return;
+
+              // 이미 같은 uid로 구독 중이면 스킵
+              if (_blockListenUid == uid &&
+                  _blocksByMeSub != null &&
+                  _blockedBySub != null) {
+                return;
+              }
+
+              _blockListenUid = uid;
+
+              _blocksByMeSub ??= _firestore
+                  .collection('blocks')
+                  .where('blocker', isEqualTo: uid)
+                  .snapshots()
+                  .listen((snap) async {
+                // blocks snapshot으로 캐시를 즉시 채워, 다음 필터링이 get()에 의존하지 않게 한다.
+                final ids = snap.docs
+                    .map((d) => (d.data()['blocked'] ?? '').toString().trim())
+                    .where((v) => v.isNotEmpty)
+                    .toSet();
+                ContentFilterService.setBlockedUserIds(ids);
+                unawaited(emitFiltered());
+              }, onError: (e) {
+                Logger.error('blocks(byMe) 스트림 오류: $e');
+                _postsStreamController?.addError(e);
+              });
+
+              _blockedBySub ??= _firestore
+                  .collection('blocks')
+                  .where('blocked', isEqualTo: uid)
+                  .snapshots()
+                  .listen((snap) async {
+                final ids = snap.docs
+                    .map((d) => (d.data()['blocker'] ?? '').toString().trim())
+                    .where((v) => v.isNotEmpty)
+                    .toSet();
+                ContentFilterService.setBlockedByUserIds(ids);
+                unawaited(emitFiltered());
+              }, onError: (e) {
+                Logger.error('blocks(blockedBy) 스트림 오류: $e');
+                _postsStreamController?.addError(e);
+              });
+            }
+
+            // posts snapshots
+            _postsSub = _firestore
+                .collection('posts')
+                .orderBy('createdAt', descending: true)
+                .limit(_feedRealtimeLimit)
+                .snapshots()
+                .listen((snapshot) async {
+              if (_debugPostsSnapshotLogs < 6) {
+                _debugPostsSnapshotLogs++;
+                Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
+              }
+              final posts = snapshot.docs.map((doc) {
+                try {
+                  return _buildPostFromFirestore(doc.id, doc.data());
+                } catch (e) {
+                  Logger.error('포스트 파싱 오류: $e');
+                  return Post(
+                    id: doc.id,
+                    title: '제목 없음',
+                    content: '내용을 불러올 수 없습니다.',
+                    author: '알 수 없음',
+                    category: '일반',
+                    createdAt: DateTime.now(),
+                    userId: '',
+                    imageUrls: [],
+                    visibility: 'public',
+                    isAnonymous: false,
+                    visibleToCategoryIds: [],
+                    likes: 0,
+                    type: 'text',
+                    pollOptions: const [],
+                    pollTotalVotes: 0,
+                  );
+                }
+              }).toList();
+
+              _lastParsedPosts = posts;
+              unawaited(emitFiltered());
+            }, onError: (e) {
+              // 중요: 에러를 스트림으로 전달하지 않으면 UI(StreamBuilder)가
+              // waiting 상태에 고정되어 "진행이 안 되는 것처럼" 보일 수 있다.
+              Logger.error('포스트 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+
+            // Auth가 늦게 확정되면(앱 초기 부팅 타이밍) cached stream이 "로그아웃 필터"에 고정될 수 있음.
+            // Auth 변화를 따라 blocks 구독/필터를 즉시 갱신해, 포스트가 안 뜨는 현상을 방지.
+            _authSub ??= _auth.authStateChanges().listen((_) async {
+              ContentFilterService.refreshCache();
+              await ensureBlockSubscriptions();
+              unawaited(emitFiltered());
+            }, onError: (e) {
+              Logger.error('Auth 스트림 오류: $e');
+              _postsStreamController?.addError(e);
+            });
+
+            // 현재 상태 기준 blocks 구독 설정
             await ensureBlockSubscriptions();
-            unawaited(emitFiltered());
-          }, onError: (e) {
-            Logger.error('Auth 스트림 오류: $e');
-            _postsStreamController?.addError(e);
-          });
-
-          // 현재 상태 기준 blocks 구독 설정
-          await ensureBlockSubscriptions();
           } catch (e, st) {
             Logger.error('getPostsStream start() 실패: $e', e, st);
             try {
@@ -1091,8 +1236,10 @@ class PostService {
       final lowercaseQuery = query.toLowerCase();
 
       // 기본 쿼리
-      Query<Map<String, dynamic>> queryRef =
-          _firestore.collection('posts').orderBy('createdAt', descending: true).limit(600);
+      Query<Map<String, dynamic>> queryRef = _firestore
+          .collection('posts')
+          .orderBy('createdAt', descending: true)
+          .limit(600);
 
       // 카테고리 필터 추가
       if (category != null && category.isNotEmpty) {
@@ -1116,7 +1263,8 @@ class PostService {
             // 작성자 본인은 항상 허용 (안전장치)
             if (post.userId == user.uid) {
               canRead = true;
-            } else if (post.allowedUserIds.isEmpty && post.visibleToCategoryIds.isNotEmpty) {
+            } else if (post.allowedUserIds.isEmpty &&
+                post.visibleToCategoryIds.isNotEmpty) {
               canRead = await _isUserIncludedByVisibleCategories(
                 userId: user.uid,
                 visibleToCategoryIds: post.visibleToCategoryIds,
@@ -1128,14 +1276,15 @@ class PostService {
           // 검색어와 일치하는지 확인
           final title = (data['title'] as String? ?? '').toLowerCase();
           final content = (data['content'] as String? ?? '').toLowerCase();
-          final author = (data['authorNickname'] as String? ?? '').toLowerCase();
+          final author =
+              (data['authorNickname'] as String? ?? '').toLowerCase();
           final isAnonymous = data['isAnonymous'] == true;
 
           // ✅ 익명 글은 "작성자(아이디/닉네임)"로 어떤 경우에도 검색에 걸리면 안됨
           // - 제목/내용 검색은 포함
           // - 작성자 기준 검색은 비익명 글에만 허용
-          final matchesTitleOrContent =
-              title.contains(lowercaseQuery) || content.contains(lowercaseQuery);
+          final matchesTitleOrContent = title.contains(lowercaseQuery) ||
+              content.contains(lowercaseQuery);
           final matchesAuthor = !isAnonymous && author.contains(lowercaseQuery);
 
           if (matchesTitleOrContent || matchesAuthor) {

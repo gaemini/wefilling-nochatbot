@@ -1,8 +1,11 @@
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../../l10n/app_localizations.dart';
-import '../../models/snack_chat.dart';
 import '../../design/tokens.dart';
+import '../../models/snack_chat.dart';
+import '../../models/user_profile.dart';
+import '../../repositories/users_repository.dart';
 
 class SnackChatCard extends StatelessWidget {
   final SnackChat snackChat;
@@ -22,188 +25,338 @@ class SnackChatCard extends StatelessWidget {
     this.isMuted = false,
   });
 
+  String _formattedListTime(BuildContext context) {
+    final timestamp = snackChat.lastMessageTime;
+    final now = DateTime.now();
+    final isToday = timestamp.year == now.year &&
+        timestamp.month == now.month &&
+        timestamp.day == now.day;
+
+    if (!isToday) {
+      if (timestamp.year == now.year) {
+        return '${timestamp.month}/${timestamp.day}';
+      }
+      return '${timestamp.year % 100}.${timestamp.month}.${timestamp.day}';
+    }
+
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final period =
+        timestamp.hour < 12 ? (isKo ? '오전' : 'AM') : (isKo ? '오후' : 'PM');
+    final hour = timestamp.hour % 12 == 0 ? 12 : timestamp.hour % 12;
+    final minute = timestamp.minute.toString().padLeft(2, '0');
+    return isKo ? '$period $hour:$minute' : '$hour:$minute $period';
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final l10n = AppLocalizations.of(context)!;
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
-    final unreadCount = currentUserId != null
-        ? snackChat.getMyUnreadCount(currentUserId!)
-        : 0;
+    final unreadCount =
+        currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
     final hasUnread = unreadCount > 0;
-    final accentColor = hasUnread
-        ? const Color(0xFF3B82F6)
-        : isFavorited
-            ? const Color(0xFFF59E0B)
-            : const Color(0xFFD1D5DB);
     final rawLastMessage = snackChat.lastMessage.trim();
-    final localizedLastMessage = rawLastMessage == '[이미지]'
+    final lastMessage = rawLastMessage == '[이미지]'
         ? (isKo ? '[이미지]' : '[Image]')
-        : rawLastMessage;
-    return Container(
-      margin: EdgeInsets.zero,
-      child: Material(
-        color: BrandColors.surface,
-        borderRadius: BorderRadius.zero,
-        child: InkWell(
-          borderRadius: BorderRadius.zero,
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s20,
-              DesignTokens.s12,
-              DesignTokens.s20,
-              DesignTokens.s8,
-            ),
-            decoration: const BoxDecoration(
-              color: BrandColors.surface,
-              border: Border(
-                bottom: BorderSide(color: BrandColors.divider),
-              ),
-            ),
-            child: Stack(
-              children: [
-                Positioned(
-                  left: 0,
-                  top: 6,
-                  bottom: 6,
-                  child: Container(
-                    width: 3,
-                    decoration: BoxDecoration(
-                      color: accentColor,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              snackChat.title,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (hasUnread)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 7, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF3B82F6),
-                                borderRadius: BorderRadius.circular(999),
-                              ),
-                              child: Text(
-                                unreadCount > 99 ? '99+' : '$unreadCount',
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          if (hasUnread) const SizedBox(width: 6),
-                          if (isMuted)
-                            const Padding(
-                              padding: EdgeInsets.only(right: 4),
-                              child: Icon(
-                                Icons.notifications_off_outlined,
-                                size: 16,
-                                color: Color(0xFF9CA3AF),
-                              ),
-                            ),
-                          InkWell(
-                            onTap: onToggleFavorite,
-                            borderRadius: BorderRadius.circular(12),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                isFavorited
-                                    ? Icons.star
-                                    : Icons.star_border,
-                                size: 20,
-                                color: isFavorited
-                                    ? const Color(0xFFF59E0B)
-                                    : const Color(0xFF9CA3AF),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.forum_outlined,
-                            size: 14,
-                            color: accentColor,
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              rawLastMessage.isEmpty
-                                  ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
-                                  : localizedLastMessage,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 14,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: rawLastMessage.isEmpty
-                                    ? const Color(0xFF6B7280)
-                                    : hasUnread
-                                        ? const Color(0xFF111827)
-                                        : const Color(0xFF4B5563),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.people_outline,
-                            size: 15,
-                            color: Color(0xFF6B7280),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            isKo
-                                ? '${snackChat.participantCount}명 참여'
-                                : '${snackChat.participantCount} ${l10n.participants}',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF6B7280),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+        : rawLastMessage.isEmpty
+            ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
+            : rawLastMessage;
+
+    return Material(
+      color: BrandColors.surface,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 96),
+          padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: BrandColors.divider),
             ),
           ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _ParticipantAvatarMosaic(
+                participantIds: snackChat.participantIds,
+                currentUserId: currentUserId,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            snackChat.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 20,
+                              height: 1.25,
+                              fontWeight:
+                                  hasUnread ? FontWeight.w800 : FontWeight.w700,
+                              color: BrandColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          '${snackChat.participantCount}',
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 17,
+                            height: 1.25,
+                            fontWeight: FontWeight.w600,
+                            color: BrandColors.neutral500,
+                          ),
+                        ),
+                        if (isMuted) ...[
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.notifications_off_rounded,
+                            size: 17,
+                            color: BrandColors.neutral500,
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      lastMessage,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 14,
+                        height: 1.35,
+                        fontWeight:
+                            hasUnread ? FontWeight.w600 : FontWeight.w400,
+                        color: rawLastMessage.isEmpty
+                            ? BrandColors.textHint
+                            : hasUnread
+                                ? BrandColors.textPrimary
+                                : BrandColors.neutral500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                width: 62,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      _formattedListTime(context),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        height: 1.25,
+                        fontWeight:
+                            hasUnread ? FontWeight.w700 : FontWeight.w500,
+                        color: hasUnread
+                            ? BrandColors.textPrimary
+                            : BrandColors.neutral500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (hasUnread) ...[
+                          Container(
+                            constraints: const BoxConstraints(minWidth: 19),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: BrandColors.info,
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : '$unreadCount',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 10,
+                                height: 1.2,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                        ],
+                        Semantics(
+                          button: true,
+                          selected: isFavorited,
+                          label: isFavorited
+                              ? (isKo ? '즐겨찾기 해제' : 'Remove favorite')
+                              : (isKo ? '즐겨찾기' : 'Favorite'),
+                          child: InkResponse(
+                            onTap: onToggleFavorite,
+                            radius: 20,
+                            child: Padding(
+                              padding: const EdgeInsets.all(3),
+                              child: Icon(
+                                isFavorited
+                                    ? Icons.star_rounded
+                                    : Icons.star_border_rounded,
+                                size: 20,
+                                color: isFavorited
+                                    ? BrandColors.warning
+                                    : BrandColors.neutral400,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _ParticipantAvatarMosaic extends StatefulWidget {
+  final List<String> participantIds;
+  final String? currentUserId;
+
+  const _ParticipantAvatarMosaic({
+    required this.participantIds,
+    required this.currentUserId,
+  });
+
+  @override
+  State<_ParticipantAvatarMosaic> createState() =>
+      _ParticipantAvatarMosaicState();
+}
+
+class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
+  static final UsersRepository _usersRepository = UsersRepository();
+
+  List<UserProfile> _profiles = const [];
+
+  List<String> get _displayIds {
+    final ids = widget.participantIds.toSet().toList();
+    ids.sort((a, b) {
+      if (a == widget.currentUserId) return 1;
+      if (b == widget.currentUserId) return -1;
+      return 0;
+    });
+    return ids.take(4).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfiles();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ParticipantAvatarMosaic oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.participantIds, widget.participantIds) ||
+        oldWidget.currentUserId != widget.currentUserId) {
+      _loadProfiles();
+    }
+  }
+
+  Future<void> _loadProfiles() async {
+    final ids = _displayIds;
+    final loadedProfiles = await _usersRepository.getUserProfilesBatch(ids);
+    if (!mounted || !listEquals(ids, _displayIds)) return;
+
+    final profilesById = {
+      for (final profile in loadedProfiles) profile.uid: profile,
+    };
+    setState(() {
+      _profiles = [
+        for (final id in ids)
+          if (profilesById[id] != null) profilesById[id]!,
+      ];
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profilesById = {
+      for (final profile in _profiles) profile.uid: profile,
+    };
+    final ids = _displayIds;
+
+    return Semantics(
+      label: Localizations.localeOf(context).languageCode == 'ko'
+          ? '참여자 프로필'
+          : 'Participant profiles',
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: 62,
+          height: 62,
+          child: Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: List.generate(4, (index) {
+              final profile =
+                  index < ids.length ? profilesById[ids[index]] : null;
+              return _AvatarTile(profile: profile);
+            }),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvatarTile extends StatelessWidget {
+  final UserProfile? profile;
+
+  const _AvatarTile({this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl =
+        profile?.hasProfileImage == true ? profile!.photoURL : null;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        width: 29,
+        height: 29,
+        color: const Color(0xFFE8EEF3),
+        child: imageUrl == null
+            ? const Icon(
+                Icons.person_rounded,
+                size: 18,
+                color: Color(0xFF7790A3),
+              )
+            : CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 150),
+                placeholder: (_, __) => const Icon(
+                  Icons.person_rounded,
+                  size: 18,
+                  color: Color(0xFF7790A3),
+                ),
+                errorWidget: (_, __, ___) => const Icon(
+                  Icons.person_rounded,
+                  size: 18,
+                  color: Color(0xFF7790A3),
+                ),
+              ),
       ),
     );
   }

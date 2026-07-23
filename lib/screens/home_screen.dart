@@ -40,14 +40,15 @@ class MeetupHomePage extends StatefulWidget {
 
 class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   final MeetupService _meetupService = MeetupService();
-  final MeetupCalendarCacheService _calendarCache = MeetupCalendarCacheService.instance;
+  final MeetupCalendarCacheService _calendarCache =
+      MeetupCalendarCacheService.instance;
 
   // UI 상태
   bool _isCalendarExpanded = false; // 요구사항: 기본 접힘
   DateTime _focusedMonth = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   String _selectedCategoryKey = 'all';
-  
+
   // PageView 컨트롤러 (날짜 슬라이드용)
   late PageController _pageController;
   static const int _initialPageIndex = 10000; // 충분히 큰 초기 인덱스 (과거/미래로 이동 가능)
@@ -78,7 +79,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     _selectedDay = DateTime(now.year, now.month, now.day);
     _focusedMonth = _selectedDay;
     _baseDate = _selectedDay; // 기준 날짜 고정 (PageView 계산용)
-    
+
     // PageController 초기화
     _pageController = PageController(initialPage: _initialPageIndex);
 
@@ -193,7 +194,9 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   List<Meetup> _applyCategoryFilter(List<Meetup> meetups) {
     if (_selectedCategoryKey == 'all') return meetups;
     final wantedKey = _firestoreCategoryForKey(_selectedCategoryKey);
-    return meetups.where((m) => _normalizeCategoryKey(m.category) == wantedKey).toList();
+    return meetups
+        .where((m) => _normalizeCategoryKey(m.category) == wantedKey)
+        .toList();
   }
 
   Map<DateTime, List<Meetup>> _groupByDay(List<Meetup> meetups) {
@@ -206,7 +209,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       map[k]!.sort((a, b) {
         final d = a.date.compareTo(b.date);
         if (d != 0) return d;
-        return _minutesFromMeetupTime(a.time).compareTo(_minutesFromMeetupTime(b.time));
+        return _minutesFromMeetupTime(a.time)
+            .compareTo(_minutesFromMeetupTime(b.time));
       });
     }
     return map;
@@ -422,7 +426,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       if (reviewId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewNotFound)),
+            SnackBar(
+                content: Text(AppLocalizations.of(context)!.reviewNotFound)),
           );
         }
         return;
@@ -432,7 +437,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       if (reviewData == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(AppLocalizations.of(context)!.reviewLoadFailed)),
+            SnackBar(
+                content: Text(AppLocalizations.of(context)!.reviewLoadFailed)),
           );
         }
         return;
@@ -450,14 +456,14 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
       String requestId;
       if (reqQuery.docs.isEmpty) {
-        final userDoc =
-            await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-        final recipientName = (userDoc.data()?['nickname'] ?? '')
-                .toString()
-                .trim()
-                .isNotEmpty
-            ? userDoc.data()!['nickname'].toString().trim()
-            : 'User';
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(user.uid)
+            .get();
+        final recipientName =
+            (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
+                ? userDoc.data()!['nickname'].toString().trim()
+                : 'User';
         final requesterId = meetup.userId ?? '';
         final requesterName =
             reviewData['authorName'] ?? meetup.hostNickname ?? meetup.host;
@@ -475,7 +481,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           'status': 'pending',
           'createdAt': FieldValue.serverTimestamp(),
           'respondedAt': null,
-          'expiresAt': Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
+          'expiresAt':
+              Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
           'metadata': {'reviewId': reviewId},
         });
         requestId = newReq.id;
@@ -504,8 +511,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
             imageUrl: imageUrls.isNotEmpty ? imageUrls.first : '',
             imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
             content: reviewData['content'] ?? '',
-            authorName:
-                reviewData['authorName'] ?? AppLocalizations.of(context)!.anonymous,
+            authorName: reviewData['authorName'] ??
+                AppLocalizations.of(context)!.anonymous,
           ),
         ),
       );
@@ -520,7 +527,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   // ===== 참여/나가기 =====
-  Future<void> _runWithMinimumButtonLoading(Future<void> Function() operation) async {
+  Future<void> _runWithMinimumButtonLoading(
+      Future<void> Function() operation) async {
     final start = DateTime.now();
     try {
       await operation();
@@ -852,12 +860,12 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     _focusedMonth = focusedDay;
                     _ensureMonthStreams(focusedDay);
                   });
-                  
+
                   // PageView도 선택된 날짜로 이동
                   final daysDiff = newDateKey.difference(_baseDate).inDays;
                   final targetPage = _initialPageIndex + daysDiff;
                   _pageController.jumpToPage(targetPage);
-                  
+
                   unawaited(_calendarCache.warmDay(selectedDay));
                 },
                 // 마커는 직접 그릴 것이므로 비활성
@@ -868,10 +876,22 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     final isSun = day.weekday == DateTime.sunday;
                     final color = isSun
                         ? const Color(0xFFEF4444)
-                        : (isSat ? const Color(0xFF3B82F6) : const Color(0xFF6B7280));
+                        : (isSat
+                            ? const Color(0xFF3B82F6)
+                            : const Color(0xFF6B7280));
                     final label = lang == 'ko'
-                        ? const ['일', '월', '화', '수', '목', '금', '토'][day.weekday % 7]
-                        : DateFormat('EEE', 'en_US').format(day).substring(0, 1);
+                        ? const [
+                            '일',
+                            '월',
+                            '화',
+                            '수',
+                            '목',
+                            '금',
+                            '토'
+                          ][day.weekday % 7]
+                        : DateFormat('EEE', 'en_US')
+                            .format(day)
+                            .substring(0, 1);
                     return Center(
                       child: Text(
                         label,
@@ -953,13 +973,13 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   void _onPageChanged(int pageIndex) {
     final newDate = _getDateFromPageIndex(pageIndex);
     final newDateKey = _dayKey(newDate);
-    
+
     // 선택 날짜가 실제로 바뀐 경우에만 setState
     if (newDateKey != _dayKey(_selectedDay)) {
       setState(() {
         _selectedDay = newDateKey;
         // 월이 바뀌면 focusedMonth도 업데이트
-        if (_selectedDay.year != _focusedMonth.year || 
+        if (_selectedDay.year != _focusedMonth.year ||
             _selectedDay.month != _focusedMonth.month) {
           _focusedMonth = DateTime(_selectedDay.year, _selectedDay.month);
           _ensureMonthStreams(_focusedMonth);
@@ -1010,7 +1030,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     _buildCategoryChips(),
                     // 상단 고정: 달력 헤더 + (펼침 시) 달력
                     _buildCalendarHeader(),
-                    _buildCalendar(visibleByDay: visibleByDay, myByDay: myByDay),
+                    _buildCalendar(
+                        visibleByDay: visibleByDay, myByDay: myByDay),
                     const SizedBox(height: 8),
                     // PageView로 날짜별 리스트 슬라이드
                     Expanded(
@@ -1022,27 +1043,32 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                           final pageDate = _getDateFromPageIndex(pageIndex);
                           final pageDateKey = _dayKey(pageDate);
                           final isPagePast = _isPastDay(pageDateKey);
-                          
+
                           // 해당 날짜의 모임 목록
                           final pageMeetups = (isPagePast
                                   ? (myByDay[pageDateKey] ?? const <Meetup>[])
-                                  : (visibleByDay[pageDateKey] ?? const <Meetup>[]))
+                                  : (visibleByDay[pageDateKey] ??
+                                      const <Meetup>[]))
                               .toList();
-                          
+
                           // 스켈레톤 표시 여부
                           final pageShowSkeleton = isPagePast
-                              ? (mySnap.connectionState == ConnectionState.waiting &&
+                              ? (mySnap.connectionState ==
+                                      ConnectionState.waiting &&
                                   !mySnap.hasData)
-                              : (visibleSnap.connectionState == ConnectionState.waiting &&
+                              : (visibleSnap.connectionState ==
+                                      ConnectionState.waiting &&
                                   !visibleSnap.hasData);
-                          
+
                           return pageShowSkeleton
                               ? ListView(
-                                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 90),
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 8, 12, 90),
                                   children: List.generate(
                                     3,
                                     (i) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 12),
+                                      padding:
+                                          const EdgeInsets.only(bottom: 12),
                                       child: _buildMeetupSkeleton(),
                                     ),
                                   ),
@@ -1051,11 +1077,14 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                   ? ListView(
                                       children: [
                                         SizedBox(
-                                          height:
-                                              MediaQuery.of(context).size.height * 0.55,
+                                          height: MediaQuery.of(context)
+                                                  .size
+                                                  .height *
+                                              0.55,
                                           child: AppEmptyState.noMeetups(
                                             context: context,
-                                            onCreateMeetup: _navigateToCreateMeetup,
+                                            onCreateMeetup:
+                                                _navigateToCreateMeetup,
                                             centerVertically: true,
                                           ),
                                         ),
@@ -1071,15 +1100,16 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                         );
                                       },
                                       child: ListView.builder(
-                                        physics: const AlwaysScrollableScrollPhysics(),
-                                        padding:
-                                            const EdgeInsets.fromLTRB(12, 8, 12, 90),
+                                        physics:
+                                            const AlwaysScrollableScrollPhysics(),
+                                        padding: const EdgeInsets.fromLTRB(
+                                            12, 8, 12, 90),
                                         itemCount: pageMeetups.length,
                                         itemBuilder: (context, index) {
                                           final meetup = pageMeetups[index];
                                           return Padding(
-                                            padding:
-                                                const EdgeInsets.only(bottom: 12),
+                                            padding: const EdgeInsets.only(
+                                                bottom: 12),
                                             child: _buildMeetupCard(
                                               meetup,
                                               forceIsParticipating:
@@ -1229,9 +1259,8 @@ class _CategoryTabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 스크린샷 기준: 연한 하늘색 배경 + 흰 글자(선택), 나머지 검정 굵은 글자
-    const selectedBg = Color(0xFF6CCFF6);
-    const selectedText = Colors.white;
+    const selectedBg = Color(0xFFE5E7EB);
+    const selectedText = Color(0xFF4B5563);
     const unselectedText = Color(0xFF111827);
 
     return Material(
@@ -1296,7 +1325,9 @@ class _CalendarDayCell extends StatelessWidget {
         : (isSelected ? const Color(0xFFE5E7EB) : Colors.transparent);
     final textColor = isToday
         ? Colors.white
-        : (isSelected ? const Color(0xFF4B5563) : _weekdayColor(day)); // 선택된 날짜도 부드러운 회색
+        : (isSelected
+            ? const Color(0xFF4B5563)
+            : _weekdayColor(day)); // 선택된 날짜도 부드러운 회색
 
     return Center(
       child: SizedBox(
@@ -1317,8 +1348,9 @@ class _CalendarDayCell extends StatelessWidget {
                   style: TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 14,
-                    fontWeight:
-                        (isToday || isSelected) ? FontWeight.w700 : FontWeight.w600,
+                    fontWeight: (isToday || isSelected)
+                        ? FontWeight.w700
+                        : FontWeight.w600,
                     color: textColor,
                   ),
                 ),
@@ -1451,4 +1483,3 @@ class _MeetupCheckMarkPainter extends CustomPainter {
     return oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
   }
 }
-

@@ -25,6 +25,9 @@ class AppIconButton extends StatelessWidget {
   /// 아이콘 색상 (null일 경우 테마 기본값 사용)
   final Color? iconColor;
 
+  /// 아이콘 크기 (null일 경우 앱 기본 크기 사용)
+  final double? iconSize;
+
   /// 배경 색상 (null일 경우 투명)
   final Color? backgroundColor;
 
@@ -52,6 +55,7 @@ class AppIconButton extends StatelessWidget {
     required this.onPressed,
     required this.semanticLabel,
     this.iconColor,
+    this.iconSize,
     this.backgroundColor,
     this.tooltip,
     this.enabled = true,
@@ -78,7 +82,8 @@ class AppIconButton extends StatelessWidget {
 
     // 텍스트 스케일에 따른 크기 조정
     final adjustedHitArea = context.adjustedHeight(DesignTokens.hit);
-    final adjustedIconSize = context.adjustedHeight(DesignTokens.icon);
+    final adjustedIconSize =
+        context.adjustedHeight(iconSize ?? DesignTokens.icon);
     final adjustedPadding = context.adjustedPadding(
       const EdgeInsets.all(DesignTokens.s12),
     );

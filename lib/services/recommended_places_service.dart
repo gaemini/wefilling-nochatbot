@@ -84,9 +84,9 @@ class RecommendedPlacesService {
     if (lower != raw) candidates.add(lower);
 
     // 하위 호환/운영 데이터 편차 대응
-    // - drink: 콘솔에 'Drinks'로 저장된 경우가 있어 폴백
-    if (lower == 'drink') {
-      candidates.add('Drinks');
+    // - hangout: allow an optional title-cased operations document.
+    if (lower == 'hangout') {
+      candidates.add('Hangout');
     }
     // - cafe: 과거 스크립트에서 'hobby'로 저장했던 흔적 폴백
     if (lower == 'cafe') {
@@ -99,9 +99,9 @@ class RecommendedPlacesService {
   }
 
   /// 카테고리별 추천 장소 가져오기
-  /// 
-  /// [category]: 카테고리 키 (study, meal, hobby, culture, other)
-  /// 
+  ///
+  /// [category]: 카테고리 키 (study, meal, cafe, hangout, culture, etc)
+  ///
   /// Returns: 추천 장소 리스트 (order 기준 정렬)
   Future<List<RecommendedPlace>> getRecommendedPlaces(String category) async {
     try {
@@ -112,10 +112,8 @@ class RecommendedPlacesService {
       String? foundId;
 
       for (final docId in docIds) {
-        final doc = await _firestore
-            .collection('recommended_places')
-            .doc(docId)
-            .get();
+        final doc =
+            await _firestore.collection('recommended_places').doc(docId).get();
         if (doc.exists) {
           found = doc;
           foundId = docId;
@@ -135,21 +133,24 @@ class RecommendedPlacesService {
       }
 
       final places = (data['places'] as List<dynamic>?)
-          ?.map((place) {
-            try {
-              return RecommendedPlace.fromMap(place as Map<String, dynamic>);
-            } catch (e) {
-              Logger.log('추천 장소 파싱 실패: $e');
-              return null;
-            }
-          })
-          .whereType<RecommendedPlace>()
-          .toList() ?? [];
+              ?.map((place) {
+                try {
+                  return RecommendedPlace.fromMap(
+                      place as Map<String, dynamic>);
+                } catch (e) {
+                  Logger.log('추천 장소 파싱 실패: $e');
+                  return null;
+                }
+              })
+              .whereType<RecommendedPlace>()
+              .toList() ??
+          [];
 
       // order 기준으로 정렬
       places.sort((a, b) => a.order.compareTo(b.order));
-      
-      Logger.log('추천 장소 로드 성공: $foundId (requested: $category, ${places.length}개)');
+
+      Logger.log(
+          '추천 장소 로드 성공: $foundId (requested: $category, ${places.length}개)');
       return places;
     } catch (e) {
       Logger.log('추천 장소 로드 실패: $e');

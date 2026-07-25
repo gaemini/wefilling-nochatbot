@@ -6,10 +6,11 @@ import 'package:wefilling/services/snack_chat_service.dart';
 SnackChat _chat({
   required int durationHours,
   required DateTime expiresAt,
+  DateTime? createdAt,
   List<String> participants = const ['owner', 'friend'],
   List<String> favorites = const [],
 }) {
-  final now = DateTime.utc(2026, 1, 1);
+  final now = createdAt ?? DateTime(2026, 1, 1);
   return SnackChat(
     id: 'chat',
     title: 'Topic',
@@ -74,58 +75,103 @@ void main() {
     expect(chat.participantCount, 20);
   });
 
-  test('all active chats stay in Today before 24 hours', () {
+  test('chats created today stay in Today until local midnight', () {
     final chats = [
       _chat(
         durationHours: 24,
-        expiresAt: DateTime.utc(2026, 1, 2),
+        expiresAt: DateTime(2026, 7, 25, 9),
+        createdAt: DateTime(2026, 7, 24, 9),
       ),
       _chat(
         durationHours: 0,
         expiresAt: SnackChat.noExpirationDate,
+        createdAt: DateTime(2026, 7, 24),
       ),
     ];
 
     final today = filterSnackChatsBySection(
       chats,
-      currentUserId: 'owner',
       section: SnackChatListSection.today,
-      now: DateTime.utc(2026, 1, 1, 23, 59, 59),
+      now: DateTime(2026, 7, 24, 23, 59, 59, 999),
     );
 
     expect(today, hasLength(2));
   });
 
-  test('no-end and favorited chats move to All after 24 hours', () {
+  test('every previous-date chat moves to All at midnight', () {
     final noEnd = _chat(
       durationHours: 0,
       expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 23, 59),
     );
     final favorited = _chat(
       durationHours: 24,
-      expiresAt: DateTime.utc(2026, 1, 2),
+      expiresAt: DateTime(2026, 7, 25, 23, 59),
+      createdAt: DateTime(2026, 7, 24, 23, 59),
       favorites: const ['owner'],
     );
     final regular = _chat(
       durationHours: 24,
-      expiresAt: DateTime.utc(2026, 1, 2),
+      expiresAt: DateTime(2026, 7, 25, 23, 59),
+      createdAt: DateTime(2026, 7, 24, 23, 59),
     );
 
     final all = filterSnackChatsBySection(
       [noEnd, favorited, regular],
-      currentUserId: 'owner',
       section: SnackChatListSection.all,
-      now: DateTime.utc(2026, 1, 2),
+      now: DateTime(2026, 7, 25),
     );
     final today = filterSnackChatsBySection(
       [noEnd, favorited, regular],
-      currentUserId: 'owner',
       section: SnackChatListSection.today,
-      now: DateTime.utc(2026, 1, 2),
+      now: DateTime(2026, 7, 25),
     );
 
-    expect(all, containsAll([noEnd, favorited]));
-    expect(all, isNot(contains(regular)));
+    expect(all, containsAll([noEnd, favorited, regular]));
     expect(today, isEmpty);
+  });
+
+  test('a room from yesterday is not Today even when under 24 hours old', () {
+    final chat = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime(2026, 7, 24, 23, 59),
+    );
+
+    final today = filterSnackChatsBySection(
+      [chat],
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 25, 0, 1),
+    );
+    final all = filterSnackChatsBySection(
+      [chat],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 25, 0, 1),
+    );
+
+    expect(today, isEmpty);
+    expect(all, contains(chat));
+  });
+
+  test('rooms before the 2026-07-24 policy boundary are isolated', () {
+    final legacy = _chat(
+      durationHours: 0,
+      expiresAt: SnackChat.noExpirationDate,
+      createdAt: DateTime.utc(2026, 7, 23, 14, 59, 59, 999),
+    );
+
+    final today = filterSnackChatsBySection(
+      [legacy],
+      section: SnackChatListSection.today,
+      now: DateTime(2026, 7, 24, 12),
+    );
+    final all = filterSnackChatsBySection(
+      [legacy],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 24, 12),
+    );
+
+    expect(today, isEmpty);
+    expect(all, isEmpty);
   });
 }

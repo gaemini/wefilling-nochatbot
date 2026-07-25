@@ -31,20 +31,27 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   final _descriptionController = TextEditingController();
   final _locationController = TextEditingController();
   final _timeController = TextEditingController();
-  
+
   late DateTime _selectedDate;
   String _selectedCategory = 'etc'; // 영어 키로 저장
   int _selectedMaxParticipants = 3;
   bool _isLoading = false;
   bool _isInitialized = false;
-  
+
   // 이미지 관련
   File? _selectedImage;
   String? _existingImageUrl;
   final ImagePicker _picker = ImagePicker();
 
   // 카테고리 키 (Firestore에 저장되는 값)
-  final List<String> _categoryKeys = ['study', 'meal', 'cafe', 'drink', 'culture', 'etc'];
+  final List<String> _categoryKeys = [
+    'study',
+    'meal',
+    'cafe',
+    'hangout',
+    'culture',
+    'etc',
+  ];
   final List<int> _participantOptions = [3, 4, 5, 6];
 
   @override
@@ -69,19 +76,23 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     _selectedMaxParticipants = widget.meetup.maxParticipants;
     _selectedDate = widget.meetup.date;
     _existingImageUrl = widget.meetup.thumbnailImageUrl;
-    
+
     // 카테고리 정규화 (한국어 → 영어 키)
     final categoryNormalizeMap = {
       '스터디': 'study',
       '식사': 'meal',
       '카페': 'cafe',
-      '술': 'drink',
+      '술': 'hangout',
+      '행아웃': 'hangout',
       '문화': 'culture',
       '기타': 'etc',
     };
-    
+
     // 기존 카테고리를 영어 키로 변환
-    final normalizedCategory = widget.meetup.category.toLowerCase();
+    final rawCategory = widget.meetup.category.toLowerCase();
+    final normalizedCategory = const {'drink', 'drinks'}.contains(rawCategory)
+        ? 'hangout'
+        : rawCategory;
     if (_categoryKeys.contains(normalizedCategory)) {
       _selectedCategory = normalizedCategory;
     } else if (categoryNormalizeMap.containsKey(widget.meetup.category)) {
@@ -118,7 +129,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.imageSelectionError}: $e'),
+            content: Text(
+                '${AppLocalizations.of(context)!.imageSelectionError}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -130,11 +142,10 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     if (_selectedImage == null) return _existingImageUrl;
 
     try {
-      final String fileName = 'meetup_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
-      final Reference storageRef = FirebaseStorage.instance
-          .ref()
-          .child('meetup_images')
-          .child(fileName);
+      final String fileName =
+          'meetup_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final Reference storageRef =
+          FirebaseStorage.instance.ref().child('meetup_images').child(fileName);
 
       final UploadTask uploadTask = storageRef.putFile(_selectedImage!);
       final TaskSnapshot snapshot = await uploadTask;
@@ -171,8 +182,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         return AppLocalizations.of(context)!.meal;
       case 'cafe':
         return AppLocalizations.of(context)!.cafe;
-      case 'drink':
-        return AppLocalizations.of(context)!.drink;
+      case 'hangout':
+        return AppLocalizations.of(context)!.hangout;
       case 'culture':
         return AppLocalizations.of(context)!.culture;
       case 'etc':
@@ -237,7 +248,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         if (parts.length < 2) return baseDay;
         final h = int.tryParse(parts[0].trim()) ?? 0;
         final m = int.tryParse(parts[1].trim()) ?? 0;
-        return DateTime(baseDay.year, baseDay.month, baseDay.day, h.clamp(0, 23), m.clamp(0, 59));
+        return DateTime(baseDay.year, baseDay.month, baseDay.day,
+            h.clamp(0, 23), m.clamp(0, 59));
       }
 
       DateTime computeEndsAt(DateTime date, String rawTime) {
@@ -264,12 +276,13 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
             endMinute = int.tryParse(endParts[1].trim()) ?? endMinute;
           }
         }
-        return DateTime(baseDay.year, baseDay.month, baseDay.day, endHour.clamp(0, 23), endMinute.clamp(0, 59));
+        return DateTime(baseDay.year, baseDay.month, baseDay.day,
+            endHour.clamp(0, 23), endMinute.clamp(0, 59));
       }
 
       final startsAt = computeStartsAt(_selectedDate, timeToSave);
       final endsAt = computeEndsAt(_selectedDate, timeToSave);
-      
+
       final updateData = {
         'title': _titleController.text.trim(),
         'description': _descriptionController.text.trim(),
@@ -280,7 +293,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         'startsAt': Timestamp.fromDate(startsAt),
         'endsAt': Timestamp.fromDate(endsAt),
         // 캘린더 날짜 기반 조회(타임존 영향 최소화)
-        'dateKey': '${_selectedDate.toLocal().year}-${_selectedDate.toLocal().month.toString().padLeft(2, '0')}-${_selectedDate.toLocal().day.toString().padLeft(2, '0')}',
+        'dateKey':
+            '${_selectedDate.toLocal().year}-${_selectedDate.toLocal().month.toString().padLeft(2, '0')}-${_selectedDate.toLocal().day.toString().padLeft(2, '0')}',
         'category': _selectedCategory,
         'updatedAt': FieldValue.serverTimestamp(),
       };
@@ -308,7 +322,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${AppLocalizations.of(context)!.meetupUpdateError}: $e'),
+            content:
+                Text('${AppLocalizations.of(context)!.meetupUpdateError}: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -325,7 +340,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -354,7 +369,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     height: 20,
                     child: CircularProgressIndicator(
                       strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(AppColors.pointColor),
                     ),
                   )
                 : Text(
@@ -363,7 +379,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                       fontFamily: 'Pretendard',
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
-                      color: _isLoading ? const Color(0xFF9CA3AF) : AppColors.pointColor,
+                      color: _isLoading
+                          ? const Color(0xFF9CA3AF)
+                          : AppColors.pointColor,
                     ),
                   ),
           ),
@@ -392,16 +410,17 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // 썸네일 이미지
-              _buildLabel('${AppLocalizations.of(context)!.thumbnailImage} (${AppLocalizations.of(context)!.optional})'),
+              _buildLabel(
+                  '${AppLocalizations.of(context)!.thumbnailImage} (${AppLocalizations.of(context)!.optional})'),
               const SizedBox(height: 8),
               _buildImagePicker(),
-              
+
               const SizedBox(height: 24),
-              
+
               // 모임 설명
               Row(
                 children: [
@@ -432,9 +451,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                 hintText: widget.meetup.description,
                 maxLines: 5,
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // 카테고리
               _buildLabel(AppLocalizations.of(context)!.category),
               const SizedBox(height: 8),
@@ -448,18 +467,19 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     });
                   }
                 },
-                itemBuilder: (String categoryKey) => _getCategoryDisplayText(categoryKey),
+                itemBuilder: (String categoryKey) =>
+                    _getCategoryDisplayText(categoryKey),
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // 날짜
               _buildLabel(AppLocalizations.of(context)!.date),
               const SizedBox(height: 8),
               _buildDateField(),
-              
+
               const SizedBox(height: 24),
-              
+
               // 시간
               _buildLabel(AppLocalizations.of(context)!.time),
               const SizedBox(height: 8),
@@ -473,9 +493,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 24),
-              
+
               // 장소
               _buildLabel(AppLocalizations.of(context)!.location),
               const SizedBox(height: 8),
@@ -489,9 +509,9 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                   return null;
                 },
               ),
-              
+
               const SizedBox(height: 40),
-              
+
               // 모임 수정하기 버튼
               SizedBox(
                 width: double.infinity,
@@ -512,7 +532,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           width: 24,
                           height: 24,
                           child: CircularProgressIndicator(
-                          color: Colors.white,
+                            color: Colors.white,
                             strokeWidth: 2.5,
                           ),
                         )
@@ -526,7 +546,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                         ),
                 ),
               ),
-              
+
               // 하단 여백 (갤럭시 네비게이션 바 고려)
               SizedBox(height: 24 + MediaQuery.of(context).padding.bottom),
             ],
@@ -571,7 +591,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
         ),
         filled: true,
         fillColor: const Color(0xFFF9FAFB),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
@@ -736,7 +757,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           icon: const Icon(Icons.edit, size: 20),
                           color: AppColors.pointColor,
                           onPressed: _pickImage,
-                          tooltip: AppLocalizations.of(context)!.changeImageTooltip,
+                          tooltip:
+                              AppLocalizations.of(context)!.changeImageTooltip,
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -757,7 +779,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                           icon: const Icon(Icons.close, size: 20),
                           color: const Color(0xFFEF4444),
                           onPressed: _removeImage,
-                          tooltip: AppLocalizations.of(context)!.removeImageTooltip,
+                          tooltip:
+                              AppLocalizations.of(context)!.removeImageTooltip,
                         ),
                       ),
                     ],
@@ -803,8 +826,8 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
                     ),
                   ),
                 ],
-        ),
-      ),
+              ),
+            ),
     );
   }
 }

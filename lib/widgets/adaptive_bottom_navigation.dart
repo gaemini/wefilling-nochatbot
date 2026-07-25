@@ -15,6 +15,7 @@ class BottomNavigationItem {
   final int? badgeCount; // 배지 카운트 추가
   final String? semanticLabel;
   final Color? selectedColor;
+  final double iconSizeMultiplier;
 
   const BottomNavigationItem({
     this.icon,
@@ -25,7 +26,8 @@ class BottomNavigationItem {
     this.badgeCount,
     this.semanticLabel,
     this.selectedColor,
-  });
+    this.iconSizeMultiplier = 1,
+  }) : assert(iconSizeMultiplier > 0);
 }
 
 /// 완전 반응형 하단 네비게이션 바
@@ -46,20 +48,39 @@ class AdaptiveBottomNavigation extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final mediaQuery = MediaQuery.of(context);
-        final screenWidth = mediaQuery.size.width;
-        final screenHeight = mediaQuery.size.height;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : mediaQuery.size.width;
         final bottomPadding = mediaQuery.padding.bottom;
         final textScale = MediaQuery.textScalerOf(context).scale(1.0);
 
         // 화면 크기별 동적 크기 계산
-        final navHeight = _calculateNavHeight(
+        final baseNavHeight = _calculateNavHeight(
           context,
-          screenWidth,
-          screenHeight,
+          availableWidth,
           textScale,
         );
         final iconSize = _calculateIconSize(context);
-        final fontSize = _calculateFontSize(context, textScale);
+        final fontSize = _calculateFontSize(context);
+        final verticalPadding = _calculateVerticalPadding(context);
+        final maxIconMultiplier = items.fold<double>(
+          1,
+          (largest, item) => item.iconSizeMultiplier > largest
+              ? item.iconSizeMultiplier
+              : largest,
+        );
+        final largestIconSize =
+            (iconSize * maxIconMultiplier).clamp(18.0, 28.0);
+        final effectiveTextScale = textScale.clamp(1.0, 1.3);
+        final requiredNavHeight = largestIconSize +
+            3 +
+            (fontSize * 1.1 * effectiveTextScale) +
+            8 +
+            (verticalPadding * 2) +
+            2;
+        final navHeight = baseNavHeight < requiredNavHeight
+            ? requiredNavHeight
+            : baseNavHeight;
         return Container(
           height: navHeight + bottomPadding,
           decoration: BoxDecoration(
@@ -77,7 +98,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: _calculateHorizontalPadding(context),
-                vertical: _calculateVerticalPadding(context),
+                vertical: verticalPadding,
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -86,6 +107,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                   final index = entry.key;
                   final item = entry.value;
                   final isSelected = index == selectedIndex;
+                  final itemIconSize =
+                      (iconSize * item.iconSizeMultiplier).clamp(18.0, 28.0);
 
                   return Expanded(
                     child: _buildNavItem(
@@ -93,7 +116,7 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                       item: item,
                       isSelected: isSelected,
                       onTap: () => onItemTapped(index),
-                      iconSize: iconSize,
+                      iconSize: itemIconSize,
                       fontSize: fontSize,
                     ),
                   );
@@ -110,7 +133,6 @@ class AdaptiveBottomNavigation extends StatelessWidget {
   double _calculateNavHeight(
     BuildContext context,
     double width,
-    double height,
     double textScale,
   ) {
     final base = context.rh(60, min: 60, max: 72);
@@ -125,10 +147,8 @@ class AdaptiveBottomNavigation extends StatelessWidget {
   }
 
   /// 화면 크기별 폰트 크기 계산
-  double _calculateFontSize(BuildContext context, double textScale) {
-    final scaled = context.rf(11).clamp(10, 12.5);
-    if (textScale > 1.35) return (scaled * 0.95).clamp(10, 12).toDouble();
-    return scaled.toDouble();
+  double _calculateFontSize(BuildContext context) {
+    return context.rf(11).clamp(10, 12.5).toDouble();
   }
 
   /// 화면 크기별 수평 패딩 계산
@@ -211,24 +231,23 @@ class AdaptiveBottomNavigation extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 3),
-              Flexible(
-                child: SizedBox(
-                  width: double.infinity,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: fontSize,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w400,
-                        color: isSelected ? activeColor : unselectedColor,
-                        height: 1.1,
-                      ),
-                      maxLines: 1,
-                      softWrap: false,
-                      textAlign: TextAlign.center,
+              SizedBox(
+                width: double.infinity,
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.3,
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.w400,
+                      color: isSelected ? activeColor : unselectedColor,
+                      height: 1.1,
                     ),
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                    textAlign: TextAlign.center,
                   ),
                 ),
               ),

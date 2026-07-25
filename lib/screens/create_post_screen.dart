@@ -16,6 +16,7 @@ import '../services/post_service.dart';
 import '../ui/widgets/fullscreen_file_image_viewer.dart';
 import '../ui/widgets/post_category_selector.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 
 class CreatePostScreen extends StatefulWidget {
   final Function onPostCreated;
@@ -73,9 +74,6 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       _selectedCategoryIds = <String>[initialAudienceCategory.id];
     }
     _contentController.addListener(_checkCanProceed);
-    _contentFocusNode.addListener(() {
-      if (mounted) setState(() {});
-    });
     _loadFriendCategories();
     _checkCanProceed();
   }
@@ -500,33 +498,48 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       elevation: 0,
       surfaceTintColor: Colors.white,
       centerTitle: true,
+      toolbarHeight: context.rh(56, min: 54, max: 60),
       automaticallyImplyLeading: false,
+      leadingWidth: 48,
       leading: IconButton(
-        icon: const Icon(Icons.close, color: Color(0xFF111827), size: 30),
+        icon: Icon(
+          Icons.close_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
         onPressed: () => Navigator.of(context).pop(),
+        tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
       ),
-      title: Text(
-        l10n.newPostCreation,
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
+      title: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Text(
+          l10n.newPostCreation,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+          ),
         ),
       ),
       actions: [
-        IconButton(
-          onPressed:
-              (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
-          icon: Icon(
-            Icons.arrow_forward_rounded,
-            size: 32,
-            color: (_canProceed && !_isSubmitting)
-                ? const Color(0xFF111827)
-                : const Color(0xFFD1D5DB),
+        SizedBox.square(
+          dimension: 48,
+          child: IconButton(
+            onPressed:
+                (_canProceed && !_isSubmitting) ? _goToVisibilityStep : null,
+            icon: Icon(
+              Icons.arrow_forward_rounded,
+              size: context.ri(23).clamp(21, 25).toDouble(),
+            ),
+            color: const Color(0xFF111827),
+            disabledColor: const Color(0xFFD1D5DB),
+            tooltip: MaterialLocalizations.of(context).nextPageTooltip,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 2),
       ],
     );
   }
@@ -539,43 +552,63 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       elevation: 0,
       surfaceTintColor: Colors.white,
       centerTitle: true,
+      toolbarHeight: context.rh(56, min: 54, max: 60),
       automaticallyImplyLeading: false,
+      leadingWidth: 48,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back, color: Color(0xFF111827), size: 30),
+        icon: Icon(
+          Icons.arrow_back_rounded,
+          color: const Color(0xFF111827),
+          size: context.ri(22).clamp(21, 24).toDouble(),
+        ),
         onPressed: _isSubmitting ? null : () => _goToStep(0),
+        tooltip: MaterialLocalizations.of(context).backButtonTooltip,
       ),
-      title: Text(
-        l10n.newPostCreation,
-        style: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 18,
-          fontWeight: FontWeight.w700,
-          color: Color(0xFF111827),
+      title: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.2,
+        child: Text(
+          l10n.newPostCreation,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
+          ),
         ),
       ),
       actions: [
-        TextButton.icon(
-          onPressed: _isSubmitting ? null : _submitPost,
-          icon: _isSubmitting
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.check_rounded),
-          label: Text(
-            l10n.registration,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+        MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.15,
+          child: TextButton.icon(
+            onPressed: _isSubmitting ? null : _submitPost,
+            icon: _isSubmitting
+                ? const SizedBox.square(
+                    dimension: 15,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    Icons.check_rounded,
+                    size: context.ri(18).clamp(17, 20).toDouble(),
+                  ),
+            label: Text(
+              l10n.registration,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+              disabledForegroundColor: const Color(0xFF9CA3AF),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(44, 44),
             ),
           ),
-          style: TextButton.styleFrom(
-            foregroundColor: AppColors.pointColor,
-          ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 4),
       ],
     );
   }
@@ -586,149 +619,106 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 16,
+              fontSize: context.rf(15).clamp(14, 16).toDouble(),
               fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
+              color: const Color(0xFF111827),
             ),
           ),
         ),
         if (trailing != null)
           Text(
             trailing,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
+              fontSize: context.rf(13).clamp(12, 14).toDouble(),
+              fontWeight: FontWeight.w700,
+              color: const Color(0xFF6B7280),
             ),
           ),
       ],
     );
   }
 
-  Widget _buildAddImageTile(AppLocalizations l10n) {
-    return GestureDetector(
-      onTap: _selectImages,
-      child: Container(
-        width: 110,
-        height: 110,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFFD1D5DB),
-            width: 1.5,
-            strokeAlign: BorderSide.strokeAlignInside,
+  Widget _buildAddImageButton(AppLocalizations l10n) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TextButton.icon(
+        onPressed: _selectImages,
+        style: TextButton.styleFrom(
+          foregroundColor: const Color(0xFF475467),
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+          minimumSize: const Size(44, 44),
+          tapTargetSize: MaterialTapTargetSize.padded,
+        ),
+        icon: Icon(
+          Icons.add_photo_alternate_outlined,
+          size: context.ri(21).clamp(20, 23).toDouble(),
+        ),
+        label: Text(
+          l10n.addImage,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+            fontWeight: FontWeight.w700,
           ),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.add_a_photo_outlined,
-                color: Color(0xFF6B7280), size: 30),
-            const SizedBox(height: 8),
-            Text(
-              l10n.addImage,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF9CA3AF),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildImagePlaceholderStrip() {
-    return Expanded(
-      child: Container(
-        height: 110,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            for (var index = 0; index < 3; index++) ...[
-              if (index > 0) const SizedBox(width: 10),
-              Expanded(
-                child: Align(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ],
         ),
       ),
     );
   }
 
   Widget _buildSelectedImagesStrip() {
-    return Expanded(
-      child: SizedBox(
-        height: 110,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          itemCount: _selectedAssets.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
-          itemBuilder: (context, index) {
-            final asset = _selectedAssets[index];
-            return GestureDetector(
-              onTap: () => _previewSelectedImages(initialIndex: index),
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image(
-                      image: AssetEntityImageProvider(
-                        asset,
-                        isOriginal: false,
-                        thumbnailSize: const ThumbnailSize.square(256),
+    final thumbnailExtent = context.rh(76, min: 68, max: 82);
+    return SizedBox(
+      height: thumbnailExtent,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _selectedAssets.length,
+        separatorBuilder: (_, __) => SizedBox(width: context.rs(8)),
+        itemBuilder: (context, index) {
+          final asset = _selectedAssets[index];
+          return GestureDetector(
+            onTap: () => _previewSelectedImages(initialIndex: index),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image(
+                    image: AssetEntityImageProvider(
+                      asset,
+                      isOriginal: false,
+                      thumbnailSize: const ThumbnailSize.square(256),
+                    ),
+                    width: thumbnailExtent,
+                    height: thumbnailExtent,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: GestureDetector(
+                    onTap: () => _removeImage(index),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      decoration: const BoxDecoration(
+                        color: Color(0xCC111827),
+                        shape: BoxShape.circle,
                       ),
-                      width: 110,
-                      height: 110,
-                      fit: BoxFit.cover,
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 15,
+                      ),
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: GestureDetector(
-                      onTap: () => _removeImage(index),
-                      child: Container(
-                        width: 26,
-                        height: 26,
-                        decoration: const BoxDecoration(
-                          color: Color(0xCC111827),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.close_rounded,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -736,201 +726,175 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildComposeBody() {
     final l10n = AppLocalizations.of(context)!;
     final imageLabel = l10n.imageAttachment;
+    final screenSize = MediaQuery.sizeOf(context);
+    final horizontalPadding = screenSize.width < 360 ? 12.0 : 16.0;
+    final contentMinLines = screenSize.height < 700 ? 7 : 10;
 
     return SingleChildScrollView(
       controller: _composeScrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 12,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        context.rs(8).clamp(6, 10).toDouble(),
+        horizontalPadding,
+        24,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PostCategorySelector(
-            selected: _selectedPostCategory,
-            showError: _showPostCategoryRequiredHint,
-            onChanged: (category) {
-              setState(() {
-                _selectedPostCategory = category;
-                _showPostCategoryRequiredHint = false;
-              });
-              _checkCanProceed();
-            },
-          ),
-          const SizedBox(height: 24),
-          _buildSectionLabel(
-            imageLabel,
-            trailing: '${_selectedAssets.length}/15',
-          ),
-          const SizedBox(height: 14),
-          Row(
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildAddImageTile(l10n),
-              const SizedBox(width: 14),
-              _selectedAssets.isEmpty
-                  ? _buildImagePlaceholderStrip()
-                  : _buildSelectedImagesStrip(),
+              PostCategorySelector(
+                selected: _selectedPostCategory,
+                showError: _showPostCategoryRequiredHint,
+                onChanged: (category) {
+                  setState(() {
+                    _selectedPostCategory = category;
+                    _showPostCategoryRequiredHint = false;
+                  });
+                  _checkCanProceed();
+                },
+              ),
+              SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
+              _buildSectionLabel(
+                imageLabel,
+                trailing: '${_selectedAssets.length}/15',
+              ),
+              _buildAddImageButton(l10n),
+              if (_selectedAssets.isNotEmpty) ...[
+                SizedBox(height: context.rs(4)),
+                _buildSelectedImagesStrip(),
+                SizedBox(height: context.rs(6)),
+              ],
+              Text(
+                l10n.postComposeImageHelper,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF6B7280),
+                ),
+              ),
+              SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
+              _buildSectionLabel(l10n.content),
+              const Divider(height: 18, color: Color(0xFFE5E7EB)),
+              TextField(
+                controller: _contentController,
+                focusNode: _contentFocusNode,
+                minLines: contentMinLines,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                decoration: InputDecoration(
+                  hintText: l10n.enterContent,
+                  hintStyle: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                    fontWeight: FontWeight.w400,
+                    color: const Color(0xFF9CA3AF),
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 16),
+                ),
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                  fontWeight: FontWeight.w500,
+                  color: const Color(0xFF111827),
+                  height: 1.5,
+                ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.postComposeImageHelper,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF6B7280),
-            ),
-          ),
-          const SizedBox(height: 28),
-          _buildSectionLabel(l10n.content),
-          const SizedBox(height: 14),
-          Container(
-            constraints: const BoxConstraints(minHeight: 360),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: _contentFocusNode.hasFocus
-                    ? AppColors.pointColor
-                    : const Color(0xFFD1D5DB),
-                width: _contentFocusNode.hasFocus ? 1.5 : 1,
-              ),
-            ),
-            child: TextField(
-              controller: _contentController,
-              focusNode: _contentFocusNode,
-              maxLines: null,
-              textAlignVertical: TextAlignVertical.top,
-              decoration: InputDecoration(
-                hintText: l10n.enterContent,
-                hintStyle: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w400,
-                  color: Color(0xFF9CA3AF),
-                ),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.all(16),
-              ),
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF111827),
-                height: 1.5,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildVisibilityOption({
     required IconData icon,
-    required Color iconColor,
-    required Color iconBackground,
     required String title,
     required String description,
     required bool selected,
     required VoidCallback onTap,
     Widget? child,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: const BoxDecoration(
-          border: Border(
-            bottom: BorderSide(color: Color(0xFFF3F4F6)),
-          ),
-        ),
-        child: Column(
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              vertical: context.rs(11).clamp(9, 13).toDouble(),
+            ),
+            child: Column(
               children: [
-                Container(
-                  width: 34,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: iconBackground,
-                    shape: BoxShape.circle,
-                  ),
-                  alignment: Alignment.center,
-                  child: Icon(icon, color: iconColor, size: 18),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    SizedBox.square(
+                      dimension: 30,
+                      child: Icon(
+                        icon,
+                        color: const Color(0xFF667085),
+                        size: context.ri(20).clamp(19, 22).toDouble(),
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        description,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: Color(0xFF6B7280),
-                          height: 1.2,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 30,
-                  height: 30,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: selected
-                          ? AppColors.pointColor
-                          : const Color(0xFFD1D5DB),
-                      width: 2.5,
                     ),
-                  ),
-                  child: selected
-                      ? const Center(
-                          child: SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: AppColors.pointColor,
-                              ),
+                    SizedBox(width: context.rs(10)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF111827),
                             ),
                           ),
-                        )
-                      : null,
+                          const SizedBox(height: 2),
+                          Text(
+                            description,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                              fontWeight: FontWeight.w500,
+                              color: const Color(0xFF6B7280),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: context.ri(23).clamp(22, 25).toDouble(),
+                      color: selected
+                          ? const Color(0xFF344054)
+                          : const Color(0xFFD0D5DD),
+                    ),
+                  ],
                 ),
+                if (child != null) ...[
+                  SizedBox(height: context.rs(10)),
+                  Padding(
+                    padding: EdgeInsets.only(left: context.rs(40)),
+                    child: child,
+                  ),
+                ],
               ],
             ),
-            if (child != null) ...[
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.only(left: 46),
-                child: child,
-              ),
-            ],
-          ],
+          ),
         ),
       ),
     );
@@ -939,91 +903,120 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildAnonymousToggle() {
     final l10n = AppLocalizations.of(context)!;
 
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.postAnonymously,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF111827),
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 48),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.postAnonymously,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF111827),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                l10n.idWillBeShown,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF6B7280),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.idWillBeShown,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF6B7280),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-        Switch(
-          value: _isAnonymous,
-          onChanged: (value) {
-            setState(() {
-              _isAnonymous = value;
-            });
-          },
-          activeThumbColor: Colors.white,
-          activeTrackColor: AppColors.pointColor,
-          inactiveThumbColor: Colors.white,
-          inactiveTrackColor: const Color(0xFF9CA3AF),
-        ),
-      ],
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 48,
+            height: 40,
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: Switch(
+                value: _isAnonymous,
+                onChanged: (value) {
+                  setState(() {
+                    _isAnonymous = value;
+                  });
+                },
+                activeThumbColor: Colors.white,
+                activeTrackColor: const Color(0xFF475467),
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: const Color(0xFFD0D5DD),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildGroupSelectionButton(FriendCategory category) {
     final isSelected = _selectedCategoryIds.contains(category.id);
 
-    return GestureDetector(
-      onTap: () {
-        final nextSelection = List<String>.from(_selectedCategoryIds);
-        if (isSelected) {
-          nextSelection.remove(category.id);
-        } else {
-          nextSelection.add(category.id);
-        }
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            final nextSelection = List<String>.from(_selectedCategoryIds);
+            if (isSelected) {
+              nextSelection.remove(category.id);
+            } else {
+              nextSelection.add(category.id);
+            }
 
-        setState(() {
-          _selectedCategoryIds = nextSelection;
-          if (nextSelection.isNotEmpty) {
-            _showCategoryRequiredHint = false;
-          }
-        });
-        _refreshSelectedAudienceUsers();
-      },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        height: 58,
-        alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF4F8EDB) : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color:
-                isSelected ? const Color(0xFF111827) : const Color(0xFF111827),
-            width: 1.6,
-          ),
-        ),
-        child: Text(
-          category.name,
-          style: TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: isSelected ? Colors.white : const Color(0xFF111827),
+            setState(() {
+              _selectedCategoryIds = nextSelection;
+              if (nextSelection.isNotEmpty) {
+                _showCategoryRequiredHint = false;
+              }
+            });
+            _refreshSelectedAudienceUsers();
+          },
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      category.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                        fontWeight:
+                            isSelected ? FontWeight.w800 : FontWeight.w600,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.circle_outlined,
+                    size: context.ri(21).clamp(20, 23).toDouble(),
+                    color: isSelected
+                        ? const Color(0xFF475467)
+                        : const Color(0xFFD0D5DD),
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -1036,59 +1029,50 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       children: [
         Text(
           l10n.postSelectedPeopleTitle,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 14,
+            fontSize: context.rf(13).clamp(12, 14).toDouble(),
             fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
+            color: const Color(0xFF111827),
           ),
         ),
-        const SizedBox(height: 10),
-        Container(
-          width: double.infinity,
-          constraints: const BoxConstraints(minHeight: 96),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFD1D5DB)),
-          ),
-          child: _isLoadingAudienceUsers
-              ? const Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+        const SizedBox(height: 8),
+        if (_isLoadingAudienceUsers)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (_selectedAudienceUsers.isEmpty)
+          Text(
+            l10n.postSelectedPeopleEmpty,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF98A2B3),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: _selectedAudienceUsers
+                .map(
+                  (user) => Text(
+                    user.displayNameOrNickname,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF344054),
+                    ),
                   ),
                 )
-              : _selectedAudienceUsers.isEmpty
-                  ? Text(
-                      l10n.postSelectedPeopleEmpty,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Color(0xFF9CA3AF),
-                      ),
-                    )
-                  : Wrap(
-                      spacing: 12,
-                      runSpacing: 10,
-                      children: _selectedAudienceUsers
-                          .map(
-                            (user) => Text(
-                              user.displayNameOrNickname,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                              ),
-                            ),
-                          )
-                          .toList(growable: false),
-                    ),
-        ),
+                .toList(growable: false),
+          ),
       ],
     );
   }
@@ -1100,53 +1084,29 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_friendCategories.isNotEmpty)
-          Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: _selectedCategoryIds.isEmpty
-                  ? const Color(0xFFF3F4F6)
-                  : const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(999),
-            ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
             child: Text(
               _selectedCategoryIds.isEmpty
                   ? l10n.postVisibilityNoGroupsSelected
                   : l10n.postVisibilityGroupsSelected(
                       _selectedCategoryIds.length),
-              style: TextStyle(
+              style: const TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
-                color: _selectedCategoryIds.isEmpty
-                    ? const Color(0xFF6B7280)
-                    : AppColors.pointColor,
+                color: Color(0xFF667085),
               ),
             ),
           ),
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                ? const Color(0xFFFFF1F2)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-            border: (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
-                ? Border.all(color: const Color(0xFFFCA5A5), width: 1.2)
-                : null,
-          ),
-          child: Column(
-            children: [
-              for (var index = 0;
-                  index < _friendCategories.length;
-                  index++) ...[
-                _buildGroupSelectionButton(_friendCategories[index]),
-                if (index != _friendCategories.length - 1)
-                  const SizedBox(height: 10),
-              ],
+        Column(
+          children: [
+            for (var index = 0; index < _friendCategories.length; index++) ...[
+              _buildGroupSelectionButton(_friendCategories[index]),
+              if (index != _friendCategories.length - 1)
+                const Divider(height: 1, color: Color(0xFFEAECF0)),
             ],
-          ),
+          ],
         ),
         if (_showCategoryRequiredHint && _selectedCategoryIds.isEmpty)
           Padding(
@@ -1161,7 +1121,9 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               ),
             ),
           ),
-        const SizedBox(height: 18),
+        SizedBox(height: context.rs(16)),
+        const Divider(height: 1, color: Color(0xFFEAECF0)),
+        SizedBox(height: context.rs(14)),
         _buildSelectedAudienceNames(l10n),
       ],
     );
@@ -1169,64 +1131,73 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   Widget _buildVisibilityBody() {
     final l10n = AppLocalizations.of(context)!;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
 
     return SingleChildScrollView(
       controller: _visibilityScrollController,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 18,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        context.rs(12).clamp(10, 16).toDouble(),
+        horizontalPadding,
+        24,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            l10n.postComposeVisibilityPrompt,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF111827),
-            ),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.postComposeVisibilityPrompt,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(17).clamp(15.5, 18).toDouble(),
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+              SizedBox(height: context.rs(14)),
+              _buildVisibilityOption(
+                icon: Icons.public_outlined,
+                title: l10n.postVisibilityPublicTitle,
+                description: l10n.postVisibilityPublicDescription,
+                selected: _visibility == 'public',
+                onTap: () {
+                  setState(() {
+                    _visibility = 'public';
+                    _showCategoryRequiredHint = false;
+                  });
+                },
+              ),
+              const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+              Padding(
+                padding: EdgeInsets.only(
+                  left: context.rs(40),
+                  top: context.rs(5),
+                  bottom: context.rs(5),
+                ),
+                child: _buildAnonymousToggle(),
+              ),
+              const Divider(height: 1, indent: 40, color: Color(0xFFEAECF0)),
+              _buildVisibilityOption(
+                icon: Icons.group_outlined,
+                title: l10n.postVisibilityGroupTitle,
+                description: l10n.postVisibilityGroupDescription,
+                selected: _visibility == 'category',
+                onTap: () {
+                  setState(() {
+                    _visibility = 'category';
+                  });
+                },
+                child: _visibility == 'category'
+                    ? _buildGroupSelectionSection()
+                    : null,
+              ),
+            ],
           ),
-          const SizedBox(height: 22),
-          _buildVisibilityOption(
-            icon: Icons.public,
-            iconColor: AppColors.pointColor,
-            iconBackground: const Color(0xFFEFF6FF),
-            title: l10n.postVisibilityPublicTitle,
-            description: l10n.postVisibilityPublicDescription,
-            selected: _visibility == 'public',
-            onTap: () {
-              setState(() {
-                _visibility = 'public';
-                _showCategoryRequiredHint = false;
-              });
-            },
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 46, top: 10, bottom: 14),
-            child: _buildAnonymousToggle(),
-          ),
-          _buildVisibilityOption(
-            icon: Icons.change_history_rounded,
-            iconColor: const Color(0xFFEF4444),
-            iconBackground: const Color(0xFFFFF1F2),
-            title: l10n.postVisibilityGroupTitle,
-            description: l10n.postVisibilityGroupDescription,
-            selected: _visibility == 'category',
-            onTap: () {
-              setState(() {
-                _visibility = 'category';
-              });
-            },
-            child: _visibility == 'category'
-                ? _buildGroupSelectionSection()
-                : null,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1263,9 +1234,14 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.white,
+        resizeToAvoidBottomInset: true,
         appBar:
             _stepIndex == 0 ? _buildComposeAppBar() : _buildVisibilityAppBar(),
-        body: _buildAnimatedBody(),
+        body: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 8),
+          child: _buildAnimatedBody(),
+        ),
       ),
     );
   }

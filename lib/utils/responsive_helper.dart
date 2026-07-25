@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 
 class ResponsiveHelper {
   static const double _baseWidth = 375;
+  static const double _maxMobileReferenceWidth = 430;
 
   /// 모바일 화면 여부 (너비 < 600)
   static bool isMobile(BuildContext context) {
@@ -26,12 +27,8 @@ class ResponsiveHelper {
 
   static double _widthScale(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
-    return (width / _baseWidth).clamp(0.85, 1.25);
-  }
-
-  static double _textScale(BuildContext context) {
-    final textScale = MediaQuery.textScalerOf(context).scale(1.0);
-    return textScale.clamp(1.0, 1.35);
+    final referenceWidth = math.min(width, _maxMobileReferenceWidth);
+    return (referenceWidth / _baseWidth).clamp(0.85, 1.25);
   }
 
   /// 화면 크기별 패딩 계산
@@ -45,8 +42,7 @@ class ResponsiveHelper {
 
   /// 화면 크기별 폰트 크기 계산
   static double getScaledFontSize(BuildContext context, double baseSize) {
-    final widthAdjusted = baseSize * _widthScale(context);
-    return widthAdjusted / math.sqrt(_textScale(context));
+    return baseSize * _widthScale(context);
   }
 
   /// 화면 크기별 아이콘 크기 계산
@@ -100,4 +96,3 @@ extension ResponsiveX on BuildContext {
       ResponsiveHelper.getScaledHeight(this, base, min: min, max: max);
   bool get isCompactLayout => ResponsiveHelper.isCompact(this);
 }
-

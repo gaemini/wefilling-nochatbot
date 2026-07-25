@@ -4155,19 +4155,23 @@ exports.onMeetupCreated = functions.firestore
             return null;
         }
         // 알림 메시지 구성
+        const isHangoutCategory = ['행아웃', 'hangout', '술', 'drink', 'Drinks']
+            .includes(category);
         const categoryEmoji = category === '스터디' || category === 'study' ? '📚' :
             category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '🍽️' :
                 category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? '🎨' :
-                    category === '문화' || category === 'culture' ? '🎭' : '🎉';
+                    isHangoutCategory ? '🎉' :
+                        category === '문화' || category === 'culture' ? '🎭' : '🎉';
         const meetupTitle = meetupData.title || '';
         const categoryEn = category === '스터디' || category === 'study' ? 'Study' :
             category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? 'Meal' :
                 category === '취미' || category === 'hobby' || category === 'cafe' || category === '카페' ? 'Hobby' :
-                    category === '문화' || category === 'culture' ? 'Culture' : 'Meetup';
+                    isHangoutCategory ? 'Hangout' :
+                        category === '문화' || category === 'culture' ? 'Culture' : 'Meetup';
         const categoryKo = category === '스터디' || category === 'study' ? '스터디' :
             category === '식사' || category === 'meal' || category === 'food' || category === '밥' ? '밥' :
                 category === '카페' || category === 'cafe' || category === 'hobby' ? '카페' :
-                    category === '술' || category === 'drink' ? '술' :
+                    isHangoutCategory ? '행아웃' :
                         category === '문화' || category === 'culture' ? '문화' :
                             category;
         const titleKo = `${categoryEmoji} 새 ${categoryKo} 모임이 생성되었습니다!`;

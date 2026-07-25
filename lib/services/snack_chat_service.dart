@@ -6,7 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
 import '../repositories/users_repository.dart';
+import '../utils/local_calendar_day.dart';
 import '../utils/logger.dart';
+import '../utils/snack_chat_list_policy.dart';
 
 class SnackChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -31,11 +33,28 @@ class SnackChatService {
         .snapshots()
         .map((snap) {
       final now = DateTime.now();
-      final items =
-          snap.docs.map((doc) => SnackChat.fromFirestore(doc)).where((chat) {
-        if (chat.isHardExpired(now)) return false;
-        return true;
-      }).toList();
+      final items = <SnackChat>[];
+      for (final doc in snap.docs) {
+        final rawCreatedAt = doc.data()['createdAt'];
+        if (rawCreatedAt is! Timestamp) {
+          // A missing/non-timestamp createdAt marks an unsupported legacy doc.
+          continue;
+        }
+        if (!isEligibleForCurrentSnackChatListPolicy(rawCreatedAt.toDate())) {
+          continue;
+        }
+
+        try {
+          final chat = SnackChat.fromFirestore(doc);
+          if (!chat.isHardExpired(now)) items.add(chat);
+        } catch (error, stackTrace) {
+          // One malformed room must never terminate both Today and All lists.
+          Logger.warning(
+            '지원되지 않는 Snack Chat 문서를 건너뜁니다: ${doc.id} '
+            '($error)\n$stackTrace',
+          );
+        }
+      }
       items.sort((a, b) => b.lastMessageTime.compareTo(a.lastMessageTime));
       return items;
     }).handleError((e) {
@@ -58,7 +77,7 @@ class SnackChatService {
 
     late final StreamController<List<SnackChat>> controller;
     StreamSubscription<List<SnackChat>>? subscription;
-    Timer? refreshTimer;
+    Timer? dateBoundaryTimer;
     List<SnackChat>? latestChats;
 
     void emitCurrentSection() {
@@ -67,32 +86,49 @@ class SnackChatService {
       controller.add(
         filterSnackChatsBySection(
           chats,
-          currentUserId: uid,
           section: section,
         ),
       );
     }
 
-    controller = StreamController<List<SnackChat>>(
+    void scheduleDateBoundaryRefresh() {
+      dateBoundaryTimer?.cancel();
+      final now = DateTime.now();
+      // A small guard ensures the callback runs on the new date even when the
+      // platform fires a timer a few milliseconds early.
+      final delay = durationUntilNextLocalCalendarDay(now) +
+          const Duration(milliseconds: 100);
+      dateBoundaryTimer = Timer(delay, () {
+        emitCurrentSection();
+        scheduleDateBoundaryRefresh();
+      });
+    }
+
+    controller = StreamController<List<SnackChat>>.broadcast(
       onListen: () {
+        // Re-listening after tab navigation is valid for a broadcast stream.
+        // Reuse the last safe value until Firestore supplies a fresh snapshot.
+        emitCurrentSection();
         subscription = _watchMySnackChats().listen(
           (chats) {
             latestChats = chats;
             emitCurrentSection();
           },
           onError: controller.addError,
-          onDone: controller.close,
+          onDone: () {
+            dateBoundaryTimer?.cancel();
+            if (!controller.isClosed) controller.close();
+          },
         );
-        refreshTimer = Timer.periodic(
-          const Duration(minutes: 1),
-          (_) => emitCurrentSection(),
-        );
+        scheduleDateBoundaryRefresh();
       },
-      onPause: () => subscription?.pause(),
-      onResume: () => subscription?.resume(),
-      onCancel: () async {
-        refreshTimer?.cancel();
-        await subscription?.cancel();
+      onCancel: () {
+        dateBoundaryTimer?.cancel();
+        final previousSubscription = subscription;
+        subscription = null;
+        if (previousSubscription != null) {
+          unawaited(previousSubscription.cancel());
+        }
       },
     );
 
@@ -152,6 +188,7 @@ class SnackChatService {
       'participantIds': unique.toList(),
       'visibleToCategoryIds': visibleToCategoryIds,
       'createdAt': Timestamp.fromDate(now),
+      'listPolicyVersion': currentSnackChatListPolicyVersion,
       'activeDurationHours': activeDurationHours,
       'expiresAt': Timestamp.fromDate(expiresAt),
       'favoriteUserIds': <String>[],
@@ -515,21 +552,26 @@ enum SnackChatListSection { today, all }
 
 List<SnackChat> filterSnackChatsBySection(
   List<SnackChat> chats, {
-  required String currentUserId,
   required SnackChatListSection section,
   DateTime? now,
 }) {
   final currentTime = now ?? DateTime.now();
+  final startOfToday = startOfLocalCalendarDay(currentTime);
+  final startOfTomorrow = startOfNextLocalCalendarDay(currentTime);
 
   return chats.where((chat) {
-    final archiveAt = chat.createdAt.add(const Duration(hours: 24));
-    final hasReachedAll = !currentTime.isBefore(archiveAt);
+    if (!isEligibleForCurrentSnackChatListPolicy(chat.createdAt)) {
+      return false;
+    }
+    final createdAt = chat.createdAt.toLocal();
+    final wasCreatedToday = !createdAt.isBefore(startOfToday) &&
+        createdAt.isBefore(startOfTomorrow);
 
     if (section == SnackChatListSection.today) {
-      return !hasReachedAll;
+      return wasCreatedToday;
     }
 
-    return hasReachedAll &&
-        (chat.hasNoExpiration || chat.isFavoritedBy(currentUserId));
+    final wasCreatedBeforeToday = createdAt.isBefore(startOfToday);
+    return wasCreatedBeforeToday;
   }).toList(growable: false);
 }

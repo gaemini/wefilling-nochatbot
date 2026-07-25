@@ -360,14 +360,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get snackChatDragForFriends => 'Drag to see more';
 
   @override
-  String get snackChatDetailsStepTitle => 'Set up the room';
-
-  @override
-  String snackChatDetailsStepHint(int count) {
-    return 'Create a room for $count participants.';
-  }
-
-  @override
   String snackChatSelectionComplete(int count) {
     return '$count selected';
   }
@@ -2505,7 +2497,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cafe => 'Cafe';
 
   @override
-  String get drink => 'Drinks';
+  String get hangout => 'Hangout';
 
   @override
   String get friendsOnlyBadge => 'Friends Only';
@@ -3105,10 +3097,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get postCategoryStyleDescription => 'Fashion, beauty & items';
 
   @override
-  String get postCategoryCreate => 'Create';
+  String get postCategoryCreate => 'Restaurant';
 
   @override
-  String get postCategoryCreateDescription => 'Art, design & crafts';
+  String get postCategoryCreateDescription => 'Restaurants, dining & food';
 
   @override
   String get postCategoryPhoto => 'Photo';

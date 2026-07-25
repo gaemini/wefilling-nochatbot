@@ -4,13 +4,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../constants/app_constants.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
 import '../models/friend_request.dart';
 import '../models/user_profile.dart';
 import '../design/tokens.dart';
 import '../l10n/app_localizations.dart';
+import '../utils/responsive_helper.dart';
 
 class RequestsPage extends StatefulWidget {
   const RequestsPage({super.key});
@@ -33,7 +33,7 @@ class _RequestsPageState extends State<RequestsPage>
       final authProvider = context.read<AuthProvider>();
       final relationshipProvider = context.read<RelationshipProvider>();
       relationshipProvider.setAuthProvider(authProvider);
-      
+
       _initializeData();
     });
   }
@@ -59,15 +59,17 @@ class _RequestsPageState extends State<RequestsPage>
   /// 친구요청 수락
   Future<void> _acceptRequest(String fromUid) async {
     if (!mounted) return;
-    
+
     final provider = context.read<RelationshipProvider>();
     final success = await provider.acceptFriendRequest(fromUid);
 
     if (mounted) {
       if (success) {
-        _showSnackBar(AppLocalizations.of(context)!.friendRequestAccepted, Colors.green);
+        _showSnackBar(AppLocalizations.of(context)!.friendRequestAccepted);
       } else {
-        _showSnackBar(AppLocalizations.of(context)!.friendRequestAcceptFailed, Colors.red);
+        _showSnackBar(
+          AppLocalizations.of(context)!.friendRequestAcceptFailed,
+        );
       }
     }
   }
@@ -75,7 +77,7 @@ class _RequestsPageState extends State<RequestsPage>
   /// 친구요청 거절
   Future<void> _rejectRequest(String fromUid) async {
     if (!mounted) return;
-    
+
     final confirmed = await _showConfirmDialog(
       AppLocalizations.of(context)!.rejectFriendRequest,
       AppLocalizations.of(context)!.confirmRejectFriendRequest,
@@ -87,9 +89,11 @@ class _RequestsPageState extends State<RequestsPage>
 
       if (mounted) {
         if (success) {
-          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejected, Colors.orange);
+          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejected);
         } else {
-          _showSnackBar(AppLocalizations.of(context)!.friendRequestRejectFailed, Colors.red);
+          _showSnackBar(
+            AppLocalizations.of(context)!.friendRequestRejectFailed,
+          );
         }
       }
     }
@@ -98,7 +102,7 @@ class _RequestsPageState extends State<RequestsPage>
   /// 친구요청 취소
   Future<void> _cancelRequest(String toUid) async {
     if (!mounted) return;
-    
+
     final confirmed = await _showConfirmDialog(
       AppLocalizations.of(context)!.cancelFriendRequest,
       AppLocalizations.of(context)!.confirmCancelFriendRequest,
@@ -110,20 +114,24 @@ class _RequestsPageState extends State<RequestsPage>
 
       if (mounted) {
         if (success) {
-          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelledSuccess, Colors.orange);
+          _showSnackBar(
+            AppLocalizations.of(context)!.friendRequestCancelledSuccess,
+          );
         } else {
-          _showSnackBar(AppLocalizations.of(context)!.friendRequestCancelFailed, Colors.red);
+          _showSnackBar(
+            AppLocalizations.of(context)!.friendRequestCancelFailed,
+          );
         }
       }
     }
   }
 
   /// 스낵바 표시
-  void _showSnackBar(String message, Color color) {
+  void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: color,
+        backgroundColor: Colors.black87,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -133,25 +141,28 @@ class _RequestsPageState extends State<RequestsPage>
   Future<bool> _showConfirmDialog(String title, String message) async {
     final result = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(AppLocalizations.of(context)!.cancel ?? ""),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-                child: Text(AppLocalizations.of(context)!.confirm ?? ""),
-              ),
-            ],
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF667085),
+            ),
+            child: Text(AppLocalizations.of(dialogContext)!.cancel),
           ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF111827),
+            ),
+            child: Text(AppLocalizations.of(dialogContext)!.confirm),
+          ),
+        ],
+      ),
     );
 
     return result ?? false;
@@ -159,68 +170,67 @@ class _RequestsPageState extends State<RequestsPage>
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB), // 게시판과 동일한 회색 배경
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        toolbarHeight: width < 360 ? 52 : 56,
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
         title: Text(
           AppLocalizations.of(context)!.requests,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
+            fontSize: context.rf(18).clamp(17, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: Color(0xFF111827),
+          ),
+          iconSize: 22,
           onPressed: () => Navigator.of(context).maybePop(),
         ),
       ),
       body: SafeArea(
-        top: true,
+        top: false,
         bottom: false,
         child: !_isInitialized
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: CircularProgressIndicator(color: Color(0xFF667085)),
+              )
             : Column(
                 children: [
-                  // 헤더 영역 (높이 통일 - 검색창과 동일)
-                  Container(
-                    height: 60, // 검색 탭과 동일한 높이
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 6,
-                      horizontal: 12,
-                    ), // TabBar 높이 48에 맞춤
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 1,
-                          blurRadius: 3,
-                          offset: const Offset(0, 1),
-                        ),
-                      ],
-                    ),
+                  SizedBox(
+                    height: width < 360 ? 46 : 48,
                     child: TabBar(
                       controller: _tabController,
-                      labelColor: Colors.black,
-                      unselectedLabelColor: Colors.grey,
-                      indicatorColor: AppColors.pointColor,
+                      labelColor: const Color(0xFF111827),
+                      unselectedLabelColor: const Color(0xFF98A2B3),
+                      indicatorColor: const Color(0xFF344054),
                       indicatorWeight: 2.0,
-                      dividerColor: Colors.transparent, // TabBar 하단 구분선 제거
+                      dividerColor: const Color(0xFFEAECF0),
+                      indicatorSize: TabBarIndicatorSize.label,
                       labelStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w700,
                       ),
                       unselectedLabelStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
                         fontSize: 14,
-                        fontWeight: FontWeight.normal,
+                        fontWeight: FontWeight.w500,
                       ),
                       tabs: [
-                        Tab(text: AppLocalizations.of(context)!.receivedRequests),
+                        Tab(
+                            text:
+                                AppLocalizations.of(context)!.receivedRequests),
                         Tab(text: AppLocalizations.of(context)!.sentRequests),
                       ],
                     ),
@@ -246,7 +256,9 @@ class _RequestsPageState extends State<RequestsPage>
     return Consumer<RelationshipProvider>(
       builder: (context, provider, child) {
         if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF667085)),
+          );
         }
 
         if (provider.errorMessage != null) {
@@ -266,8 +278,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         return ListView.builder(
           padding: EdgeInsets.only(
-            top: 8,
-            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+            top: 0,
+            bottom: bottomPadding > 0 ? bottomPadding + 12 : 12,
           ),
           itemCount: provider.incomingRequests.length,
           itemBuilder: (context, index) {
@@ -276,12 +288,7 @@ class _RequestsPageState extends State<RequestsPage>
               future: provider.getUserProfile(request.fromUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)!.loading ?? ""),
-                    ),
-                  );
+                  return _buildLoadingRequestTile();
                 }
 
                 final user = snapshot.data;
@@ -303,7 +310,9 @@ class _RequestsPageState extends State<RequestsPage>
     return Consumer<RelationshipProvider>(
       builder: (context, provider, child) {
         if (provider.isLoading) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(
+            child: CircularProgressIndicator(color: Color(0xFF667085)),
+          );
         }
 
         if (provider.errorMessage != null) {
@@ -323,8 +332,8 @@ class _RequestsPageState extends State<RequestsPage>
 
         return ListView.builder(
           padding: EdgeInsets.only(
-            top: 8,
-            bottom: bottomPadding > 0 ? bottomPadding + 8 : 8,
+            top: 0,
+            bottom: bottomPadding > 0 ? bottomPadding + 12 : 12,
           ),
           itemCount: provider.outgoingRequests.length,
           itemBuilder: (context, index) {
@@ -333,12 +342,7 @@ class _RequestsPageState extends State<RequestsPage>
               future: provider.getUserProfile(request.toUid),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
-                  return Card(
-                    child: ListTile(
-                      leading: const CircleAvatar(child: CircularProgressIndicator()),
-                      title: Text(AppLocalizations.of(context)!.loading ?? ""),
-                    ),
-                  );
+                  return _buildLoadingRequestTile();
                 }
 
                 final user = snapshot.data;
@@ -357,117 +361,112 @@ class _RequestsPageState extends State<RequestsPage>
 
   /// 받은 요청 타일
   Widget _buildIncomingRequestTile(FriendRequest request, UserProfile user) {
-    const actionPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
-    const actionMinSize = Size(76, 36);
+    return _buildRequestTile(
+      user: user,
+      timestamp: _getTimeAgo(request.createdAt),
+      actions: [
+        _requestAction(
+          label: AppLocalizations.of(context)!.reject,
+          onPressed: () => _rejectRequest(request.fromUid),
+          secondary: true,
+        ),
+        _requestAction(
+          label: AppLocalizations.of(context)!.accept,
+          onPressed: () => _acceptRequest(request.fromUid),
+        ),
+      ],
+    );
+  }
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: DesignTokens.radiusM,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+  /// 보낸 요청 타일
+  Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
+    return _buildRequestTile(
+      user: user,
+      timestamp: _getTimeAgo(request.createdAt),
+      actions: [
+        _requestAction(
+          label: AppLocalizations.of(context)!.cancelAction,
+          onPressed: () => _cancelRequest(request.toUid),
+          secondary: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRequestTile({
+    required UserProfile user,
+    required String timestamp,
+    required List<Widget> actions,
+  }) {
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 360;
+    final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    final avatarSize = isCompact ? 40.0 : 44.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            // 프로필 이미지
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: BrandColors.neutral200,
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                10,
+                horizontalPadding - 4,
+                10,
               ),
-              child: user.hasProfileImage
-                  ? ClipOval(
-                      child: Image.network(
-                        user.photoURL!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(
-                          Icons.person_outline,
-                          size: 24,
-                          color: BrandColors.textTertiary,
-                        ),
+              child: MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Row(
+                  children: [
+                    _requestAvatar(user, avatarSize),
+                    SizedBox(width: isCompact ? 10 : 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            user.displayNameOrNickname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                              fontWeight: FontWeight.w700,
+                              color: const Color(0xFF111827),
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            timestamp,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF8B93A1),
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
                       ),
-                    )
-                  : Icon(
-                      Icons.person_outline,
-                      size: 24,
-                      color: BrandColors.textTertiary,
                     ),
-            ),
-
-            const SizedBox(width: 12),
-
-            // 사용자 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.displayNameOrNickname,
-                    style: TypographyStyles.titleMedium.copyWith(
-                      fontSize: 15,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _getTimeAgo(request.createdAt),
-                    style: TypographyStyles.bodySmall.copyWith(
-                      color: BrandColors.textTertiary,
-                    ),
-                  ),
-                ],
+                    const SizedBox(width: 4),
+                    Row(mainAxisSize: MainAxisSize.min, children: actions),
+                  ],
+                ),
               ),
             ),
-
-            // 액션 버튼들 (가로 배치)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 수락 버튼
-                ElevatedButton(
-                  onPressed: () => _acceptRequest(request.fromUid),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: actionPadding,
-                    minimumSize: actionMinSize,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    AppLocalizations.of(context)!.accept,
-                    style: TypographyStyles.labelMedium.copyWith(
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // 거절 버튼
-                OutlinedButton(
-                  onPressed: () => _rejectRequest(request.fromUid),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.pointColor,
-                    side: BorderSide(color: AppColors.pointColor, width: 1.5),
-                    padding: actionPadding,
-                    minimumSize: actionMinSize,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    AppLocalizations.of(context)!.reject,
-                    style: TypographyStyles.labelMedium.copyWith(color: AppColors.pointColor),
-                  ),
-                ),
-              ],
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: horizontalPadding + avatarSize + (isCompact ? 10 : 12),
+              endIndent: horizontalPadding,
+              color: const Color(0xFFEAECF0),
             ),
           ],
         ),
@@ -475,96 +474,101 @@ class _RequestsPageState extends State<RequestsPage>
     );
   }
 
-  /// 보낸 요청 타일
-  Widget _buildOutgoingRequestTile(FriendRequest request, UserProfile user) {
-    const actionPadding = EdgeInsets.symmetric(horizontal: 14, vertical: 8);
-    const actionMinSize = Size(76, 36);
-
+  Widget _requestAvatar(UserProfile user, double size) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: DesignTokens.radiusM,
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: BrandColors.neutral200,
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            // 프로필 이미지
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: BrandColors.neutral200,
-              ),
-              child: user.hasProfileImage
-                  ? ClipOval(
-                      child: Image.network(
-                        user.photoURL!,
-                        width: 48,
-                        height: 48,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(
-                          Icons.person_outline,
-                          size: 24,
-                          color: BrandColors.textTertiary,
-                        ),
-                      ),
-                    )
-                  : Icon(
-                      Icons.person_outline,
-                      size: 24,
-                      color: BrandColors.textTertiary,
-                    ),
-            ),
-
-            const SizedBox(width: 16),
-
-            // 사용자 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    user.displayNameOrNickname,
-                    style: TypographyStyles.titleMedium.copyWith(
-                      fontSize: 15,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _getTimeAgo(request.createdAt),
-                    style: TypographyStyles.bodySmall.copyWith(
-                      color: BrandColors.textTertiary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // 취소 버튼
-            OutlinedButton(
-              onPressed: () => _cancelRequest(request.toUid),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.pointColor,
-                side: BorderSide(color: AppColors.pointColor, width: 1.5),
-                padding: actionPadding,
-                minimumSize: actionMinSize,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+      child: user.hasProfileImage
+          ? ClipOval(
+              child: Image.network(
+                user.photoURL!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: BrandColors.textTertiary,
                 ),
               ),
-              child: Text(
-                AppLocalizations.of(context)!.cancelAction,
-                style: TypographyStyles.labelMedium.copyWith(
-                  color: AppColors.pointColor,
+            )
+          : Icon(
+              Icons.person_outline_rounded,
+              size: size * 0.5,
+              color: BrandColors.textTertiary,
+            ),
+    );
+  }
+
+  Widget _requestAction({
+    required String label,
+    required VoidCallback onPressed,
+    bool secondary = false,
+  }) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor:
+            secondary ? const Color(0xFF667085) : const Color(0xFF111827),
+        minimumSize: const Size(44, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.compact,
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontFamily: 'Pretendard',
+          fontSize: 12,
+          fontWeight: secondary ? FontWeight.w600 : FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingRequestTile() {
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: 12,
+          ),
+          child: const Row(
+            children: [
+              SizedBox.square(
+                dimension: 40,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF667085),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ],
+              SizedBox(width: 12),
+              Expanded(
+                child: SizedBox(
+                  height: 2,
+                  child: LinearProgressIndicator(
+                    color: Color(0xFF98A2B3),
+                    backgroundColor: Color(0xFFF2F4F7),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -574,22 +578,31 @@ class _RequestsPageState extends State<RequestsPage>
   Widget _buildEmptyState(String title, String subtitle, IconData icon) {
     return Center(
       child: Padding(
-        padding: DesignTokens.paddingL,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            Icon(icon, size: 32, color: const Color(0xFF98A2B3)),
+            const SizedBox(height: 12),
             Text(
               title,
-              style: TypographyStyles.headlineMedium.copyWith(
-                color: BrandColors.textSecondary,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF344054),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Text(
               subtitle,
               textAlign: TextAlign.center,
-              style: TypographyStyles.bodyMedium.copyWith(
-                color: BrandColors.textTertiary,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF98A2B3),
               ),
             ),
           ],
@@ -602,45 +615,45 @@ class _RequestsPageState extends State<RequestsPage>
   Widget _buildErrorState(String errorMessage) {
     return Center(
       child: Padding(
-        padding: DesignTokens.paddingL,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: BrandColors.error.withOpacity(0.1),
-                borderRadius: DesignTokens.radiusL,
-              ),
-              child: Icon(
-                Icons.error_outline,
-                size: 40,
-                color: BrandColors.error,
-              ),
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 34,
+              color: Color(0xFF98A2B3),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             Text(
               AppLocalizations.of(context)!.error,
-              style: TypographyStyles.headlineMedium.copyWith(
-                color: BrandColors.error,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF344054),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Text(
               errorMessage,
               textAlign: TextAlign.center,
-              style: TypographyStyles.bodyMedium.copyWith(
-                color: BrandColors.error,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF667085),
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
+            const SizedBox(height: 8),
+            TextButton(
               onPressed: () {
                 context.read<RelationshipProvider>().clearError();
               },
-              style: ComponentStyles.primaryButton,
-              child: Text(AppLocalizations.of(context)!.retryAction ?? ""),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF344054),
+              ),
+              child: Text(AppLocalizations.of(context)!.retryAction),
             ),
           ],
         ),

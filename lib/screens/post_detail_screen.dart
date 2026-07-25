@@ -37,6 +37,7 @@ import '../services/content_hide_service.dart';
 import '../services/report_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
+import '../ui/snackbar/app_snackbar.dart';
 import '../ui/widgets/friends_only_badge.dart';
 import '../ui/widgets/post_action_group.dart';
 
@@ -551,6 +552,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       isSaving: _isTogglingSave,
       saveLabel: _isSaved ? l10n.saved : l10n.save,
       onSaveTap: _toggleSave,
+      compact: true,
+      hideEmptyMetrics: true,
+      trailingActionsAtEnd: true,
     );
   }
 
@@ -1289,12 +1293,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final isLoggedIn = authProvider.isLoggedIn;
 
     if (!isLoggedIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(AppLocalizations.of(context)!.loginRequired),
-          backgroundColor: Colors.orange,
-          duration: Duration(seconds: 2),
-        ),
+      AppSnackBar.show(
+        context,
+        message: AppLocalizations.of(context)!.loginRequired,
+        type: AppSnackBarType.warning,
+        duration: const Duration(seconds: 2),
       );
       return;
     }
@@ -1312,14 +1315,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _isTogglingSave = false;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(newSavedStatus
-                ? (AppLocalizations.of(context)!.postSaved ?? "")
-                : AppLocalizations.of(context)!.postUnsaved),
-            backgroundColor: newSavedStatus ? Colors.green : Colors.grey,
-            duration: Duration(seconds: 1),
-          ),
+        AppSnackBar.show(
+          context,
+          message: newSavedStatus
+              ? (AppLocalizations.of(context)!.postSaved ?? "")
+              : AppLocalizations.of(context)!.postUnsaved,
+          type: newSavedStatus ? AppSnackBarType.success : AppSnackBarType.info,
+          duration: const Duration(seconds: 1),
         );
       }
     } catch (e) {
@@ -1328,12 +1330,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           _isTogglingSave = false;
         });
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.error ?? ""),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.error ?? "",
+          type: AppSnackBarType.error,
+          duration: const Duration(seconds: 2),
         );
       }
     }

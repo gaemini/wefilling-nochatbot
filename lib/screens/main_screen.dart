@@ -338,18 +338,18 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
             ],
             // 마이페이지 탭일 때: 설정 버튼을 먼저 표시 (알림 아이콘과 위치 교체)
             if (_selectedIndex == 3) ...[
-              const SizedBox(width: 4),
               AppIconButton(
                 icon: Icons.settings_outlined,
+                iconSize: 23,
                 onPressed: () {
                   MyPageSettingsSheet.show(context);
                 },
                 semanticLabel: AppLocalizations.of(context)!.settings,
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 4),
               AppIconButton(
                 icon: Icons.calendar_month_outlined,
+                iconSize: 23,
                 onPressed: () {
                   Navigator.push(
                     context,
@@ -361,7 +361,6 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 semanticLabel: '내 모임 달력',
                 visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 4),
             ],
             // 알림 아이콘
             StreamBuilder<int>(
@@ -373,6 +372,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                   count: unreadCount,
                   child: AppIconButton(
                     icon: Icons.notifications_outlined,
+                    iconSize: 23,
                     onPressed: () {
                       Navigator.push(
                         context,
@@ -427,11 +427,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     icon: Icons.menu,
                     selectedIcon: Icons.menu,
                     label: l10n.board,
+                    iconSizeMultiplier: 1.2,
                   ),
                   BottomNavigationItem(
                     icon: Icons.groups_outlined,
                     selectedIcon: Icons.groups,
                     label: l10n.meetup,
+                    iconSizeMultiplier: 1.35,
                   ),
                   BottomNavigationItem(
                     icon: Icons.forum_outlined,
@@ -439,11 +441,13 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                     label: l10n.snackChat,
                     semanticLabel: l10n.snackChatTabSemantic,
                     badgeCount: unreadSCCount,
+                    iconSizeMultiplier: 1.2,
                   ),
                   BottomNavigationItem(
                     icon: Icons.person_outline,
                     selectedIcon: Icons.person,
                     label: l10n.myPage,
+                    iconSizeMultiplier: 1.2,
                   ),
                   BottomNavigationItem(
                     icon: Icons.send_outlined,

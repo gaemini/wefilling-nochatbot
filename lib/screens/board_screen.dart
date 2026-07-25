@@ -21,13 +21,13 @@ import '../ui/widgets/board_meetup_card.dart';
 import '../ui/widgets/post_category_explorer.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import 'create_post_screen.dart';
-import 'create_snack_chat_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_category_feed_screen.dart';
 import 'meetup_detail_screen.dart';
 import '../widgets/ad_banner_widget.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 
 class BoardScreen extends StatefulWidget {
   const BoardScreen({super.key});
@@ -54,8 +54,20 @@ class BoardScreenState extends State<BoardScreen>
 
   // 일반 게시물은 그림자 대신 콘텐츠 여백과 divider로 구분한다.
   static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
-  static const EdgeInsets _boardPostCardContentPadding =
-      EdgeInsets.fromLTRB(20, 20, 20, 24);
+
+  EdgeInsets get _boardPostCardContentPadding {
+    final horizontal = context.rs(18).clamp(14.0, 20.0).toDouble();
+    final top = context.rs(11).clamp(9.0, 12.0).toDouble();
+    final bottom = context.rs(13).clamp(11.0, 14.0).toDouble();
+    return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
+  }
+
+  double get _sectionHorizontalPadding =>
+      context.rs(16).clamp(12.0, 18.0).toDouble();
+
+  double get _sectionTitleSize => context.rf(15).clamp(14.0, 16.0).toDouble();
+
+  double get _sectionBodySize => context.rf(13.5).clamp(12.5, 14.0).toDouble();
 
   // 스크롤 위치 복원을 위한 ScrollController들
   late final ScrollController _todayScrollController;
@@ -345,95 +357,84 @@ class BoardScreenState extends State<BoardScreen>
 
   @override
   Widget build(BuildContext context) {
+    final tabFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
+    final tabHeight = context.rh(46, min: 44, max: 48);
+
     return Scaffold(
       backgroundColor:
           const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
-      body: Column(
-        children: [
-          // 탭 바
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              children: [
+                // 탭 바
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.25,
+                    child: TabBar(
+                      controller: _tabController,
+                      indicatorColor: AppColors.pointColor,
+                      indicatorWeight: 2.5,
+                      dividerColor: const Color(0xFFE5E7EB),
+                      labelColor: const Color(0xFF111827),
+                      unselectedLabelColor: const Color(0xFF6B7280),
+                      labelStyle: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: tabFontSize,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      unselectedLabelStyle: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: tabFontSize,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      overlayColor: WidgetStateProperty.all(
+                        Colors.black.withValues(alpha: 0.04),
+                      ),
+                      tabs: [
+                        Tab(height: tabHeight, text: 'Today'),
+                        Tab(height: tabHeight, text: 'All'),
+                      ],
+                    ),
+                  ),
+                ),
+                // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
+                Expanded(
+                  child: StreamBuilder<List<Post>>(
+                    stream: _postService.getPostsStream(),
+                    builder: (context, postSnap) {
+                      return TabBarView(
+                        controller: _tabController,
+                        children: [
+                          // Today
+                          _buildTodayPostsTab(postSnap),
+                          // All
+                          _buildAllPostsTab(postSnap),
+                        ],
+                      );
+                    },
+                  ),
                 ),
               ],
             ),
-            child: AnimatedBuilder(
-              animation: _tabController,
-              builder: (context, _) {
-                final isTodaySelected = _tabController.index == 0;
-
-                const selectedBase = TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                );
-                const unselectedBase = TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                );
-
-                return TabBar(
-                  controller: _tabController,
-                  indicatorColor: AppColors.pointColor,
-                  indicatorWeight: 2.5,
-                  overlayColor:
-                      WidgetStateProperty.all(Colors.black.withOpacity(0.04)),
-                  tabs: [
-                    Tab(
-                      child: Text(
-                        'Today',
-                        style: (isTodaySelected ? selectedBase : unselectedBase)
-                            .copyWith(
-                          color: isTodaySelected
-                              ? const Color(0xFF111827)
-                              : (Colors.grey[600] ?? const Color(0xFF6B7280)),
-                        ),
-                      ),
-                    ),
-                    Tab(
-                      child: Text(
-                        'All',
-                        style:
-                            (!isTodaySelected ? selectedBase : unselectedBase)
-                                .copyWith(
-                          color: !isTodaySelected
-                              ? const Color(0xFF111827)
-                              : (Colors.grey[600] ?? const Color(0xFF6B7280)),
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
           ),
-          // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
-          Expanded(
-            child: StreamBuilder<List<Post>>(
-              stream: _postService.getPostsStream(),
-              builder: (context, postSnap) {
-                return TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Today
-                    _buildTodayPostsTab(postSnap),
-                    // All
-                    _buildAllPostsTab(postSnap),
-                  ],
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
       floatingActionButton: AppFab.write(
-        onPressed: _openCreateEntrySheet,
+        onPressed: _openCreatePost,
         heroTag: 'board_write_fab',
       ),
     );
@@ -531,6 +532,87 @@ class BoardScreenState extends State<BoardScreen>
 
   // NOTE: Today 탭은 "오늘의 모임 + 오늘의 게시글" 섹션이 항상 존재하므로
   // 기존 단일 EmptyView는 더 이상 사용하지 않습니다(미사용 경고 방지).
+
+  Widget _buildTodaySectionHeader({
+    required IconData icon,
+    required String title,
+    int? count,
+    bool isLoading = false,
+  }) {
+    final horizontal = _sectionHorizontalPadding;
+    final iconSize = context.ri(18).clamp(17.0, 19.0).toDouble();
+    final gap = context.rs(7).clamp(6.0, 8.0).toDouble();
+
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 7),
+        child: Row(
+          children: [
+            Icon(icon, size: iconSize, color: const Color(0xFF111827)),
+            SizedBox(width: gap),
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: _sectionTitleSize,
+                  fontWeight: FontWeight.w800,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+            if (isLoading || count != null) SizedBox(width: gap),
+            if (isLoading)
+              const SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else if (count != null)
+              Text(
+                '$count',
+                maxLines: 1,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF6B7280),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTodaySectionMessage(
+    String message, {
+    double bottom = 10,
+  }) {
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.35,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          _sectionHorizontalPadding,
+          0,
+          _sectionHorizontalPadding,
+          bottom,
+        ),
+        child: Text(
+          message,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: _sectionBodySize,
+            fontWeight: FontWeight.w600,
+            color: const Color(0xFF6B7280),
+            height: 1.35,
+          ),
+        ),
+      ),
+    );
+  }
 
   // 게시글 목록 뷰 (AdBanner + 게시글들)
   Widget _buildTodayPostsView(List<Post> todayPosts) {
@@ -956,41 +1038,11 @@ class BoardScreenState extends State<BoardScreen>
 
               // 1) meetups header
               if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.event_available_rounded,
-                          size: 18, color: Color(0xFF111827)),
-                      const SizedBox(width: 8),
-                      Text(
-                        todayMeetupsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      if (isMeetupsLoading)
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      else
-                        Text(
-                          '${todayMeetups.length}',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                    ],
-                  ),
+                return _buildTodaySectionHeader(
+                  icon: Icons.event_available_rounded,
+                  title: todayMeetupsTitle,
+                  count: isMeetupsLoading ? null : todayMeetups.length,
+                  isLoading: isMeetupsLoading,
                 );
               }
               i -= 1;
@@ -1004,18 +1056,7 @@ class BoardScreenState extends State<BoardScreen>
                   );
                 }
                 if (todayMeetups.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                    child: Text(
-                      noTodayMeetupsText,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  );
+                  return _buildTodaySectionMessage(noTodayMeetupsText);
                 }
 
                 final meetup = todayMeetups[i];
@@ -1043,24 +1084,9 @@ class BoardScreenState extends State<BoardScreen>
 
               // 3) posts header
               if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.article_rounded,
-                          size: 18, color: Color(0xFF111827)),
-                      const SizedBox(width: 8),
-                      Text(
-                        todayPostsTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                    ],
-                  ),
+                return _buildTodaySectionHeader(
+                  icon: Icons.article_rounded,
+                  title: todayPostsTitle,
                 );
               }
               i -= 1;
@@ -1068,31 +1094,25 @@ class BoardScreenState extends State<BoardScreen>
               // 4) posts list/skeleton/error/empty
               if (isPostsLoading) {
                 return Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: _sectionHorizontalPadding,
+                    vertical: 8,
+                  ),
                   child: _buildPostSkeleton(),
                 );
               }
 
               if (isPostsError) {
                 return Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(_sectionHorizontalPadding),
                   child: _buildErrorWidget('데이터를 불러올 수 없습니다'),
                 );
               }
 
               if (todayCombined.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  child: Text(
-                    noTodayPostsText,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
+                return _buildTodaySectionMessage(
+                  noTodayPostsText,
+                  bottom: 24,
                 );
               }
 
@@ -1309,119 +1329,14 @@ class BoardScreenState extends State<BoardScreen>
     return DateTime.fromMillisecondsSinceEpoch(0);
   }
 
-  void _openCreateEntrySheet() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: false,
-      builder: (ctx) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              clipBehavior: Clip.antiAlias,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildCreateSheetAction(
-                    icon: Icons.article_outlined,
-                    title: AppLocalizations.of(context)!.createPost,
-                    subtitle: AppLocalizations.of(context)!.createPostSheetDesc,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => CreatePostScreen(
-                            onPostCreated: () {
-                              setState(() {});
-                            },
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const Divider(height: 1),
-                  _buildCreateSheetAction(
-                    icon: Icons.forum_outlined,
-                    title: AppLocalizations.of(context)!.createSnackChat,
-                    subtitle:
-                        AppLocalizations.of(context)!.createSnackChatSheetDesc,
-                    onTap: () {
-                      Navigator.pop(ctx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CreateSnackChatScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildCreateSheetAction({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F7FF),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(icon, color: AppColors.pointColor, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1B2330),
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.25,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFF9CA3AF),
-              size: 24,
-            ),
-          ],
+  void _openCreatePost() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CreatePostScreen(
+          onPostCreated: () {
+            if (mounted) setState(() {});
+          },
         ),
       ),
     );

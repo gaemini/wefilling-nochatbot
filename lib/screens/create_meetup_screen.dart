@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/meetup.dart';
 import '../models/friend_category.dart';
-import '../constants/app_constants.dart';
 import '../services/meetup_service.dart';
 import '../services/friend_category_service.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +15,7 @@ import 'meetup_category_select_screen.dart';
 import '../models/meetup_favorite_template.dart';
 import 'meetup_favorites_screen.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../ui/sheets/participant_count_sheet.dart';
 import '../ui/widgets/app_button.dart';
 import '../utils/responsive_helper.dart';
 
@@ -102,7 +102,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   bool _isCalendarExpanded = true; // 생성 화면은 기본 펼침(스크린샷 기준)
-  
+
   // 공개 범위 관련 변수
   String _visibility = 'public'; // 'public', 'friends', 'category'
   List<FriendCategory> _friendCategories = [];
@@ -189,15 +189,11 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 // 미정 빠른 선택 (선택 상태 표시만, 불필요한 chevron 제거)
                 InkWell(
                   onTap: () => Navigator.pop(sheetContext, l10n.undecided),
-                  borderRadius: BorderRadius.circular(14),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF9FAFB),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isUndecidedSelected ? AppColors.pointColor : const Color(0xFFE5E7EB),
-                        width: isUndecidedSelected ? 2 : 1,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: const BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Color(0xFFEAECF0)),
                       ),
                     ),
                     child: Row(
@@ -214,16 +210,19 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           height: 22,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            color: isUndecidedSelected ? AppColors.pointColor : Colors.transparent,
+                            color: isUndecidedSelected
+                                ? const Color(0xFF475467)
+                                : Colors.transparent,
                             border: Border.all(
                               color: isUndecidedSelected
-                                  ? AppColors.pointColor
+                                  ? const Color(0xFF475467)
                                   : const Color(0xFFD1D5DB),
                               width: 2,
                             ),
                           ),
                           child: isUndecidedSelected
-                              ? const Icon(Icons.check, size: 14, color: Colors.white)
+                              ? const Icon(Icons.check,
+                                  size: 14, color: Colors.white)
                               : null,
                         ),
                       ],
@@ -238,8 +237,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                   height: 216,
                   decoration: BoxDecoration(
                     color: const Color(0xFFF9FAFB),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                    borderRadius: BorderRadius.circular(12),
                   ),
                   child: CupertinoTheme(
                     data: const CupertinoThemeData(
@@ -279,7 +277,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                     Expanded(
                       child: AppButton(
                         label: l10n.done,
-                        onPressed: () => Navigator.pop(sheetContext, _formatHHmm(picked)),
+                        onPressed: () =>
+                            Navigator.pop(sheetContext, _formatHHmm(picked)),
                         size: AppButtonSize.m,
                       ),
                     ),
@@ -301,102 +300,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   Future<void> _showMaxParticipantsSheet() async {
     final l10n = AppLocalizations.of(context)!;
 
-    final selected = await showModalBottomSheet<int>(
+    final selected = await showParticipantCountSheet(
       context: context,
-      isScrollControlled: false,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  l10n.maxParticipants,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                ..._participantOptions.map((value) {
-                  final isSelected = value == _maxParticipants;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: InkWell(
-                      onTap: () => Navigator.pop(sheetContext, value),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        decoration: BoxDecoration(
-                          color:
-                              isSelected ? AppColors.pointColor.withOpacity(0.08) : const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color:
-                                isSelected ? AppColors.pointColor : const Color(0xFFE5E7EB),
-                            width: isSelected ? 2 : 1,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '$value${l10n.people}',
-                                style: _inputTextStyle,
-                              ),
-                            ),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: isSelected ? AppColors.pointColor : Colors.transparent,
-                                border: Border.all(
-                                  color: isSelected
-                                      ? AppColors.pointColor
-                                      : const Color(0xFFD1D5DB),
-                                  width: 2,
-                                ),
-                              ),
-                              child: isSelected
-                                  ? const Icon(
-                                      Icons.check,
-                                      size: 14,
-                                      color: Colors.white,
-                                    )
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-                const SizedBox(height: 8),
-                AppButton(
-                  label: l10n.cancel,
-                  onPressed: () => Navigator.pop(sheetContext),
-                  variant: AppButtonVariant.outline,
-                  size: AppButtonSize.m,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      selectedValue: _maxParticipants,
+      options: _participantOptions,
+      title: l10n.maxParticipants,
+      itemLabel: (value) => '$value${l10n.people}',
     );
 
     if (!mounted || selected == null) return;
@@ -427,110 +336,123 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   Future<bool> _showExitConfirmationDialog() async {
     final l10n = AppLocalizations.of(context)!;
-    
+
     final result = await showDialog<bool>(
       context: context,
-      builder: (context) => Dialog(
+      barrierColor: const Color(0x99000000),
+      builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
+        elevation: 0,
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: context.rs(28).clamp(20, 36).toDouble(),
         ),
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                l10n.exitMeetupCreation,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF111827),
-                ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                context.rs(22).clamp(20, 24).toDouble(),
+                context.rs(22).clamp(20, 24).toDouble(),
+                context.rs(16).clamp(12, 18).toDouble(),
+                context.rs(12).clamp(10, 14).toDouble(),
               ),
-              const SizedBox(height: 8),
-              Text(
-                l10n.exitMeetupCreationMessage,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  height: 1.4,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: AppButton(
-                      label: l10n.stay,
-                      onPressed: () => Navigator.of(context).pop(false),
-                      variant: AppButtonVariant.outline,
-                      size: AppButtonSize.m,
+                  Text(
+                    l10n.exitMeetupCreation,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(17).clamp(16, 18).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                      color: const Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: AppButton(
-                      label: l10n.exit,
-                      onPressed: () => Navigator.of(context).pop(true),
-                      size: AppButtonSize.m,
+                  SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
+                  Text(
+                    l10n.exitMeetupCreationMessage,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
+                      fontWeight: FontWeight.w400,
+                      height: 1.5,
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(14).clamp(12, 18).toDouble()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 2,
+                      runSpacing: 2,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(false),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF667085),
+                            minimumSize: const Size(64, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            l10n.stay,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(true),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF344054),
+                            minimumSize: const Size(64, 40),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            l10n.exit,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-            ],
+            ),
           ),
         ),
       ),
     );
-    
+
     return result ?? false;
   }
 
-  MeetupFavoriteTemplate _buildFavoritesDraft() {
-    // time 저장은 locale 영향 제거: undecided 여부 + HH:mm만 저장
-    final l10n = AppLocalizations.of(context)!;
-    final selectedTime = _selectedTime;
-    final isUndecided = selectedTime == null || selectedTime == l10n.undecided;
-    final timeValue = isUndecided ? null : selectedTime;
-
-    final title = _titleController.text.trim();
-    final name = title.isNotEmpty ? title : '';
-
-    final primaryFile =
-        _meetupImageFiles.isNotEmpty ? _meetupImageFiles.first : null;
-    final primaryUrl = primaryFile == null && _meetupImageUrls.isNotEmpty
-        ? _meetupImageUrls.first
-        : null;
-
-    return MeetupFavoriteTemplate(
-      id: 'draft',
-      name: name,
-      title: title,
-      description: _descriptionController.text.trim(),
-      location: _locationController.text.trim(),
-      categoryKey: _selectedCategory ?? 'study',
-      isUndecidedTime: isUndecided,
-      time: timeValue,
-      maxParticipants: _maxParticipants,
-      thumbnailImagePath: primaryFile?.path,
-      thumbnailImageUrl: primaryUrl,
-      updatedAt: DateTime.now(),
-    );
-  }
-
   Future<void> _openMeetupFavorites() async {
-    final draft = _buildFavoritesDraft();
     final selected = await Navigator.of(context).push<MeetupFavoriteTemplate>(
       MaterialPageRoute(
-        builder: (context) => MeetupFavoritesScreen(
-          draftFromCreateScreen: draft,
-        ),
+        builder: (context) => const MeetupFavoritesScreen(),
       ),
     );
 
@@ -540,12 +462,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
 
   void _applyFavoriteTemplate(MeetupFavoriteTemplate t) {
     final l10n = AppLocalizations.of(context)!;
+    final categoryKey = switch (t.categoryKey.trim().toLowerCase()) {
+      'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+      final key => key,
+    };
 
     setState(() {
       _titleController.text = t.title;
       _descriptionController.text = t.description;
       _locationController.text = t.location;
       _maxParticipants = t.maxParticipants;
+      _visibility = t.visibility;
+      _selectedCategoryIds = t.visibility == 'category'
+          ? List<String>.from(t.visibleToCategoryIds)
+          : <String>[];
 
       // 이미지(1장) 복원 (즐겨찾기 템플릿은 썸네일 1장만 저장)
       _meetupImageFiles.clear();
@@ -569,14 +499,16 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         _selectedTime = l10n.undecided;
       } else {
         final timeValue = t.time;
-        _selectedTime = (timeValue == null || timeValue.isEmpty) ? l10n.undecided : timeValue;
+        _selectedTime = (timeValue == null || timeValue.isEmpty)
+            ? l10n.undecided
+            : timeValue;
       }
 
       // 카테고리
-      _selectedCategory = t.categoryKey;
+      _selectedCategory = categoryKey;
     });
 
-    _onCategorySelected(t.categoryKey);
+    _onCategorySelected(categoryKey);
   }
 
   @override
@@ -592,7 +524,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       _visibility = 'category';
       _selectedCategoryIds = <String>[initialAudienceCategory.id];
     }
-    
+
     // 친구 카테고리 로드
     _loadFriendCategories();
   }
@@ -619,7 +551,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   // 친구 카테고리 로드
   void _loadFriendCategories() {
     _categoriesSubscription?.cancel();
-    _categoriesSubscription = _friendCategoryService.getCategoriesStream().listen((categories) {
+    _categoriesSubscription =
+        _friendCategoryService.getCategoriesStream().listen((categories) {
       if (mounted) {
         setState(() {
           _friendCategories = categories;
@@ -638,13 +571,84 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     super.dispose();
   }
 
+  double _pageHorizontalPadding(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width < 360) return 12;
+    if (width < 600) return 16;
+    return 24;
+  }
+
+  TextStyle _responsiveSectionTitle(BuildContext context) {
+    return _sectionTitleStyle.copyWith(
+      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+    );
+  }
+
+  TextStyle _responsiveInputStyle(BuildContext context) {
+    return _inputTextStyle.copyWith(
+      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+      height: 1.35,
+    );
+  }
+
+  TextStyle _responsiveHintStyle(BuildContext context) {
+    return _hintTextStyle.copyWith(
+      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+      height: 1.35,
+    );
+  }
+
+  InputDecoration _minimalInputDecoration(
+    BuildContext context, {
+    required String hintText,
+    EdgeInsetsGeometry? contentPadding,
+  }) {
+    const restingBorder = UnderlineInputBorder(
+      borderSide: BorderSide(color: Color(0xFFEAECF0)),
+    );
+    const focusedBorder = UnderlineInputBorder(
+      borderSide: BorderSide(color: Color(0xFF667085), width: 1.4),
+    );
+
+    return InputDecoration(
+      hintText: hintText,
+      hintStyle: _responsiveHintStyle(context),
+      border: restingBorder,
+      enabledBorder: restingBorder,
+      focusedBorder: focusedBorder,
+      errorBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Color(0xFFB42318)),
+      ),
+      focusedErrorBorder: const UnderlineInputBorder(
+        borderSide: BorderSide(color: Color(0xFFB42318), width: 1.4),
+      ),
+      contentPadding: contentPadding ??
+          EdgeInsets.symmetric(
+            horizontal: 0,
+            vertical: context.rs(12).clamp(10, 14).toDouble(),
+          ),
+    );
+  }
+
+  Widget _requiredMark(BuildContext context) {
+    return Text(
+      '*',
+      style: TextStyle(
+        fontFamily: 'Pretendard',
+        fontSize: context.rf(14).clamp(13, 15).toDouble(),
+        fontWeight: FontWeight.w700,
+        color: const Color(0xFF667085),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final DateTime selectedDate = _selectedDay;
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) async {
+      onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
         final shouldExit = await _showExitConfirmationDialog();
         if (shouldExit && mounted) {
@@ -652,13 +656,20 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         }
       },
       child: Scaffold(
-        backgroundColor: const Color(0xFFFAFBFC),
+        backgroundColor: Colors.white,
         appBar: AppBar(
           backgroundColor: Colors.white,
           elevation: 0,
+          surfaceTintColor: Colors.white,
           centerTitle: true,
+          toolbarHeight: context.rh(56, min: 54, max: 60),
+          leadingWidth: 48,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+            icon: Icon(
+              Icons.arrow_back_rounded,
+              color: const Color(0xFF111827),
+              size: context.ri(22).clamp(21, 24).toDouble(),
+            ),
             onPressed: () async {
               final shouldExit = await _showExitConfirmationDialog();
               if (shouldExit && mounted) {
@@ -666,679 +677,729 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
               }
             },
           ),
-          title: Text(
-            AppLocalizations.of(context)!.createNewMeetup,
-            style: _appBarTitleStyle,
-          ),
-          actions: [
-            IconButton(
-              tooltip: Localizations.localeOf(context).languageCode == 'ko'
-                  ? '즐겨찾기'
-                  : 'Favorites',
-              onPressed: _openMeetupFavorites,
-              icon: const Icon(
-                Icons.star_border_rounded,
-                color: Color(0xFF111827),
+          title: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: Text(
+              AppLocalizations.of(context)!.createNewMeetup,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: _appBarTitleStyle.copyWith(
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
               ),
             ),
-          ],
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(1),
-            child: Container(
-              height: 1,
-              color: const Color(0xFFE6EAF0),
-            ),
           ),
+          actions: [
+            SizedBox.square(
+              dimension: 48,
+              child: IconButton(
+                tooltip: Localizations.localeOf(context).languageCode == 'ko'
+                    ? '즐겨찾기'
+                    : 'Favorites',
+                onPressed: _openMeetupFavorites,
+                icon: Icon(
+                  Icons.star_border_rounded,
+                  size: context.ri(22).clamp(21, 24).toDouble(),
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+            const SizedBox(width: 2),
+          ],
         ),
         body: Column(
           children: [
-          // 스크롤 가능한 컨텐츠
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                // 공개 범위 (최상단)
-                _buildMeetupVisibilitySection(),
-                const SizedBox(height: 22),
-
-                // 날짜 선택 (월 캘린더)
-                _buildMeetupDateSection(),
-                const SizedBox(height: 24),
-
-                // 제목 필드
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.title,
-                          style: _sectionTitleStyle,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          '*',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                        const SizedBox(height: 6),
-                        TextFormField(
-                          controller: _titleController,
-                          decoration: InputDecoration(
-                            hintText: AppLocalizations.of(context)!.enterMeetupTitle,
-                            hintStyle: _hintTextStyle,
-                            filled: true,
-                            fillColor: Colors.white,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                            ),
-                            contentPadding: const EdgeInsets.all(16),
-                          ),
-                          style: _inputTextStyle,
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return AppLocalizations.of(context)!.pleaseEnterMeetupTitle ?? "";
-                            }
-                            return null;
-                          },
-                        ),
-                      ],
-                    ),
-                const SizedBox(height: 18),
-
-                // 개선된 카테고리 선택
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.category,
-                          style: _sectionTitleStyle,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          '*',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _buildCategorySelectField(),
-                    
-                  ],
+            // 스크롤 가능한 컨텐츠
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: EdgeInsets.fromLTRB(
+                  _pageHorizontalPadding(context),
+                  context.rs(10).clamp(8, 14).toDouble(),
+                  _pageHorizontalPadding(context),
+                  context.rs(28).clamp(24, 34).toDouble(),
                 ),
-                const SizedBox(height: 18),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 720),
+                    child: Form(
+                      key: _formKey,
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 공개 범위 (최상단)
+                            _buildMeetupVisibilitySection(),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
 
-                // 장소 필드
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.location,
-                          style: _sectionTitleStyle,
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          '*',
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _locationController,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)!.enterMeetupLocation,
-                        hintStyle: _hintTextStyle,
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.all(16),
-                      ),
-                      style: _inputTextStyle,
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return AppLocalizations.of(context)!.pleaseEnterLocation ?? "";
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
+                            // 날짜 선택 (월 캘린더)
+                            _buildMeetupDateSection(),
+                            SizedBox(
+                                height:
+                                    context.rs(22).clamp(18, 26).toDouble()),
 
-                // 시간 선택과 최대 인원: 좁은 화면/큰 글꼴에서는 세로 fallback
-                LayoutBuilder(
-                  builder: (context, constraints) {
-                    final isCompact = constraints.maxWidth < 360 || context.isCompactLayout;
-                    if (isCompact) {
-                      return Column(
-                        children: [
-                          _buildTimeField(),
-                          SizedBox(height: context.rs(12)),
-                          _buildParticipantsField(),
-                        ],
-                      );
-                    }
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: _buildTimeField()),
-                        SizedBox(width: context.rs(12)),
-                        Expanded(child: _buildParticipantsField()),
-                      ],
-                    );
-                  },
-                ),
-                const SizedBox(height: 20),
-
-                // 세부 설명 (맨 아래에서 두 번째)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          AppLocalizations.of(context)!.description,
-                          style: _sectionTitleStyle,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          AppLocalizations.of(context)!.optionalField,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _descriptionController,
-                      decoration: InputDecoration(
-                        hintText: AppLocalizations.of(context)!.enterMeetupDescription,
-                        hintStyle: _hintTextStyle,
-                        filled: true,
-                        fillColor: Colors.white,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: Color(0xFFE6EAF0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: AppColors.pointColor, width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.all(16),
-                      ),
-                      style: _inputTextStyle,
-                      minLines: 4,
-                      maxLines: 6,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // 썸네일 설정
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 썸네일 이미지 첨부 (외곽 테두리 제거 + 높이/패딩 통일)
-                    Semantics(
-                      button: true,
-                      label: AppLocalizations.of(context)!.thumbnailImage,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        curve: Curves.easeOut,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: _hasMeetupImages()
-                                ? AppColors.pointColor
-                                : const Color(0xFFE6EAF0),
-                            width: _hasMeetupImages() ? 1.6 : 1,
-                          ),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          borderRadius: BorderRadius.circular(12),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(12),
-                            onTap: _selectThumbnailImage,
-                            child: SizedBox(
-                              height: 52,
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                child: Row(
+                            // 제목 필드
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
                                   children: [
-                                    Container(
-                                      width: 34,
-                                      height: 34,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.pointColor.withValues(alpha: 0.12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: const Icon(
-                                        Icons.image_outlined,
-                                        size: 18,
-                                        color: AppColors.pointColor,
-                                      ),
+                                    Text(
+                                      AppLocalizations.of(context)!.title,
+                                      style: _responsiveSectionTitle(context),
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        AppLocalizations.of(context)!.thumbnailImage,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFF111827),
-                                        ),
-                                      ),
+                                    const SizedBox(width: 4),
+                                    _requiredMark(context),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                TextFormField(
+                                  controller: _titleController,
+                                  decoration: _minimalInputDecoration(
+                                    context,
+                                    hintText: AppLocalizations.of(context)!
+                                        .enterMeetupTitle,
+                                  ),
+                                  style: _responsiveInputStyle(context),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return AppLocalizations.of(context)!
+                                              .pleaseEnterMeetupTitle ??
+                                          "";
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
+
+                            // 개선된 카테고리 선택
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context)!.category,
+                                      style: _responsiveSectionTitle(context),
                                     ),
-                                    const Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Color(0xFF9CA3AF),
+                                    const SizedBox(width: 4),
+                                    _requiredMark(context),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                _buildCategorySelectField(),
+                              ],
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
+
+                            // 장소 필드
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context)!.location,
+                                      style: _responsiveSectionTitle(context),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    _requiredMark(context),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                TextFormField(
+                                  controller: _locationController,
+                                  decoration: _minimalInputDecoration(
+                                    context,
+                                    hintText: AppLocalizations.of(context)!
+                                        .enterMeetupLocation,
+                                  ),
+                                  style: _responsiveInputStyle(context),
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return AppLocalizations.of(context)!
+                                              .pleaseEnterLocation ??
+                                          "";
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ],
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(15, 22).toDouble()),
+
+                            // 시간 선택과 최대 인원: 좁은 화면/큰 글꼴에서는 세로 fallback
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final isCompact = constraints.maxWidth < 520 ||
+                                    context.isCompactLayout;
+                                if (isCompact) {
+                                  return Column(
+                                    children: [
+                                      _buildTimeField(),
+                                      SizedBox(height: context.rs(12)),
+                                      _buildParticipantsField(),
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: _buildTimeField()),
+                                    SizedBox(width: context.rs(12)),
+                                    Expanded(child: _buildParticipantsField()),
+                                  ],
+                                );
+                              },
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(20).clamp(16, 24).toDouble()),
+
+                            // 세부 설명 (맨 아래에서 두 번째)
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      AppLocalizations.of(context)!.description,
+                                      style: _responsiveSectionTitle(context),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      AppLocalizations.of(context)!
+                                          .optionalField,
+                                      style: TextStyle(
+                                        fontFamily: 'Pretendard',
+                                        fontSize: context
+                                            .rf(12)
+                                            .clamp(11, 13)
+                                            .toDouble(),
+                                        fontWeight: FontWeight.w500,
+                                        height: 1.2,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
                                     ),
                                   ],
                                 ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (_hasMeetupImages()) ...[
-                      const SizedBox(height: 12),
-                      Builder(
-                        builder: (context) {
-                          final primaryUrl =
-                              _meetupImageUrls.isNotEmpty ? _meetupImageUrls.first : null;
-                          final primaryFile =
-                              _meetupImageFiles.isNotEmpty ? _meetupImageFiles.first : null;
-                          final total = _currentMeetupImageCount();
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // 실제 모임 화면처럼: 가로 전체 큰 미리보기
-                              Container(
-                                width: double.infinity,
-                                constraints: const BoxConstraints(maxHeight: 260),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(16),
-                                  border: Border.all(
-                                    color: const Color(0xFFE2E8F0),
-                                    width: 1,
+                                const SizedBox(height: 2),
+                                TextFormField(
+                                  controller: _descriptionController,
+                                  decoration: _minimalInputDecoration(
+                                    context,
+                                    hintText: AppLocalizations.of(context)!
+                                        .enterMeetupDescription,
+                                    contentPadding:
+                                        const EdgeInsets.fromLTRB(0, 10, 0, 14),
                                   ),
+                                  style: _responsiveInputStyle(context)
+                                      .copyWith(height: 1.5),
+                                  minLines:
+                                      MediaQuery.sizeOf(context).height < 700
+                                          ? 3
+                                          : 4,
+                                  maxLines: 7,
                                 ),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(16),
-                                  child: Stack(
-                                    children: [
-                                      if (primaryFile != null)
-                                        Image.file(
-                                          primaryFile,
-                                          width: double.infinity,
-                                          height: 220,
-                                          fit: BoxFit.cover,
-                                        )
-                                      else if (primaryUrl != null)
-                                        Image.network(
-                                          primaryUrl,
-                                          width: double.infinity,
-                                          height: 220,
-                                          fit: BoxFit.cover,
-                                          errorBuilder: (_, __, ___) => Container(
-                                            height: 220,
-                                            alignment: Alignment.center,
-                                            color: const Color(0xFFF3F4F6),
-                                            child: const Icon(
-                                              Icons.image_not_supported_outlined,
-                                              color: Color(0xFF9CA3AF),
-                                            ),
-                                          ),
+                              ],
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(18).clamp(16, 22).toDouble()),
+
+                            // 썸네일 설정
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // 썸네일 이미지 첨부 (외곽 테두리 제거 + 높이/패딩 통일)
+                                Semantics(
+                                  button: true,
+                                  label: AppLocalizations.of(context)!
+                                      .thumbnailImage,
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: TextButton.icon(
+                                      onPressed: _selectThumbnailImage,
+                                      style: TextButton.styleFrom(
+                                        foregroundColor:
+                                            const Color(0xFF475467),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 2,
+                                          vertical: 8,
                                         ),
-                                      Positioned(
-                                        top: 10,
-                                        right: 10,
-                                        child: GestureDetector(
-                                          onTap: () => _removeMeetupImageAt(0),
-                                          child: Container(
-                                            padding: const EdgeInsets.all(6),
-                                            decoration: const BoxDecoration(
-                                              color: Color(0xCC111827),
-                                              shape: BoxShape.circle,
-                                            ),
-                                            child: const Icon(
-                                              Icons.close_rounded,
-                                              color: Colors.white,
-                                              size: 18,
-                                            ),
-                                          ),
+                                        minimumSize: const Size(44, 44),
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.padded,
+                                      ),
+                                      icon: Icon(
+                                        Icons.add_photo_alternate_outlined,
+                                        size: context
+                                            .ri(21)
+                                            .clamp(20, 23)
+                                            .toDouble(),
+                                      ),
+                                      label: Text(
+                                        AppLocalizations.of(context)!
+                                            .thumbnailImage,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: context
+                                              .rf(13)
+                                              .clamp(12, 14)
+                                              .toDouble(),
+                                          fontWeight: FontWeight.w700,
                                         ),
                                       ),
-                                      if (total > 1)
-                                        Positioned(
-                                          bottom: 10,
-                                          right: 10,
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
-                                            ),
+                                    ),
+                                  ),
+                                ),
+                                if (_hasMeetupImages()) ...[
+                                  const SizedBox(height: 12),
+                                  Builder(
+                                    builder: (context) {
+                                      final primaryUrl =
+                                          _meetupImageUrls.isNotEmpty
+                                              ? _meetupImageUrls.first
+                                              : null;
+                                      final primaryFile =
+                                          _meetupImageFiles.isNotEmpty
+                                              ? _meetupImageFiles.first
+                                              : null;
+                                      final total = _currentMeetupImageCount();
+
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // 실제 모임 화면처럼: 가로 전체 큰 미리보기
+                                          Container(
+                                            width: double.infinity,
+                                            constraints: const BoxConstraints(
+                                                maxHeight: 260),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xCC111827),
-                                              borderRadius: BorderRadius.circular(16),
+                                              color: Colors.grey.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                             ),
-                                            child: Text(
-                                              '$total/$_maxMeetupImages',
-                                              style: const TextStyle(
-                                                fontFamily: 'Pretendard',
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w800,
-                                                color: Colors.white,
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              child: Stack(
+                                                children: [
+                                                  if (primaryFile != null)
+                                                    Image.file(
+                                                      primaryFile,
+                                                      width: double.infinity,
+                                                      height: 220,
+                                                      fit: BoxFit.cover,
+                                                    )
+                                                  else if (primaryUrl != null)
+                                                    Image.network(
+                                                      primaryUrl,
+                                                      width: double.infinity,
+                                                      height: 220,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder:
+                                                          (_, __, ___) =>
+                                                              Container(
+                                                        height: 220,
+                                                        alignment:
+                                                            Alignment.center,
+                                                        color: const Color(
+                                                            0xFFF3F4F6),
+                                                        child: const Icon(
+                                                          Icons
+                                                              .image_not_supported_outlined,
+                                                          color:
+                                                              Color(0xFF9CA3AF),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  Positioned(
+                                                    top: 10,
+                                                    right: 10,
+                                                    child: GestureDetector(
+                                                      onTap: () =>
+                                                          _removeMeetupImageAt(
+                                                              0),
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .all(6),
+                                                        decoration:
+                                                            const BoxDecoration(
+                                                          color:
+                                                              Color(0xCC111827),
+                                                          shape:
+                                                              BoxShape.circle,
+                                                        ),
+                                                        child: const Icon(
+                                                          Icons.close_rounded,
+                                                          color: Colors.white,
+                                                          size: 18,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  if (total > 1)
+                                                    Positioned(
+                                                      bottom: 10,
+                                                      right: 10,
+                                                      child: Container(
+                                                        padding:
+                                                            const EdgeInsets
+                                                                .symmetric(
+                                                          horizontal: 10,
+                                                          vertical: 6,
+                                                        ),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: const Color(
+                                                              0xCC111827),
+                                                          borderRadius:
+                                                              BorderRadius
+                                                                  .circular(16),
+                                                        ),
+                                                        child: Text(
+                                                          '$total/$_maxMeetupImages',
+                                                          style:
+                                                              const TextStyle(
+                                                            fontFamily:
+                                                                'Pretendard',
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w800,
+                                                            color: Colors.white,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                ],
                                               ),
                                             ),
                                           ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              if (total > 1) ...[
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  height: 64,
-                                  child: ListView(
-                                    scrollDirection: Axis.horizontal,
-                                    children: [
-                                      ...List.generate(_meetupImageUrls.length, (i) {
-                                        final url = _meetupImageUrls[i];
-                                        return _MiniImageThumb(
-                                          onRemove: () => _removeMeetupImageAt(i),
-                                          child: Image.network(
-                                            url,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => const Icon(
-                                              Icons.image_not_supported_outlined,
-                                              color: Color(0xFF9CA3AF),
+                                          if (total > 1) ...[
+                                            const SizedBox(height: 12),
+                                            SizedBox(
+                                              height: 64,
+                                              child: ListView(
+                                                scrollDirection:
+                                                    Axis.horizontal,
+                                                children: [
+                                                  ...List.generate(
+                                                      _meetupImageUrls.length,
+                                                      (i) {
+                                                    final url =
+                                                        _meetupImageUrls[i];
+                                                    return _MiniImageThumb(
+                                                      onRemove: () =>
+                                                          _removeMeetupImageAt(
+                                                              i),
+                                                      child: Image.network(
+                                                        url,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder:
+                                                            (_, __, ___) =>
+                                                                const Icon(
+                                                          Icons
+                                                              .image_not_supported_outlined,
+                                                          color:
+                                                              Color(0xFF9CA3AF),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }),
+                                                  ...List.generate(
+                                                      _meetupImageFiles.length,
+                                                      (j) {
+                                                    final idx = _meetupImageUrls
+                                                            .length +
+                                                        j;
+                                                    final f =
+                                                        _meetupImageFiles[j];
+                                                    return _MiniImageThumb(
+                                                      onRemove: () =>
+                                                          _removeMeetupImageAt(
+                                                              idx),
+                                                      child: Image.file(
+                                                        f,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder:
+                                                            (_, __, ___) =>
+                                                                const Icon(
+                                                          Icons
+                                                              .image_not_supported_outlined,
+                                                          color:
+                                                              Color(0xFF9CA3AF),
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }),
+                                                ],
+                                              ),
                                             ),
-                                          ),
-                                        );
-                                      }),
-                                      ...List.generate(_meetupImageFiles.length, (j) {
-                                        final idx = _meetupImageUrls.length + j;
-                                        final f = _meetupImageFiles[j];
-                                        return _MiniImageThumb(
-                                          onRemove: () => _removeMeetupImageAt(idx),
-                                          child: Image.file(
-                                            f,
-                                            fit: BoxFit.cover,
-                                            errorBuilder: (_, __, ___) => const Icon(
-                                              Icons.image_not_supported_outlined,
-                                              color: Color(0xFF9CA3AF),
-                                            ),
-                                          ),
-                                        );
-                                      }),
-                                    ],
+                                          ],
+                                        ],
+                                      );
+                                    },
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
-                          );
-                        },
+                            ),
+                            SizedBox(
+                                height:
+                                    context.rs(12).clamp(10, 16).toDouble()),
+                          ],
+                        ),
                       ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 24),
-                      ],
                     ),
                   ),
+                ),
               ),
             ),
-          // 하단 고정 버튼 영역
-          Container(
-            decoration: BoxDecoration(
+            // 하단 고정 버튼 영역
+            Container(
               color: Colors.white,
-              border: Border(
-                top: BorderSide(
-                  color: const Color(0xFFE6EAF0),
-                  width: 1,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    _pageHorizontalPadding(context),
+                    8,
+                    _pageHorizontalPadding(context),
+                    10,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.2,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildBottomActionButton(
+                                label: AppLocalizations.of(context)!.cancel,
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : () async {
+                                        final shouldExit =
+                                            await _showExitConfirmationDialog();
+                                        if (shouldExit && mounted) {
+                                          _closeScreen(
+                                            shouldSaveAutofill: false,
+                                          );
+                                        }
+                                      },
+                                isPrimary: false,
+                              ),
+                            ),
+                            SizedBox(
+                                width: context.rs(8).clamp(8, 12).toDouble()),
+                            Expanded(
+                              flex: 2,
+                              child: _buildBottomActionButton(
+                                label:
+                                    AppLocalizations.of(context)!.createAction,
+                                onPressed: _isSubmitting
+                                    ? null
+                                    : () async {
+                                        if (_formKey.currentState!.validate()) {
+                                          final l10n =
+                                              AppLocalizations.of(context)!;
+
+                                          // 카테고리 유효성 검사
+                                          if (_selectedCategory == null) {
+                                            AppSnackBar.show(
+                                              context,
+                                              message:
+                                                  AppLocalizations.of(context)!
+                                                      .pleaseSelectCategory,
+                                              type: AppSnackBarType.warning,
+                                            );
+                                            return;
+                                          }
+
+                                          // 시간 유효성 검사 + 과거 시간 방지
+                                          final selectedTime = _selectedTime;
+                                          if (selectedTime == null ||
+                                              selectedTime.isEmpty) {
+                                            AppSnackBar.show(
+                                              context,
+                                              message: l10n.pleaseSelectTime,
+                                              type: AppSnackBarType.warning,
+                                            );
+                                            return;
+                                          }
+
+                                          if (selectedTime != l10n.undecided) {
+                                            final parsed =
+                                                _tryParseHHmm(selectedTime);
+                                            if (parsed != null) {
+                                              final dt = DateTime(
+                                                selectedDate.year,
+                                                selectedDate.month,
+                                                selectedDate.day,
+                                                parsed.$1,
+                                                parsed.$2,
+                                              );
+                                              if (dt.isBefore(DateTime.now())) {
+                                                AppSnackBar.show(
+                                                  context,
+                                                  message: l10n.todayTimePassed,
+                                                  type: AppSnackBarType.warning,
+                                                );
+                                                return;
+                                              }
+                                            }
+                                          }
+
+                                          // 공개 범위 유효성 검사
+                                          if (_visibility == 'category' &&
+                                              _selectedCategoryIds.isEmpty) {
+                                            AppSnackBar.show(
+                                              context,
+                                              message:
+                                                  AppLocalizations.of(context)!
+                                                      .noGroupSelectedWarning,
+                                              type: AppSnackBarType.warning,
+                                            );
+                                            return;
+                                          }
+
+                                          setState(() {
+                                            _isSubmitting = true;
+                                          });
+
+                                          _formKey.currentState!.save();
+
+                                          try {
+                                            // Firebase에 모임 생성
+                                            final success = await _meetupService
+                                                .createMeetup(
+                                              title:
+                                                  _titleController.text.trim(),
+                                              description:
+                                                  _descriptionController.text
+                                                      .trim(),
+                                              location: _locationController.text
+                                                  .trim(),
+                                              time: _selectedTime!,
+                                              maxParticipants: _maxParticipants,
+                                              date: selectedDate,
+                                              category: _selectedCategory!,
+                                              thumbnailContent: '',
+                                              images: _meetupImageFiles,
+                                              imageUrls: _meetupImageUrls,
+                                              visibility: _visibility,
+                                              visibleToCategoryIds:
+                                                  _selectedCategoryIds,
+                                            );
+
+                                            if (success) {
+                                              if (mounted) {
+                                                // 더미 모임 객체 생성 (콜백용)
+                                                final dummyMeetup = Meetup(
+                                                  id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+                                                  title: _titleController.text
+                                                      .trim(),
+                                                  description:
+                                                      _descriptionController
+                                                          .text
+                                                          .trim(),
+                                                  location: _locationController
+                                                      .text
+                                                      .trim(),
+                                                  time: _selectedTime!,
+                                                  maxParticipants:
+                                                      _maxParticipants,
+                                                  currentParticipants: 1,
+                                                  host: 'temp_host',
+                                                  hostNationality: '',
+                                                  imageUrl: '',
+                                                  thumbnailContent: '',
+                                                  thumbnailImageUrl:
+                                                      _meetupImageUrls
+                                                              .isNotEmpty
+                                                          ? _meetupImageUrls
+                                                              .first
+                                                          : '',
+                                                  date: selectedDate,
+                                                  category: _selectedCategory!,
+                                                );
+
+                                                final dayIndex =
+                                                    (selectedDate.weekday - 1)
+                                                        .clamp(0, 6);
+                                                widget.onCreateMeetup(
+                                                    dayIndex, dummyMeetup);
+
+                                                final createdMessage =
+                                                    AppLocalizations.of(
+                                                                context)!
+                                                            .meetupCreated ??
+                                                        '';
+                                                await _closeScreen(
+                                                    shouldSaveAutofill: true);
+                                                AppSnackBar.show(
+                                                  context,
+                                                  message: createdMessage,
+                                                  type: AppSnackBarType.success,
+                                                );
+                                              }
+                                            } else if (mounted) {
+                                              setState(() {
+                                                _isSubmitting = false;
+                                              });
+                                              AppSnackBar.show(
+                                                context,
+                                                message: AppLocalizations.of(
+                                                        context)!
+                                                    .meetupCreateFailed,
+                                                type: AppSnackBarType.error,
+                                              );
+                                            }
+                                          } catch (e) {
+                                            if (mounted) {
+                                              setState(() {
+                                                _isSubmitting = false;
+                                              });
+                                              AppSnackBar.show(
+                                                context,
+                                                message:
+                                                    '${AppLocalizations.of(context)!.error}: $e',
+                                                type: AppSnackBarType.error,
+                                              );
+                                            }
+                                          }
+                                        }
+                                      },
+                                isLoading: _isSubmitting,
+                                isPrimary: true,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _buildBottomActionButton(
-                        label: AppLocalizations.of(context)!.cancel,
-                        onPressed: _isSubmitting
-                            ? null
-                            : () async {
-                                final shouldExit = await _showExitConfirmationDialog();
-                                if (shouldExit && mounted) {
-                                  _closeScreen(shouldSaveAutofill: false);
-                                }
-                              },
-                        isPrimary: false,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 2,
-                      child: _buildBottomActionButton(
-                        label: AppLocalizations.of(context)!.createAction,
-                        onPressed: _isSubmitting
-                            ? null
-                            : () async {
-                                if (_formKey.currentState!.validate()) {
-                                  final l10n = AppLocalizations.of(context)!;
-
-                                  // 카테고리 유효성 검사
-                                  if (_selectedCategory == null) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: AppLocalizations.of(context)!.pleaseSelectCategory,
-                                      type: AppSnackBarType.warning,
-                                    );
-                                    return;
-                                  }
-
-                                  // 시간 유효성 검사 + 과거 시간 방지
-                                  final selectedTime = _selectedTime;
-                                  if (selectedTime == null || selectedTime.isEmpty) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: l10n.pleaseSelectTime,
-                                      type: AppSnackBarType.warning,
-                                    );
-                                    return;
-                                  }
-
-                                  if (selectedTime != l10n.undecided) {
-                                    final parsed = _tryParseHHmm(selectedTime);
-                                    if (parsed != null) {
-                                      final dt = DateTime(
-                                        selectedDate.year,
-                                        selectedDate.month,
-                                        selectedDate.day,
-                                        parsed.$1,
-                                        parsed.$2,
-                                      );
-                                      if (dt.isBefore(DateTime.now())) {
-                                        AppSnackBar.show(
-                                          context,
-                                          message: l10n.todayTimePassed,
-                                          type: AppSnackBarType.warning,
-                                        );
-                                        return;
-                                      }
-                                    }
-                                  }
-
-                                  // 공개 범위 유효성 검사
-                                  if (_visibility == 'category' && _selectedCategoryIds.isEmpty) {
-                                    AppSnackBar.show(
-                                      context,
-                                      message: AppLocalizations.of(context)!.noGroupSelectedWarning,
-                                      type: AppSnackBarType.warning,
-                                    );
-                                    return;
-                                  }
-
-                                  setState(() {
-                                    _isSubmitting = true;
-                                  });
-
-                                  _formKey.currentState!.save();
-
-                                  try {
-                                    // Firebase에 모임 생성
-                                    final success = await _meetupService.createMeetup(
-                                      title: _titleController.text.trim(),
-                                      description: _descriptionController.text.trim(),
-                                      location: _locationController.text.trim(),
-                                      time: _selectedTime!,
-                                      maxParticipants: _maxParticipants,
-                                      date: selectedDate,
-                                      category: _selectedCategory!,
-                                      thumbnailContent: '',
-                                      images: _meetupImageFiles,
-                                      imageUrls: _meetupImageUrls,
-                                      visibility: _visibility,
-                                      visibleToCategoryIds: _selectedCategoryIds,
-                                    );
-
-                                    if (success) {
-                                      if (mounted) {
-                                        // 더미 모임 객체 생성 (콜백용)
-                                        final dummyMeetup = Meetup(
-                                          id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
-                                          title: _titleController.text.trim(),
-                                          description: _descriptionController.text.trim(),
-                                          location: _locationController.text.trim(),
-                                          time: _selectedTime!,
-                                          maxParticipants: _maxParticipants,
-                                          currentParticipants: 1,
-                                          host: 'temp_host',
-                                          hostNationality: '',
-                                          imageUrl: '',
-                                          thumbnailContent: '',
-                                          thumbnailImageUrl: _meetupImageUrls.isNotEmpty
-                                              ? _meetupImageUrls.first
-                                              : '',
-                                          date: selectedDate,
-                                          category: _selectedCategory!,
-                                        );
-
-                                        final dayIndex =
-                                            (selectedDate.weekday - 1).clamp(0, 6);
-                                        widget.onCreateMeetup(dayIndex, dummyMeetup);
-
-                                        final createdMessage =
-                                            AppLocalizations.of(context)!.meetupCreated ?? '';
-                                        await _closeScreen(shouldSaveAutofill: true);
-                                        AppSnackBar.show(
-                                          context,
-                                          message: createdMessage,
-                                          type: AppSnackBarType.success,
-                                        );
-                                      }
-                                    } else if (mounted) {
-                                      setState(() {
-                                        _isSubmitting = false;
-                                      });
-                                      AppSnackBar.show(
-                                        context,
-                                        message:
-                                            AppLocalizations.of(context)!.meetupCreateFailed,
-                                        type: AppSnackBarType.error,
-                                      );
-                                    }
-                                  } catch (e) {
-                                    if (mounted) {
-                                      setState(() {
-                                        _isSubmitting = false;
-                                      });
-                                      AppSnackBar.show(
-                                        context,
-                                        message: '${AppLocalizations.of(context)!.error}: $e',
-                                        type: AppSnackBarType.error,
-                                      );
-                                    }
-                                  }
-                                }
-                              },
-                        isLoading: _isSubmitting,
-                        isPrimary: true,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -1351,37 +1412,24 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
   }) {
     final isDisabled = onPressed == null || isLoading;
     final backgroundColor = isPrimary
-        ? (isDisabled ? const Color(0xFFCBDCF4) : const Color(0xFF5B8DEF))
-        : Colors.white;
-    final borderColor = isPrimary
-        ? Colors.transparent
-        : (isDisabled ? const Color(0xFFD8DEE8) : const Color(0xFFB9C2D0));
+        ? (isDisabled ? const Color(0xFFD0D5DD) : const Color(0xFF344054))
+        : Colors.transparent;
     final textColor = isPrimary
         ? Colors.white
-        : (isDisabled ? const Color(0xFFA8B0BE) : const Color(0xFF4A5B78));
+        : (isDisabled ? const Color(0xFFB0B7C3) : const Color(0xFF475467));
 
     return SizedBox(
-      height: 52,
+      height: context.rh(48, min: 44, max: 50),
       child: Material(
         color: backgroundColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         child: InkWell(
           onTap: isDisabled ? null : onPressed,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           child: Ink(
             decoration: BoxDecoration(
               color: backgroundColor,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: borderColor, width: isPrimary ? 0 : 1.2),
-              boxShadow: isPrimary
-                  ? const [
-                      BoxShadow(
-                        color: Color(0x1A5B8DEF),
-                        blurRadius: 14,
-                        offset: Offset(0, 6),
-                      ),
-                    ]
-                  : const [],
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: isLoading
@@ -1397,7 +1445,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       label,
                       style: TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 16,
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
                         fontWeight: FontWeight.w700,
                         color: textColor,
                       ),
@@ -1472,8 +1520,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
-      case 'drink':
-        return l10n.drink;
+      case 'hangout':
+        return l10n.hangout;
       case 'culture':
         return l10n.culture;
       case 'etc':
@@ -1499,15 +1547,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
         color: Colors.transparent,
         child: InkWell(
           onTap: _openMeetupCategorySelection,
-          borderRadius: BorderRadius.circular(12),
           child: Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFE6EAF0),
+            constraints: BoxConstraints(
+              minHeight: context.rh(48, min: 46, max: 52),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFEAECF0)),
               ),
             ),
             child: Row(
@@ -1515,11 +1562,12 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Expanded(
                   child: Text(
                     displayText,
-                    style: _inputTextStyle.copyWith(
+                    style: _responsiveInputStyle(context).copyWith(
                       color: isSelected
                           ? const Color(0xFF111827)
                           : const Color(0xFF9CA3AF),
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w400,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -1527,9 +1575,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 ),
                 const SizedBox(width: 8),
                 const Icon(
-                  Icons.chevron_right,
-                  size: 22,
-                  color: Color(0xFF9CA3AF),
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: Color(0xFF98A2B3),
                 ),
               ],
             ),
@@ -1557,7 +1605,6 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
     });
   }
 
-
   Future<void> _selectThumbnailImage() async {
     final pickedFiles = await _picker.pickMultiImage();
     if (!mounted) return;
@@ -1577,10 +1624,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       return;
     }
 
-    final toAdd = pickedFiles
-        .take(remaining)
-        .map((x) => File(x.path))
-        .toList();
+    final toAdd = pickedFiles.take(remaining).map((x) => File(x.path)).toList();
 
     setState(() {
       _meetupImageFiles.addAll(toAdd);
@@ -1637,9 +1681,9 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       children: [
         Text(
           l10n.visibilityScope,
-          style: _sectionTitleStyle,
+          style: _responsiveSectionTitle(context),
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: context.rs(6).clamp(4, 8).toDouble()),
         _VisibilitySegmentedControl(
           selected: _visibility,
           groupSelectedCount: _selectedCategoryIds.length,
@@ -1691,7 +1735,14 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
       children: [
         Row(
           children: [
-            Text(l10n.dateSelection, style: _sectionTitleStyle),
+            Flexible(
+              child: Text(
+                l10n.dateSelection,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _responsiveSectionTitle(context),
+              ),
+            ),
             const SizedBox(width: 8),
             Text(
               '(${short(_selectedDay)})',
@@ -1702,12 +1753,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        SizedBox(height: context.rs(6).clamp(4, 8).toDouble()),
         Container(
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE6EAF0)),
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFEAECF0)),
+            ),
           ),
           child: Column(
             children: [
@@ -1719,9 +1771,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                       _isCalendarExpanded = !_isCalendarExpanded;
                     });
                   },
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+                    padding: const EdgeInsets.fromLTRB(0, 8, 0, 6),
                     child: Row(
                       children: [
                         const SizedBox(width: 28), // 좌우 균형
@@ -1743,8 +1794,8 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           _isCalendarExpanded
                               ? Icons.keyboard_arrow_up
                               : Icons.keyboard_arrow_down,
-                          size: 28,
-                          color: const Color(0xFF111827),
+                          size: context.ri(22).clamp(20, 24).toDouble(),
+                          color: const Color(0xFF667085),
                         ),
                       ],
                     ),
@@ -1756,7 +1807,7 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 curve: Curves.easeOut,
                 child: _isCalendarExpanded
                     ? Padding(
-                        padding: const EdgeInsets.fromLTRB(10, 0, 10, 12),
+                        padding: const EdgeInsets.fromLTRB(0, 0, 0, 8),
                         child: TableCalendar<void>(
                           firstDay: DateTime.utc(2020, 1, 1),
                           lastDay: DateTime.utc(2035, 12, 31),
@@ -1765,10 +1816,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           calendarFormat: CalendarFormat.month,
                           startingDayOfWeek: StartingDayOfWeek.sunday,
                           availableGestures: AvailableGestures.horizontalSwipe,
+                          rowHeight: context.rh(42, min: 36, max: 44),
+                          daysOfWeekHeight: context.rh(30, min: 26, max: 32),
                           onPageChanged: (focusedDay) {
                             setState(() => _focusedDay = focusedDay);
                           },
-                          selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
+                          selectedDayPredicate: (day) =>
+                              isSameDay(_selectedDay, day),
                           onDaySelected: (selectedDay, focusedDay) {
                             setState(() {
                               _selectedDay = DateTime(
@@ -1782,24 +1836,40 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                           },
                           eventLoader: (_) => const <void>[],
                           calendarBuilders: CalendarBuilders<void>(
-                            markerBuilder: (_, __, ___) => const SizedBox.shrink(),
+                            markerBuilder: (_, __, ___) =>
+                                const SizedBox.shrink(),
                             dowBuilder: (context, day) {
                               final isSat = day.weekday == DateTime.saturday;
                               final isSun = day.weekday == DateTime.sunday;
-                              final color = isSun
-                                  ? const Color(0xFFEF4444)
-                                  : (isSat
-                                      ? const Color(0xFF3B82F6)
-                                      : const Color(0xFF6B7280));
+                              final color = (isSun || isSat)
+                                  ? const Color(0xFF98A2B3)
+                                  : const Color(0xFF667085);
                               final label = lang == 'ko'
-                                  ? const ['일', '월', '화', '수', '목', '금', '토'][day.weekday % 7]
-                                  : const ['S', 'M', 'T', 'W', 'T', 'F', 'S'][day.weekday % 7];
+                                  ? const [
+                                      '일',
+                                      '월',
+                                      '화',
+                                      '수',
+                                      '목',
+                                      '금',
+                                      '토'
+                                    ][day.weekday % 7]
+                                  : const [
+                                      'S',
+                                      'M',
+                                      'T',
+                                      'W',
+                                      'T',
+                                      'F',
+                                      'S'
+                                    ][day.weekday % 7];
                               return Center(
                                 child: Text(
                                   label,
                                   style: TextStyle(
                                     fontFamily: 'Pretendard',
-                                    fontSize: 12,
+                                    fontSize:
+                                        context.rf(12).clamp(11, 13).toDouble(),
                                     fontWeight: FontWeight.w800,
                                     color: color,
                                   ),
@@ -1885,35 +1955,23 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           children: [
             Text(
               AppLocalizations.of(context)!.timeSelection,
-              style: _sectionTitleStyle,
+              style: _responsiveSectionTitle(context),
             ),
             const SizedBox(width: 4),
-            const Text(
-              '*',
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.red,
-              ),
-            ),
+            _requiredMark(context),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 2),
         InkWell(
           onTap: _showTimePickerSheet,
-          borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.rs(16),
-              vertical: context.rs(16),
+            constraints: BoxConstraints(
+              minHeight: context.rh(48, min: 46, max: 52),
             ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFE6EAF0),
-                width: 1,
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFEAECF0)),
               ),
             ),
             child: Row(
@@ -1921,12 +1979,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Expanded(
                   child: Text(
                     _selectedTime ?? AppLocalizations.of(context)!.undecided,
-                    style: _inputTextStyle,
+                    style: _responsiveInputStyle(context),
                   ),
                 ),
-                const Icon(
-                  Icons.expand_more,
-                  color: Color(0xFF9CA3AF),
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: const Color(0xFF98A2B3),
                 ),
               ],
             ),
@@ -1944,35 +2003,23 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
           children: [
             Text(
               AppLocalizations.of(context)!.maxParticipants,
-              style: _sectionTitleStyle,
+              style: _responsiveSectionTitle(context),
             ),
             const SizedBox(width: 4),
-            const Text(
-              '*',
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: Colors.red,
-              ),
-            ),
+            _requiredMark(context),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 2),
         InkWell(
           onTap: _showMaxParticipantsSheet,
-          borderRadius: BorderRadius.circular(12),
           child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: context.rs(16),
-              vertical: context.rs(16),
+            constraints: BoxConstraints(
+              minHeight: context.rh(48, min: 46, max: 52),
             ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFFE6EAF0),
-                width: 1,
+            padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0xFFEAECF0)),
               ),
             ),
             child: Row(
@@ -1980,12 +2027,13 @@ class _CreateMeetupScreenState extends State<CreateMeetupScreen> {
                 Expanded(
                   child: Text(
                     '$_maxParticipants${AppLocalizations.of(context)!.people}',
-                    style: _inputTextStyle,
+                    style: _responsiveInputStyle(context),
                   ),
                 ),
-                const Icon(
-                  Icons.expand_more,
-                  color: Color(0xFF9CA3AF),
+                Icon(
+                  Icons.expand_more_rounded,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: const Color(0xFF98A2B3),
                 ),
               ],
             ),
@@ -2015,11 +2063,6 @@ class _VisibilitySegmentedControl extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
 
-    const selectedBg = Color(0xFF6CCFF6); // 스크린샷 톤
-    const selectedText = Colors.white;
-    const unselectedText = Color(0xFF111827);
-    const dividerColor = Color(0xFFD1D5DB);
-
     Widget item({
       required Widget child,
       required bool isSelected,
@@ -2033,21 +2076,33 @@ class _VisibilitySegmentedControl extends StatelessWidget {
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 160),
               curve: Curves.easeOut,
-              height: 44,
+              constraints: const BoxConstraints(minHeight: 44),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 9),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: isSelected ? selectedBg : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
+                border: Border(
+                  bottom: BorderSide(
+                    color: isSelected
+                        ? const Color(0xFF344054)
+                        : Colors.transparent,
+                    width: 2,
+                  ),
+                ),
               ),
               child: DefaultTextStyle(
                 style: TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 15,
-                  fontWeight: FontWeight.w800,
-                  color: isSelected ? selectedText : unselectedText,
-                  height: 1.1,
+                  fontSize: context.rf(14).clamp(12, 15).toDouble(),
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected
+                      ? const Color(0xFF111827)
+                      : const Color(0xFF667085),
+                  height: 1.2,
                 ),
-                child: child,
+                child: MediaQuery.withClampedTextScaling(
+                  maxScaleFactor: 1.15,
+                  child: child,
+                ),
               ),
             ),
           ),
@@ -2060,58 +2115,62 @@ class _VisibilitySegmentedControl extends StatelessWidget {
     final isGroup = selected == 'category';
 
     return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            item(
-              isSelected: isPublic,
-              onTap: onSelectPublic,
-              child: Text(l10n.all),
-            ),
-            const VerticalDivider(
-              width: 10,
-              thickness: 1,
-              color: dividerColor,
-            ),
-            item(
-              isSelected: isFriends,
-              onTap: onSelectFriends,
-              child: Text(l10n.meetupVisibilityFriendsAll),
-            ),
-            const VerticalDivider(
-              width: 10,
-              thickness: 1,
-              color: dividerColor,
-            ),
-            item(
-              isSelected: isGroup,
-              onTap: onSelectGroup,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.change_history_rounded,
-                    size: 18,
-                    color: isGroup ? Colors.white : AppColors.accentRed,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(l10n.groups),
-                  if (groupSelectedCount > 0) ...[
-                    const SizedBox(width: 6),
-                    Text('($groupSelectedCount)'),
-                  ],
-                ],
-              ),
-            ),
-          ],
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFEAECF0)),
         ),
+      ),
+      child: Row(
+        children: [
+          item(
+            isSelected: isPublic,
+            onTap: onSelectPublic,
+            child: Text(
+              l10n.all,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          item(
+            isSelected: isFriends,
+            onTap: onSelectFriends,
+            child: Text(
+              l10n.meetupVisibilityFriendsAll,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          item(
+            isSelected: isGroup,
+            onTap: onSelectGroup,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.change_history_rounded,
+                  size: context.ri(16).clamp(15, 18).toDouble(),
+                  color: isGroup
+                      ? const Color(0xFF344054)
+                      : const Color(0xFF98A2B3),
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    l10n.groups,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                if (groupSelectedCount > 0) ...[
+                  const SizedBox(width: 3),
+                  Text('($groupSelectedCount)'),
+                ],
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2129,21 +2188,22 @@ class _CreateMeetupCalendarDayCell extends StatelessWidget {
   });
 
   Color _weekdayColor(DateTime d) {
-    if (d.weekday == DateTime.saturday) return const Color(0xFF3B82F6);
-    if (d.weekday == DateTime.sunday) return const Color(0xFFEF4444);
+    if (d.weekday == DateTime.saturday || d.weekday == DateTime.sunday) {
+      return const Color(0xFF667085);
+    }
     return const Color(0xFF111827);
   }
 
   @override
   Widget build(BuildContext context) {
-    final fill = isSelected ? AppColors.pointColor : Colors.transparent;
+    final fill = isSelected ? const Color(0xFF344054) : Colors.transparent;
     final textColor = isSelected ? Colors.white : _weekdayColor(day);
     final fontWeight = isSelected ? FontWeight.w900 : FontWeight.w700;
 
     return Center(
       child: SizedBox(
-        width: 38,
-        height: 38,
+        width: context.rh(36, min: 32, max: 38),
+        height: context.rh(36, min: 32, max: 38),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -2158,7 +2218,7 @@ class _CreateMeetupCalendarDayCell extends StatelessWidget {
                   '${day.day}',
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 14,
+                    fontSize: context.rf(14).clamp(12.5, 15).toDouble(),
                     fontWeight: fontWeight,
                     color: textColor,
                   ),
@@ -2176,7 +2236,7 @@ class _CreateMeetupCalendarDayCell extends StatelessWidget {
                     height: 4,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        color: AppColors.pointColor,
+                        color: Color(0xFF667085),
                         shape: BoxShape.circle,
                       ),
                     ),

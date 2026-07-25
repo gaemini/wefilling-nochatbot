@@ -196,23 +196,28 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
+        toolbarHeight: 56,
+        leadingWidth: 52,
+        titleSpacing: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
+          iconSize: 22,
+          padding: const EdgeInsets.all(12),
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF111827)),
           onPressed: () => Navigator.pop(context),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             // 배경/테두리 없이 도형 아이콘만 표시
-            ShapeIcon(iconName: iconName, color: color, size: 28),
-            const SizedBox(width: 12),
+            ShapeIcon(iconName: iconName, color: color, size: 24),
+            const SizedBox(width: 10),
             Expanded(
               child: Text(
                 widget.category.name,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
                   color: Color(0xFF111827),
-                  fontSize: 18,
+                  fontSize: 17,
                   fontWeight: FontWeight.w600,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -223,6 +228,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         actions: [
           TextButton(
             onPressed: (_hasChanges && !_isSaving) ? _save : null,
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              minimumSize: const Size(0, 40),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             child: _isSaving
                 ? const SizedBox(
                     width: 16,
@@ -233,6 +243,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     AppLocalizations.of(context)!.save,
                     style: TextStyle(
                       fontFamily: 'Pretendard',
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                       color: (_hasChanges && !_isSaving)
                           ? AppColors.pointColor
@@ -312,9 +323,9 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
                       child: SizedBox(
-                        height: 92,
+                        height: 76,
                         child: selectedFriends.isEmpty
                             ? Align(
                                 alignment: Alignment.topLeft,
@@ -323,7 +334,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                       .groupNoFriendsSelected,
                                   style: const TextStyle(
                                     fontFamily: 'Pretendard',
-                                    fontSize: 14,
+                                    fontSize: 13,
                                     fontWeight: FontWeight.w600,
                                     color: Color(0xFF94A3B8),
                                   ),
@@ -333,7 +344,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                                 scrollDirection: Axis.horizontal,
                                 itemCount: selectedFriends.length,
                                 separatorBuilder: (_, __) =>
-                                    const SizedBox(width: 14),
+                                    const SizedBox(width: 10),
                                 itemBuilder: (_, index) =>
                                     _buildSelectedFriendSlot(
                                   selectedFriends[index],
@@ -342,53 +353,80 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 18),
-                      child: TextField(
-                        controller: _searchController,
-                        textInputAction: TextInputAction.search,
-                        decoration: InputDecoration(
-                          hintText:
-                              AppLocalizations.of(context)!.searchByFriendName,
-                          prefixIcon:
-                              const Icon(Icons.search_rounded, size: 22),
-                          suffixIcon: _searchQuery.isNotEmpty
-                              ? IconButton(
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    size: 20,
-                                  ),
-                                  onPressed: () {
-                                    _searchController.clear();
-                                    setState(() => _searchQuery = '');
-                                  },
-                                )
-                              : null,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide.none,
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: SizedBox(
+                        height: 44,
+                        child: TextField(
+                          controller: _searchController,
+                          textInputAction: TextInputAction.search,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
                           ),
-                          filled: true,
-                          fillColor: const Color(0xFFF4F6F8),
-                          contentPadding:
-                              const EdgeInsets.symmetric(vertical: 15),
+                          decoration: InputDecoration(
+                            hintText: AppLocalizations.of(context)!
+                                .searchByFriendName,
+                            hintStyle: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              color: Color(0xFF6B7280),
+                            ),
+                            prefixIcon: const Icon(
+                              Icons.search_rounded,
+                              size: 20,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(
+                                    iconSize: 18,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 44,
+                                      height: 44,
+                                    ),
+                                    icon: const Icon(Icons.close_rounded),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                  )
+                                : null,
+                            suffixIconConstraints: const BoxConstraints(
+                              minWidth: 44,
+                              minHeight: 44,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            filled: true,
+                            fillColor: const Color(0xFFF4F6F8),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              vertical: 11,
+                            ),
+                          ),
+                          onChanged: (value) =>
+                              setState(() => _searchQuery = value),
                         ),
-                        onChanged: (value) =>
-                            setState(() => _searchQuery = value),
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Text(
                         AppLocalizations.of(context)!.friends,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 15,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF64748B),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Expanded(
                       child: displayFriends.isEmpty
                           ? Center(
@@ -406,7 +444,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                           : ListView.builder(
                               keyboardDismissBehavior:
                                   ScrollViewKeyboardDismissBehavior.onDrag,
-                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                              padding: const EdgeInsets.fromLTRB(8, 0, 8, 20),
                               itemCount: displayFriends.length,
                               itemBuilder: (_, index) {
                                 final friend = displayFriends[index];
@@ -432,7 +470,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 10, 24, 4),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
       child: Row(
         children: [
           Expanded(
@@ -444,7 +482,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               onTap: _openCreatePost,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: _buildCreateShortcut(
               key: const ValueKey('create_meetup_shortcut'),
@@ -454,7 +492,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               onTap: _openCreateMeetup,
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: _buildCreateShortcut(
               key: const ValueKey('create_snack_chat_shortcut'),
@@ -485,17 +523,17 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         child: Material(
           key: key,
           color: const Color(0xFFF4F6F8),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
             child: SizedBox(
-              height: 64,
+              height: 58,
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(icon, size: 21, color: AppColors.pointColor),
-                  const SizedBox(height: 5),
+                  Icon(icon, size: 19, color: AppColors.pointColor),
+                  const SizedBox(height: 4),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     child: Text(
@@ -504,7 +542,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 12,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF334155),
                       ),
@@ -534,13 +572,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
         child: InkWell(
           key: ValueKey('group_friend_${friend.uid}'),
           onTap: () => _toggleFriend(friend.uid),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(12),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             child: Row(
               children: [
                 _buildAvatar(
-                  size: 52,
+                  size: 44,
                   photoUrl: friend.photoURL,
                   fallbackLabel: friend.displayNameOrNickname,
                 ),
@@ -552,8 +590,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
                       color: Color(0xFF111827),
                     ),
                   ),
@@ -561,8 +599,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 const SizedBox(width: 8),
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 140),
-                  width: 26,
-                  height: 26,
+                  width: 22,
+                  height: 22,
                   decoration: BoxDecoration(
                     color:
                         isSelected ? AppColors.pointColor : Colors.transparent,
@@ -571,13 +609,13 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                       color: isSelected
                           ? AppColors.pointColor
                           : const Color(0xFFB8C0CC),
-                      width: 1.7,
+                      width: 1.5,
                     ),
                   ),
                   child: isSelected
                       ? const Icon(
                           Icons.check_rounded,
-                          size: 18,
+                          size: 15,
                           color: Colors.white,
                         )
                       : null,
@@ -606,7 +644,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               clipBehavior: Clip.none,
               children: [
                 _buildAvatar(
-                  size: 64,
+                  size: 52,
                   photoUrl: friend.photoURL,
                   fallbackLabel: friend.displayNameOrNickname,
                 ),
@@ -614,25 +652,25 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                   right: -2,
                   top: -2,
                   child: Container(
-                    width: 18,
-                    height: 18,
+                    width: 16,
+                    height: 16,
                     decoration: BoxDecoration(
                       color: const Color(0xFF111827),
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
+                      border: Border.all(color: Colors.white, width: 1.25),
                     ),
                     child: const Icon(
                       Icons.close,
-                      size: 12,
+                      size: 10,
                       color: Colors.white,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             SizedBox(
-              width: 70,
+              width: 62,
               child: Text(
                 friend.displayNameOrNickname,
                 maxLines: 1,
@@ -640,7 +678,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 13,
+                  fontSize: 12,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF374151),
                 ),
@@ -679,21 +717,22 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           ? Image.network(
               photoUrl,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _avatarFallback(fallbackLabel),
+              errorBuilder: (_, __, ___) =>
+                  _avatarFallback(fallbackLabel, size),
             )
-          : _avatarFallback(fallbackLabel),
+          : _avatarFallback(fallbackLabel, size),
     );
   }
 
-  Widget _avatarFallback(String label) {
+  Widget _avatarFallback(String label, double avatarSize) {
     return Center(
       child: Text(
         label.isEmpty ? '?' : label[0],
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Pretendard',
-          fontSize: 20,
+          fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF6B7280),
+          color: const Color(0xFF6B7280),
         ),
       ),
     );

@@ -19,7 +19,7 @@ class PostSearchCard extends StatelessWidget {
     final now = DateTime.now();
     final difference = now.difference(date);
     final l10n = AppLocalizations.of(context)!;
-    
+
     if (difference.inDays > 0) {
       return l10n.daysAgo(difference.inDays);
     } else if (difference.inHours > 0) {
@@ -36,7 +36,7 @@ class PostSearchCard extends StatelessWidget {
     final l10n = AppLocalizations.of(context)!;
     final currentUserId = context.read<AuthProvider>().user?.uid;
     final isLiked = currentUserId != null && post.isLikedByUser(currentUserId);
-    
+
     return InkWell(
       onTap: () {
         // 게시글 상세 페이지로 직접 이동
@@ -92,9 +92,9 @@ class PostSearchCard extends StatelessWidget {
                   ),
                 ],
               ),
-              
+
               SizedBox(height: DesignTokens.s12),
-              
+
               // 제목
               Text(
                 post.title,
@@ -102,7 +102,7 @@ class PostSearchCard extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              
+
               // 내용
               if (post.content.isNotEmpty) ...[
                 SizedBox(height: DesignTokens.s8),
@@ -115,9 +115,9 @@ class PostSearchCard extends StatelessWidget {
                   ),
                 ),
               ],
-              
+
               SizedBox(height: DesignTokens.s12),
-              
+
               // 통계 정보 (좋아요수, 댓글수)
               Row(
                 children: [
@@ -125,7 +125,9 @@ class PostSearchCard extends StatelessWidget {
                   Icon(
                     isLiked ? IconStyles.favoriteFilled : IconStyles.favorite,
                     size: DesignTokens.iconSmall,
-                    color: isLiked ? BrandColors.error : BrandColors.textTertiary,
+                    color: isLiked
+                        ? BrandColors.textSecondary
+                        : BrandColors.textTertiary,
                   ),
                   SizedBox(width: DesignTokens.s4),
                   Text(
@@ -135,7 +137,7 @@ class PostSearchCard extends StatelessWidget {
                     ),
                   ),
                   SizedBox(width: DesignTokens.s16),
-                  
+
                   // 댓글수
                   Icon(
                     Icons.chat_bubble_outline,
@@ -158,4 +160,3 @@ class PostSearchCard extends StatelessWidget {
     );
   }
 }
-

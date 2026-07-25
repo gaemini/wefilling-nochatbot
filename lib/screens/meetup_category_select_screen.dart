@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../constants/app_constants.dart';
 import '../l10n/app_localizations.dart';
 import '../services/recommended_places_service.dart';
+import '../utils/responsive_helper.dart';
 
 class MeetupCategorySelectionResult {
   final String categoryKey;
@@ -30,7 +30,8 @@ class MeetupCategorySelectScreen extends StatefulWidget {
       _MeetupCategorySelectScreenState();
 }
 
-class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen> {
+class _MeetupCategorySelectScreenState
+    extends State<MeetupCategorySelectScreen> {
   String? _selectedCategoryKey;
 
   final RecommendedPlacesService _recommendedPlacesService =
@@ -42,7 +43,7 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
     'study',
     'meal',
     'cafe',
-    'drink',
+    'hangout',
     'culture',
     'etc',
   ];
@@ -50,7 +51,11 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
   @override
   void initState() {
     super.initState();
-    _selectedCategoryKey = widget.initialSelectedCategoryKey;
+    final initialKey = widget.initialSelectedCategoryKey?.trim().toLowerCase();
+    _selectedCategoryKey = switch (initialKey) {
+      'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+      _ => initialKey,
+    };
     if (_selectedCategoryKey != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _loadRecommendedPlaces(_selectedCategoryKey!);
@@ -66,8 +71,8 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
-      case 'drink':
-        return l10n.drink;
+      case 'hangout':
+        return l10n.hangout;
       case 'culture':
         return l10n.culture;
       case 'etc':
@@ -102,27 +107,27 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
         });
         _loadRecommendedPlaces(key);
       },
-      borderRadius: BorderRadius.circular(18),
       child: Container(
-        height: 36,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
+        constraints: const BoxConstraints(minHeight: 42),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.pointColor : Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(
-            color: isSelected ? AppColors.pointColor : const Color(0xFFE1E6EE),
-            width: 1,
+          border: Border(
+            bottom: BorderSide(
+              color: isSelected ? const Color(0xFF344054) : Colors.transparent,
+              width: 2,
+            ),
           ),
         ),
         child: Text(
           _labelForKey(l10n, key),
           style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            height: 1.0,
-            color: isSelected ? Colors.white : const Color(0xFF111827),
+            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            height: 1.2,
+            color:
+                isSelected ? const Color(0xFF111827) : const Color(0xFF667085),
           ),
         ),
       ),
@@ -132,21 +137,16 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
   Widget _buildRecommendedPlacesSection(AppLocalizations l10n) {
     // 선택 전: 빈 상태를 자연스럽게 안내
     if (_selectedCategoryKey == null) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF8F9FA),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE1E6EE)),
-        ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 14),
         child: Text(
           l10n.pleaseSelectCategory,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 14,
+            fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w500,
             height: 1.25,
-            color: Color(0xFF6B7280),
+            color: const Color(0xFF6B7280),
           ),
         ),
       );
@@ -157,13 +157,13 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
       children: [
         Text(
           l10n.recommendedPlaces,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 14,
+            fontSize: context.rf(14).clamp(13, 15).toDouble(),
             fontWeight: FontWeight.w700,
             height: 1.2,
             letterSpacing: -0.1,
-            color: Color(0xFFFF8A65),
+            color: const Color(0xFF344054),
           ),
         ),
         const SizedBox(height: 12),
@@ -194,7 +194,8 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
             children: [
               ...List.generate(
                 _recommendedPlaces.length,
-                (index) => _buildPlaceItem(_recommendedPlaces[index], index + 1),
+                (index) =>
+                    _buildPlaceItem(_recommendedPlaces[index], index + 1),
               ),
             ],
           ),
@@ -208,7 +209,6 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
         onTap: _selectedCategoryKey == null
             ? null
             : () {
@@ -232,40 +232,27 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
                 );
               },
         child: Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          decoration: BoxDecoration(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 12),
+          decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFEAECF0)),
+            ),
           ),
           child: Row(
             children: [
               Container(
-                width: 28,
-                height: 28,
+                width: 24,
+                height: 24,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF3F4F6),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFE5E7EB),
-                  ),
-                ),
                 child: Text(
                   '$displayIndex',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 12,
+                    fontSize: context.rf(12).clamp(11, 13).toDouble(),
                     fontWeight: FontWeight.w800,
                     height: 1.0,
-                    color: Color(0xFF6B7280),
+                    color: const Color(0xFF6B7280),
                   ),
                 ),
               ),
@@ -273,12 +260,12 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
               Expanded(
                 child: Text(
                   place.name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 16,
+                    fontSize: context.rf(15).clamp(14, 16).toDouble(),
                     fontWeight: FontWeight.w800,
                     height: 1.25,
-                    color: Color(0xFF111827),
+                    color: const Color(0xFF111827),
                   ),
                 ),
               ),
@@ -286,8 +273,8 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
                 ClipRRect(
                   borderRadius: BorderRadius.circular(14),
                   child: SizedBox(
-                    width: 72,
-                    height: 72,
+                    width: context.rh(60, min: 54, max: 66),
+                    height: context.rh(60, min: 54, max: 66),
                     child: Image.network(
                       thumbUrl!,
                       fit: BoxFit.cover,
@@ -329,96 +316,127 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
     final l10n = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFBFC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
-        centerTitle: false,
+        surfaceTintColor: Colors.white,
+        centerTitle: true,
+        toolbarHeight: context.rh(56, min: 54, max: 60),
+        leadingWidth: 48,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+          icon: Icon(
+            Icons.arrow_back_rounded,
+            color: const Color(0xFF111827),
+            size: context.ri(22).clamp(21, 24).toDouble(),
+          ),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text(
-          l10n.selectCategoryRequired,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            height: 1.2,
-            letterSpacing: -0.2,
-            color: Color(0xFF111827),
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: const Color(0xFFE6EAF0),
+        title: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.2,
+          child: Text(
+            l10n.selectCategoryRequired,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: context.rf(18).clamp(16, 19).toDouble(),
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+              letterSpacing: -0.2,
+              color: const Color(0xFF111827),
+            ),
           ),
         ),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 카테고리 버튼: 한 줄(가로 스크롤)
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: [
-                  ..._categoryKeys.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final key = entry.value;
-                    return Padding(
-                      padding: EdgeInsets.only(
-                        right: index == _categoryKeys.length - 1 ? 0 : 10,
-                      ),
-                      child: _buildCategoryChip(l10n, key),
-                    );
-                  }).toList(),
-                ],
-              ),
+        padding: EdgeInsets.fromLTRB(
+          MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+          6,
+          MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+          24,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 카테고리 버튼: 한 줄(가로 스크롤)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  child: Row(
+                    children: [
+                      ..._categoryKeys.asMap().entries.map((entry) {
+                        final index = entry.key;
+                        final key = entry.value;
+                        return Padding(
+                          padding: EdgeInsets.only(
+                            right: index == _categoryKeys.length - 1 ? 0 : 4,
+                          ),
+                          child: _buildCategoryChip(l10n, key),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+                SizedBox(height: context.rs(14).clamp(12, 18).toDouble()),
+                // 추천 장소: 이 화면에서 모두 표시
+                _buildRecommendedPlacesSection(l10n),
+              ],
             ),
-            const SizedBox(height: 16),
-            // 추천 장소: 이 화면에서 모두 표시
-            _buildRecommendedPlacesSection(l10n),
-          ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(
+        top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-          child: SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _selectedCategoryKey == null
-                  ? null
-                  : () => Navigator.of(context).pop(
-                        MeetupCategorySelectionResult(
-                          categoryKey: _selectedCategoryKey!,
-                        ),
+          padding: EdgeInsets.fromLTRB(
+            MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            8,
+            MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            10,
+          ),
+          // bottomNavigationBar가 본문 높이를 잠식하지 않도록 shrink-wrap.
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 720),
+              child: SizedBox(
+                height: context.rh(48, min: 44, max: 50),
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _selectedCategoryKey == null
+                      ? null
+                      : () => Navigator.of(context).pop(
+                            MeetupCategorySelectionResult(
+                              categoryKey: _selectedCategoryKey!,
+                            ),
+                          ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF344054),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                    disabledBackgroundColor: const Color(0xFFE5E7EB),
+                    disabledForegroundColor: const Color(0xFF9CA3AF),
+                  ),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.2,
+                    child: Text(
+                      l10n.done,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w700,
+                        height: 1.1,
+                        letterSpacing: -0.1,
                       ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 0,
-                disabledBackgroundColor: const Color(0xFFE5E7EB),
-                disabledForegroundColor: const Color(0xFF9CA3AF),
-              ),
-              child: Text(
-                l10n.done,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  height: 1.1,
-                  letterSpacing: -0.1,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -428,4 +446,3 @@ class _MeetupCategorySelectScreenState extends State<MeetupCategorySelectScreen>
     );
   }
 }
-

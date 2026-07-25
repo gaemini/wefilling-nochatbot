@@ -353,14 +353,6 @@ class AppLocalizationsKo extends AppLocalizations {
   String get snackChatDragForFriends => '드래그해서 더 보기';
 
   @override
-  String get snackChatDetailsStepTitle => '방 설정';
-
-  @override
-  String snackChatDetailsStepHint(int count) {
-    return '$count명이 함께할 방을 만들어보세요.';
-  }
-
-  @override
   String snackChatSelectionComplete(int count) {
     return '$count명 선택 완료';
   }
@@ -2436,7 +2428,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get cafe => '카페';
 
   @override
-  String get drink => '술';
+  String get hangout => '행아웃';
 
   @override
   String get friendsOnlyBadge => '친구 공개';
@@ -3015,10 +3007,10 @@ class AppLocalizationsKo extends AppLocalizations {
   String get postCategoryStyleDescription => '패션·뷰티·아이템';
 
   @override
-  String get postCategoryCreate => '크리에이트';
+  String get postCategoryCreate => '레스토랑';
 
   @override
-  String get postCategoryCreateDescription => '그림·디자인·공예';
+  String get postCategoryCreateDescription => '맛집·외식·음식';
 
   @override
   String get postCategoryPhoto => '사진';

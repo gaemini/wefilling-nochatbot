@@ -11,7 +11,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/post.dart';
 import '../../design/tokens.dart';
-import '../../constants/app_constants.dart';
 import '../../services/cache/app_image_cache_manager.dart';
 import '../../services/post_service.dart';
 import '../../services/report_service.dart';
@@ -24,7 +23,9 @@ import '../../screens/friend_profile_screen.dart';
 import '../../screens/main_screen.dart';
 import '../../ui/dialogs/block_dialog.dart';
 import '../../ui/dialogs/report_dialog.dart';
+import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/logger.dart';
+import '../../utils/responsive_helper.dart';
 import 'friends_only_badge.dart';
 import 'post_action_group.dart';
 import 'poll_post_widget.dart';
@@ -52,7 +53,7 @@ class OptimizedPostCard extends StatefulWidget {
     this.preloadImage = false,
     this.useGlassmorphism = false,
     this.margin = EdgeInsets.zero,
-    this.contentPadding = const EdgeInsets.fromLTRB(20, 20, 20, 24),
+    this.contentPadding = const EdgeInsets.fromLTRB(20, 12, 20, 14),
   });
 
   factory OptimizedPostCard.glassmorphism({
@@ -245,9 +246,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
     // 너무 많은 경우 성능/쿼리 제한을 위해 상단 N명만 노출
     const maxShown = 50;
-    final shownIds =
-        orderedUnique.length > maxShown ? orderedUnique.take(maxShown).toList() : orderedUnique;
-    final hiddenCount = orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
+    final shownIds = orderedUnique.length > maxShown
+        ? orderedUnique.take(maxShown).toList()
+        : orderedUnique;
+    final hiddenCount =
+        orderedUnique.length > maxShown ? orderedUnique.length - maxShown : 0;
 
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -289,7 +292,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       ),
                       const SizedBox(height: 12),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: DesignTokens.s16),
                         child: Row(
                           children: [
                             Text.rich(
@@ -349,17 +353,21 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         child: FutureBuilder<List<_PostLikeUser>>(
                           future: _fetchLikeUsers(shownIds),
                           builder: (context, snapshot) {
-                            if (snapshot.connectionState != ConnectionState.done &&
+                            if (snapshot.connectionState !=
+                                    ConnectionState.done &&
                                 !snapshot.hasData) {
                               return const Center(
-                                child: CircularProgressIndicator(color: BrandColors.primary),
+                                child: CircularProgressIndicator(
+                                    color: BrandColors.primary),
                               );
                             }
-                            final users = snapshot.data ?? const <_PostLikeUser>[];
+                            final users =
+                                snapshot.data ?? const <_PostLikeUser>[];
                             if (users.isEmpty) {
                               return Center(
                                 child: Padding(
-                                  padding: const EdgeInsets.all(DesignTokens.s16),
+                                  padding:
+                                      const EdgeInsets.all(DesignTokens.s16),
                                   child: Text(
                                     isKo ? '아직 좋아요가 없어요' : 'No likes yet.',
                                     style: const TextStyle(
@@ -540,7 +548,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   Future<void> _toggleSave() async {
     if (_isLoading) return;
-    
+
     setState(() {
       _isLoading = true;
     });
@@ -552,15 +560,18 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           _isSaved = newSavedStatus;
           _isLoading = false;
         });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(newSavedStatus 
-                ? (AppLocalizations.of(context)!.postSaved ?? '포스트가 저장되었습니다')
-                : (AppLocalizations.of(context)!.postUnsaved ?? '포스트 저장이 취소되었습니다')),
-            duration: Duration(seconds: 1),
-            backgroundColor: newSavedStatus ? AppTheme.accentEmerald : AppTheme.primary,
-          ),
+
+        AppSnackBar.show(
+          context,
+          message: newSavedStatus
+              ? (AppLocalizations.of(context)!.postSaved ??
+                  '포스트가 저장되었습니다')
+              : (AppLocalizations.of(context)!.postUnsaved ??
+                  '포스트 저장이 취소되었습니다'),
+          type: newSavedStatus
+              ? AppSnackBarType.success
+              : AppSnackBarType.info,
+          duration: const Duration(seconds: 1),
         );
       }
     } catch (e) {
@@ -568,11 +579,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         setState(() {
           _isLoading = false;
         });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(AppLocalizations.of(context)!.error ?? ""),
-            backgroundColor: AppTheme.accentRed,
-          ),
+        AppSnackBar.show(
+          context,
+          message: AppLocalizations.of(context)!.error ?? "",
+          type: AppSnackBarType.error,
         );
       }
     }
@@ -618,7 +628,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         label: AppLocalizations.of(context)!.friendsOnly,
         iconSize: 11,
         fontSize: 11,
-        gap: DesignTokens.s4,
+        gap: 3,
         fontWeight: FontWeight.w600,
         foregroundColor: BrandColors.textTertiary,
       );
@@ -641,6 +651,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final hasBody = unifiedText.isNotEmpty;
     final contentInsets =
         widget.contentPadding.resolve(Directionality.of(context));
+    final imageGap = context.rs(10).clamp(8.0, 10.0).toDouble();
+    final contentTopGap = context.rs(12).clamp(9.0, 12.0).toDouble();
+    final titleSize = context.rf(20).clamp(18.0, 22.0).toDouble();
+    final bodySize = context.rf(14.5).clamp(13.5, 15.0).toDouble();
 
     return Container(
       margin: widget.margin,
@@ -662,7 +676,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                 child: _buildAuthorInfoWithTitle(post, theme, colorScheme),
               ),
               if (post.imageUrls.isNotEmpty) ...[
-                const SizedBox(height: DesignTokens.s16),
+                SizedBox(height: imageGap),
                 Padding(
                   padding: EdgeInsets.symmetric(
                     horizontal: contentInsets.left,
@@ -673,9 +687,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               Padding(
                 padding: EdgeInsets.fromLTRB(
                   contentInsets.left,
-                  post.imageUrls.isNotEmpty
-                      ? DesignTokens.s16
-                      : DesignTokens.s20,
+                  contentTopGap,
                   contentInsets.right,
                   contentInsets.bottom,
                 ),
@@ -686,26 +698,25 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       _buildSmartEllipsizedText(
                         text: title,
                         maxLines: 3,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: BrandColors.textPrimary,
                           fontFamily: 'Pretendard',
                           fontWeight: FontWeight.w700,
-                          fontSize: 22,
+                          fontSize: titleSize,
                           height: 1.2,
                           letterSpacing: -0.45,
                         ),
                       ),
-                    if (hasTitle && hasBody)
-                      const SizedBox(height: DesignTokens.s8),
+                    if (hasTitle && hasBody) const SizedBox(height: 6),
                     if (hasBody && hasTitle)
                       _buildSmartEllipsizedText(
                         text: unifiedText,
                         maxLines: 2,
-                        style: const TextStyle(
+                        style: TextStyle(
                           color: BrandColors.textSecondary,
                           fontFamily: 'Pretendard',
                           fontWeight: FontWeight.w400,
-                          fontSize: 15,
+                          fontSize: bodySize,
                           height: 1.45,
                           letterSpacing: -0.2,
                         ),
@@ -718,11 +729,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       ),
                     if (post.type == 'poll') ...[
                       if (hasTitle || hasBody)
-                        const SizedBox(height: DesignTokens.s16),
+                        const SizedBox(height: DesignTokens.s12),
                       PollPostWidget(postId: post.id),
                     ],
                     if (hasTitle || hasBody || post.type == 'poll')
-                      const SizedBox(height: DesignTokens.s16),
+                      const SizedBox(height: 10),
                     _buildPostMeta(
                       post.copyWith(
                         commentCount: widget.externalCommentCountOverride ??
@@ -770,6 +781,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           final tp = TextPainter(
             text: TextSpan(text: s, style: style),
             textDirection: dir,
+            textScaler: MediaQuery.textScalerOf(context),
             maxLines: maxLines,
             ellipsis: null,
           )..layout(maxWidth: constraints.maxWidth);
@@ -791,7 +803,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
         bool fitsCandidate(String prefix) {
           final trimmedPrefix = prefix.replaceAll(RegExp(r'[ \t]+$'), '');
-          final candidate = trimmedPrefix.isEmpty ? '...' : '$trimmedPrefix$_overflowSuffix';
+          final candidate =
+              trimmedPrefix.isEmpty ? '...' : '$trimmedPrefix$_overflowSuffix';
           return !exceeds(candidate);
         }
 
@@ -817,7 +830,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
           }
         }
 
-        final prefix = base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
+        final prefix =
+            base.substring(0, low).replaceAll(RegExp(r'[ \t]+$'), '');
         final finalText = prefix.isEmpty ? '...' : '$prefix$_overflowSuffix';
 
         return Text(
@@ -837,18 +851,19 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final trimmed = preview.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
+    final responsiveFontSize = context.rf(17).clamp(15.5, 18.0).toDouble();
     final style = theme.textTheme.bodyLarge?.copyWith(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
-          fontSize: 18,
+          fontSize: responsiveFontSize,
           fontWeight: FontWeight.w600,
           height: 1.4,
           letterSpacing: -0.2,
         ) ??
-        const TextStyle(
+        TextStyle(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
-          fontSize: 18,
+          fontSize: responsiveFontSize,
           fontWeight: FontWeight.w600,
           height: 1.4,
           letterSpacing: -0.2,
@@ -876,7 +891,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     } else {
       authorName = post.author;
     }
-    final String? authorImageUrl = isAnonymous ? null : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
+    final String? authorImageUrl = isAnonymous
+        ? null
+        : (post.authorPhotoURL.isNotEmpty ? post.authorPhotoURL : null);
     final bool canOpenProfile =
         !isAnonymous && post.userId.isNotEmpty && post.userId != 'deleted';
 
@@ -964,7 +981,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 ),
 
-                const SizedBox(width: DesignTokens.s8),
+                const SizedBox(width: 6),
 
                 // 작성자 이름과 시간
                 Expanded(
@@ -988,7 +1005,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                                 resolvedNickname,
                                 style: TextStyle(
                                   fontFamily: 'Pretendard',
-                                  fontSize: 15,
+                                  fontSize: context
+                                      .rf(14.5)
+                                      .clamp(13.5, 15.0)
+                                      .toDouble(),
                                   fontWeight: FontWeight.w600,
                                   color: BrandColors.textPrimary,
                                   height: 1.2,
@@ -1001,7 +1021,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           ),
                           if (!isAnonymous &&
                               post.authorNationality.trim().isNotEmpty) ...[
-                            const SizedBox(width: DesignTokens.s4),
+                            const SizedBox(width: 3),
                             Padding(
                               padding: const EdgeInsets.only(top: 1),
                               child: CountryFlagCircle(
@@ -1023,7 +1043,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                               style: theme.textTheme.bodySmall?.copyWith(
                                 color: BrandColors.textTertiary,
                                 fontFamily: 'Pretendard',
-                                fontSize: 13,
+                                fontSize: context
+                                    .rf(12.5)
+                                    .clamp(12.0, 13.0)
+                                    .toDouble(),
                                 height: 1.2,
                               ),
                             ),
@@ -1165,6 +1188,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       isSaving: _isLoading,
       saveLabel: _isSaved ? l10n.saved : l10n.save,
       onSaveTap: _toggleSave,
+      compact: true,
+      hideEmptyMetrics: true,
     );
   }
 
@@ -1251,7 +1276,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       Logger.log('  - post.isAnonymous: ${post.isAnonymous}');
       Logger.log('  - post.author: ${post.author}');
       Logger.log('  - currentUser.uid: ${currentUser.uid}');
-      
+
       // 본인에게 DM 전송 체크 (익명 포함)
       if (post.userId == currentUser.uid) {
         Logger.log('❌ 본인 게시글에는 DM 불가');
@@ -1268,11 +1293,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // Firebase Auth UID 형식 검증 (20~30자 영숫자, 언더스코어 포함 가능)
       final uidPattern = RegExp(r'^[a-zA-Z0-9_-]{20,30}$');
       if (!uidPattern.hasMatch(post.userId)) {
-        Logger.log('❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
+        Logger.log(
+            '❌ 잘못된 userId 형식: ${post.userId} (길이: ${post.userId.length}자)');
         // 로딩 다이얼로그 닫기
         if (mounted) Navigator.pop(context);
         if (mounted) {
@@ -1286,7 +1312,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // userId가 'deleted' 또는 빈 문자열인 경우 체크
       if (post.userId == 'deleted' || post.userId.isEmpty) {
         Logger.log('❌ 탈퇴했거나 삭제된 사용자');
@@ -1303,7 +1329,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         }
         return;
       }
-      
+
       // ✅ 게시글에서 DM 보내기는 "게시글에 대해 물어보는 용도"이므로,
       // - 익명 게시글만 익명 대화방(anon_*)으로 분리
       // - 그 외에는 기존 1:1 대화방을 연장선으로 재사용(보관된 방 복원 포함)
@@ -1314,10 +1340,10 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         postId: post.id,
         isOtherUserAnonymous: shouldUseAnonymousChat,
       );
-      
+
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
-      
+
       Logger.log('✅ DM conversation ID: $conversationId');
 
       if (mounted) {
@@ -1326,8 +1352,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
         // 게시글 컨텍스트 카드가 항상 렌더링되도록 preview를 최소 1개는 만든다.
         final rawContent = post.content.trim();
         final rawTitle = post.title.trim();
-        final base = rawContent.isNotEmpty ? rawContent : (rawTitle.isNotEmpty ? rawTitle : '포스트');
-        final originPostPreview = base.length > 90 ? '${base.substring(0, 90)}...' : base;
+        final base = rawContent.isNotEmpty
+            ? rawContent
+            : (rawTitle.isNotEmpty ? rawTitle : '포스트');
+        final originPostPreview =
+            base.length > 90 ? '${base.substring(0, 90)}...' : base;
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -1344,7 +1373,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     } catch (e) {
       // 로딩 다이얼로그 닫기
       if (mounted) Navigator.pop(context);
-      
+
       Logger.error('❌ DM 열기 오류: $e');
       Logger.error('오류 타입: ${e.runtimeType}');
       if (mounted) {
@@ -1427,7 +1456,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     ),
                     onTap: () async {
                       Navigator.pop(sheetContext);
-                      final headline = post.content.trim().split('\n').first.trim();
+                      final headline =
+                          post.content.trim().split('\n').first.trim();
                       await showReportDialog(
                         context,
                         reportedUserId: post.userId,
@@ -1455,14 +1485,13 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                       Navigator.pop(sheetContext);
                       if (post.isAnonymous) {
                         final isKo =
-                            Localizations.localeOf(context).languageCode == 'ko';
+                            Localizations.localeOf(context).languageCode ==
+                                'ko';
                         final confirmed = await showDialog<bool>(
                               context: context,
                               builder: (context) => AlertDialog(
                                 title: Text(
-                                  isKo
-                                      ? '익명 게시글 차단'
-                                      : 'Block anonymous post',
+                                  isKo ? '익명 게시글 차단' : 'Block anonymous post',
                                 ),
                                 content: Text(
                                   isKo
@@ -1485,11 +1514,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                             ) ??
                             false;
                         if (!confirmed || !mounted) return;
-                        final headline = post.content
-                            .trim()
-                            .split('\n')
-                            .first
-                            .trim();
+                        final headline =
+                            post.content.trim().split('\n').first.trim();
                         final success = await ReportService.blockAnonymousPost(
                           postId: post.id,
                           titleSnapshot: headline,

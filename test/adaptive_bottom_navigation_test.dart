@@ -12,11 +12,13 @@ List<BottomNavigationItem> _items({
       icon: Icons.menu,
       selectedIcon: Icons.menu,
       label: 'Posts',
+      iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
       icon: Icons.groups_outlined,
       selectedIcon: Icons.groups,
       label: 'Meetup',
+      iconSizeMultiplier: 1.35,
     ),
     BottomNavigationItem(
       icon: Icons.forum_outlined,
@@ -24,11 +26,13 @@ List<BottomNavigationItem> _items({
       label: snackChatLabel,
       semanticLabel: snackChatSemanticLabel,
       badgeCount: 3,
+      iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
       icon: Icons.person_outline,
       selectedIcon: Icons.person,
       label: 'My Page',
+      iconSizeMultiplier: 1.2,
     ),
     const BottomNavigationItem(
       icon: Icons.send_outlined,
@@ -81,7 +85,15 @@ void main() {
   });
 
   for (final label in ['Snack Chat', '스낵챗']) {
-    for (final width in [320.0, 360.0, 390.0, 430.0, 768.0]) {
+    for (final width in [
+      320.0,
+      360.0,
+      390.0,
+      430.0,
+      600.0,
+      840.0,
+      1024.0,
+    ]) {
       testWidgets('$label stays on one line at ${width.toInt()}dp',
           (tester) async {
         await _pumpNavigation(
@@ -102,11 +114,31 @@ void main() {
             of: find.text(label),
             matching: find.byType(FittedBox),
           ),
-          findsOneWidget,
+          findsNothing,
+        );
+        final labelContext = tester.element(find.text(label));
+        expect(
+          MediaQuery.textScalerOf(labelContext).scale(1),
+          closeTo(1.3, 0.001),
         );
       });
     }
   }
+
+  testWidgets('large screens keep the 430dp navigation sizes', (tester) async {
+    await _pumpNavigation(tester, width: 430, selectedIndex: 0);
+    final mobileFontSize =
+        tester.widget<Text>(find.text('Posts')).style!.fontSize;
+    final mobileIconSize = tester.widget<Icon>(find.byIcon(Icons.menu)).size;
+
+    await _pumpNavigation(tester, width: 1024, selectedIndex: 0);
+    final largeFontSize =
+        tester.widget<Text>(find.text('Posts')).style!.fontSize;
+    final largeIconSize = tester.widget<Icon>(find.byIcon(Icons.menu)).size;
+
+    expect(largeFontSize, mobileFontSize);
+    expect(largeIconSize, mobileIconSize);
+  });
 
   testWidgets('third item uses filled icon and black selected color',
       (tester) async {

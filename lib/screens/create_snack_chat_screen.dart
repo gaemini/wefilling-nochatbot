@@ -10,6 +10,7 @@ import '../services/friend_category_service.dart';
 import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 import 'snack_chat_screen.dart';
 
 class CreateSnackChatScreen extends StatefulWidget {
@@ -85,10 +86,9 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     if (!mounted) return;
     final initialAudienceCategory = widget.initialAudienceCategory;
     final friendIds = friends.map((friend) => friend.uid).toSet();
-    final initialParticipantIds = initialAudienceCategory?.friendIds
-            .where(friendIds.contains)
-            .toSet() ??
-        <String>{};
+    final initialParticipantIds =
+        initialAudienceCategory?.friendIds.where(friendIds.contains).toSet() ??
+            <String>{};
     setState(() {
       _selectedCategoryIds = initialAudienceCategory == null
           ? allCategoryIds
@@ -215,8 +215,11 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           backgroundColor: Colors.white,
           elevation: 0,
           surfaceTintColor: Colors.white,
-          foregroundColor: const Color(0xFF005BAC),
+          foregroundColor: const Color(0xFF111827),
+          toolbarHeight: context.rh(56, min: 54, max: 60),
+          leadingWidth: 48,
           leading: IconButton(
+            iconSize: context.ri(22).clamp(21, 24).toDouble(),
             onPressed: _isSubmitting
                 ? null
                 : () {
@@ -226,18 +229,23 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       Navigator.of(context).pop();
                     }
                   },
-            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 22),
+            icon: const Icon(Icons.arrow_back_rounded),
           ),
           centerTitle: true,
-          title: Text(
-            _stepIndex == 0
-                ? l10n.snackChatInviteStepTitle
-                : l10n.createSnackChat,
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 18,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF005BAC),
+          title: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: Text(
+              _stepIndex == 0
+                  ? l10n.snackChatInviteStepTitle
+                  : l10n.createSnackChat,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111827),
+              ),
             ),
           ),
           actions: [
@@ -246,9 +254,11 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                 onPressed:
                     canContinue ? () => setState(() => _stepIndex = 1) : null,
                 style: TextButton.styleFrom(
-                  foregroundColor: AppColors.pointColor,
+                  foregroundColor: const Color(0xFF344054),
                   disabledForegroundColor: const Color(0xFFCBD5E1),
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -257,16 +267,16 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       '${_selectedParticipantIds.length}',
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Text(
                       l10n.next,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 16,
+                        fontSize: 14,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -276,7 +286,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
             else
               const Center(
                 child: Padding(
-                  padding: EdgeInsets.only(right: 20),
+                  padding: EdgeInsets.only(right: 12),
                   child: Text(
                     '2/2',
                     style: TextStyle(
@@ -298,50 +308,70 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     ? _buildInviteStep(key: const ValueKey('invite'))
                     : _buildDetailsStep(key: const ValueKey('details')),
               ),
-        bottomNavigationBar: _stepIndex == 0
-            ? null
-            : SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  child: SizedBox(
-                    height: 56,
-                    child: ElevatedButton.icon(
-                      onPressed: _isSubmitting || !canCreate ? null : _create,
-                      style: ElevatedButton.styleFrom(
-                        elevation: 0,
-                        backgroundColor: AppColors.pointColor,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: const Color(0xFFE2E8F0),
-                        disabledForegroundColor: const Color(0xFF94A3B8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                      ),
-                      icon: _isSubmitting
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.add_rounded, size: 22),
-                      label: Text(
-                        _isSubmitting
-                            ? l10n.snackChatCreating
-                            : l10n.snackChatCreate,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                        ),
+        bottomNavigationBar:
+            _stepIndex == 0 ? null : _buildCreateActionBar(l10n, canCreate),
+      ),
+    );
+  }
+
+  Widget _buildCreateActionBar(AppLocalizations l10n, bool canCreate) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          _pageHorizontalPadding(context),
+          8,
+          _pageHorizontalPadding(context),
+          12,
+        ),
+        // Center/Align을 사용하지 않고 바의 실제 높이를 고정해
+        // Scaffold가 본문 공간을 정확하게 계산할 수 있게 한다.
+        child: SizedBox(
+          height: context.rh(48, min: 44, max: 50),
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _isSubmitting || !canCreate ? null : _create,
+            style: ElevatedButton.styleFrom(
+              elevation: 0,
+              backgroundColor: const Color(0xFF344054),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor: const Color(0xFFD0D5DD),
+              disabledForegroundColor: const Color(0xFF98A2B3),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_isSubmitting) ...[
+                    const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: Colors.white,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    _isSubmitting
+                        ? l10n.snackChatCreating
+                        : l10n.snackChatCreate,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
+                ],
               ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -354,14 +384,21 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
       return friend.displayNameOrNickname.toLowerCase().contains(_searchQuery);
     }).toList(growable: false);
 
+    final horizontalPadding = _pageHorizontalPadding(context);
+
     return Column(
       key: key,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 18, 24, 12),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            12,
+            horizontalPadding,
+            8,
+          ),
           child: SizedBox(
-            height: 92,
+            height: 76,
             child: selected.isEmpty
                 ? Align(
                     alignment: Alignment.topLeft,
@@ -369,7 +406,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                       l10n.snackChatNoFriendsSelected,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: Color(0xFF94A3B8),
                       ),
@@ -378,43 +415,81 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                 : ListView.separated(
                     scrollDirection: Axis.horizontal,
                     itemCount: selected.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 14),
+                    separatorBuilder: (_, __) => const SizedBox(width: 10),
                     itemBuilder: (_, index) =>
                         _buildFriendSlot(selected[index]),
                   ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(24, 4, 24, 18),
-          child: TextField(
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: l10n.searchByName,
-              prefixIcon: const Icon(Icons.search_rounded, size: 22),
-              filled: true,
-              fillColor: const Color(0xFFF4F6F8),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide.none,
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            12,
+          ),
+          child: SizedBox(
+            height: 44,
+            child: TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 14,
               ),
-              contentPadding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: InputDecoration(
+                hintText: l10n.searchByName,
+                hintStyle: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  color: Color(0xFF6B7280),
+                ),
+                prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                prefixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 44,
+                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 44,
+                          height: 44,
+                        ),
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: _searchController.clear,
+                      )
+                    : null,
+                suffixIconConstraints: const BoxConstraints(
+                  minWidth: 44,
+                  minHeight: 44,
+                ),
+                filled: true,
+                fillColor: const Color(0xFFF4F6F8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 11),
+              ),
             ),
           ),
         ),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           child: Text(
             l10n.snackChatFriendList,
             style: const TextStyle(
               fontFamily: 'Pretendard',
-              fontSize: 15,
+              fontSize: 14,
               fontWeight: FontWeight.w700,
               color: Color(0xFF64748B),
             ),
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 4),
         Expanded(
           child: visibleFriends.isEmpty
               ? Center(
@@ -429,7 +504,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
               : ListView.builder(
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 24),
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding - 12,
+                    0,
+                    horizontalPadding - 12,
+                    20,
+                  ),
                   itemCount: visibleFriends.length,
                   itemBuilder: (_, index) =>
                       _buildFriendSelectionTile(visibleFriends[index]),
@@ -441,58 +521,65 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
 
   Widget _buildFriendSelectionTile(UserProfile friend) {
     final selected = _selectedParticipantIds.contains(friend.uid);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _toggleParticipant(friend.uid),
-        borderRadius: BorderRadius.circular(14),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          child: Row(
-            children: [
-              _buildAvatar(
-                size: 52,
-                photoUrl: friend.photoURL,
-                fallbackLabel: friend.displayNameOrNickname,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  friend.displayNameOrNickname,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF111827),
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: friend.displayNameOrNickname,
+      onTap: () => _toggleParticipant(friend.uid),
+      excludeSemantics: true,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _toggleParticipant(friend.uid),
+          borderRadius: BorderRadius.circular(12),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            child: Row(
+              children: [
+                _buildAvatar(
+                  size: 44,
+                  photoUrl: friend.photoURL,
+                  fallbackLabel: friend.displayNameOrNickname,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    friend.displayNameOrNickname,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.pointColor : Colors.transparent,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected
-                        ? AppColors.pointColor
-                        : const Color(0xFFB8C0CC),
-                    width: 1.7,
+                const SizedBox(width: 8),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 140),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.pointColor : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.pointColor
+                          : const Color(0xFFB8C0CC),
+                      width: 1.5,
+                    ),
                   ),
+                  child: selected
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        )
+                      : null,
                 ),
-                child: selected
-                    ? const Icon(
-                        Icons.check_rounded,
-                        size: 18,
-                        color: Colors.white,
-                      )
-                    : null,
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -501,104 +588,125 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
 
   Widget _buildDetailsStep({Key? key}) {
     final l10n = AppLocalizations.of(context)!;
+    final horizontalPadding = _pageHorizontalPadding(context);
     return ListView(
       key: key,
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 120),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        context.rs(20).clamp(16, 24).toDouble(),
+        horizontalPadding,
+        96,
+      ),
       children: [
-        Text(
-          l10n.snackChatDetailsStepTitle,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          l10n.snackChatDetailsStepHint(
-            _selectedParticipantIds.length + 1,
-          ),
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF64748B),
-          ),
-        ),
-        const SizedBox(height: 28),
-        Text(
-          l10n.snackChatRoomTitle,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 10),
-        TextField(
-          controller: _titleController,
-          maxLength: 40,
-          textInputAction: TextInputAction.done,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
-          ),
-          decoration: InputDecoration(
-            hintText: l10n.snackChatRoomTitleHint,
-            counterText: '',
-            filled: true,
-            fillColor: const Color(0xFFF7F9FC),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(
-                color: AppColors.pointColor,
-                width: 1.4,
+        Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.3,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    l10n.snackChatRoomTitle,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(2)),
+                  TextField(
+                    controller: _titleController,
+                    maxLength: 40,
+                    textInputAction: TextInputAction.done,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                      color: const Color(0xFF111827),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: l10n.snackChatRoomTitleHint,
+                      hintStyle: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w400,
+                        color: const Color(0xFF98A2B3),
+                      ),
+                      counterText: '',
+                      border: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFEAECF0)),
+                      ),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFEAECF0)),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: Color(0xFF667085),
+                          width: 1.4,
+                        ),
+                      ),
+                      contentPadding: EdgeInsets.symmetric(
+                        horizontal: 0,
+                        vertical: context.rs(12).clamp(10, 14).toDouble(),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(24).clamp(20, 28).toDouble()),
+                  Text(
+                    l10n.snackChatVisibilityDuration,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w800,
+                      color: const Color(0xFF111827),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(4)),
+                  Text(
+                    l10n.snackChatVisibilityDurationHint,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
+                  _buildDurationSelector(),
+                ],
               ),
             ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 18,
-            ),
           ),
-        ),
-        const SizedBox(height: 28),
-        Text(
-          l10n.snackChatVisibilityDuration,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 17,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 5),
-        Text(
-          l10n.snackChatVisibilityDurationHint,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF64748B),
-          ),
-        ),
-        const SizedBox(height: 14),
-        Row(
-          children: [
-            Expanded(child: _buildDurationOption(24)),
-            const SizedBox(width: 12),
-            Expanded(child: _buildDurationOption(0)),
-          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildDurationSelector() {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 360 || context.isCompactLayout) {
+          return Column(
+            children: [
+              _buildDurationOption(24),
+              _buildDurationOption(0),
+            ],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: _buildDurationOption(24)),
+            SizedBox(width: context.rs(12).clamp(8, 14).toDouble()),
+            Expanded(child: _buildDurationOption(0)),
+          ],
+        );
+      },
     );
   }
 
@@ -611,90 +719,129 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
     final label = hours == 24
         ? AppLocalizations.of(context)!.snackChatDuration24Hours
         : AppLocalizations.of(context)!.snackChatDurationNoEnd;
-    return GestureDetector(
-      onTap: () => setState(() => _activeDurationHours = hours),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: selected ? const Color(0xFFEAF3FF) : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
-            width: selected ? 1.6 : 1.0,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              hours == 0 ? Icons.all_inclusive_rounded : Icons.schedule_rounded,
-              color: selected ? AppColors.pointColor : const Color(0xFF9CA3AF),
-              size: 21,
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => setState(() => _activeDurationHours = hours),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            constraints: BoxConstraints(
+              minHeight: context.rh(48, min: 46, max: 52),
             ),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                color:
-                    selected ? AppColors.pointColor : const Color(0xFF111827),
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(
+                  color: selected
+                      ? const Color(0xFF344054)
+                      : const Color(0xFFEAECF0),
+                  width: selected ? 2 : 1,
+                ),
               ),
             ),
-          ],
+            child: Row(
+              children: [
+                Icon(
+                  hours == 0
+                      ? Icons.all_inclusive_rounded
+                      : Icons.schedule_rounded,
+                  color: selected
+                      ? const Color(0xFF344054)
+                      : const Color(0xFF98A2B3),
+                  size: context.ri(19).clamp(18, 21).toDouble(),
+                ),
+                SizedBox(width: context.rs(8)),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(14).clamp(13, 15).toDouble(),
+                      fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                      color: selected
+                          ? const Color(0xFF111827)
+                          : const Color(0xFF475467),
+                    ),
+                  ),
+                ),
+                SizedBox(width: context.rs(6)),
+                Icon(
+                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  size: context.ri(20).clamp(19, 22).toDouble(),
+                  color: selected
+                      ? const Color(0xFF475467)
+                      : const Color(0xFFD0D5DD),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
   Widget _buildFriendSlot(UserProfile friend) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: friend.displayNameOrNickname,
       onTap: () => _toggleParticipant(friend.uid),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              _buildAvatar(
-                size: 64,
-                photoUrl: friend.photoURL,
-                fallbackLabel: friend.displayNameOrNickname,
-              ),
-              Positioned(
-                right: -2,
-                top: -2,
-                child: Container(
-                  width: 18,
-                  height: 18,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF111827),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
+      excludeSemantics: true,
+      child: GestureDetector(
+        onTap: () => _toggleParticipant(friend.uid),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                _buildAvatar(
+                  size: 52,
+                  photoUrl: friend.photoURL,
+                  fallbackLabel: friend.displayNameOrNickname,
+                ),
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111827),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.25),
+                    ),
+                    child: const Icon(
+                      Icons.close,
+                      size: 10,
+                      color: Colors.white,
+                    ),
                   ),
-                  child: const Icon(Icons.close, size: 12, color: Colors.white),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            SizedBox(
+              width: 62,
+              child: Text(
+                friend.displayNameOrNickname,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF374151),
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 70,
-            child: Text(
-              friend.displayNameOrNickname,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF374151),
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -716,23 +863,31 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           ? Image.network(
               photoUrl,
               fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _avatarFallback(fallbackLabel),
+              errorBuilder: (_, __, ___) =>
+                  _avatarFallback(fallbackLabel, size),
             )
-          : _avatarFallback(fallbackLabel),
+          : _avatarFallback(fallbackLabel, size),
     );
   }
 
-  Widget _avatarFallback(String label) {
+  Widget _avatarFallback(String label, double avatarSize) {
     return Center(
       child: Text(
         label.isEmpty ? '?' : label[0],
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Pretendard',
-          fontSize: 20,
+          fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,
           color: Color(0xFF6B7280),
         ),
       ),
     );
+  }
+
+  double _pageHorizontalPadding(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
+    if (width < 360) return 12;
+    if (width < 600) return 16;
+    return 24;
   }
 }

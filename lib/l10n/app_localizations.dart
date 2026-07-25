@@ -782,18 +782,6 @@ abstract class AppLocalizations {
   /// **'드래그해서 더 보기'**
   String get snackChatDragForFriends;
 
-  /// No description provided for @snackChatDetailsStepTitle.
-  ///
-  /// In ko, this message translates to:
-  /// **'방 설정'**
-  String get snackChatDetailsStepTitle;
-
-  /// No description provided for @snackChatDetailsStepHint.
-  ///
-  /// In ko, this message translates to:
-  /// **'{count}명이 함께할 방을 만들어보세요.'**
-  String snackChatDetailsStepHint(int count);
-
   /// No description provided for @snackChatSelectionComplete.
   ///
   /// In ko, this message translates to:
@@ -4688,11 +4676,11 @@ abstract class AppLocalizations {
   /// **'카페'**
   String get cafe;
 
-  /// No description provided for @drink.
+  /// No description provided for @hangout.
   ///
   /// In ko, this message translates to:
-  /// **'술'**
-  String get drink;
+  /// **'행아웃'**
+  String get hangout;
 
   /// No description provided for @friendsOnlyBadge.
   ///
@@ -5777,13 +5765,13 @@ abstract class AppLocalizations {
   /// No description provided for @postCategoryCreate.
   ///
   /// In ko, this message translates to:
-  /// **'크리에이트'**
+  /// **'레스토랑'**
   String get postCategoryCreate;
 
   /// No description provided for @postCategoryCreateDescription.
   ///
   /// In ko, this message translates to:
-  /// **'그림·디자인·공예'**
+  /// **'맛집·외식·음식'**
   String get postCategoryCreateDescription;
 
   /// No description provided for @postCategoryPhoto.

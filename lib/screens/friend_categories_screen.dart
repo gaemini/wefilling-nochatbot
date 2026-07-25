@@ -123,7 +123,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         elevation: 0,
         backgroundColor: Colors.white,
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
+          preferredSize: const Size.fromHeight(48),
           child: TabBar(
             controller: _tabController,
             indicator: const UnderlineTabIndicator(
@@ -137,14 +137,17 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             unselectedLabelColor: const Color(0xFF9CA3AF),
             labelStyle: const TextStyle(
               fontFamily: 'Pretendard',
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
             unselectedLabelStyle: const TextStyle(
               fontFamily: 'Pretendard',
+              fontSize: 14,
               fontWeight: FontWeight.w500,
             ),
             tabs: [
               Tab(
+                height: 46,
                 child: Semantics(
                   label: l10n.snackChatTabSemantic,
                   selected: _tabController.index == snackChatTabIndex,
@@ -154,6 +157,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
                 ),
               ),
               Tab(
+                height: 46,
                 child: Semantics(
                   label: l10n.groupsTabSemantic,
                   selected: _tabController.index == groupsTabIndex,
@@ -166,12 +170,20 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           ),
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          const SnackChatTabView(),
-          _buildGroupsTab(),
-        ],
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: SizedBox(
+            width: double.infinity,
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                const SnackChatTabView(),
+                _buildGroupsTab(),
+              ],
+            ),
+          ),
+        ),
       ),
       floatingActionButton: _tabController.index == snackChatTabIndex
           ? _buildSnackChatFab()
@@ -234,13 +246,17 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     // 안드로이드 하단 네비게이션 바 높이 감지
     final bottomPadding = MediaQuery.of(context).padding.bottom;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final horizontalPadding = _responsiveHorizontalPadding(context);
 
     return SafeArea(
       child: Column(
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: 10,
+            ),
             decoration: const BoxDecoration(
               color: BrandColors.surface,
               border: Border(
@@ -251,7 +267,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
               isKo ? '그룹을 통해 공개범위를 설정하세요.' : 'Set visibility through groups.',
               style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 14,
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
                 color: Color(0xFF6B7280),
               ),
@@ -260,7 +276,7 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           Expanded(
             child: ListView.builder(
               padding: EdgeInsets.only(
-                bottom: bottomPadding > 0 ? bottomPadding + 90 : 90,
+                bottom: bottomPadding > 0 ? bottomPadding + 72 : 72,
               ),
               itemCount: _categories.length,
               itemBuilder: (context, index) {
@@ -279,6 +295,8 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         '#${AppColors.pointColor.value.toRadixString(16).substring(2)}');
     final iconName = _normalizeIconName(category.iconName);
     final l10n = AppLocalizations.of(context)!;
+    final horizontalPadding = _responsiveHorizontalPadding(context);
+    final isCompact = MediaQuery.sizeOf(context).width < 360;
 
     return DecoratedBox(
       decoration: const BoxDecoration(
@@ -288,26 +306,38 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         ),
       ),
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: DesignTokens.s20,
-          vertical: DesignTokens.s8,
+        minTileHeight: 68,
+        minLeadingWidth: 40,
+        horizontalTitleGap: isCompact ? 8 : 10,
+        minVerticalPadding: 4,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: 2,
         ),
-        // 아이콘만 보이도록 (배경/테두리 제거) - 크기만 유지
         leading: SizedBox(
-          width: 46,
-          height: 46,
+          width: 40,
+          height: 40,
           child: Center(
-            child: ShapeIcon(iconName: iconName, color: color, size: 34),
+            child: ShapeIcon(
+              iconName: iconName,
+              color: color,
+              size: isCompact ? 26 : 28,
+            ),
           ),
         ),
         title: Text(
           category.name,
-          style: TypographyStyles.titleMedium.copyWith(
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 15,
             fontWeight: FontWeight.w700,
+            color: Color(0xFF111827),
           ),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.only(top: 2),
           child: _FriendCountSubtitle(
             category: category,
             cache: _friendCountCache,
@@ -315,34 +345,27 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           ),
         ),
         trailing: PopupMenuButton<String>(
-          // 흰 카드 위에서 버튼/배경이 섞이지 않도록 "버튼" 형태를 부여
-          child: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-            ),
-            child: const Center(
+          tooltip: MaterialLocalizations.of(context).showMenuTooltip,
+          child: const SizedBox(
+            width: 44,
+            height: 44,
+            child: Center(
               child: Icon(
                 IconStyles.more,
                 color: Color(0xFF6B7280),
-                size: 18,
+                size: 20,
               ),
             ),
           ),
           padding: EdgeInsets.zero,
-          // 메뉴 컨테이너도 배경과 구분되도록 테두리/틴트 적용
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
+            borderRadius: BorderRadius.circular(14),
           ),
-          elevation: 4,
-          color: const Color(0xFFFCFCFD), // pure white보다 살짝 틴트
-          surfaceTintColor: const Color(0xFFFCFCFD),
-          shadowColor: const Color(0x1A000000), // 대비를 조금 더
-          offset: const Offset(0, 8),
+          elevation: 6,
+          color: Colors.white,
+          surfaceTintColor: Colors.white,
+          shadowColor: const Color(0x24000000),
+          offset: const Offset(0, 6),
           onSelected: (value) {
             switch (value) {
               case 'edit':
@@ -356,32 +379,23 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
           itemBuilder: (context) => [
             PopupMenuItem(
               value: 'edit',
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF6B7280).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFFE5E7EB),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      IconStyles.edit,
-                      size: 16,
-                      color: Color(0xFF6B7280),
-                    ),
+                  const Icon(
+                    IconStyles.edit,
+                    size: 19,
+                    color: Color(0xFF6B7280),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     l10n.editAction ?? "",
-                    style: TypographyStyles.labelLarge.copyWith(
-                      color: BrandColors.textPrimary,
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF111827),
                     ),
                   ),
                 ],
@@ -390,31 +404,22 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
             const PopupMenuDivider(height: 1),
             PopupMenuItem(
               value: 'delete',
-              height: 48,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              height: 44,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: _safeColorWithOpacity(BrandColors.error, 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: const Color(0xFFFEE2E2),
-                        width: 1,
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.delete_outline,
-                      size: 16,
-                      color: BrandColors.error,
-                    ),
+                  const Icon(
+                    Icons.delete_outline_rounded,
+                    size: 19,
+                    color: BrandColors.error,
                   ),
                   const SizedBox(width: 12),
                   Text(
                     l10n.delete,
-                    style: TypographyStyles.labelLarge.copyWith(
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
                       color: BrandColors.error,
                     ),
                   ),
@@ -429,6 +434,11 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
         },
       ),
     );
+  }
+
+  double _responsiveHorizontalPadding(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    return (screenWidth * 0.05).clamp(16.0, 24.0).toDouble();
   }
 
   void _showCreateCategoryDialog() {
@@ -658,12 +668,6 @@ class _FriendCategoriesScreenState extends State<FriendCategoriesScreen>
     }
   }
 
-  /// 안전하게 opacity를 적용하는 헬퍼 메서드
-  Color _safeColorWithOpacity(Color color, double opacity) {
-    final clampedOpacity = opacity.clamp(0.0, 1.0);
-    return color.withOpacity(clampedOpacity);
-  }
-
   String _normalizeIconName(String? iconName) {
     const allowed = {
       'shape_triangle',
@@ -829,8 +833,8 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final baseStyle = const TextStyle(
       fontFamily: 'Pretendard',
-      fontSize: 13,
-      fontWeight: FontWeight.w600,
+      fontSize: 12,
+      fontWeight: FontWeight.w500,
       color: Color(0xFF4B5563),
     );
     return Text.rich(
@@ -839,7 +843,7 @@ class _FriendCountSubtitleState extends State<_FriendCountSubtitle> {
           TextSpan(
             text: '$_count',
             style: baseStyle.copyWith(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
               color: const Color(0xFF111827),
             ),
           ),

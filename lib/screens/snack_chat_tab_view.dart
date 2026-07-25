@@ -55,7 +55,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
       builder: (context, mutedSnapshot) {
         final mutedIds = mutedSnapshot.data ?? const <String>{};
         return ListView(
-          padding: const EdgeInsets.only(bottom: 96),
+          padding: const EdgeInsets.only(bottom: 76),
           children: [
             _SectionTitle(title: l10n.today),
             StreamBuilder<List<SnackChat>>(
@@ -98,7 +98,7 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                 );
               },
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 6),
             _SectionTitle(title: l10n.all),
             StreamBuilder<List<SnackChat>>(
               stream: _allStream,
@@ -153,14 +153,23 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding =
+        (MediaQuery.sizeOf(context).width * 0.045)
+            .clamp(14.0, 20.0)
+            .toDouble();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        7,
+        horizontalPadding,
+        6,
+      ),
       child: Text(
         title,
         style: const TextStyle(
           fontFamily: 'Pretendard',
-          fontSize: 16,
-          fontWeight: FontWeight.w800,
+          fontSize: 15,
+          fontWeight: FontWeight.w700,
           color: Color(0xFF111827),
         ),
       ),
@@ -186,13 +195,22 @@ class _SectionEmpty extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding =
+        (MediaQuery.sizeOf(context).width * 0.045)
+            .clamp(14.0, 20.0)
+            .toDouble();
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+      padding: EdgeInsets.fromLTRB(
+        horizontalPadding,
+        2,
+        horizontalPadding,
+        12,
+      ),
       child: Text(
         message,
         style: const TextStyle(
           fontFamily: 'Pretendard',
-          fontSize: 14,
+          fontSize: 13,
           fontWeight: FontWeight.w500,
           color: Color(0xFF6B7280),
         ),

@@ -105,59 +105,93 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      height: 116,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      decoration: const BoxDecoration(
-        color: BrandColors.surface,
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // 현재 배너만 표시
-          ClipRect(
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 500),
-              transitionBuilder: (Widget child, Animation<double> animation) {
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: Tween<Offset>(
-                      begin: const Offset(1.0, 0.0),
-                      end: Offset.zero,
-                    ).animate(animation),
-                    child: child,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
+        final isCompact = width < 360;
+        final isExpanded = width >= 600;
+        final height = isCompact ? 100.0 : (isExpanded ? 116.0 : 108.0);
+        final horizontalPadding = isCompact ? 12.0 : (isExpanded ? 20.0 : 16.0);
+        final verticalPadding = isCompact ? 8.0 : 10.0;
+        final imageSize = isCompact ? 72.0 : (isExpanded ? 84.0 : 80.0);
+        final titleSize = isCompact ? 13.0 : (isExpanded ? 15.0 : 14.0);
+        final descriptionSize = isCompact ? 11.0 : (isExpanded ? 12.0 : 11.5);
+
+        return MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.2,
+          child: Container(
+            height: height,
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            decoration: const BoxDecoration(
+              color: BrandColors.surface,
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 현재 배너만 표시
+                ClipRect(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 500),
+                    transitionBuilder:
+                        (Widget child, Animation<double> animation) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(1.0, 0.0),
+                            end: Offset.zero,
+                          ).animate(animation),
+                          child: child,
+                        ),
+                      );
+                    },
+                    child: _buildBannerContent(
+                      _banners[_currentIndex],
+                      _currentIndex,
+                      imageSize: imageSize,
+                      titleSize: titleSize,
+                      descriptionSize: descriptionSize,
+                      compact: isCompact,
+                    ),
                   ),
-                );
-              },
-              child: _buildBannerContent(
-                _banners[_currentIndex],
-                _currentIndex,
-              ),
+                ),
+
+                // 페이지 인디케이터
+                if (_banners.length > 1)
+                  Positioned(
+                    top: 0,
+                    right: 2,
+                    child: Text(
+                      '${_currentIndex + 1}/${_banners.length}',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        color: const Color(0xFF6B7280),
+                        fontSize: isCompact ? 10 : 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
-
-          // 페이지 인디케이터
-          if (_banners.length > 1)
-            Positioned(
-              top: 0,
-              right: 2,
-              child: Text(
-                '${_currentIndex + 1}/${_banners.length}',
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  color: Color(0xFF6B7280),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildBannerContent(AdBanner banner, int index) {
+  Widget _buildBannerContent(
+    AdBanner banner,
+    int index, {
+    required double imageSize,
+    required double titleSize,
+    required double descriptionSize,
+    required bool compact,
+  }) {
     return GestureDetector(
       key: ValueKey('banner_$index'), // AnimatedSwitcher를 위한 고유 키
       onTap: () {
@@ -174,18 +208,18 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
           // 이미지 또는 아이콘
           banner.imageUrl != null && banner.imageUrl!.isNotEmpty
               ? ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(compact ? 10 : 12),
                   child: CachedNetworkImage(
                     imageUrl: banner.imageUrl!,
-                    width: 84,
-                    height: 84,
+                    width: imageSize,
+                    height: imageSize,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      width: 84,
-                      height: 84,
+                      width: imageSize,
+                      height: imageSize,
                       decoration: BoxDecoration(
                         color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(compact ? 10 : 12),
                       ),
                       child: const Center(
                         child: CircularProgressIndicator(
@@ -194,19 +228,17 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                       ),
                     ),
                     errorWidget: (context, url, error) {
-                      // 이미지 로드 실패 시 아이콘 표시
-                      return _buildIconPlaceholder();
+                      return _buildIconPlaceholder(imageSize);
                     },
-                    // 이미지 캐싱 설정
-                    memCacheWidth: 200, // 메모리 캐시 너비 제한
-                    memCacheHeight: 200, // 메모리 캐시 높이 제한
-                    maxWidthDiskCache: 400, // 디스크 캐시 너비 제한
-                    maxHeightDiskCache: 400, // 디스크 캐시 높이 제한
+                    memCacheWidth: 200,
+                    memCacheHeight: 200,
+                    maxWidthDiskCache: 400,
+                    maxHeightDiskCache: 400,
                   ),
                 )
-              : _buildIconPlaceholder(),
+              : _buildIconPlaceholder(imageSize),
 
-          const SizedBox(width: 12),
+          SizedBox(width: compact ? 10 : 12),
 
           // 텍스트 영역
           Expanded(
@@ -220,20 +252,21 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                     Flexible(
                       child: Text(
                         banner.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 15,
+                          fontSize: titleSize,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
+                          height: 1.2,
                         ),
-                        maxLines: 2,
+                        maxLines: compact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    SizedBox(width: compact ? 4 : 6),
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: compact ? 5 : 6,
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
@@ -241,11 +274,11 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                         border: Border.all(color: Colors.black, width: 1),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text(
+                      child: Text(
                         'AD',
                         style: TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 9,
+                          fontSize: compact ? 8 : 9,
                           fontWeight: FontWeight.w800,
                           color: Colors.black,
                           letterSpacing: 0.5,
@@ -255,32 +288,30 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
                   ],
                 ),
 
-                const SizedBox(height: 4),
+                SizedBox(height: compact ? 3 : 4),
 
-                // 설명
                 Text(
                   banner.description,
                   style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 12,
+                    fontSize: descriptionSize,
                     fontWeight: FontWeight.w600,
                     color: Colors.grey[600],
-                    height: 1.4,
+                    height: 1.35,
                   ),
-                  maxLines: 2,
+                  maxLines: compact ? 1 : 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ],
             ),
           ),
 
-          const SizedBox(width: 8),
+          SizedBox(width: compact ? 6 : 8),
 
-          // 화살표 아이콘
           Icon(
             Icons.arrow_forward_ios,
             color: Colors.grey[400],
-            size: 16,
+            size: compact ? 14 : 16,
           ),
         ],
       ),
@@ -288,22 +319,22 @@ class _AdBannerWidgetState extends State<AdBannerWidget> {
   }
 
   /// 이미지가 없을 때 표시할 아이콘 플레이스홀더
-  Widget _buildIconPlaceholder() {
+  Widget _buildIconPlaceholder(double size) {
     return Container(
-      width: 84,
-      height: 84,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: AppColors.pointColor.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(size < 80 ? 10 : 12),
         border: Border.all(
           color: AppColors.pointColor.withValues(alpha: 0.2),
           width: 2,
         ),
       ),
-      child: const Icon(
+      child: Icon(
         Icons.campaign_rounded,
         color: AppColors.pointColor,
-        size: 40,
+        size: size * 0.48,
       ),
     );
   }

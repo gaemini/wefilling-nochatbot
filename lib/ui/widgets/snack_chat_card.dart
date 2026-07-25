@@ -50,6 +50,10 @@ class SnackChatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final horizontalPadding =
+        (screenWidth * 0.045).clamp(14.0, 20.0).toDouble();
+    final isCompact = screenWidth < 360;
     final isFavorited = snackChat.isFavoritedBy(currentUserId);
     final unreadCount =
         currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
@@ -67,8 +71,13 @@ class SnackChatCard extends StatelessWidget {
         onTap: onTap,
         onLongPress: onLongPress,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 96),
-          padding: const EdgeInsets.fromLTRB(20, 14, 16, 14),
+          constraints: const BoxConstraints(minHeight: 68),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            6,
+            isCompact ? 10 : 12,
+            6,
+          ),
           decoration: const BoxDecoration(
             border: Border(
               bottom: BorderSide(color: BrandColors.divider),
@@ -81,7 +90,7 @@ class SnackChatCard extends StatelessWidget {
                 participantIds: snackChat.participantIds,
                 currentUserId: currentUserId,
               ),
-              const SizedBox(width: 14),
+              SizedBox(width: isCompact ? 9 : 11),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,7 +104,7 @@ class SnackChatCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontFamily: 'Pretendard',
-                              fontSize: 20,
+                              fontSize: 17,
                               height: 1.25,
                               fontWeight:
                                   hasUnread ? FontWeight.w800 : FontWeight.w700,
@@ -103,35 +112,35 @@ class SnackChatCard extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 7),
+                        const SizedBox(width: 5),
                         Text(
                           '${snackChat.participantCount}',
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 17,
+                            fontSize: 14,
                             height: 1.25,
                             fontWeight: FontWeight.w600,
                             color: BrandColors.neutral500,
                           ),
                         ),
                         if (isMuted) ...[
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 3),
                           const Icon(
                             Icons.notifications_off_rounded,
-                            size: 17,
+                            size: 14,
                             color: BrandColors.neutral500,
                           ),
                         ],
                       ],
                     ),
-                    const SizedBox(height: 7),
+                    const SizedBox(height: 4),
                     Text(
                       lastMessage,
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 14,
+                        fontSize: 13,
                         height: 1.35,
                         fontWeight:
                             hasUnread ? FontWeight.w600 : FontWeight.w400,
@@ -145,9 +154,9 @@ class SnackChatCard extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                width: 62,
+                width: 54,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
@@ -157,7 +166,7 @@ class SnackChatCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontFamily: 'Pretendard',
-                        fontSize: 12,
+                        fontSize: 11,
                         height: 1.25,
                         fontWeight:
                             hasUnread ? FontWeight.w700 : FontWeight.w500,
@@ -166,7 +175,7 @@ class SnackChatCard extends StatelessWidget {
                             : BrandColors.neutral500,
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 5),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
@@ -186,7 +195,7 @@ class SnackChatCard extends StatelessWidget {
                               textAlign: TextAlign.center,
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 10,
+                                fontSize: 9.5,
                                 height: 1.2,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white,
@@ -203,14 +212,14 @@ class SnackChatCard extends StatelessWidget {
                               : (isKo ? '즐겨찾기' : 'Favorite'),
                           child: InkResponse(
                             onTap: onToggleFavorite,
-                            radius: 20,
+                            radius: 18,
                             child: Padding(
-                              padding: const EdgeInsets.all(3),
+                              padding: const EdgeInsets.all(4),
                               child: Icon(
                                 isFavorited
                                     ? Icons.star_rounded
                                     : Icons.star_border_rounded,
-                                size: 20,
+                                size: 18,
                                 color: isFavorited
                                     ? BrandColors.warning
                                     : BrandColors.neutral400,
@@ -304,8 +313,8 @@ class _ParticipantAvatarMosaicState extends State<_ParticipantAvatarMosaic> {
           : 'Participant profiles',
       child: ExcludeSemantics(
         child: SizedBox(
-          width: 62,
-          height: 62,
+          width: 52,
+          height: 52,
           child: Wrap(
             spacing: 4,
             runSpacing: 4,
@@ -331,15 +340,15 @@ class _AvatarTile extends StatelessWidget {
     final imageUrl =
         profile?.hasProfileImage == true ? profile!.photoURL : null;
     return ClipRRect(
-      borderRadius: BorderRadius.circular(9),
+      borderRadius: BorderRadius.circular(7),
       child: Container(
-        width: 29,
-        height: 29,
+        width: 24,
+        height: 24,
         color: const Color(0xFFE8EEF3),
         child: imageUrl == null
             ? const Icon(
                 Icons.person_rounded,
-                size: 18,
+                size: 15,
                 color: Color(0xFF7790A3),
               )
             : CachedNetworkImage(
@@ -348,12 +357,12 @@ class _AvatarTile extends StatelessWidget {
                 fadeInDuration: const Duration(milliseconds: 150),
                 placeholder: (_, __) => const Icon(
                   Icons.person_rounded,
-                  size: 18,
+                  size: 15,
                   color: Color(0xFF7790A3),
                 ),
                 errorWidget: (_, __, ___) => const Icon(
                   Icons.person_rounded,
-                  size: 18,
+                  size: 15,
                   color: Color(0xFF7790A3),
                 ),
               ),

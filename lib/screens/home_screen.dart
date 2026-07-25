@@ -178,8 +178,11 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       case '카페':
         return 'cafe';
       case 'drink':
+      case 'drinks':
       case '술':
-        return 'drink';
+      case 'hangout':
+      case '행아웃':
+        return 'hangout';
       case 'culture':
       case '문화':
         return 'culture';
@@ -714,18 +717,30 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   // ===== 상단 고정 카테고리 칩 =====
   Widget _buildCategoryChips() {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 360;
+    final isExpanded = screenWidth >= 600;
+    // Keep the top filter bar compact on large phones. These values use
+    // breakpoints instead of scaling continuously with the device size.
+    final itemHeight = isCompact ? 30.0 : (isExpanded ? 34.0 : 32.0);
+    final outerVerticalPadding = isCompact ? 5.0 : 6.0;
+    final dividerWidth = isCompact ? 18.0 : 20.0;
+    final labelSize = isCompact ? 12.5 : (isExpanded ? 13.5 : 13.0);
     final categories = [
       {'key': 'all', 'label': AppLocalizations.of(context)!.all},
       {'key': 'study', 'label': AppLocalizations.of(context)!.study},
       {'key': 'meal', 'label': AppLocalizations.of(context)!.meal},
       {'key': 'cafe', 'label': AppLocalizations.of(context)!.cafe},
-      {'key': 'drink', 'label': AppLocalizations.of(context)!.drink},
+      {'key': 'hangout', 'label': AppLocalizations.of(context)!.hangout},
       {'key': 'culture', 'label': AppLocalizations.of(context)!.culture},
       {'key': 'etc', 'label': AppLocalizations.of(context)!.other},
     ];
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      padding: EdgeInsets.symmetric(
+        horizontal: isCompact ? 10 : (isExpanded ? 16 : 12),
+        vertical: outerVerticalPadding,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -734,21 +749,27 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
       ),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        child: IntrinsicHeight(
+        child: SizedBox(
+          height: itemHeight,
           child: Row(
             children: [
               for (var i = 0; i < categories.length; i++) ...[
                 if (i != 0)
-                  const VerticalDivider(
-                    width: 22,
-                    thickness: 1.5,
-                    color: Color(0xFFD1D5DB),
-                    indent: 6,
-                    endIndent: 6,
+                  SizedBox(
+                    width: dividerWidth,
+                    height: 20,
+                    child: const VerticalDivider(
+                      width: 1,
+                      thickness: 1,
+                      color: Color(0xFFD1D5DB),
+                    ),
                   ),
                 _CategoryTabItem(
                   label: categories[i]['label']!,
                   selected: _selectedCategoryKey == categories[i]['key']!,
+                  height: itemHeight,
+                  fontSize: labelSize,
+                  horizontalPadding: isCompact ? 8 : 10,
                   onTap: () {
                     setState(() {
                       _selectedCategoryKey = categories[i]['key']!;
@@ -764,6 +785,12 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
   }
 
   Widget _buildCalendarHeader() {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isCompact = screenWidth < 360;
+    final isExpanded = screenWidth >= 600;
+    final headerHeight = isCompact ? 44.0 : (isExpanded ? 50.0 : 48.0);
+    final labelSize = isCompact ? 14.0 : (isExpanded ? 16.0 : 15.0);
+    final iconSize = isCompact ? 22.0 : 24.0;
     final label = _isCalendarExpanded
         ? _expandedHeaderLabel(context, _focusedMonth)
         : _collapsedHeaderLabel(context, _selectedDay);
@@ -776,20 +803,26 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
             _isCalendarExpanded = !_isCalendarExpanded;
           });
         },
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+        child: SizedBox(
+          height: headerHeight,
           child: Row(
             children: [
-              const SizedBox(width: 28), // 좌우 균형(아이콘 자리)
+              SizedBox(width: iconSize), // 좌우 균형(아이콘 자리)
               Expanded(
                 child: Center(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFF4B5563),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.2,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: labelSize,
+                        fontWeight: FontWeight.w900,
+                        color: const Color(0xFF4B5563),
+                        height: 1.15,
+                      ),
                     ),
                   ),
                 ),
@@ -798,7 +831,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                 _isCalendarExpanded
                     ? Icons.keyboard_arrow_up
                     : Icons.keyboard_arrow_down,
-                size: 28,
+                size: iconSize,
                 color: const Color(0xFF111827),
               ),
             ],
@@ -1249,11 +1282,17 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 class _CategoryTabItem extends StatelessWidget {
   final String label;
   final bool selected;
+  final double height;
+  final double fontSize;
+  final double horizontalPadding;
   final VoidCallback onTap;
 
   const _CategoryTabItem({
     required this.label,
     required this.selected,
+    required this.height,
+    required this.fontSize,
+    required this.horizontalPadding,
     required this.onTap,
   });
 
@@ -1269,24 +1308,30 @@ class _CategoryTabItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: AnimatedContainer(
+          height: height,
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: selected ? selectedBg : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: selected ? selectedText : unselectedText,
-              height: 0.9,
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: fontSize,
+                fontWeight: FontWeight.w700,
+                color: selected ? selectedText : unselectedText,
+                height: 1.1,
+              ),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.fade,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),

@@ -17,7 +17,7 @@ class AppTheme {
   static const Color _primaryLight = AppColors.primaryLight; // Indigo-400
   static const Color _primaryDark = AppColors.primaryDark; // Indigo-600
 
-  // Modern Secondary Colors (Pink-Orange Gradient) 
+  // Modern Secondary Colors (Pink-Orange Gradient)
   static const Color _secondaryColor = AppColors.secondaryMain; // Pink-500
   static const Color _secondaryLight = AppColors.secondaryLight; // Pink-400
 
@@ -32,7 +32,8 @@ class AppTheme {
 
   // Dark mode backgrounds (Future Dusk Enhanced)
   static const Color _darkBackgroundPrimary = AppColors.darkBackgroundPrimary;
-  static const Color _darkBackgroundSecondary = AppColors.darkBackgroundSecondary;
+  static const Color _darkBackgroundSecondary =
+      AppColors.darkBackgroundSecondary;
   static const Color _darkBackgroundTertiary = AppColors.darkBackgroundTertiary;
 
   // High contrast colors (WCAG compliance)
@@ -53,6 +54,7 @@ class AppTheme {
       colorScheme: cs,
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF171717),
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(14),
@@ -199,10 +201,10 @@ class AppTheme {
       );
 
   static ChipThemeData _chipTheme(ColorScheme cs) => ChipThemeData(
-    selectedColor: cs.primaryContainer,
-    side: BorderSide(color: cs.outline),
-    labelStyle: TextStyle(color: cs.onSurface),
-    padding: const EdgeInsets.all(8),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-  );
+        selectedColor: cs.primaryContainer,
+        side: BorderSide(color: cs.outline),
+        labelStyle: TextStyle(color: cs.onSurface),
+        padding: const EdgeInsets.all(8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      );
 }

@@ -10,6 +10,7 @@ import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../utils/country_flag_helper.dart';
+import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
 
 class SnackChatInfoScreen extends StatefulWidget {
@@ -439,6 +440,160 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     }
   }
 
+  Widget _buildRoomSummary(
+    BuildContext context,
+    SnackChat room,
+    AppLocalizations l10n,
+  ) {
+    return Padding(
+      padding: EdgeInsets.symmetric(
+        vertical: context.rs(16).clamp(14, 18).toDouble(),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox.square(
+            dimension: context.ri(36).clamp(34, 38).toDouble(),
+            child: Center(
+              child: Icon(
+                Icons.forum_outlined,
+                size: context.ri(22).clamp(20, 23).toDouble(),
+                color: const Color(0xFF475467),
+              ),
+            ),
+          ),
+          SizedBox(width: context.rs(10).clamp(8, 12).toDouble()),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  room.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(16).clamp(15, 17).toDouble(),
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF111827),
+                    height: 1.25,
+                  ),
+                ),
+                SizedBox(height: context.rs(6).clamp(4, 7).toDouble()),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      l10n.snackChatParticipantCount(room.participantCount),
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(12.5).clamp(12, 13.5).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF667085),
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          room.hasNoExpiration
+                              ? Icons.all_inclusive_rounded
+                              : Icons.schedule_rounded,
+                          size: context.ri(14).clamp(13, 15).toDouble(),
+                          color: const Color(0xFF667085),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          room.hasNoExpiration
+                              ? l10n.snackChatDurationNoEnd
+                              : l10n.snackChatDuration24Hours,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize:
+                                context.rf(12.5).clamp(12, 13.5).toDouble(),
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF667085),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSettingRow({
+    required BuildContext context,
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Semantics(
+      toggled: value,
+      label: title,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 52),
+        child: Row(
+          children: [
+            SizedBox.square(
+              dimension: 32,
+              child: Center(
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: context.ri(19).clamp(18, 20).toDouble(),
+                ),
+              ),
+            ),
+            SizedBox(width: context.rs(8)),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(14.5).clamp(13.5, 15.5).toDouble(),
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF1F2937),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 46,
+              height: 38,
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: Switch(
+                  value: value,
+                  onChanged: onChanged,
+                  activeThumbColor: const Color(0xFF344054),
+                  activeTrackColor: const Color(0xFFD0D5DD),
+                  inactiveThumbColor: const Color(0xFF98A2B3),
+                  inactiveTrackColor: const Color(0xFFEAECF0),
+                  trackOutlineColor: const WidgetStatePropertyAll(
+                    Colors.transparent,
+                  ),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
@@ -470,247 +625,211 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
         _ensureParticipantsFuture(room);
 
         final isHost = _uid == room.creatorId;
+        final screenWidth = MediaQuery.sizeOf(context).width;
+        final pagePadding = screenWidth < 360
+            ? 16.0
+            : screenWidth < 600
+                ? 20.0
+                : 24.0;
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F6FB),
+          backgroundColor: Colors.white,
           appBar: AppBar(
-            backgroundColor: Colors.transparent,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.white,
             elevation: 0,
-            title: const Text(
-              'Snack Chat',
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontWeight: FontWeight.w800,
+            toolbarHeight: context.rh(54, min: 52, max: 58),
+            leadingWidth: 48,
+            leading: IconButton(
+              onPressed: () => Navigator.maybePop(context),
+              icon: Icon(
+                Icons.arrow_back_rounded,
+                size: context.ri(22).clamp(21, 24).toDouble(),
+              ),
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+            ),
+            titleSpacing: 0,
+            title: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Text(
+                'Snack Chat',
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(18).clamp(17, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
               ),
             ),
           ),
-          body: FutureBuilder<List<UserProfile>>(
-            future: _participantsFuture,
-            builder: (context, usersSnap) {
-              final participants = usersSnap.data ?? const <UserProfile>[];
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
+          body: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: FutureBuilder<List<UserProfile>>(
+                future: _participantsFuture,
+                builder: (context, usersSnap) {
+                  final participants = usersSnap.data ?? const <UserProfile>[];
+                  return ListView(
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: EdgeInsets.fromLTRB(
+                      pagePadding,
+                      2,
+                      pagePadding,
+                      24 + MediaQuery.paddingOf(context).bottom,
                     ),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 58,
-                          height: 58,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF5FD),
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: const Icon(Icons.group,
-                              color: AppColors.pointColor),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                room.title,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 28 / 2,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                l10n.snackChatParticipantCount(
-                                  room.participantCount,
-                                ),
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF6B7280),
-                                ),
-                              ),
-                              const SizedBox(height: 5),
-                              Row(
-                                children: [
-                                  Icon(
-                                    room.hasNoExpiration
-                                        ? Icons.all_inclusive_rounded
-                                        : Icons.schedule_rounded,
-                                    size: 14,
-                                    color: AppColors.pointColor,
-                                  ),
-                                  const SizedBox(width: 5),
-                                  Text(
-                                    room.hasNoExpiration
-                                        ? l10n.snackChatDurationNoEnd
-                                        : l10n.snackChatDuration24Hours,
-                                    style: const TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.pointColor,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.star, color: Color(0xFFF4B400)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            isKo ? '채팅 즐겨찾기' : 'Favorite this chat',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                        Switch(
-                          value: room.isFavoritedBy(
-                              FirebaseAuth.instance.currentUser?.uid),
-                          onChanged: (_) => _toggleFavorite(room),
-                          activeThumbColor: AppColors.pointColor,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            isKo ? '알림' : 'Notifications',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF374151),
-                            ),
-                          ),
-                        ),
-                        Switch(
-                          value: !_isMuted,
-                          onChanged: (_) => _toggleMute(),
-                          activeThumbColor: AppColors.pointColor,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
                     children: [
-                      Expanded(
-                        child: Text(
-                          isKo ? '접속 중인 멤버' : 'ONLINE MEMBERS',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF6B7280),
-                            letterSpacing: 0.8,
-                          ),
-                        ),
+                      _buildRoomSummary(context, room, l10n),
+                      const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      _buildSettingRow(
+                        context: context,
+                        icon: room.isFavoritedBy(_uid)
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        iconColor: const Color(0xFF667085),
+                        title: isKo ? '채팅 즐겨찾기' : 'Favorite this chat',
+                        value: room.isFavoritedBy(_uid),
+                        onChanged: (_) => _toggleFavorite(room),
                       ),
-                      if (isHost)
-                        IconButton(
-                          onPressed:
-                              _isInviting ? null : () => _openInviteSheet(room),
-                          icon: _isInviting
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child:
-                                      CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(
-                                  Icons.add_circle,
-                                  color: AppColors.pointColor,
+                      const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                      _buildSettingRow(
+                        context: context,
+                        icon: _isMuted
+                            ? Icons.notifications_off_outlined
+                            : Icons.notifications_none_rounded,
+                        iconColor: const Color(0xFF667085),
+                        title: isKo ? '알림' : 'Notifications',
+                        value: !_isMuted,
+                        onChanged: (_) => _toggleMute(),
+                      ),
+                      SizedBox(height: context.rs(18).clamp(16, 22).toDouble()),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              isKo ? '참여 멤버' : 'MEMBERS',
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize:
+                                    context.rf(13).clamp(12, 14).toDouble(),
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF667085),
+                                letterSpacing: isKo ? 0 : 0.7,
+                              ),
+                            ),
+                          ),
+                          if (isHost)
+                            SizedBox.square(
+                              dimension: 40,
+                              child: IconButton(
+                                onPressed: _isInviting
+                                    ? null
+                                    : () => _openInviteSheet(room),
+                                padding: EdgeInsets.zero,
+                                style: IconButton.styleFrom(
+                                  foregroundColor: const Color(0xFF475467),
+                                  disabledForegroundColor:
+                                      const Color(0xFF98A2B3),
                                 ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (usersSnap.connectionState == ConnectionState.waiting)
-                    const Center(child: CircularProgressIndicator())
-                  else
-                    ...participants.map((user) => _MemberTile(user: user)),
-                  const SizedBox(height: 16),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: isHost
-                        ? Text(
-                            isKo
-                                ? '방장은 채팅방을 나갈 수 없어요'
-                                : 'Host cannot leave this room.',
+                                tooltip: isKo ? '멤버 초대' : 'Invite members',
+                                icon: _isInviting
+                                    ? const SizedBox.square(
+                                        dimension: 17,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : Icon(
+                                        Icons.person_add_alt_1_rounded,
+                                        size: context
+                                            .ri(19)
+                                            .clamp(18, 20)
+                                            .toDouble(),
+                                        color: const Color(0xFF475467),
+                                      ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      SizedBox(height: context.rs(4)),
+                      if (usersSnap.connectionState ==
+                              ConnectionState.waiting &&
+                          participants.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 28),
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: 22,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      else if (participants.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20),
+                          child: Text(
+                            isKo ? '표시할 멤버가 없습니다.' : 'No members to show.',
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
                               fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF9CA3AF),
+                              color: Color(0xFF98A2B3),
                             ),
-                          )
-                        : _isLeaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child:
-                                    CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : TextButton.icon(
-                                onPressed: () => _leaveRoom(room),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: const Color(0xFF6B7280),
-                                  backgroundColor: const Color(0xFFF3F4F6),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 9),
-                                  minimumSize: Size.zero,
-                                  tapTargetSize:
-                                      MaterialTapTargetSize.shrinkWrap,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                ),
-                                icon: const Icon(
-                                  Icons.logout_rounded,
-                                  size: 16,
-                                  color: Color(0xFF6B7280),
-                                ),
-                                label: Text(
-                                  isKo ? '채팅방 나가기' : 'Leave Room',
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF6B7280),
-                                  ),
-                                ),
+                          ),
+                        )
+                      else
+                        ...List.generate(
+                          participants.length,
+                          (index) => _MemberTile(
+                            user: participants[index],
+                            showDivider: index < participants.length - 1,
+                          ),
+                        ),
+                      SizedBox(height: context.rs(14)),
+                      if (isHost)
+                        Text(
+                          isKo
+                              ? '방장은 채팅방을 나갈 수 없어요.'
+                              : 'Host cannot leave this room.',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize:
+                                context.rf(12.5).clamp(12, 13.5).toDouble(),
+                            fontWeight: FontWeight.w500,
+                            color: const Color(0xFF98A2B3),
+                          ),
+                        )
+                      else if (_isLeaving)
+                        const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () => _leaveRoom(room),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF667085),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 4,
+                                vertical: 8,
                               ),
-                  ),
-                ],
-              );
-            },
+                            ),
+                            icon: const Icon(Icons.logout_rounded, size: 17),
+                            label: Text(
+                              isKo ? '채팅방 나가기' : 'Leave Room',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
@@ -720,88 +839,113 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
 
 class _MemberTile extends StatelessWidget {
   final UserProfile user;
-  const _MemberTile({required this.user});
+  final bool showDivider;
+
+  const _MemberTile({
+    required this.user,
+    required this.showDivider,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => FriendProfileScreen(
-              userId: user.uid,
-              nickname: user.displayNameOrNickname,
-              photoURL: user.photoURL,
-              email: user.email,
-              university: user.university,
-              allowNonFriendsPreview: true,
-            ),
-          ),
-        );
-      },
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Row(
-          children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: const Color(0xFFE5E7EB),
-              backgroundImage:
-                  (user.photoURL != null && user.photoURL!.isNotEmpty)
-                      ? NetworkImage(user.photoURL!)
-                      : null,
-              child: (user.photoURL == null || user.photoURL!.isEmpty)
-                  ? Text(
-                      user.displayNameOrNickname.isEmpty
-                          ? '?'
-                          : user.displayNameOrNickname[0].toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      user.displayNameOrNickname,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+    return Column(
+      children: [
+        Semantics(
+          button: true,
+          label: user.displayNameOrNickname,
+          child: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => FriendProfileScreen(
+                    userId: user.uid,
+                    nickname: user.displayNameOrNickname,
+                    photoURL: user.photoURL,
+                    email: user.email,
+                    university: user.university,
+                    allowNonFriendsPreview: true,
                   ),
-                  if (user.nationality != null &&
-                      user.nationality!.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 56),
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: context.rs(2),
+                  vertical: context.rs(7).clamp(6, 9).toDouble(),
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: context.ri(19).clamp(18, 20).toDouble(),
+                      backgroundColor: const Color(0xFFE5E7EB),
+                      backgroundImage:
+                          (user.photoURL != null && user.photoURL!.isNotEmpty)
+                              ? NetworkImage(user.photoURL!)
+                              : null,
+                      child: (user.photoURL == null || user.photoURL!.isEmpty)
+                          ? Text(
+                              user.displayNameOrNickname.isEmpty
+                                  ? '?'
+                                  : user.displayNameOrNickname[0].toUpperCase(),
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize:
+                                    context.rf(13).clamp(12, 14).toDouble(),
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF475467),
+                              ),
+                            )
+                          : null,
+                    ),
+                    SizedBox(width: context.rs(10).clamp(8, 11).toDouble()),
+                    Expanded(
                       child: Text(
-                        CountryFlagHelper.getFlagEmoji(user.nationality!),
-                        style: const TextStyle(fontSize: 16, height: 1.0),
+                        user.displayNameOrNickname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize:
+                              context.rf(14.5).clamp(13.5, 15.5).toDouble(),
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF111827),
+                        ),
                       ),
+                    ),
+                    if (user.nationality != null &&
+                        user.nationality!.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        CountryFlagHelper.getFlagEmoji(user.nationality!),
+                        style: TextStyle(
+                          fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                          height: 1,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 10),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: const Color(0xFF98A2B3),
+                      size: context.ri(18).clamp(17, 19).toDouble(),
                     ),
                   ],
-                ],
+                ),
               ),
             ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chat_bubble_outline,
-                color: Color(0xFF98A2B3), size: 18),
-          ],
+          ),
         ),
-      ),
+        if (showDivider)
+          const Divider(
+            height: 1,
+            indent: 50,
+            color: Color(0xFFEAECF0),
+          ),
+      ],
     );
   }
 }

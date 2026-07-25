@@ -5,6 +5,8 @@ import '../l10n/app_localizations.dart';
 import '../models/meetup_favorite_template.dart';
 import '../services/meetup_favorites_service.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../utils/responsive_helper.dart';
+import 'meetup_favorite_editor_screen.dart';
 
 const TextStyle _kDialogTitleStyle = TextStyle(
   fontFamily: 'Pretendard',
@@ -28,12 +30,7 @@ const TextStyle _kDialogButtonStyle = TextStyle(
 );
 
 class MeetupFavoritesScreen extends StatefulWidget {
-  final MeetupFavoriteTemplate? draftFromCreateScreen;
-
-  const MeetupFavoritesScreen({
-    super.key,
-    this.draftFromCreateScreen,
-  });
+  const MeetupFavoritesScreen({super.key});
 
   @override
   State<MeetupFavoritesScreen> createState() => _MeetupFavoritesScreenState();
@@ -70,10 +67,14 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
         return l10n.meal;
       case 'cafe':
         return l10n.cafe;
-      case 'drink':
-        return l10n.drink;
+      case 'hangout':
+      case 'drink': // Legacy favorite templates.
+      case 'drinks':
+        return l10n.hangout;
       case 'culture':
         return l10n.culture;
+      case 'etc':
+        return l10n.other;
       default:
         return key;
     }
@@ -84,70 +85,49 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
     return t.time ?? l10n.undecided;
   }
 
-  Future<String?> _promptTemplateName({required String initialName}) async {
-    return showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return _TemplateNameDialog(initialName: initialName);
-      },
-    );
+  Future<void> _deleteManagedThumbnail(String? path) async {
+    final normalized = path?.trim();
+    if (normalized == null ||
+        normalized.isEmpty ||
+        !normalized.contains('meetup_favorite_images')) {
+      return;
+    }
+    try {
+      final file = File(normalized);
+      if (file.existsSync()) await file.delete();
+    } catch (_) {}
   }
 
-  Future<void> _saveDraftAsTemplate() async {
-    final l10n = AppLocalizations.of(context)!;
-    final draft = widget.draftFromCreateScreen;
-    if (draft == null) return;
-
-    final baseName =
-        (draft.name.trim().isEmpty ? draft.title.trim() : draft.name.trim()).isEmpty
-            ? (Localizations.localeOf(context).languageCode == 'ko'
-                ? '새 템플릿'
-                : 'New template')
-            : (draft.name.trim().isEmpty ? draft.title.trim() : draft.name.trim());
-
-    final savedName = await _promptTemplateName(initialName: baseName);
-
-    if (!mounted || savedName == null || savedName.isEmpty) return;
-
-    // 같은 이름이 있으면 "다른 템플릿"을 늘리지 않고 업데이트로 취급
-    final existingByName = _templates
-        .where((t) => t.name.trim().toLowerCase() == savedName.trim().toLowerCase())
-        .toList();
-
-    final isUpdatingExisting = existingByName.isNotEmpty;
-    if (!isUpdatingExisting && _templates.length >= _maxTemplates) {
-      final isKo = Localizations.localeOf(context).languageCode == 'ko';
+  Future<void> _openEditor({MeetupFavoriteTemplate? template}) async {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    if (template == null && _templates.length >= _maxTemplates) {
       AppSnackBar.show(
         context,
         message: isKo
-            ? '즐겨찾기는 최대 $_maxTemplates개까지 저장할 수 있어요'
-            : 'You can save up to $_maxTemplates favorites',
+            ? '즐겨찾기는 최대 $_maxTemplates개까지 저장할 수 있어요.'
+            : 'You can save up to $_maxTemplates favorites.',
         type: AppSnackBarType.warning,
       );
       return;
     }
 
-    final templateId = isUpdatingExisting
-        ? existingByName.first.id
-        : 'tmpl_${DateTime.now().microsecondsSinceEpoch}';
-
-    final toSave = draft.copyWith(
-      id: templateId,
-      name: savedName,
-      updatedAt: DateTime.now(),
+    final result = await Navigator.of(context).push<MeetupFavoriteTemplate>(
+      MaterialPageRoute(
+        builder: (_) => MeetupFavoriteEditorScreen(template: template),
+      ),
     );
-    final list = await _service.upsert(toSave);
+    if (!mounted || result == null) return;
 
+    final list = await _service.upsert(result);
+    if (template != null &&
+        template.thumbnailImagePath != result.thumbnailImagePath) {
+      await _deleteManagedThumbnail(template.thumbnailImagePath);
+    }
     if (!mounted) return;
-    setState(() {
-      _templates = list;
-    });
-
+    setState(() => _templates = list);
     AppSnackBar.show(
       context,
-      message: Localizations.localeOf(context).languageCode == 'ko'
-          ? '즐겨찾기에 저장했어요'
-          : 'Saved to favorites',
+      message: isKo ? '즐겨찾기에 저장했어요.' : 'Saved to favorites.',
       type: AppSnackBarType.success,
     );
   }
@@ -184,7 +164,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
           ],
         ),
         content: Text(
-          isKo ? '이 템플릿을 삭제하면 되돌릴 수 없어요.' : 'This template will be permanently deleted.',
+          isKo
+              ? '이 템플릿을 삭제하면 되돌릴 수 없어요.'
+              : 'This template will be permanently deleted.',
           style: _kDialogBodyStyle,
         ),
         actions: [
@@ -203,7 +185,8 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                   ),
                   child: Text(
                     l10n.cancel,
-                    style: _kDialogButtonStyle.copyWith(color: const Color(0xFF6B7280)),
+                    style: _kDialogButtonStyle.copyWith(
+                        color: const Color(0xFF6B7280)),
                   ),
                 ),
               ),
@@ -231,6 +214,7 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
 
     if (!mounted || ok != true) return;
     final list = await _service.deleteById(t.id);
+    await _deleteManagedThumbnail(t.thumbnailImagePath);
     if (!mounted) return;
     setState(() => _templates = list);
   }
@@ -243,36 +227,30 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-
-    final canSaveDraft = widget.draftFromCreateScreen != null &&
-        (widget.draftFromCreateScreen!.title.trim().isNotEmpty ||
-            widget.draftFromCreateScreen!.location.trim().isNotEmpty ||
-            widget.draftFromCreateScreen!.description.trim().isNotEmpty);
+    final horizontalPadding =
+        MediaQuery.sizeOf(context).width < 360 ? 14.0 : 18.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFFAFBFC),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
         centerTitle: true,
+        toolbarHeight: context.rh(56, min: 54, max: 60),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1A1A1A)),
+          icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF111827)),
+          iconSize: 22,
           onPressed: () => Navigator.of(context).pop(),
         ),
         title: Text(
           isKo ? '즐겨찾기' : 'Favorites',
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 20,
+            fontSize: context.rf(18).clamp(16, 19).toDouble(),
             fontWeight: FontWeight.w700,
-            height: 1.2,
-            letterSpacing: -0.2,
             color: Color(0xFF111827),
           ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: const Color(0xFFE6EAF0)),
         ),
       ),
       body: _loading
@@ -280,43 +258,103 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  8,
+                  horizontalPadding,
+                  28,
+                ),
                 children: [
-                  if (canSaveDraft) ...[
-                    SizedBox(
-                      height: 52,
-                      child: ElevatedButton.icon(
-                        onPressed: _saveDraftAsTemplate,
-                        icon: const Icon(Icons.star_rounded),
-                        label: Text(isKo ? '현재 입력값 저장' : 'Save current'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.pointColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
+                  InkWell(
+                    onTap: () => _openEditor(),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 64),
+                      decoration: const BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(color: Color(0xFFEAECF0)),
                         ),
                       ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.add_rounded,
+                            size: 22,
+                            color: Color(0xFF344054),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  isKo ? '새 즐겨찾기 만들기' : 'Create a favorite',
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  isKo
+                                      ? '날짜를 제외한 밋업 정보를 미리 저장합니다.'
+                                      : 'Save meetup details without a date.',
+                                  style: const TextStyle(
+                                    fontFamily: 'Pretendard',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                    color: Color(0xFF667085),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 20,
+                            color: Color(0xFF98A2B3),
+                          ),
+                        ],
+                      ),
                     ),
-                    const SizedBox(height: 14),
-                  ],
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    isKo
+                        ? '저장한 항목을 눌러 밋업에 불러오세요.'
+                        : 'Tap a saved item to load it into your meetup.',
+                    style: const TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF667085),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   if (_templates.isEmpty)
                     Padding(
-                      padding: const EdgeInsets.only(top: 24),
-                      child: Center(
-                        child: Text(
-                          isKo
-                              ? '저장된 즐겨찾기가 없어요'
-                              : 'No saved favorites yet',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            height: 1.3,
-                            color: Color(0xFF6B7280),
+                      padding: const EdgeInsets.only(top: 52),
+                      child: Column(
+                        children: [
+                          const Icon(
+                            Icons.star_border_rounded,
+                            size: 28,
+                            color: Color(0xFFB8C0CC),
                           ),
-                        ),
+                          const SizedBox(height: 10),
+                          Text(
+                            isKo ? '저장된 즐겨찾기가 없어요.' : 'No saved favorites yet.',
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF667085),
+                            ),
+                          ),
+                        ],
                       ),
                     )
                   else ...[
@@ -326,9 +364,9 @@ class _MeetupFavoritesScreenState extends State<MeetupFavoritesScreen> {
                         categoryLabel: _categoryLabel(l10n, t.categoryKey),
                         timeLabel: _timeLabel(l10n, t),
                         onTap: () => _applyTemplate(t),
+                        onEdit: () => _openEditor(template: t),
                         onDelete: () => _confirmDelete(t),
                       ),
-                      const SizedBox(height: 12),
                     ],
                   ],
                 ],
@@ -343,6 +381,7 @@ class _TemplateCard extends StatelessWidget {
   final String categoryLabel;
   final String timeLabel;
   final VoidCallback onTap;
+  final VoidCallback onEdit;
   final VoidCallback onDelete;
 
   const _TemplateCard({
@@ -350,16 +389,17 @@ class _TemplateCard extends StatelessWidget {
     required this.categoryLabel,
     required this.timeLabel,
     required this.onTap,
+    required this.onEdit,
     required this.onDelete,
   });
 
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
-    final title = template.name.trim().isNotEmpty
-        ? template.name
-        : (template.title.trim().isNotEmpty
-            ? template.title
+    final title = template.title.trim().isNotEmpty
+        ? template.title
+        : (template.name.trim().isNotEmpty
+            ? template.name
             : (isKo ? '(제목 없음)' : '(No title)'));
 
     final subtitleParts = <String>[
@@ -373,13 +413,13 @@ class _TemplateCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE6EAF0)),
+          constraints: const BoxConstraints(minHeight: 74),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFEAECF0)),
+            ),
           ),
           child: Row(
             children: [
@@ -420,10 +460,26 @@ class _TemplateCard extends StatelessWidget {
                   ],
                 ),
               ),
-              IconButton(
-                onPressed: onDelete,
-                icon: const Icon(Icons.delete_outline_rounded),
-                color: const Color(0xFF9CA3AF),
+              PopupMenuButton<String>(
+                tooltip: isKo ? '더보기' : 'More',
+                icon: const Icon(
+                  Icons.more_horiz_rounded,
+                  color: Color(0xFF98A2B3),
+                ),
+                onSelected: (value) {
+                  if (value == 'edit') onEdit();
+                  if (value == 'delete') onDelete();
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem<String>(
+                    value: 'edit',
+                    child: Text(isKo ? '수정' : 'Edit'),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'delete',
+                    child: Text(isKo ? '삭제' : 'Delete'),
+                  ),
+                ],
               ),
             ],
           ),
@@ -452,10 +508,7 @@ class _ThumbnailPreview extends StatelessWidget {
       child: Container(
         width: 46,
         height: 46,
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          border: Border.all(color: const Color(0xFFE6EAF0)),
-        ),
+        color: const Color(0xFFF3F4F6),
         child: exists
             ? Image.file(
                 file!,
@@ -569,9 +622,11 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.pointColor, width: 1.5),
+                borderSide:
+                    const BorderSide(color: AppColors.pointColor, width: 1.5),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               filled: true,
               fillColor: const Color(0xFFF9FAFB),
             ),
@@ -603,7 +658,8 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
                     ),
                     child: Text(
                       l10n.cancel,
-                      style: _kDialogButtonStyle.copyWith(color: const Color(0xFF6B7280)),
+                      style: _kDialogButtonStyle.copyWith(
+                          color: const Color(0xFF6B7280)),
                     ),
                   ),
                 ),
@@ -634,4 +690,3 @@ class _TemplateNameDialogState extends State<_TemplateNameDialog> {
     );
   }
 }
-

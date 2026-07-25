@@ -4,7 +4,10 @@
 // 기존 기능 유지 + 새로운 탭 구조
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/services.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/relationship_provider.dart';
@@ -12,6 +15,8 @@ import '../services/user_stats_service.dart';
 import '../services/review_service.dart';
 import '../services/post_service.dart';
 import '../services/relationship_service.dart';
+import '../services/cache/app_image_cache_manager.dart';
+import '../services/cache/my_page_cache_service.dart';
 import '../models/review_post.dart';
 import '../models/post.dart';
 import '../constants/app_constants.dart';
@@ -19,7 +24,6 @@ import '../design/tokens.dart';
 import '../ui/dialogs/logout_dialog.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/country_flag_helper.dart';
-import '../utils/logger.dart';
 import '../widgets/country_flag_circle.dart';
 import 'profile_edit_screen.dart';
 import 'user_meetups_screens.dart';
@@ -31,6 +35,7 @@ import 'review_detail_screen.dart';
 import 'friends_page.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
+import '../utils/responsive_helper.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -39,19 +44,35 @@ class MyPageScreen extends StatefulWidget {
   State<MyPageScreen> createState() => _MyPageScreenState();
 }
 
-class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderStateMixin {
+class _MyPageScreenState extends State<MyPageScreen>
+    with SingleTickerProviderStateMixin {
   final UserStatsService _userStatsService = UserStatsService();
   final ReviewService _reviewService = ReviewService();
   final PostService _postService = PostService();
   final RelationshipService _relationshipService = RelationshipService();
+  final MyPageCacheService _myPageCacheService = MyPageCacheService();
   late TabController _tabController;
+  bool _showPostsAsGrid = false;
   // 통계 숫자(Posts/Friends/Reviews 등) 깜빡임 방지용 마지막 값 캐시
   final Map<String, int> _statCountCache = {};
-  
+
+  String? _myPageCacheUserId;
+  int _myPageLoadToken = 0;
+  List<Post>? _userPosts;
+  List<ReviewPost>? _userReviews;
+  List<Post>? _savedPosts;
+  Stream<int>? _friendCountStream;
+  bool _isLoadingUserPosts = true;
+  bool _isLoadingReviews = true;
+  bool _isLoadingSavedPosts = true;
+  Object? _userPostsError;
+  Object? _reviewsError;
+  Object? _savedPostsError;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
 
     // ✅ 마이페이지에서도 친구요청 뱃지/상태가 즉시 갱신되도록 관계 스트림 초기화
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -65,7 +86,141 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       }
     });
   }
-  
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final userId = context.read<AuthProvider>().user?.uid;
+    if (_myPageCacheUserId == userId) return;
+
+    _myPageCacheUserId = userId;
+    final loadToken = ++_myPageLoadToken;
+    _friendCountStream = userId == null
+        ? Stream<int>.value(0)
+        : _relationshipService.getFriendCount();
+    _userPosts = null;
+    _userReviews = null;
+    _savedPosts = null;
+    _userPostsError = null;
+    _reviewsError = null;
+    _savedPostsError = null;
+    _isLoadingUserPosts = userId != null;
+    _isLoadingReviews = userId != null;
+    _isLoadingSavedPosts = userId != null;
+
+    if (userId != null && userId.isNotEmpty) {
+      _loadMyPageTabs(userId, loadToken);
+    }
+  }
+
+  bool _isCurrentLoad(String userId, int loadToken) {
+    return mounted &&
+        _myPageCacheUserId == userId &&
+        _myPageLoadToken == loadToken;
+  }
+
+  void _loadMyPageTabs(String userId, int loadToken) {
+    _loadUserPosts(userId, loadToken);
+    _loadUserReviews(userId, loadToken);
+    _loadSavedPosts(userId, loadToken);
+  }
+
+  Future<void> _loadUserPosts(String userId, int loadToken) async {
+    final cached = await _myPageCacheService.readUserPosts(userId);
+    if (!_isCurrentLoad(userId, loadToken)) return;
+
+    setState(() {
+      if (cached != null) _userPosts = cached.items;
+      _isLoadingUserPosts = cached == null;
+    });
+    if (cached?.isFresh == true) return;
+
+    try {
+      final posts = await _userStatsService
+          .getUserPosts()
+          .first
+          .timeout(const Duration(seconds: 20));
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      await _myPageCacheService.saveUserPosts(userId, posts);
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _userPosts = posts;
+        _isLoadingUserPosts = false;
+        _userPostsError = null;
+      });
+    } catch (error) {
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _isLoadingUserPosts = false;
+        if (_userPosts == null) _userPostsError = error;
+      });
+    }
+  }
+
+  Future<void> _loadUserReviews(String userId, int loadToken) async {
+    final cached = await _myPageCacheService.readReviews(userId);
+    if (!_isCurrentLoad(userId, loadToken)) return;
+
+    setState(() {
+      if (cached != null) _userReviews = cached.items;
+      _isLoadingReviews = cached == null;
+    });
+    if (cached?.isFresh == true) return;
+
+    try {
+      final reviews = await _reviewService
+          .getUserReviews()
+          .first
+          .timeout(const Duration(seconds: 20));
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      await _myPageCacheService.saveReviews(userId, reviews);
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _userReviews = reviews;
+        _isLoadingReviews = false;
+        _reviewsError = null;
+      });
+    } catch (error) {
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _isLoadingReviews = false;
+        if (_userReviews == null) _reviewsError = error;
+      });
+    }
+  }
+
+  Future<void> _loadSavedPosts(String userId, int loadToken) async {
+    final cached = await _myPageCacheService.readSavedPosts(userId);
+    if (!_isCurrentLoad(userId, loadToken)) return;
+
+    setState(() {
+      if (cached != null) _savedPosts = cached.items;
+      _isLoadingSavedPosts = cached == null;
+    });
+    if (cached?.isFresh == true) return;
+
+    try {
+      final posts = await _postService
+          .getSavedPosts()
+          .first
+          .timeout(const Duration(seconds: 20));
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      await _myPageCacheService.saveSavedPosts(userId, posts);
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _savedPosts = posts;
+        _isLoadingSavedPosts = false;
+        _savedPostsError = null;
+      });
+    } catch (error) {
+      if (!_isCurrentLoad(userId, loadToken)) return;
+      setState(() {
+        _isLoadingSavedPosts = false;
+        if (_savedPosts == null) _savedPostsError = error;
+      });
+    }
+  }
+
   @override
   void dispose() {
     _tabController.dispose();
@@ -81,6 +236,12 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         bottom: true,
         child: NestedScrollView(
           headerSliverBuilder: (BuildContext context, bool innerBoxIsScrolled) {
+            final isKorean =
+                Localizations.localeOf(context).languageCode == 'ko';
+            final postsLabel = AppLocalizations.of(context)!.posts;
+            final reviewsLabel = isKorean ? '모임 후기' : 'Meetup Reviews';
+            final savedPostsLabel = isKorean ? '저장한 글' : 'Saved Posts';
+
             return <Widget>[
               SliverToBoxAdapter(
                 child: _buildProfileHeader(),
@@ -90,24 +251,31 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 delegate: _SliverAppBarDelegate(
                   TabBar(
                     controller: _tabController,
-                    labelColor: const Color(0xFF646464),
-                    unselectedLabelColor: Colors.grey[400],
-                    indicatorColor: const Color(0xFF646464),
-                    indicatorWeight: 2.5,
+                    labelColor: const Color(0xFF111827),
+                    unselectedLabelColor: const Color(0xFF9CA3AF),
+                    indicatorColor: const Color(0xFF2563EB),
+                    indicatorWeight: 2,
+                    dividerColor: const Color(0xFFF1F3F5),
                     labelStyle: AppTheme.labelMedium.copyWith(
                       fontWeight: FontWeight.w600,
-                      fontSize: 14,
+                      fontSize: 13,
+                    ),
+                    unselectedLabelStyle: AppTheme.labelMedium.copyWith(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 13,
                     ),
                     tabs: [
-                      Tab(
-                        icon: Icon(Icons.article_outlined, size: 16),
-                        text: AppLocalizations.of(context)!.posts,
-                        height: 48,
+                      _buildProfileTab(
+                        postsLabel,
+                        sizingLabel: reviewsLabel,
                       ),
-                      Tab(
-                        icon: Icon(Icons.grid_on_rounded, size: 16),
-                        text: AppLocalizations.of(context)!.reviews,
-                        height: 48,
+                      _buildProfileTab(
+                        reviewsLabel,
+                        sizingLabel: reviewsLabel,
+                      ),
+                      _buildProfileTab(
+                        savedPostsLabel,
+                        sizingLabel: reviewsLabel,
                       ),
                     ],
                   ),
@@ -118,8 +286,50 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           body: TabBarView(
             controller: _tabController,
             children: [
-              _buildUserPosts(),
-              _buildReviewGrid(),
+              _KeepAliveTab(
+                key: const PageStorageKey('mypage_posts_tab'),
+                child: _buildUserPosts(),
+              ),
+              _KeepAliveTab(
+                key: const PageStorageKey('mypage_reviews_tab'),
+                child: _buildReviewGrid(),
+              ),
+              _KeepAliveTab(
+                key: const PageStorageKey('mypage_saved_posts_tab'),
+                child: _buildSavedPosts(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileTab(String label, {required String sizingLabel}) {
+    return Tab(
+      height: 46,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              ExcludeSemantics(
+                child: Opacity(
+                  opacity: 0,
+                  child: Text(
+                    sizingLabel,
+                    maxLines: 1,
+                    softWrap: false,
+                  ),
+                ),
+              ),
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+              ),
             ],
           ),
         ),
@@ -163,7 +373,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                       boxShadow: photoUrl.isNotEmpty
                           ? [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -172,15 +382,24 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     ),
                     child: photoUrl.isNotEmpty
                         ? ClipOval(
-                            child: Image.network(
+                            child: _buildCachedImage(
                               photoUrl,
-                              width: 100,
-                              height: 100,
                               fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => const Icon(
-                                Icons.person,
-                                size: 50,
-                                color: Color(0xFF6B7280),
+                              errorWidget: const ColoredBox(
+                                color: Color(0xFFE5E7EB),
+                                child: Icon(
+                                  Icons.person,
+                                  size: 50,
+                                  color: Color(0xFF6B7280),
+                                ),
+                              ),
+                              placeholder: const ColoredBox(
+                                color: Color(0xFFE5E7EB),
+                                child: Icon(
+                                  Icons.person,
+                                  size: 50,
+                                  color: Color(0xFF6B7280),
+                                ),
                               ),
                             ),
                           )
@@ -192,9 +411,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
               ),
-              
+
               const SizedBox(width: 16),
-              
+
               // 이름과 국가 정보 (중앙)
               Expanded(
                 child: Column(
@@ -202,7 +421,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      userData?['nickname'] ?? AppLocalizations.of(context)!.user,
+                      userData?['nickname'] ??
+                          AppLocalizations.of(context)!.user,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 20,
@@ -224,8 +444,10 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                           Flexible(
                             child: Text(
                               CountryFlagHelper.getCountryInfo(nationality)
-                                  ?.getLocalizedName(Localizations.localeOf(context).languageCode) 
-                                  ?? nationality,
+                                      ?.getLocalizedName(
+                                          Localizations.localeOf(context)
+                                              .languageCode) ??
+                                  nationality,
                               style: const TextStyle(
                                 fontFamily: 'Pretendard',
                                 fontSize: 14,
@@ -238,9 +460,10 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                           ),
                         ],
                       ),
-                    
+
                     // 한 줄 소개 (국기 아래)
-                    if (userData?['bio'] != null && (userData!['bio'] as String).isNotEmpty) ...[
+                    if (userData?['bio'] != null &&
+                        (userData!['bio'] as String).isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
                         userData!['bio'],
@@ -259,12 +482,11 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ],
                 ),
               ),
-              
             ],
           ),
-          
+
           const SizedBox(height: 20),
-          
+
           // 통계 정보 (3개 컬럼)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -275,6 +497,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 icon: Icons.article,
                 color: AppColors.pointColor,
                 showIcon: false,
+                usesCachedCount: true,
+                countValue: _userPosts?.length,
                 onTap: null,
               ),
               Container(width: 1, height: 50, color: const Color(0xFFE5E7EB)),
@@ -286,6 +510,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                     icon: Icons.people,
                     color: AppColors.pointColor,
                     showIcon: false,
+                    countStream: _friendCountStream,
                     onTap: () => _navigateToFriendsPage(),
                   );
                 },
@@ -296,7 +521,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 icon: Icons.grid_on_rounded,
                 color: AppColors.pointColor,
                 showIcon: false,
-                countStream: _reviewService.getUserReviews().map((list) => list.length),
+                usesCachedCount: true,
+                countValue: _userReviews?.length,
                 onTap: null,
               ),
             ],
@@ -310,7 +536,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     // 실제 로그인된 사용자 ID 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.user?.uid;
-    
+
     // 로그인되지 않은 경우 로그인 유도 메시지 표시
     if (currentUserId == null || currentUserId.isEmpty) {
       return Center(
@@ -345,234 +571,220 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         ),
       );
     }
-    
-    return StreamBuilder<List<ReviewPost>>(
-      stream: _reviewService.getUserReviews(),
-                    builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
-            ),
-          );
-        }
-        
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline_rounded,
-                  size: 64,
-                  color: Color(0xFFEF4444),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  '오류가 발생했습니다',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFEF4444),
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '${snapshot.error}',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        
-        final reviews = snapshot.data ?? [];
-        
-        if (reviews.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFF3F4F6),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.photo_library_outlined,
-                    size: 48,
-                    color: AppColors.pointColor,
-                  ),
-                ),
-                SizedBox(height: 20),
-                Text(
-                  AppLocalizations.of(context)!.noReviewsYet,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  AppLocalizations.of(context)!.joinMeetupAndWriteReview,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-        
-        return GridView.builder(
-          padding: EdgeInsets.all(4),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
-            childAspectRatio: 1,
+
+    final reviews = _userReviews;
+    if (_isLoadingReviews && reviews == null) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+        ),
+      );
+    }
+
+    if (_reviewsError != null && reviews == null) {
+      return Center(
+        child: Text(
+          AppLocalizations.of(context)!.error,
+          style: const TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: 16,
+            color: Color(0xFFEF4444),
           ),
-          itemCount: reviews.length,
-          itemBuilder: (context, index) {
-            final review = reviews[index];
-            return GestureDetector(
-              onTap: () => _openReviewDetail(review),
-              onLongPress: () => _showReviewOptions(review),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppTheme.backgroundSecondary,
-                  image: review.imageUrls.isNotEmpty
-                    ? DecorationImage(
-                        image: NetworkImage(review.imageUrls.first),
-                        fit: BoxFit.cover,
-                      )
-                    : null,
-                ),
-                child: Stack(
-                  children: [
-                    // 이미지가 없을 때 플레이스홀더
-                    if (review.imageUrls.isEmpty)
-                      Center(
+        ),
+      );
+    }
+
+    if (reviews == null || reviews.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Color(0xFFF3F4F6),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.photo_library_outlined,
+                size: 48,
+                color: AppColors.pointColor,
+              ),
+            ),
+            SizedBox(height: 20),
+            Text(
+              AppLocalizations.of(context)!.noReviewsYet,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              AppLocalizations.of(context)!.joinMeetupAndWriteReview,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 15,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GridView.builder(
+      key: const PageStorageKey('mypage_reviews_grid'),
+      padding: const EdgeInsets.all(4),
+      scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
+        childAspectRatio: 1,
+      ),
+      itemCount: reviews.length,
+      itemBuilder: (context, index) {
+        final review = reviews[index];
+        return GestureDetector(
+          onTap: () => _openReviewDetail(review),
+          onLongPress: () => _showReviewOptions(review),
+          child: Container(
+            color: AppTheme.backgroundSecondary,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (review.imageUrls.isNotEmpty)
+                  _buildCachedImage(
+                    review.imageUrls.first,
+                    fit: BoxFit.cover,
+                    placeholder: ColoredBox(
+                      color: AppTheme.backgroundSecondary,
+                    ),
+                    errorWidget: ColoredBox(
+                      color: AppTheme.backgroundSecondary,
+                      child: Center(
                         child: Icon(
                           Icons.image_not_supported_rounded,
                           color: Colors.grey[400],
                           size: 32,
                         ),
                       ),
-                    
-                    // 숨김 표시 오버레이
-                    if (review.hidden)
-                      Container(
-                        color: Colors.black54,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.visibility_off_rounded,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              SizedBox(height: 4),
-                              Text(
-                                AppLocalizations.of(context)!.hideReview,
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    
-                    // 다중 이미지 표시
-                    if (review.imageUrls.length > 1)
-                      Positioned(
-                        top: 4,
-                        right: 4,
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.collections_rounded,
+                    ),
+                  ),
+                // 이미지가 없을 때 플레이스홀더
+                if (review.imageUrls.isEmpty)
+                  Center(
+                    child: Icon(
+                      Icons.image_not_supported_rounded,
+                      color: Colors.grey[400],
+                      size: 32,
+                    ),
+                  ),
+
+                // 숨김 표시 오버레이
+                if (review.hidden)
+                  Container(
+                    color: Colors.black54,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.visibility_off_rounded,
                             color: Colors.white,
-                            size: 16,
+                            size: 24,
                           ),
-                        ),
-                      ),
-                    
-                    // 좋아요 수 표시
-                    if (review.likedBy.isNotEmpty && !review.hidden)
-                      Positioned(
-                        bottom: 4,
-                        right: 4,
-                        child: Container(
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(8),
+                          SizedBox(height: 4),
+                          Text(
+                            AppLocalizations.of(context)!.hideReview,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.favorite_rounded,
-                                color: AppTheme.accentRed,
-                                size: 12,
-                              ),
-                              SizedBox(width: 2),
-                              Text(
-                                '${review.likedBy.length}',
-                                style: AppTheme.labelSmall.copyWith(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    
-                    // 메뉴 버튼
-                    Positioned(
-                      top: 4,
-                      left: 4,
-                      child: GestureDetector(
-                        onTap: () => _showReviewOptions(review),
-                        child: Container(
-                          padding: EdgeInsets.all(4),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            Icons.more_vert,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
+
+                // 다중 이미지 표시
+                if (review.imageUrls.length > 1)
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.collections_rounded,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+
+                // 좋아요 수 표시
+                if (review.likedBy.isNotEmpty && !review.hidden)
+                  Positioned(
+                    bottom: 4,
+                    right: 4,
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.favorite_rounded,
+                            color: BrandColors.textSecondary,
+                            size: 12,
+                          ),
+                          SizedBox(width: 2),
+                          Text(
+                            '${review.likedBy.length}',
+                            style: AppTheme.labelSmall.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                // 메뉴 버튼
+                Positioned(
+                  top: 4,
+                  left: 4,
+                  child: GestureDetector(
+                    onTap: () => _showReviewOptions(review),
+                    child: Container(
+                      padding: EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.more_vert,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         );
       },
     );
@@ -586,7 +798,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         pageBuilder: (context, animation, secondaryAnimation) {
           return ProfileImageViewer(
             imageUrl: imageUrl,
-            heroTag: 'profile_image_${Provider.of<AuthProvider>(context, listen: false).user?.uid ?? 'me'}',
+            heroTag:
+                'profile_image_${Provider.of<AuthProvider>(context, listen: false).user?.uid ?? 'me'}',
           );
         },
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -602,7 +815,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     // 실제 로그인된 사용자 ID 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUserId = authProvider.user?.uid;
-    
+
     // 로그인되지 않은 경우 로그인 유도 메시지 표시
     if (currentUserId == null || currentUserId.isEmpty) {
       final isKo = Localizations.localeOf(context).languageCode == 'ko';
@@ -627,9 +840,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
             ),
             SizedBox(height: 8),
             Text(
-              isKo
-                  ? '포스트를 보려면 로그인해주세요'
-                  : 'Please login to view posts',
+              isKo ? '포스트를 보려면 로그인해주세요' : 'Please login to view posts',
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: 14,
@@ -640,246 +851,481 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
         ),
       );
     }
-    
-    return StreamBuilder<List<Post>>(
-      stream: _userStatsService.getUserPosts(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Center(
-            child: CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+
+    final posts = _userPosts;
+    if (_isLoadingUserPosts && posts == null) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+        ),
+      );
+    }
+
+    if (_userPostsError != null && posts == null) {
+      return Center(child: Text(AppLocalizations.of(context)!.error));
+    }
+
+    if (posts == null || posts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF3F4F6),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.article_outlined,
+                size: 48,
+                color: AppColors.pointColor,
+              ),
             ),
-          );
-        }
-        
-        if (snapshot.hasError) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.error_outline_rounded,
-                  size: 64,
-                  color: Color(0xFFEF4444),
-                ),
-                SizedBox(height: 16),
-                Text(
-                  AppLocalizations.of(context)!.error,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFFEF4444),
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  '${snapshot.error}',
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 14,
-                    color: Color(0xFF6B7280),
-                  ),
-                ),
-              ],
+            const SizedBox(height: 20),
+            Text(
+              AppLocalizations.of(context)!.noWrittenPosts,
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF111827),
+              ),
             ),
-          );
-        }
-        
-        final posts = snapshot.data ?? [];
-        
-        if (posts.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFF3F4F6),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.article_outlined,
-                    size: 48,
-                    color: AppColors.pointColor,
-                  ),
-                ),
-                SizedBox(height: 20),
-                Text(
-                  AppLocalizations.of(context)!.noWrittenPosts,
-                  style: TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-              ],
+          ],
+        ),
+      );
+    }
+
+    return _buildPostCollection(
+      posts,
+      showControls: true,
+      storageKey: 'mypage_user_posts',
+    );
+  }
+
+  Widget _buildSavedPosts() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final currentUserId = authProvider.user?.uid;
+    final l10n = AppLocalizations.of(context)!;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return Center(child: Text(l10n.loginRequired));
+    }
+
+    final posts = _savedPosts;
+    if (_isLoadingSavedPosts && posts == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_savedPostsError != null && posts == null) {
+      return Center(child: Text(l10n.error));
+    }
+
+    if (posts == null || posts.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.bookmark_border_rounded,
+              size: 48,
+              color: Color(0xFF9CA3AF),
             ),
-          );
-        }
-        
-        return ListView.builder(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemCount: posts.length,
-          itemBuilder: (context, index) {
-            final post = posts[index];
-            return Container(
-              margin: EdgeInsets.only(bottom: 4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
+            const SizedBox(height: 12),
+            Text(
+              isKo ? '저장한 글이 없습니다' : 'No saved posts yet',
+              style: const TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF111827),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return _buildPostCollection(
+      posts,
+      showControls: false,
+      storageKey: 'mypage_saved_posts',
+    );
+  }
+
+  Widget _buildPostCollection(
+    List<Post> posts, {
+    required bool showControls,
+    required String storageKey,
+  }) {
+    return ColoredBox(
+      color: Colors.white,
+      child: Column(
+        children: [
+          if (showControls) _buildPostCollectionControls(),
+          Expanded(
+            child: _showPostsAsGrid
+                ? _buildBorderlessPostGrid(posts, storageKey: storageKey)
+                : _buildBorderlessPostList(posts, storageKey: storageKey),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostCollectionControls() {
+    final l10n = AppLocalizations.of(context)!;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 8, 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  Semantics(
+                    selected: true,
+                    button: true,
+                    child: Material(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Text(
+                          l10n.all,
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF4B5563),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  TextButton(
+                    onPressed: _navigateToUserMeetups,
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B7280),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 6,
+                      ),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      l10n.myMeetups,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {
-                    _openPostDetail(post.id);
-                  },
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // 썸네일 또는 아이콘
-                        Container(
-                          width: 64,
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: post.imageUrls.isNotEmpty 
-                                ? Colors.transparent 
-                                : Color(0xFFF3F4F6),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: post.imageUrls.isNotEmpty
-                              ? ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Image.network(
-                                    post.imageUrls.first,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        color: Color(0xFFF3F4F6),
-                                        child: Icon(
-                                          Icons.image_not_supported_outlined,
-                                          color: Color(0xFF9CA3AF),
-                                          size: 24,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                )
-                              : Icon(
-                                  Icons.article_outlined,
-                                  color: Color(0xFF6366F1),
-                                  size: 28,
-                                ),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('mypage_posts_grid_toggle'),
+            tooltip: 'Grid',
+            onPressed: () => setState(() => _showPostsAsGrid = true),
+            iconSize: 20,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: Icon(
+              Icons.grid_view_rounded,
+              color: _showPostsAsGrid
+                  ? const Color(0xFF2563EB)
+                  : const Color(0xFF9CA3AF),
+            ),
+          ),
+          IconButton(
+            key: const ValueKey('mypage_posts_list_toggle'),
+            tooltip: 'List',
+            onPressed: () => setState(() => _showPostsAsGrid = false),
+            iconSize: 20,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            icon: Icon(
+              Icons.format_list_bulleted_rounded,
+              color: !_showPostsAsGrid
+                  ? const Color(0xFF2563EB)
+                  : const Color(0xFF9CA3AF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBorderlessPostList(
+    List<Post> posts, {
+    required String storageKey,
+  }) {
+    return ListView.separated(
+      key: PageStorageKey('$storageKey.list'),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
+      itemCount: posts.length,
+      separatorBuilder: (_, __) => const Divider(
+        height: 1,
+        thickness: 1,
+        color: Color(0xFFF1F3F5),
+      ),
+      itemBuilder: (context, index) => _buildBorderlessPostRow(posts[index]),
+    );
+  }
+
+  Widget _buildBorderlessPostRow(Post post) {
+    final l10n = AppLocalizations.of(context)!;
+    final metadata = post.content.trim().isEmpty
+        ? post.postCategory.label(l10n)
+        : post.content.trim();
+
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () => _openPostDetail(post.id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          child: Row(
+            children: [
+              _buildPostThumbnail(post, size: 92),
+              const SizedBox(width: 16),
+              Expanded(
+                child: SizedBox(
+                  height: 92,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF111827),
+                          height: 1.25,
                         ),
-                        SizedBox(width: 12),
-                        // 텍스트 정보
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                post.title,
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111827),
-                                  height: 1.25,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        DateFormat('yyyy.MM.dd').format(post.createdAt),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF9CA3AF),
+                        ),
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.notes_rounded,
+                            size: 17,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(
+                              metadata,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF6B7280),
                               ),
-                              SizedBox(height: 4),
-                              Text(
-                                post.content,
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF111827),
-                                  height: 1.35,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              SizedBox(height: 8),
-                              Row(
-                                children: [
-                              Text(
-                                    post.getFormattedTime(context),
-                                    style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 12,
-                                  color: Color(0xFF9CA3AF),
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  if (post.likes > 0) ...[
-                                    const Icon(
-                                      Icons.favorite,
-                                      size: 16,
-                                      color: Color(0xFFEF4444),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${post.likes}',
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        color: Color(0xFF6B7280),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ],
-                                  if (post.commentCount > 0) ...[
-                                    const Icon(
-                                      Icons.chat_bubble_outline,
-                                      size: 16,
-                                      color: AppColors.pointColor,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '${post.commentCount}',
-                                      style: const TextStyle(
-                                        fontFamily: 'Pretendard',
-                                        color: Color(0xFF6B7280),
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                height: 92,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    PopupMenuButton<String>(
+                      tooltip: 'More',
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(
+                        Icons.more_horiz_rounded,
+                        color: Color(0xFF9CA3AF),
+                      ),
+                      onSelected: (_) => _openPostDetail(post.id),
+                      itemBuilder: (_) => [
+                        PopupMenuItem(
+                          value: 'open',
+                          child: Text(
+                            Localizations.localeOf(context).languageCode == 'ko'
+                                ? '게시물 보기'
+                                : 'View post',
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    const Spacer(),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.favorite_rounded,
+                          size: 19,
+                          color: BrandColors.textSecondary,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '${post.likes}',
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-            );
-          },
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBorderlessPostGrid(
+    List<Post> posts, {
+    required String storageKey,
+  }) {
+    return GridView.builder(
+      key: PageStorageKey('$storageKey.grid'),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 6,
+        mainAxisSpacing: 6,
+      ),
+      itemCount: posts.length,
+      itemBuilder: (context, index) {
+        final post = posts[index];
+        return Semantics(
+          button: true,
+          label: post.title,
+          child: InkWell(
+            onTap: () => _openPostDetail(post.id),
+            child: _buildPostThumbnail(post),
+          ),
         );
       },
     );
+  }
+
+  Widget _buildPostThumbnail(Post post, {double? size}) {
+    final image = post.imageUrls.isNotEmpty ? post.imageUrls.first : null;
+    return SizedBox(
+      width: size,
+      height: size,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: image == null
+            ? const ColoredBox(
+                color: Color(0xFFF3F4F6),
+                child: Icon(
+                  Icons.article_outlined,
+                  color: Color(0xFF9CA3AF),
+                  size: 28,
+                ),
+              )
+            : _buildCachedImage(
+                image,
+                fit: BoxFit.cover,
+                placeholder: const ColoredBox(
+                  color: Color(0xFFF3F4F6),
+                ),
+                errorWidget: const ColoredBox(
+                  color: Color(0xFFF3F4F6),
+                  child: Icon(
+                    Icons.image_not_supported_outlined,
+                    color: Color(0xFF9CA3AF),
+                    size: 26,
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _buildCachedImage(
+    String imageUrl, {
+    required BoxFit fit,
+    Widget? placeholder,
+    Widget? errorWidget,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final pixelRatio = MediaQuery.devicePixelRatioOf(context);
+        final targetWidth = _cacheDimension(
+          constraints.maxWidth,
+          pixelRatio,
+        );
+        final targetHeight = _cacheDimension(
+          constraints.maxHeight,
+          pixelRatio,
+        );
+
+        return CachedNetworkImage(
+          imageUrl: imageUrl,
+          cacheManager: AppImageCacheManager.instance,
+          fit: fit,
+          width: double.infinity,
+          height: double.infinity,
+          memCacheWidth: targetWidth,
+          memCacheHeight: targetHeight,
+          fadeInDuration: Duration.zero,
+          fadeOutDuration: Duration.zero,
+          useOldImageOnUrlChange: true,
+          placeholder: (_, __) =>
+              placeholder ??
+              const ColoredBox(
+                color: Color(0xFFF3F4F6),
+              ),
+          errorWidget: (_, __, ___) =>
+              errorWidget ??
+              const ColoredBox(
+                color: Color(0xFFF3F4F6),
+                child: Icon(
+                  Icons.image_not_supported_outlined,
+                  color: Color(0xFF9CA3AF),
+                ),
+              ),
+        );
+      },
+    );
+  }
+
+  int? _cacheDimension(double logicalSize, double pixelRatio) {
+    if (!logicalSize.isFinite || logicalSize <= 0) return null;
+    return (logicalSize * pixelRatio).ceil().clamp(64, 1024).toInt();
   }
 
   Future<void> _openPostDetail(String postId) async {
@@ -889,7 +1335,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
       if (fetched == null) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
+          SnackBar(
+              content: Text(AppLocalizations.of(context)!.postNotFound ?? "")),
         );
         return;
       }
@@ -907,24 +1354,24 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       );
     }
   }
-  
+
   String _getTimeAgo(DateTime dateTime) {
     final now = DateTime.now();
     final difference = now.difference(dateTime);
     final l10n = AppLocalizations.of(context);
-    
+
     if (difference.inDays > 0) {
-      return difference.inDays == 1 
-        ? '1${l10n!.dayAgo}'
-        : l10n!.daysAgoCount(difference.inDays);
+      return difference.inDays == 1
+          ? '1${l10n!.dayAgo}'
+          : l10n!.daysAgoCount(difference.inDays);
     } else if (difference.inHours > 0) {
       return difference.inHours == 1
-        ? '1${l10n!.hourAgo}'
-        : l10n!.hoursAgoCount(difference.inHours);
+          ? '1${l10n!.hourAgo}'
+          : l10n!.hoursAgoCount(difference.inHours);
     } else if (difference.inMinutes > 0) {
       return difference.inMinutes == 1
-        ? '1${l10n!.minuteAgo}'
-        : l10n!.minutesAgoCount(difference.inMinutes);
+          ? '1${l10n!.minuteAgo}'
+          : l10n!.minutesAgoCount(difference.inMinutes);
     } else {
       return l10n?.justNowTime ?? "";
     }
@@ -939,12 +1386,42 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     required Color color,
     bool showIcon = true,
     Stream<int>? countStream,
+    bool usesCachedCount = false,
+    int? countValue,
     int badgeCount = 0,
     VoidCallback? onTap,
   }) {
     // 라벨/타입 기반으로 캐시 키 생성 (언어 변경에도 안정적으로 유지되도록 플래그 조합 사용)
     final cacheKey =
         'stat_${isFriends ? 'friends' : isJoined ? 'joined' : isPosts ? 'posts' : 'other'}_${showIcon ? 'icon' : 'noicon'}_${icon.codePoint}';
+    if (usesCachedCount && countValue != null) {
+      _statCountCache[cacheKey] = countValue;
+    }
+
+    final countDisplay = usesCachedCount
+        ? _buildAnimatedStatCount(
+            cacheKey,
+            countValue ?? _statCountCache[cacheKey],
+          )
+        : StreamBuilder<int>(
+            stream: countStream ??
+                (isFriends
+                    ? _relationshipService.getFriendCount()
+                    : isJoined
+                        ? _userStatsService.getJoinedMeetupCount()
+                        : isPosts
+                            ? _userStatsService.getUserPostCount()
+                            : _userStatsService.getHostedMeetupCount()),
+            initialData: _statCountCache[cacheKey],
+            builder: (context, snapshot) {
+              final live = snapshot.data;
+              if (live != null) _statCountCache[cacheKey] = live;
+              return _buildAnimatedStatCount(
+                cacheKey,
+                live ?? _statCountCache[cacheKey],
+              );
+            },
+          );
 
     return Expanded(
       child: InkWell(
@@ -959,62 +1436,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 Icon(icon, size: 24, color: color),
                 const SizedBox(height: 8),
               ],
-              StreamBuilder<int>(
-                stream: countStream ??
-                    (isFriends
-                        ? _relationshipService.getFriendCount()
-                        : isJoined
-                            ? _userStatsService.getJoinedMeetupCount()
-                            : isPosts
-                                ? _userStatsService.getUserPostCount()
-                                : _userStatsService.getHostedMeetupCount()),
-                initialData: _statCountCache[cacheKey],
-                builder: (context, snapshot) {
-                  // 데이터 도착 전에는 0을 보여주지 말고(어색함), 캐시/플레이스홀더를 사용
-                  final int? live = snapshot.data;
-                  if (live != null) {
-                    _statCountCache[cacheKey] = live;
-                  }
-
-                  final int? value = live ?? _statCountCache[cacheKey];
-                  final Widget countWidget = value != null
-                      ? Text(
-                          '$value',
-                          key: ValueKey<String>('count_$cacheKey:$value'),
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF111827),
-                          ),
-                        )
-                      : Text(
-                          '—',
-                          key: ValueKey<String>('count_$cacheKey:loading'),
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF9CA3AF),
-                          ),
-                        );
-
-                  // 친구요청 배지(빨간 숫자)는 마이페이지 통계 영역에서 더 이상 표시하지 않음
-                  return AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 220),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, animation) {
-                      final fade = FadeTransition(opacity: animation, child: child);
-                      return ScaleTransition(
-                        scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
-                        child: fade,
-                      );
-                    },
-                    child: countWidget,
-                  );
-                },
-              ),
+              countDisplay,
               const SizedBox(height: 4),
               Text(
                 label,
@@ -1030,6 +1452,44 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildAnimatedStatCount(String cacheKey, int? value) {
+    final countWidget = value != null
+        ? Text(
+            '$value',
+            key: ValueKey<String>('count_$cacheKey:$value'),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF111827),
+            ),
+          )
+        : Text(
+            '—',
+            key: ValueKey<String>('count_$cacheKey:loading'),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF9CA3AF),
+            ),
+          );
+
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      transitionBuilder: (child, animation) {
+        final fade = FadeTransition(opacity: animation, child: child);
+        return ScaleTransition(
+          scale: Tween<double>(begin: 0.98, end: 1.0).animate(animation),
+          child: fade,
+        );
+      },
+      child: countWidget,
     );
   }
 
@@ -1066,21 +1526,22 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                   ),
                 ),
                 SizedBox(height: DesignTokens.s16),
-                
+
                 // 숨김/표시 옵션만 제공 (삭제는 불가)
                 _buildMenuItem(
                   context,
-                  review.hidden 
-                    ? (AppLocalizations.of(context)!.unhideReview ?? "") : AppLocalizations.of(context)!.hideReview,
-                  review.hidden 
-                    ? Icons.visibility_rounded
-                    : Icons.visibility_off_rounded,
+                  review.hidden
+                      ? (AppLocalizations.of(context)!.unhideReview ?? "")
+                      : AppLocalizations.of(context)!.hideReview,
+                  review.hidden
+                      ? Icons.visibility_rounded
+                      : Icons.visibility_off_rounded,
                   () async {
                     Navigator.pop(context);
                     await _toggleReviewHidden(review);
                   },
                 ),
-                
+
                 SizedBox(height: DesignTokens.s12),
               ],
             ),
@@ -1092,7 +1553,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   Future<void> _toggleReviewHidden(ReviewPost review) async {
     final l10n = AppLocalizations.of(context);
-    
+
     // 확인 다이얼로그
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1101,9 +1562,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
           review.hidden ? l10n?.unhideReview ?? "" : l10n?.hideReview ?? "",
         ),
         content: Text(
-          review.hidden 
-            ? l10n?.unhideReviewConfirm ?? ""
-            : l10n?.hideReviewConfirm ?? "",
+          review.hidden
+              ? l10n?.unhideReviewConfirm ?? ""
+              : l10n?.hideReviewConfirm ?? "",
         ),
         actions: [
           TextButton(
@@ -1128,10 +1589,24 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     if (!mounted) return;
 
     if (success) {
+      final updatedReview = review.copyWith(hidden: !review.hidden);
+      setState(() {
+        _userReviews = _userReviews
+            ?.map((item) => item.id == review.id ? updatedReview : item)
+            .toList(growable: false);
+      });
+      final userId = _myPageCacheUserId;
+      final reviews = _userReviews;
+      if (userId != null && reviews != null) {
+        await _myPageCacheService.saveReviews(userId, reviews);
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            review.hidden ? l10n?.reviewUnhidden ?? "" : l10n?.reviewHidden ?? "",
+            review.hidden
+                ? l10n?.reviewUnhidden ?? ""
+                : l10n?.reviewHidden ?? "",
           ),
           backgroundColor: Colors.green,
         ),
@@ -1140,7 +1615,9 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            review.hidden ? l10n?.reviewUnhideFailed ?? "" : l10n?.reviewHideFailed ?? "",
+            review.hidden
+                ? l10n?.reviewUnhideFailed ?? ""
+                : l10n?.reviewHideFailed ?? "",
           ),
           backgroundColor: Colors.red,
         ),
@@ -1203,7 +1680,7 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
 
   void _showSettingsBottomSheet(BuildContext context) {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    
+
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.white,
@@ -1278,30 +1755,37 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
                 // );
                 // }),
                 // 내 게시글 메뉴 숨김 처리 (기존 UserPostsScreen 페이지 제거됨)
-                _buildMenuItem(context, AppLocalizations.of(context)!.notificationSettings, Icons.notifications_rounded, () {
+                _buildMenuItem(
+                    context,
+                    AppLocalizations.of(context)!.notificationSettings,
+                    Icons.notifications_rounded, () {
                   Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const NotificationSettingsScreen(),
-                  ),
-                );
-              }),
-                _buildMenuItem(context, AppLocalizations.of(context)!.accountSettings, Icons.settings_rounded, () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const NotificationSettingsScreen(),
+                    ),
+                  );
+                }),
+                _buildMenuItem(
+                    context,
+                    AppLocalizations.of(context)!.accountSettings,
+                    Icons.settings_rounded, () {
                   Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const AccountSettingsScreen(),
-                  ),
-                );
-              }),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AccountSettingsScreen(),
+                    ),
+                  );
+                }),
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   height: 1,
                   color: const Color(0xFFE5E7EB),
                 ),
-                _buildMenuItem(context, AppLocalizations.of(context)!.logout, Icons.logout_rounded, () async {
+                _buildMenuItem(context, AppLocalizations.of(context)!.logout,
+                    Icons.logout_rounded, () async {
                   // 햅틱 피드백 - 중요한 액션임을 알림
                   HapticFeedback.lightImpact();
                   Navigator.pop(context);
@@ -1365,13 +1849,34 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
       context,
       MaterialPageRoute(
         builder: (context) => Scaffold(
-          backgroundColor: const Color(0xFFEBEBEB),
+          backgroundColor: Colors.white,
           appBar: AppBar(
-            title: Text(AppLocalizations.of(context)!.friends),
+            toolbarHeight: MediaQuery.sizeOf(context).width < 360 ? 52 : 56,
+            leadingWidth: MediaQuery.sizeOf(context).width < 360 ? 48 : 52,
+            leading: IconButton(
+              onPressed: () => Navigator.maybePop(context),
+              icon: const Icon(Icons.arrow_back_rounded),
+              iconSize: 22,
+              tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+            ),
+            title: MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.2,
+              child: Text(
+                AppLocalizations.of(context)!.friends,
+                style: TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: context.rf(18).clamp(17, 19).toDouble(),
+                  fontWeight: FontWeight.w700,
+                  color: const Color(0xFF111827),
+                ),
+              ),
+            ),
+            centerTitle: true,
             backgroundColor: Colors.white,
             surfaceTintColor: Colors.white,
             foregroundColor: const Color(0xFF111827),
             elevation: 0,
+            scrolledUnderElevation: 0,
           ),
           body: const SafeArea(
             top: false,
@@ -1391,8 +1896,8 @@ class _MyPageScreenState extends State<MyPageScreen> with SingleTickerProviderSt
     );
   }
 
-
-  void _showLogoutConfirmDialog(BuildContext context, AuthProvider authProvider) {
+  void _showLogoutConfirmDialog(
+      BuildContext context, AuthProvider authProvider) {
     showLogoutConfirmDialog(context, authProvider: authProvider);
   }
 }
@@ -1458,7 +1963,8 @@ class MyPageSettingsSheet {
                     Navigator.pop(sheetContext);
                     Navigator.push(
                       rootContext,
-                      MaterialPageRoute(builder: (_) => const SavedPostsScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const SavedPostsScreen()),
                     );
                   },
                 ),
@@ -1484,7 +1990,8 @@ class MyPageSettingsSheet {
                     Navigator.pop(sheetContext);
                     Navigator.push(
                       rootContext,
-                      MaterialPageRoute(builder: (_) => const AccountSettingsScreen()),
+                      MaterialPageRoute(
+                          builder: (_) => const AccountSettingsScreen()),
                     );
                   },
                 ),
@@ -1562,6 +2069,28 @@ class MyPageSettingsSheet {
   }
 }
 
+/// TabBarView 바깥으로 잠시 이동해도 탭의 렌더 트리와 스크롤 상태를 유지한다.
+class _KeepAliveTab extends StatefulWidget {
+  const _KeepAliveTab({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_KeepAliveTab> createState() => _KeepAliveTabState();
+}
+
+class _KeepAliveTabState extends State<_KeepAliveTab>
+    with AutomaticKeepAliveClientMixin<_KeepAliveTab> {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
+  }
+}
+
 // SliverPersistentHeader를 위한 Delegate 클래스
 class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
   _SliverAppBarDelegate(this._tabBar);
@@ -1570,24 +2099,26 @@ class _SliverAppBarDelegate extends SliverPersistentHeaderDelegate {
 
   @override
   double get minExtent => _tabBar.preferredSize.height;
-  
+
   @override
   double get maxExtent => _tabBar.preferredSize.height;
 
   @override
   Widget build(
-    BuildContext context, 
-    double shrinkOffset, 
+    BuildContext context,
+    double shrinkOffset,
     bool overlapsContent,
   ) {
     return Container(
-      color: AppTheme.backgroundSecondary,
+      color: Colors.white,
       child: _tabBar,
     );
   }
 
   @override
   bool shouldRebuild(_SliverAppBarDelegate oldDelegate) {
-    return false;
+    // 탭 높이, 문구(언어), 컨트롤러가 바뀌면 고정 헤더의 child와
+    // min/max extent를 함께 갱신해야 SliverGeometry 불일치가 발생하지 않는다.
+    return true;
   }
 }

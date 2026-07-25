@@ -28,6 +28,9 @@ class PostActionGroup extends StatelessWidget {
   final bool isSaving;
   final String? saveLabel;
   final VoidCallback? onSaveTap;
+  final bool compact;
+  final bool hideEmptyMetrics;
+  final bool trailingActionsAtEnd;
 
   const PostActionGroup({
     super.key,
@@ -50,6 +53,9 @@ class PostActionGroup extends StatelessWidget {
     this.isSaving = false,
     this.saveLabel,
     this.onSaveTap,
+    this.compact = false,
+    this.hideEmptyMetrics = false,
+    this.trailingActionsAtEnd = false,
   });
 
   String _labelWithCount(String label, int count) {
@@ -59,12 +65,21 @@ class PostActionGroup extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const actionColor = BrandColors.iconDefault;
+    final responsiveIconSize = context
+        .iconToken(compact ? 20 : 21)
+        .clamp(compact ? 18.5 : 20, compact ? 20.5 : 22)
+        .toDouble();
+    final responsiveCountSize = context
+        .fontToken(compact ? 13 : 14)
+        .clamp(compact ? 12 : 13, compact ? 13.5 : 15)
+        .toDouble();
+    final responsiveMinExtent = context
+        .spacingToken(compact ? 40 : 44)
+        .clamp(compact ? 38 : 42, compact ? 42 : 46)
+        .toDouble();
 
-    return Wrap(
-      spacing: DesignTokens.s8,
-      runSpacing: DesignTokens.s4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
+    final metricActions = <Widget>[
+      if (!hideEmptyMetrics || likes > 0)
         Semantics(
           button: true,
           selected: isLiked,
@@ -79,11 +94,16 @@ class PostActionGroup extends StatelessWidget {
               icon: isLiked
                   ? Icons.favorite_rounded
                   : Icons.favorite_border_rounded,
-              iconColor: isLiked ? BrandColors.error : actionColor,
+              iconColor: isLiked ? BrandColors.textSecondary : actionColor,
+              iconSize: responsiveIconSize,
               count: likes,
+              compact: compact,
+              countFontSize: responsiveCountSize,
+              minExtent: responsiveMinExtent,
             ),
           ),
         ),
+      if (!hideEmptyMetrics || comments > 0)
         Semantics(
           button: onCommentTap != null,
           label: _labelWithCount(commentLabel, comments),
@@ -94,59 +114,104 @@ class PostActionGroup extends StatelessWidget {
             child: _PostActionItem(
               icon: Icons.chat_bubble_outline_rounded,
               iconColor: actionColor,
+              iconSize: responsiveIconSize,
               count: comments,
+              compact: compact,
+              countFontSize: responsiveCountSize,
+              minExtent: responsiveMinExtent,
             ),
           ),
         ),
+      if (!hideEmptyMetrics || views > 0)
         Semantics(
           label: '$viewsLabel $views',
           excludeSemantics: true,
           child: _PostActionItem(
             icon: Icons.visibility_outlined,
             iconColor: actionColor,
+            iconSize: responsiveIconSize,
             count: views,
+            compact: compact,
+            countFontSize: responsiveCountSize,
+            minExtent: responsiveMinExtent,
           ),
         ),
-        if (showDirectMessage)
-          Semantics(
-            button: true,
-            label: directMessageLabel,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onDirectMessageTap,
-              child: _PostActionItem(
-                iconWidget: Transform.rotate(
-                  angle: -math.pi / 4,
-                  child: const Icon(
-                    Icons.send_rounded,
-                    size: 21,
-                    color: actionColor,
-                  ),
+    ];
+
+    final trailingActions = <Widget>[
+      if (showDirectMessage)
+        Semantics(
+          button: true,
+          label: directMessageLabel,
+          excludeSemantics: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onDirectMessageTap,
+            child: _PostActionItem(
+              iconWidget: Transform.rotate(
+                angle: -math.pi / 4,
+                child: Icon(
+                  Icons.send_rounded,
+                  size: responsiveIconSize,
+                  color: actionColor,
                 ),
               ),
+              compact: compact,
+              countFontSize: responsiveCountSize,
+              minExtent: responsiveMinExtent,
             ),
           ),
-        if (showSave)
-          Semantics(
-            button: true,
-            selected: isSaved,
-            label: saveLabel,
-            excludeSemantics: true,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: isSaving ? null : onSaveTap,
-              child: _PostActionItem(
-                icon: isSaved
-                    ? Icons.bookmark_rounded
-                    : Icons.bookmark_border_rounded,
-                iconColor: actionColor,
-                progress: isSaving,
-                iconSize: 24,
-              ),
+        ),
+      if (showSave)
+        Semantics(
+          button: true,
+          selected: isSaved,
+          label: saveLabel,
+          excludeSemantics: true,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: isSaving ? null : onSaveTap,
+            child: _PostActionItem(
+              icon: isSaved
+                  ? Icons.bookmark_rounded
+                  : Icons.bookmark_border_rounded,
+              iconColor: actionColor,
+              progress: isSaving,
+              iconSize: responsiveIconSize + 1,
+              compact: compact,
+              countFontSize: responsiveCountSize,
+              minExtent: responsiveMinExtent,
             ),
           ),
-      ],
+        ),
+    ];
+
+    if (trailingActionsAtEnd && trailingActions.isNotEmpty) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
+              runSpacing: DesignTokens.s4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: metricActions,
+            ),
+          ),
+          SizedBox(width: compact ? DesignTokens.s4 : DesignTokens.s8),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: trailingActions,
+          ),
+        ],
+      );
+    }
+
+    return Wrap(
+      spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
+      runSpacing: DesignTokens.s4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [...metricActions, ...trailingActions],
     );
   }
 }
@@ -158,6 +223,9 @@ class _PostActionItem extends StatelessWidget {
   final double iconSize;
   final int count;
   final bool progress;
+  final bool compact;
+  final double countFontSize;
+  final double minExtent;
 
   const _PostActionItem({
     this.icon,
@@ -166,17 +234,22 @@ class _PostActionItem extends StatelessWidget {
     this.iconSize = 21,
     this.count = 0,
     this.progress = false,
+    this.compact = false,
+    this.countFontSize = 14,
+    this.minExtent = 44,
   }) : assert(icon != null || iconWidget != null || progress);
 
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(
-        minWidth: 44,
-        minHeight: 44,
+      constraints: BoxConstraints(
+        minWidth: minExtent,
+        minHeight: minExtent,
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s4),
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? DesignTokens.s2 : DesignTokens.s4,
+        ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -193,16 +266,17 @@ class _PostActionItem extends StatelessWidget {
                     color: iconColor,
                   ),
             if (!progress && count > 0) ...[
-              const SizedBox(width: DesignTokens.s4),
+              SizedBox(width: compact ? 4 : DesignTokens.s4),
               Text(
                 '$count',
                 maxLines: 1,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 14,
+                  fontSize: countFontSize,
                   fontWeight: FontWeight.w600,
                   color: BrandColors.textSecondary,
-                  height: 1.2,
+                  height: 1.15,
+                  letterSpacing: -0.15,
                 ),
               ),
             ],

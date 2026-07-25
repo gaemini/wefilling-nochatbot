@@ -14,7 +14,6 @@ import '../l10n/app_localizations.dart';
 import 'dm_chat_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../utils/logger.dart';
-import '../constants/app_constants.dart';
 import '../ui/widgets/user_avatar.dart';
 
 // DM 목록 필터: 친구 / 익명
@@ -223,7 +222,10 @@ class _DMListScreenState extends State<DMListScreen> {
     if (_filter == DMFilter.friends) {
       return FloatingActionButton(
         onPressed: _showFriendSelectionSheet,
-        backgroundColor: AppColors.pointColor,
+        backgroundColor: const Color(0xFF344054),
+        foregroundColor: Colors.white,
+        elevation: 3,
+        highlightElevation: 4,
         child: const Icon(Icons.add, color: Colors.white),
       );
     }
@@ -377,11 +379,13 @@ class _DMListScreenState extends State<DMListScreen> {
               }
 
               return ListView.builder(
-                padding: EdgeInsets.zero,
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.paddingOf(context).bottom + 88,
+                ),
                 // ✅ 목록 아이템 높이는 항상 76으로 고정(카드 컨테이너)되어 있어
                 // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
                 // (최신 대화가 상단으로 재정렬되어도 스크롤/렌더가 더 안정적)
-                itemExtent: 76,
+                itemExtent: 72,
                 itemCount: filtered.length,
                 itemBuilder: (context, index) {
                   final conversation = filtered[index];
@@ -410,13 +414,13 @@ class _DMListScreenState extends State<DMListScreen> {
     // 상단 필터 배너 아래에 자연스럽게 보이도록 리스트 형태로 렌더링
     return ListView.builder(
       padding: EdgeInsets.zero,
-      itemExtent: 76,
+      itemExtent: 72,
       itemCount: 8,
       itemBuilder: (context, index) {
         final base = Colors.grey.shade200;
         final base2 = Colors.grey.shade100;
         return Container(
-          height: 76,
+          height: 72,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: const BoxDecoration(
             border: Border(
@@ -426,8 +430,8 @@ class _DMListScreenState extends State<DMListScreen> {
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: base,
                   shape: BoxShape.circle,
@@ -492,15 +496,16 @@ class _DMListScreenState extends State<DMListScreen> {
 
   /// 상단 필터 탭(친구 / 익명) - 밑줄 인디케이터 스타일
   Widget _buildFilterBanners() {
-    const activeColor = AppColors.pointColor;
-    const inactiveColor = Color(0xFF9CA3AF);
+    const activeColor = Color(0xFF111827);
+    const inactiveColor = Color(0xFF98A2B3);
 
     return Container(
       color: Colors.white,
       child: LayoutBuilder(
         builder: (context, constraints) {
+          final compact = constraints.maxWidth < 360;
           final tabWidth = constraints.maxWidth / 2;
-          final indicatorWidth = 42.0;
+          final indicatorWidth = compact ? 36.0 : 42.0;
           final leftForFriends = (tabWidth - indicatorWidth) / 2;
           final leftForAnonymous = tabWidth + (tabWidth - indicatorWidth) / 2;
 
@@ -524,13 +529,13 @@ class _DMListScreenState extends State<DMListScreen> {
                           setState(() => _filter = DMFilter.friends);
                       },
                       child: Container(
-                        height: 48,
+                        height: compact ? 44 : 48,
                         alignment: Alignment.center,
                         child: Text(
                           AppLocalizations.of(context)!.friends,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 16,
+                            fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.friends
                                 ? activeColor
@@ -547,13 +552,13 @@ class _DMListScreenState extends State<DMListScreen> {
                           setState(() => _filter = DMFilter.anonymous);
                       },
                       child: Container(
-                        height: 48,
+                        height: compact ? 44 : 48,
                         alignment: Alignment.center,
                         child: Text(
                           AppLocalizations.of(context)!.anonymous,
                           style: TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 16,
+                            fontSize: compact ? 14 : 15,
                             fontWeight: FontWeight.w600,
                             color: _filter == DMFilter.anonymous
                                 ? activeColor
@@ -578,7 +583,7 @@ class _DMListScreenState extends State<DMListScreen> {
                   width: indicatorWidth,
                   height: 2.5,
                   decoration: BoxDecoration(
-                    color: activeColor,
+                    color: const Color(0xFF344054),
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
@@ -770,8 +775,11 @@ class _DMListScreenState extends State<DMListScreen> {
       child: InkWell(
         onTap: () => _openConversation(conversation),
         child: Container(
-          height: 76,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          height: 72,
+          padding: EdgeInsets.symmetric(
+            horizontal: MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
+            vertical: 8,
+          ),
           decoration: const BoxDecoration(
             border: Border(
               bottom: BorderSide(
@@ -789,8 +797,8 @@ class _DMListScreenState extends State<DMListScreen> {
                   photoUrl: otherUserPhoto,
                   photoVersion: otherUserPhotoVersion,
                   isAnonymous: isAnonymous,
-                  size: 48,
-                  placeholderIconSize: 24,
+                  size: 44,
+                  placeholderIconSize: 22,
                 ),
                 const SizedBox(width: 12),
               ],
@@ -832,7 +840,7 @@ class _DMListScreenState extends State<DMListScreen> {
                       ],
                     ),
 
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
 
                     // 마지막 메시지 (캐시→서버 전환/최신 정보 로딩 중에는 스켈레톤으로 부드럽게)
                     AnimatedSwitcher(
@@ -861,7 +869,7 @@ class _DMListScreenState extends State<DMListScreen> {
                               ),
                               style: TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 14,
+                                fontSize: 13,
                                 color: const Color(0xFF6B7280),
                                 fontWeight: unreadCount > 0
                                     ? FontWeight.w600
@@ -911,7 +919,7 @@ class _DMListScreenState extends State<DMListScreen> {
                           ),
                   ),
 
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 3),
 
                   // 읽지 않은 메시지 배지 (하단)
                   if (unreadCount > 0)
@@ -921,7 +929,7 @@ class _DMListScreenState extends State<DMListScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
+                        color: const Color(0xFF344054),
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
@@ -956,10 +964,10 @@ class _DMListScreenState extends State<DMListScreen> {
         children: [
           Icon(
             icon,
-            size: 80,
+            size: 44,
             color: const Color(0xFFD1D5DB),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Text(
             title,
             style: const TextStyle(
@@ -992,7 +1000,7 @@ class _DMListScreenState extends State<DMListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const CircularProgressIndicator(color: AppColors.pointColor),
+          const CircularProgressIndicator(color: Color(0xFF344054)),
           const SizedBox(height: 16),
           Text(
             AppLocalizations.of(context)!.loadingMessages,
@@ -1053,8 +1061,9 @@ class _DMListScreenState extends State<DMListScreen> {
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     Logger.log('🔍 [FCM 진단 2단계] DM 채팅 화면 열기 시도');
     Logger.log('  - conversationId: ${conversation.id}');
-    Logger.log('  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
-    
+    Logger.log(
+        '  - otherUserId: ${conversation.getOtherUserId(_currentUser!.uid)}');
+
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -1135,7 +1144,8 @@ class _DMListScreenState extends State<DMListScreen> {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return const Center(
                         child: CircularProgressIndicator(
-                            color: AppColors.pointColor),
+                          color: Color(0xFF344054),
+                        ),
                       );
                     }
 

@@ -6,7 +6,9 @@ class MeetupFavoriteTemplate {
   final String title;
   final String description;
   final String location;
-  final String categoryKey; // study/meal/cafe/drink/culture
+  final String categoryKey; // study/meal/cafe/hangout/culture/etc
+  final String visibility; // public/friends/category
+  final List<String> visibleToCategoryIds;
   final bool isUndecidedTime;
   final String? time; // HH:mm (isUndecidedTime=false일 때)
   final int maxParticipants;
@@ -21,6 +23,8 @@ class MeetupFavoriteTemplate {
     required this.description,
     required this.location,
     required this.categoryKey,
+    this.visibility = 'public',
+    this.visibleToCategoryIds = const <String>[],
     required this.isUndecidedTime,
     required this.time,
     required this.maxParticipants,
@@ -36,6 +40,8 @@ class MeetupFavoriteTemplate {
     String? description,
     String? location,
     String? categoryKey,
+    String? visibility,
+    List<String>? visibleToCategoryIds,
     bool? isUndecidedTime,
     String? time,
     int? maxParticipants,
@@ -50,6 +56,8 @@ class MeetupFavoriteTemplate {
       description: description ?? this.description,
       location: location ?? this.location,
       categoryKey: categoryKey ?? this.categoryKey,
+      visibility: visibility ?? this.visibility,
+      visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
       isUndecidedTime: isUndecidedTime ?? this.isUndecidedTime,
       time: time ?? this.time,
       maxParticipants: maxParticipants ?? this.maxParticipants,
@@ -67,6 +75,8 @@ class MeetupFavoriteTemplate {
       'description': description,
       'location': location,
       'categoryKey': categoryKey,
+      'visibility': visibility,
+      'visibleToCategoryIds': visibleToCategoryIds,
       'isUndecidedTime': isUndecidedTime,
       'time': time,
       'maxParticipants': maxParticipants,
@@ -83,16 +93,26 @@ class MeetupFavoriteTemplate {
       title: (json['title'] ?? '') as String,
       description: (json['description'] ?? '') as String,
       location: (json['location'] ?? '') as String,
-      categoryKey: (json['categoryKey'] ?? '') as String,
+      categoryKey: switch (
+          ((json['categoryKey'] ?? '') as String).trim().toLowerCase()) {
+        'drink' || 'drinks' || '술' || '행아웃' => 'hangout',
+        final key => key,
+      },
+      visibility: (json['visibility'] ?? 'public') as String,
+      visibleToCategoryIds: json['visibleToCategoryIds'] is List
+          ? List<String>.from(json['visibleToCategoryIds'] as List)
+          : const <String>[],
       isUndecidedTime: (json['isUndecidedTime'] ?? true) as bool,
       time: json['time'] as String?,
       maxParticipants: (json['maxParticipants'] ?? 3) as int,
-      thumbnailImagePath: (json['thumbnailImagePath'] as String?)?.trim().isEmpty == true
-          ? null
-          : (json['thumbnailImagePath'] as String?),
-      thumbnailImageUrl: (json['thumbnailImageUrl'] as String?)?.trim().isEmpty == true
-          ? null
-          : (json['thumbnailImageUrl'] as String?),
+      thumbnailImagePath:
+          (json['thumbnailImagePath'] as String?)?.trim().isEmpty == true
+              ? null
+              : (json['thumbnailImagePath'] as String?),
+      thumbnailImageUrl:
+          (json['thumbnailImageUrl'] as String?)?.trim().isEmpty == true
+              ? null
+              : (json['thumbnailImageUrl'] as String?),
       updatedAt: DateTime.tryParse((json['updatedAt'] ?? '') as String) ??
           DateTime.now(),
     );
@@ -115,4 +135,3 @@ class MeetupFavoriteTemplate {
     return jsonEncode(list.map((e) => e.toJson()).toList());
   }
 }
-

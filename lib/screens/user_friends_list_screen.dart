@@ -10,6 +10,7 @@ import '../constants/app_constants.dart';
 import '../widgets/country_flag_circle.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 import 'friend_profile_screen.dart';
 import 'main_screen.dart';
 
@@ -60,7 +61,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
       }
 
       // 친구가 아니면 접근 불가
-      final status = await _relationshipService.getRelationshipStatus(widget.userId);
+      final status =
+          await _relationshipService.getRelationshipStatus(widget.userId);
       if (status != RelationshipStatus.friends) {
         _denyAccess();
         return;
@@ -112,9 +114,9 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
 
       // 친구의 친구 목록에서도 "나"가 보이도록 현재 사용자 필터링을 하지 않는다.
       // (기존: 내 uid를 제외해서 목록에서 사라짐)
-      final friends = (results[0] as List<UserProfile>).toList(growable: false);
+      final friends = results[0].toList(growable: false);
 
-      final myFriends = results[1] as List<UserProfile>;
+      final myFriends = results[1];
       final myFriendIds = myFriends.map((u) => u.uid).toSet();
       // 내 카드가 "이미 친구" 섹션에 자연스럽게 포함되도록(액션 버튼/탭 동작 일관)
       if (currentUserId != null) {
@@ -131,7 +133,8 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
             nonFriends.map(
               (u) async {
                 try {
-                  return await _relationshipService.getRelationshipStatus(u.uid);
+                  return await _relationshipService
+                      .getRelationshipStatus(u.uid);
                 } catch (_) {
                   return RelationshipStatus.none;
                 }
@@ -145,7 +148,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
           }
         }
       }
-      
+
       if (mounted) {
         setState(() {
           _friends = friends;
@@ -170,22 +173,32 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final width = MediaQuery.sizeOf(context).width;
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: Colors.white,
       appBar: AppBar(
+        toolbarHeight: width < 360 ? 52 : 56,
         backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          icon: const Icon(
+            Icons.arrow_back_rounded,
+            color: Color(0xFF111827),
+          ),
+          iconSize: 22,
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           '${widget.userName}${AppLocalizations.of(context)!.friendsOfUser}',
-          style: const TextStyle(
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
             fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
+            fontSize: context.rf(18).clamp(17, 19).toDouble(),
+            fontWeight: FontWeight.w700,
+            color: const Color(0xFF111827),
           ),
         ),
         centerTitle: true,
@@ -260,7 +273,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     if (_isLoading) {
       return const Center(
         child: CircularProgressIndicator(
-          color: AppColors.pointColor,
+          color: Color(0xFF667085),
         ),
       );
     }
@@ -270,30 +283,27 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: 64,
-              color: Colors.grey[400],
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 34,
+              color: Color(0xFF98A2B3),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               _errorMessage!,
-              style: TextStyle(
+              textAlign: TextAlign.center,
+              style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 16,
-                color: Colors.grey[600],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF667085),
               ),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
+            const SizedBox(height: 8),
+            TextButton(
               onPressed: _loadFriends,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.pointColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF344054),
               ),
               child: const Text(
                 '다시 시도',
@@ -314,26 +324,19 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.people_outline,
-                size: 48,
-                color: Colors.grey[400],
-              ),
+            const Icon(
+              Icons.people_outline_rounded,
+              size: 34,
+              color: Color(0xFF98A2B3),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Text(
               AppLocalizations.of(context)!.noFriendsYet,
-              style: TextStyle(
+              style: const TextStyle(
                 fontFamily: 'Pretendard',
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-                color: Colors.grey[600],
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF667085),
               ),
             ),
           ],
@@ -352,14 +355,14 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     final l10n = AppLocalizations.of(context)!;
 
     return RefreshIndicator(
-      color: AppColors.pointColor,
+      color: const Color(0xFF667085),
       onRefresh: _loadFriends,
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
         slivers: [
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          const SliverToBoxAdapter(child: SizedBox(height: 4)),
           if (friendsGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
               child: _SectionHeader(
@@ -376,7 +379,7 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
                 childCount: friendsGroup.length,
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
           ],
           if (nonFriendsGroup.isNotEmpty) ...[
             SliverToBoxAdapter(
@@ -411,165 +414,185 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
     final isRequesting = _requestingIds.contains(friend.uid);
     final isRequested = _requestedIds.contains(friend.uid);
 
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: (isFriend || isMe)
-            ? () {
-                if (isMe) {
-                  _openMyPage();
-                } else {
-                  _openProfile(friend);
-                }
-              }
-            : null,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Color(0xFFE5E7EB),
-                ),
-                child: friend.hasProfileImage
-                    ? ClipOval(
-                        child: Image.network(
-                          friend.photoURL!,
-                          width: 44,
-                          height: 44,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => const Icon(
-                            Icons.person_outline,
-                            size: 22,
-                            color: Color(0xFF6B7280),
+    final width = MediaQuery.sizeOf(context).width;
+    final isCompact = width < 360;
+    final horizontalPadding = isCompact ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    final avatarSize = isCompact ? 40.0 : 44.0;
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Material(
+              color: Colors.white,
+              child: InkWell(
+                onTap: (isFriend || isMe)
+                    ? () {
+                        if (isMe) {
+                          _openMyPage();
+                        } else {
+                          _openProfile(friend);
+                        }
+                      }
+                    : null,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    10,
+                    horizontalPadding - 4,
+                    10,
+                  ),
+                  child: MediaQuery.withClampedTextScaling(
+                    maxScaleFactor: 1.2,
+                    child: Row(
+                      children: [
+                        _friendAvatar(friend, avatarSize),
+                        SizedBox(width: isCompact ? 10 : 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _displayNameWithMeSuffix(
+                                  friend.displayNameOrNickname,
+                                  isMe,
+                                ),
+                                style: TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize:
+                                      context.rf(14).clamp(13, 15).toDouble(),
+                                  fontWeight: FontWeight.w700,
+                                  color: const Color(0xFF111827),
+                                  height: 1.2,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (friend.nationality != null &&
+                                  friend.nationality!.isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Row(
+                                  children: [
+                                    CountryFlagCircle(
+                                      nationality: friend.nationality!,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Expanded(
+                                      child: Text(
+                                        friend.nationality!,
+                                        style: const TextStyle(
+                                          fontFamily: 'Pretendard',
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF8B93A1),
+                                          height: 1.2,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ],
                           ),
                         ),
-                      )
-                    : const Icon(
-                        Icons.person_outline,
-                        size: 22,
-                        color: Color(0xFF6B7280),
-                      ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _displayNameWithMeSuffix(friend.displayNameOrNickname, isMe),
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (friend.nationality != null &&
-                        friend.nationality!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CountryFlagCircle(
-                            nationality: friend.nationality!,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 6),
-                          Flexible(
-                            child: Text(
-                              friend.nationality!,
-                              style: const TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w400,
-                                color: Color(0xFF6B7280),
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 4),
+                        if (isFriend || isMe)
+                          const SizedBox.square(
+                            dimension: 40,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: Color(0xFF98A2B3),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              if (isFriend || isMe)
-                const Icon(
-                  Icons.chevron_right,
-                  color: Color(0xFF9CA3AF),
-                )
-              else
-                SizedBox(
-                  height: 32,
-                  child: OutlinedButton(
-                    onPressed: (isRequesting || isRequested)
-                        ? null
-                        : () => _sendFriendRequest(friend),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.pointColor,
-                      side: BorderSide(
-                        color: (isRequesting || isRequested)
-                            ? const Color(0xFFE5E7EB)
-                            : AppColors.pointColor,
-                      ),
-                      backgroundColor: (isRequesting || isRequested)
-                          ? const Color(0xFFF3F4F6)
-                          : Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      elevation: 0,
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (isRequesting)
-                          const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         else
-                          const Icon(Icons.person_add_alt_1, size: 16),
-                        const SizedBox(width: 6),
-                        Text(
-                          isRequested ? l10n.requestPending : l10n.friendRequest,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                          TextButton(
+                            onPressed: (isRequesting || isRequested)
+                                ? null
+                                : () => _sendFriendRequest(friend),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF344054),
+                              disabledForegroundColor: const Color(0xFF98A2B3),
+                              minimumSize: const Size(44, 40),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 6,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: isRequesting
+                                ? const SizedBox.square(
+                                    dimension: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Color(0xFF667085),
+                                    ),
+                                  )
+                                : Text(
+                                    isRequested
+                                        ? l10n.requestPending
+                                        : l10n.friendRequest,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                           ),
-                        ),
                       ],
                     ),
                   ),
                 ),
-            ],
-          ),
+              ),
+            ),
+            Divider(
+              height: 1,
+              thickness: 1,
+              indent: horizontalPadding + avatarSize + (isCompact ? 10 : 12),
+              endIndent: horizontalPadding,
+              color: const Color(0xFFEAECF0),
+            ),
+          ],
         ),
       ),
+    );
+  }
+
+  Widget _friendAvatar(UserProfile friend, double size) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Color(0xFFE5E7EB),
+      ),
+      child: friend.hasProfileImage
+          ? ClipOval(
+              child: Image.network(
+                friend.photoURL!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Icon(
+                  Icons.person_outline_rounded,
+                  size: size * 0.5,
+                  color: const Color(0xFF667085),
+                ),
+              ),
+            )
+          : Icon(
+              Icons.person_outline_rounded,
+              size: size * 0.5,
+              color: const Color(0xFF667085),
+            ),
     );
   }
 
@@ -639,10 +662,11 @@ class _UserFriendsListScreenState extends State<UserFriendsListScreen> {
         SnackBar(content: Text(msg)),
       );
     } finally {
-      if (!mounted) return;
-      setState(() {
-        _requestingIds.remove(user.uid);
-      });
+      if (mounted) {
+        setState(() {
+          _requestingIds.remove(user.uid);
+        });
+      }
     }
   }
 }
@@ -658,38 +682,31 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-      child: Row(
-        children: [
-          Text(
-            title,
+    final width = MediaQuery.sizeOf(context).width;
+    final horizontalPadding = width < 360 ? 12.0 : (width < 600 ? 16.0 : 24.0);
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 720),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            10,
+            horizontalPadding,
+            7,
+          ),
+          child: Text(
+            '$title  ${count > 99 ? '99+' : count}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontFamily: 'Pretendard',
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: Color(0xFF6B7280),
+              color: Color(0xFF667085),
               letterSpacing: -0.2,
             ),
           ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF3F4F6),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Text(
-              count > 99 ? '99+' : count.toString(),
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF6B7280),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

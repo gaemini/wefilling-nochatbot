@@ -18,10 +18,10 @@ class UsersRepository {
   static const String _friendRequestsCollection = 'friend_requests';
   static const String _friendshipsCollection = 'friendships';
   static const String _blocksCollection = 'blocks';
-  
+
   // 프로필 캐시 (메모리 캐시)
-  final Map<String, UserProfile> _profileCache = {};
-  final Map<String, DateTime> _cacheTimestamps = {};
+  static final Map<String, UserProfile> _profileCache = {};
+  static final Map<String, DateTime> _cacheTimestamps = {};
   static const Duration _cacheExpiry = Duration(minutes: 5);
 
   /// 현재 로그인한 사용자 ID 가져오기
@@ -36,7 +36,7 @@ class UsersRepository {
       // 캐시 확인
       if (_profileCache.containsKey(userId)) {
         final cacheTime = _cacheTimestamps[userId];
-        if (cacheTime != null && 
+        if (cacheTime != null &&
             DateTime.now().difference(cacheTime) < _cacheExpiry) {
           Logger.log('💾 캐시에서 프로필 로드: $userId');
           return _profileCache[userId];
@@ -53,11 +53,11 @@ class UsersRepository {
 
       if (doc.exists) {
         final profile = UserProfile.fromFirestore(doc);
-        
+
         // 캐시에 저장
         _profileCache[userId] = profile;
         _cacheTimestamps[userId] = DateTime.now();
-        
+
         return profile;
       }
       return null;
@@ -66,20 +66,20 @@ class UsersRepository {
       return null;
     }
   }
-  
+
   /// 여러 사용자 프로필을 배치로 조회 (성능 최적화)
   Future<List<UserProfile>> getUserProfilesBatch(List<String> userIds) async {
     try {
       if (userIds.isEmpty) return [];
-      
+
       final profiles = <UserProfile>[];
       final uncachedIds = <String>[];
-      
+
       // 1. 캐시에서 먼저 가져오기
       for (final userId in userIds) {
         if (_profileCache.containsKey(userId)) {
           final cacheTime = _cacheTimestamps[userId];
-          if (cacheTime != null && 
+          if (cacheTime != null &&
               DateTime.now().difference(cacheTime) < _cacheExpiry) {
             profiles.add(_profileCache[userId]!);
             continue;
@@ -91,50 +91,50 @@ class UsersRepository {
         }
         uncachedIds.add(userId);
       }
-      
+
       if (uncachedIds.isEmpty) {
         return profiles;
       }
-      
+
       // 2. Firestore에서 배치로 조회 (최대 10개씩)
       final batches = <List<String>>[];
       for (var i = 0; i < uncachedIds.length; i += 10) {
         final end = (i + 10 > uncachedIds.length) ? uncachedIds.length : i + 10;
         batches.add(uncachedIds.sublist(i, end));
       }
-      
+
       for (final batch in batches) {
         final snapshot = await _firestore
             .collection(_usersCollection)
             .where(FieldPath.documentId, whereIn: batch)
             .get();
-        
+
         for (final doc in snapshot.docs) {
           if (doc.exists) {
             final profile = UserProfile.fromFirestore(doc);
             profiles.add(profile);
-            
+
             // 캐시에 저장
             _profileCache[doc.id] = profile;
             _cacheTimestamps[doc.id] = DateTime.now();
           }
         }
       }
-      
+
       return profiles;
     } catch (e) {
       Logger.error('배치 프로필 조회 오류: $e');
       return [];
     }
   }
-  
+
   /// 캐시 초기화
   void clearCache() {
     _profileCache.clear();
     _cacheTimestamps.clear();
     Logger.log('🗑️ 프로필 캐시 초기화');
   }
-  
+
   /// 특정 사용자 캐시 무효화
   void invalidateCache(String userId) {
     _profileCache.remove(userId);
@@ -152,7 +152,7 @@ class UsersRepository {
 
       // 검색어 전처리 - 대소문자 구분 없이 검색
       final normalizedQuery = query.trim().toLowerCase();
-      
+
       // 더 넓은 범위로 사용자 데이터 가져오기
       final allUsersQuery = await _firestore
           .collection(_usersCollection)
@@ -160,17 +160,17 @@ class UsersRepository {
           .get();
 
       final matchedProfiles = <UserProfile>[];
-      
+
       for (final doc in allUsersQuery.docs) {
         // 현재 사용자 제외
         if (doc.id == currentUid) continue;
-        
+
         try {
           final profile = UserProfile.fromFirestore(doc);
-          
+
           // 닉네임을 소문자로 변환하여 검색
           final nickname = (profile.nickname ?? '').toLowerCase();
-          
+
           // 부분 문자열 매칭 (한국어 포함)
           if (nickname.contains(normalizedQuery) ||
               _isKoreanMatch(nickname, normalizedQuery)) {
@@ -200,12 +200,12 @@ class UsersRepository {
   /// 한국어 매칭 검사 (초성, 중성, 종성 고려)
   bool _isKoreanMatch(String text, String query) {
     if (text.isEmpty || query.isEmpty) return false;
-    
+
     // 한국어 초성 추출 및 매칭
     try {
       final textChoseong = _extractChoseong(text);
       final queryChoseong = _extractChoseong(query);
-      
+
       return textChoseong.contains(queryChoseong);
     } catch (e) {
       return false;
@@ -215,15 +215,32 @@ class UsersRepository {
   /// 한국어 초성 추출
   String _extractChoseong(String text) {
     const choseong = [
-      'ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ',
-      'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'
+      'ㄱ',
+      'ㄲ',
+      'ㄴ',
+      'ㄷ',
+      'ㄸ',
+      'ㄹ',
+      'ㅁ',
+      'ㅂ',
+      'ㅃ',
+      'ㅅ',
+      'ㅆ',
+      'ㅇ',
+      'ㅈ',
+      'ㅉ',
+      'ㅊ',
+      'ㅋ',
+      'ㅌ',
+      'ㅍ',
+      'ㅎ'
     ];
-    
+
     String result = '';
     for (int i = 0; i < text.length; i++) {
       final char = text[i];
       final code = char.codeUnitAt(0);
-      
+
       // 한글 완성형인지 확인 (가-힣: 44032-55203)
       if (code >= 0xAC00 && code <= 0xD7A3) {
         final choseongIndex = (code - 0xAC00) ~/ (21 * 28);
@@ -235,36 +252,36 @@ class UsersRepository {
         result += char;
       }
     }
-    
+
     return result;
   }
 
   /// 검색 관련도 점수 계산
   int _getRelevanceScore(UserProfile profile, String query) {
     final nickname = (profile.nickname ?? '').toLowerCase();
-    
+
     int score = 0;
-    
+
     // 정확한 매칭에 높은 점수
     if (nickname == query) {
       score += 100;
     }
-    
+
     // 시작 부분 매칭에 중간 점수
     if (nickname.startsWith(query)) {
       score += 50;
     }
-    
+
     // 부분 매칭에 낮은 점수
     if (nickname.contains(query)) {
       score += 25;
     }
-    
+
     // 한국어 초성 매칭
     if (_isKoreanMatch(nickname, query)) {
       score += 10;
     }
-    
+
     return score;
   }
 
@@ -275,7 +292,8 @@ class UsersRepository {
       if (currentUid == null) return RelationshipStatus.none;
       if (currentUid == otherUserId) return RelationshipStatus.none;
 
-      final blockStatus = await _getBlockRelationshipStatus(currentUid, otherUserId);
+      final blockStatus =
+          await _getBlockRelationshipStatus(currentUid, otherUserId);
       if (blockStatus != null) return blockStatus;
 
       // 친구 관계 확인
@@ -371,11 +389,10 @@ class UsersRepository {
     try {
       // 내가 보낸 요청 확인
       final outgoingId = '${fromUid}_$toUid';
-      final outgoingDoc =
-          await _firestore
-              .collection(_friendRequestsCollection)
-              .doc(outgoingId)
-              .get();
+      final outgoingDoc = await _firestore
+          .collection(_friendRequestsCollection)
+          .doc(outgoingId)
+          .get();
 
       if (outgoingDoc.exists) {
         final data = outgoingDoc.data() as Map<String, dynamic>;
@@ -387,11 +404,10 @@ class UsersRepository {
 
       // 내가 받은 요청 확인
       final incomingId = '${toUid}_$fromUid';
-      final incomingDoc =
-          await _firestore
-              .collection(_friendRequestsCollection)
-              .doc(incomingId)
-              .get();
+      final incomingDoc = await _firestore
+          .collection(_friendRequestsCollection)
+          .doc(incomingId)
+          .get();
 
       if (incomingDoc.exists) {
         final data = incomingDoc.data() as Map<String, dynamic>;
@@ -421,10 +437,10 @@ class UsersRepository {
           .orderBy('createdAt', descending: true)
           .snapshots()
           .map((snapshot) {
-            return snapshot.docs
-                .map((doc) => FriendRequest.fromFirestore(doc))
-                .toList();
-          });
+        return snapshot.docs
+            .map((doc) => FriendRequest.fromFirestore(doc))
+            .toList();
+      });
     } catch (e) {
       Logger.error('받은 친구요청 조회 오류: $e');
       return Stream.value([]);
@@ -444,10 +460,10 @@ class UsersRepository {
           .orderBy('createdAt', descending: true)
           .snapshots()
           .map((snapshot) {
-            return snapshot.docs
-                .map((doc) => FriendRequest.fromFirestore(doc))
-                .toList();
-          });
+        return snapshot.docs
+            .map((doc) => FriendRequest.fromFirestore(doc))
+            .toList();
+      });
     } catch (e) {
       Logger.error('보낸 친구요청 조회 오류: $e');
       return Stream.value([]);
@@ -465,30 +481,30 @@ class UsersRepository {
           .where('uids', arrayContains: currentUid)
           .snapshots()
           .asyncMap((snapshot) async {
-            final startTime = DateTime.now();
-            final friendIds = <String>[];
+        final startTime = DateTime.now();
+        final friendIds = <String>[];
 
-            // 1단계: 친구 ID 추출
-            for (final doc in snapshot.docs) {
-              final data = doc.data() as Map<String, dynamic>;
-              final uids = List<String>.from(data['uids'] ?? []);
-              // 현재 사용자 제외한 상대방 ID 추가
-              for (final uid in uids) {
-                if (uid != currentUid) {
-                  friendIds.add(uid);
-                }
-              }
+        // 1단계: 친구 ID 추출
+        for (final doc in snapshot.docs) {
+          final data = doc.data() as Map<String, dynamic>;
+          final uids = List<String>.from(data['uids'] ?? []);
+          // 현재 사용자 제외한 상대방 ID 추가
+          for (final uid in uids) {
+            if (uid != currentUid) {
+              friendIds.add(uid);
             }
+          }
+        }
 
-            if (friendIds.isEmpty) {
-              Logger.log('👥 친구 목록: 0명');
-              return <UserProfile>[];
-            }
+        if (friendIds.isEmpty) {
+          Logger.log('👥 친구 목록: 0명');
+          return <UserProfile>[];
+        }
 
-            // 2단계: 배치로 프로필 조회 (캐싱 + 병렬 처리)
-            final profiles = await getUserProfilesBatch(friendIds);
-            return profiles;
-          });
+        // 2단계: 배치로 프로필 조회 (캐싱 + 병렬 처리)
+        final profiles = await getUserProfilesBatch(friendIds);
+        return profiles;
+      });
     } catch (e) {
       Logger.error('친구 목록 조회 오류: $e');
       return Stream.value([]);
@@ -558,7 +574,7 @@ class UsersRepository {
 
       // 3. 배치로 프로필 조회
       final profiles = await getUserProfilesBatch(friendIds);
-      
+
       Logger.log('✅ ${userId}의 친구 목록: ${profiles.length}명');
       return profiles;
     } catch (e) {

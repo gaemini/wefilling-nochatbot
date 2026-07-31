@@ -29,9 +29,27 @@ class MeetupCalendarCacheService extends ChangeNotifier {
   bool _started = false;
   DateTime? _friendContextFetchedAt;
   Set<String> _friendIds = <String>{};
-  Set<String> _userCategoryIds = <String>{};
+  Map<String, String> _userCategoryOwners = <String, String>{};
 
   final Map<String, _MonthCache> _monthCaches = <String, _MonthCache>{};
+
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _getAudienceScoped(
+      Query<Map<String, dynamic>> baseQuery) async {
+    final user = _auth.currentUser;
+    if (user == null) return const [];
+    final snapshots = await Future.wait([
+      baseQuery.where('visibility', isEqualTo: 'public').get(),
+      baseQuery.where('allowedUserIds', arrayContains: user.uid).get(),
+      baseQuery.where('userId', isEqualTo: user.uid).get(),
+    ]);
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+    for (final snapshot in snapshots) {
+      for (final doc in snapshot.docs) {
+        byId[doc.id] = doc;
+      }
+    }
+    return byId.values.toList();
+  }
 
   void start() {
     _started = true;
@@ -72,7 +90,8 @@ class MeetupCalendarCacheService extends ChangeNotifier {
       // - 레거시(dateKey 없는 문서)까지 커버하려고, 필요 시 `date range`(userId 조건 없음)로 fallback
       final today = DateTime.now().toLocal();
       final todayStart = DateTime(today.year, today.month, today.day);
-      final effectiveStart = monthStart.isAfter(todayStart) ? monthStart : todayStart;
+      final effectiveStart =
+          monthStart.isAfter(todayStart) ? monthStart : todayStart;
 
       final startKey = _dateKey(effectiveStart);
       final endKey = _dateKey(monthEnd);
@@ -81,13 +100,12 @@ class MeetupCalendarCacheService extends ChangeNotifier {
 
       // 1) 기본: dateKey range (가장 빠르고 인덱스 요구가 최소)
       try {
-        final snap = await _firestore
+        final scopedDocs = await _getAudienceScoped(_firestore
             .collection('meetups')
             .where('dateKey', isGreaterThanOrEqualTo: startKey)
             .where('dateKey', isLessThanOrEqualTo: endKey)
-            .orderBy('dateKey', descending: false)
-            .get();
-        docs.addAll(snap.docs);
+            .orderBy('dateKey', descending: false));
+        docs.addAll(scopedDocs);
       } catch (e) {
         Logger.error('친구 모임(월) dateKey 쿼리 실패: $e');
       }
@@ -95,16 +113,16 @@ class MeetupCalendarCacheService extends ChangeNotifier {
       // 2) fallback: 레거시(dateKey 누락) 문서를 위해 date(Timestamp) range로 월 전체를 가져온 뒤 필터링
       if (docs.isEmpty) {
         try {
-          final snap = await _firestore
+          final scopedDocs = await _getAudienceScoped(_firestore
               .collection('meetups')
               .where('date', isGreaterThanOrEqualTo: effectiveStart)
               .where(
                 'date',
-                isLessThanOrEqualTo: DateTime(monthEnd.year, monthEnd.month, monthEnd.day, 23, 59, 59, 999),
+                isLessThanOrEqualTo: DateTime(monthEnd.year, monthEnd.month,
+                    monthEnd.day, 23, 59, 59, 999),
               )
-              .orderBy('date', descending: false)
-              .get();
-          docs.addAll(snap.docs);
+              .orderBy('date', descending: false));
+          docs.addAll(scopedDocs);
         } catch (e) {
           Logger.error('친구 모임(월) date range fallback 실패: $e');
         }
@@ -113,7 +131,8 @@ class MeetupCalendarCacheService extends ChangeNotifier {
       final meetups = <Meetup>[];
       for (final d in docs) {
         try {
-          meetups.add(Meetup.fromJson(<String, dynamic>{...d.data(), 'id': d.id}));
+          meetups
+              .add(Meetup.fromJson(<String, dynamic>{...d.data(), 'id': d.id}));
         } catch (e) {
           // 개별 파싱 실패는 무시
           Logger.error('친구 모임(월) 파싱 실패(무시): $e');
@@ -128,7 +147,8 @@ class MeetupCalendarCacheService extends ChangeNotifier {
           .where((m) => _canSeeMeetup(m, user.uid))
           .toList();
 
-      final filteredByBlock = await ContentFilterService.filterMeetups(friendMeetups);
+      final filteredByBlock =
+          await ContentFilterService.filterMeetups(friendMeetups);
 
       final byDay = <DateTime, List<Meetup>>{};
       for (final m in filteredByBlock) {
@@ -140,7 +160,8 @@ class MeetupCalendarCacheService extends ChangeNotifier {
         byDay[k]!.sort((a, b) {
           final d = a.date.compareTo(b.date);
           if (d != 0) return d;
-          return _minutesFromMeetupTime(a.time).compareTo(_minutesFromMeetupTime(b.time));
+          return _minutesFromMeetupTime(a.time)
+              .compareTo(_minutesFromMeetupTime(b.time));
         });
       }
 
@@ -197,10 +218,13 @@ class MeetupCalendarCacheService extends ChangeNotifier {
           .collection('friend_categories')
           .where('friendIds', arrayContains: user.uid)
           .get();
-      final categoryIds = catSnap.docs.map((d) => d.id).toSet();
+      final categoryOwners = <String, String>{
+        for (final doc in catSnap.docs)
+          doc.id: (doc.data()['userId'] ?? '').toString(),
+      };
 
       _friendIds = friendIds;
-      _userCategoryIds = categoryIds;
+      _userCategoryOwners = categoryOwners;
       _friendContextFetchedAt = DateTime.now();
     } catch (e) {
       Logger.error('친구 컨텍스트 로드 오류: $e');
@@ -213,14 +237,16 @@ class MeetupCalendarCacheService extends ChangeNotifier {
     if (meetup.userId == myUid) return true;
 
     final visibility = meetup.visibility.trim();
-    if (visibility.isEmpty || visibility == 'public') return true;
+    if (visibility == 'public') return true;
 
     if (visibility == 'friends') {
       return meetup.userId != null && _friendIds.contains(meetup.userId);
     }
 
     if (visibility == 'category') {
-      return meetup.visibleToCategoryIds.any(_userCategoryIds.contains);
+      return meetup.visibleToCategoryIds.any(
+        (id) => _userCategoryOwners[id] == meetup.userId,
+      );
     }
 
     // 알 수 없는 값은 안전하게 숨김
@@ -266,4 +292,3 @@ class _MonthCache {
   Map<DateTime, List<Meetup>> byDayKey = <DateTime, List<Meetup>>{};
   String? lastError;
 }
-

@@ -207,7 +207,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get todayPostsSectionTitle => '오늘의 포스트';
 
   @override
-  String get todayNoMeetups => '오늘 올라온 밋업이 없어요.';
+  String get todayNoMeetups => '오늘 만들었거나 예정된 밋업이 없어요.';
 
   @override
   String get todayNoPosts => '오늘 올라온 포스트가 없어요.';
@@ -2681,8 +2681,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get signUpMethodSelectionHeading => '가입 방식을 선택해주세요';
 
   @override
-  String get signUpMethodSelectionDescription =>
-      '한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.';
+  String get signUpMethodSelectionDescription => '사용할 계정으로 계속 진행해주세요.';
 
   @override
   String get signUpWithApple => 'Apple로 회원가입';
@@ -2695,6 +2694,23 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get signUpWithId => '아이디로 회원가입';
+
+  @override
+  String get generalEmailVerificationTitle => '이메일 인증';
+
+  @override
+  String get generalEmailVerificationHeading => '이메일을 인증해주세요';
+
+  @override
+  String get generalEmailVerificationDescription =>
+      '사용할 이메일로 4자리 인증번호를 보내드릴게요.';
+
+  @override
+  String get verifiedEmailLabel => '인증된 이메일';
+
+  @override
+  String get generalEmailPasswordDescription =>
+      '인증한 이메일에 사용할 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.';
 
   @override
   String get appleSignupIosOnlyError => 'Apple 회원가입은 iOS에서만 사용할 수 있습니다.';
@@ -2957,6 +2973,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get exitMeetupCreationMessage => '정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.';
 
   @override
+  String get exitMeetupEditing => '모임 수정 나가기';
+
+  @override
+  String get exitMeetupEditingMessage => '정말 나가시겠습니까?\n수정한 내용은 저장되지 않습니다.';
+
+  @override
   String get exit => '나가기';
 
   @override
@@ -3029,6 +3051,12 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get postCategoryCafeDescription => '카페·디저트·공간';
+
+  @override
+  String get postCategoryAcademicStudy => '학업·스터디';
+
+  @override
+  String get postCategoryAcademicStudyDescription => '수업·과제·시험·스터디';
 
   @override
   String get postCategoryBooksWriting => '책·글';

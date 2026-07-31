@@ -15,7 +15,6 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:provider/provider.dart';
@@ -26,11 +25,11 @@ import 'models/meetup.dart';
 import 'providers/auth_provider.dart' as app_auth;
 import 'providers/relationship_provider.dart';
 import 'screens/login_screen.dart';
-import 'screens/nickname_setup_screen.dart';
 import 'firebase_options.dart';
 import 'services/feature_flag_service.dart';
 import 'services/fcm_service.dart';
 import 'services/language_service.dart';
+import 'services/semester_todo_service.dart';
 import 'services/cache/cache_manager.dart';
 import 'l10n/app_localizations.dart';
 import 'services/navigation_service.dart';
@@ -114,18 +113,20 @@ void main() {
 
       // 4. App Check 초기화
       try {
-        // ⚠️ 임시: iOS에서 App Check 완전 비활성화 (TestFlight 크래시 방지)
-        // TODO: 나중에 제대로 된 App Check 설정 필요
-        if (Platform.isIOS) {
-          if (kDebugMode) {
-            debugPrint('🛡️ App Check: iOS 전체 비활성화 (임시)');
-          }
-        } else {
+        if (!kIsWeb) {
+          const AndroidAppCheckProvider androidProvider = kReleaseMode
+              ? AndroidPlayIntegrityProvider()
+              : AndroidDebugProvider();
+          const AppleAppCheckProvider appleProvider = kReleaseMode
+              ? AppleAppAttestWithDeviceCheckFallbackProvider()
+              : AppleDebugProvider();
           await FirebaseAppCheck.instance.activate(
-            providerAndroid: const AndroidDebugProvider(),
-            providerApple: const AppleDeviceCheckProvider(),
+            providerAndroid: androidProvider,
+            providerApple: appleProvider,
           );
-          if (kDebugMode) debugPrint('🛡️ App Check 활성화 완료');
+          if (kDebugMode) {
+            debugPrint('🛡️ App Check 활성화 완료 (debug provider)');
+          }
         }
       } catch (e) {
         if (kDebugMode) {
@@ -222,26 +223,6 @@ void main() {
             debugPrint('🔐 로그인된 사용자 없음');
           }
           debugPrint('🔐 인증 초기화 완료: ${DateTime.now()}');
-        }
-
-        // Firebase Storage 접근 테스트 (백그라운드로 이동)
-        if (currentUser != null) {
-          unawaited(Future(() async {
-            try {
-              if (kDebugMode) {
-                debugPrint('🗄️ Storage 접근 테스트 시작 (백그라운드)');
-              }
-              final storageRef = FirebaseStorage.instance.ref();
-              await storageRef.listAll();
-              if (kDebugMode) {
-                debugPrint('✅ Firebase Storage 접근 테스트: 성공');
-              }
-            } catch (storageError) {
-              if (kDebugMode) {
-                debugPrint('⚠️ Firebase Storage 접근 테스트 실패: $storageError');
-              }
-            }
-          }));
         }
       } catch (e) {
         if (kDebugMode) {
@@ -393,12 +374,30 @@ class _MeetupAppState extends State<MeetupApp> {
       setState(() {
         _locale = Locale(languageCode);
       });
-      _languageService.saveLanguage(languageCode);
+      unawaited(_saveLanguageAndRefreshNotifications(languageCode));
       // 푸시 i18n을 위해 서버에도 동기화
       unawaited(_syncLanguageToFirestore(languageCode));
       if (kDebugMode) {
         debugPrint('🌐 언어 변경: $languageCode');
       }
+    }
+  }
+
+  Future<void> _saveLanguageAndRefreshNotifications(
+    String languageCode,
+  ) async {
+    await _languageService.saveLanguage(languageCode);
+    try {
+      await SemesterTodoService.instance
+          .refreshPersonalTodoNotificationLanguage();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ 로컬 할 일 알림 언어 갱신 실패(다음 화면 진입 시 재시도): $e');
+      }
+    }
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId != null) {
+      await FCMService().refreshTokenLocale(userId);
     }
   }
 
@@ -464,13 +463,15 @@ class _MeetupAppState extends State<MeetupApp> {
 
           // 로그인되어 있으면
           if (authProvider.isLoggedIn) {
-            // 닉네임 설정 확인
-            if (!authProvider.hasNickname) {
-              return const NicknameSetupScreen();
+            // Firebase Auth 존재 여부가 아니라 서버의 최종 가입 완료 상태를
+            // 기준으로만 앱 진입을 허용한다.
+            if (!authProvider.isRegistrationComplete) {
+              return const LoginScreen();
             }
 
-            // 닉네임 있으면 메인 화면
-            return const MainScreen();
+            return MainScreen(
+              key: ValueKey('main_session_${authProvider.user!.uid}'),
+            );
           }
 
           // 로그인되어 있지 않으면

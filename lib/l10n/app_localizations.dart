@@ -497,7 +497,7 @@ abstract class AppLocalizations {
   /// No description provided for @todayNoMeetups.
   ///
   /// In ko, this message translates to:
-  /// **'오늘 올라온 밋업이 없어요.'**
+  /// **'오늘 만들었거나 예정된 밋업이 없어요.'**
   String get todayNoMeetups;
 
   /// No description provided for @todayNoPosts.
@@ -5171,7 +5171,7 @@ abstract class AppLocalizations {
   /// No description provided for @signUpMethodSelectionDescription.
   ///
   /// In ko, this message translates to:
-  /// **'한양메일 인증이 완료되었습니다.\n원하는 회원가입 방식을 선택할 수 있어요.'**
+  /// **'사용할 계정으로 계속 진행해주세요.'**
   String get signUpMethodSelectionDescription;
 
   /// No description provided for @signUpWithApple.
@@ -5197,6 +5197,36 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'아이디로 회원가입'**
   String get signUpWithId;
+
+  /// No description provided for @generalEmailVerificationTitle.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일 인증'**
+  String get generalEmailVerificationTitle;
+
+  /// No description provided for @generalEmailVerificationHeading.
+  ///
+  /// In ko, this message translates to:
+  /// **'이메일을 인증해주세요'**
+  String get generalEmailVerificationHeading;
+
+  /// No description provided for @generalEmailVerificationDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'사용할 이메일로 4자리 인증번호를 보내드릴게요.'**
+  String get generalEmailVerificationDescription;
+
+  /// No description provided for @verifiedEmailLabel.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증된 이메일'**
+  String get verifiedEmailLabel;
+
+  /// No description provided for @generalEmailPasswordDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'인증한 이메일에 사용할 비밀번호를 설정해주세요.\n최소 8자 이상이어야 합니다.'**
+  String get generalEmailPasswordDescription;
 
   /// No description provided for @appleSignupIosOnlyError.
   ///
@@ -5666,6 +5696,18 @@ abstract class AppLocalizations {
   /// **'정말 나가시겠습니까?\n입력한 정보는 저장되지 않습니다.'**
   String get exitMeetupCreationMessage;
 
+  /// No description provided for @exitMeetupEditing.
+  ///
+  /// In ko, this message translates to:
+  /// **'모임 수정 나가기'**
+  String get exitMeetupEditing;
+
+  /// No description provided for @exitMeetupEditingMessage.
+  ///
+  /// In ko, this message translates to:
+  /// **'정말 나가시겠습니까?\n수정한 내용은 저장되지 않습니다.'**
+  String get exitMeetupEditingMessage;
+
   /// No description provided for @exit.
   ///
   /// In ko, this message translates to:
@@ -5809,6 +5851,18 @@ abstract class AppLocalizations {
   /// In ko, this message translates to:
   /// **'카페·디저트·공간'**
   String get postCategoryCafeDescription;
+
+  /// No description provided for @postCategoryAcademicStudy.
+  ///
+  /// In ko, this message translates to:
+  /// **'학업·스터디'**
+  String get postCategoryAcademicStudy;
+
+  /// No description provided for @postCategoryAcademicStudyDescription.
+  ///
+  /// In ko, this message translates to:
+  /// **'수업·과제·시험·스터디'**
+  String get postCategoryAcademicStudyDescription;
 
   /// No description provided for @postCategoryBooksWriting.
   ///

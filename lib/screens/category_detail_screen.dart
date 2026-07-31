@@ -12,6 +12,7 @@ import 'package:provider/provider.dart';
 import '../providers/relationship_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/friend_category_service.dart';
+import '../ui/widgets/category_create_shortcut_bar.dart';
 import '../ui/widgets/shape_icon.dart';
 import 'create_meetup_screen.dart';
 import 'create_post_screen.dart';
@@ -253,8 +254,11 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
+      body: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          children: [
           _buildCreateShortcuts(),
           Expanded(
             child: Consumer<RelationshipProvider>(
@@ -398,12 +402,7 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
                               minWidth: 44,
                               minHeight: 44,
                             ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide.none,
-                            ),
-                            filled: true,
-                            fillColor: const Color(0xFFF4F6F8),
+                            border: InputBorder.none,
                             isDense: true,
                             contentPadding: const EdgeInsets.symmetric(
                               vertical: 11,
@@ -461,7 +460,8 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
               },
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -469,91 +469,16 @@ class _CategoryDetailScreenState extends State<CategoryDetailScreen> {
   Widget _buildCreateShortcuts() {
     final l10n = AppLocalizations.of(context)!;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildCreateShortcut(
-              key: const ValueKey('create_post_shortcut'),
-              icon: Icons.article_outlined,
-              label: l10n.post,
-              semanticLabel: l10n.createPost,
-              onTap: _openCreatePost,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildCreateShortcut(
-              key: const ValueKey('create_meetup_shortcut'),
-              icon: Icons.groups_outlined,
-              label: l10n.meetup,
-              semanticLabel: l10n.createMeetup,
-              onTap: _openCreateMeetup,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: _buildCreateShortcut(
-              key: const ValueKey('create_snack_chat_shortcut'),
-              icon: Icons.forum_outlined,
-              label: l10n.snackChat,
-              semanticLabel: l10n.createSnackChat,
-              onTap: _openCreateSnackChat,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCreateShortcut({
-    required Key key,
-    required IconData icon,
-    required String label,
-    required String semanticLabel,
-    required VoidCallback onTap,
-  }) {
-    return Semantics(
-      button: true,
-      label: semanticLabel,
-      excludeSemantics: true,
-      child: Tooltip(
-        message: semanticLabel,
-        child: Material(
-          key: key,
-          color: const Color(0xFFF4F6F8),
-          borderRadius: BorderRadius.circular(12),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: onTap,
-            child: SizedBox(
-              height: 58,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, size: 19, color: AppColors.pointColor),
-                  const SizedBox(height: 4),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF334155),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
+    return CategoryCreateShortcutBar(
+      postLabel: l10n.post,
+      meetupLabel: l10n.meetup,
+      snackChatLabel: l10n.snackChat,
+      createPostLabel: l10n.createPost,
+      createMeetupLabel: l10n.createMeetup,
+      createSnackChatLabel: l10n.createSnackChat,
+      onCreatePost: _openCreatePost,
+      onCreateMeetup: _openCreateMeetup,
+      onCreateSnackChat: _openCreateSnackChat,
     );
   }
 

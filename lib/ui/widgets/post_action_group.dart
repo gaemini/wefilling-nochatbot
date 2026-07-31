@@ -79,30 +79,31 @@ class PostActionGroup extends StatelessWidget {
         .toDouble();
 
     final metricActions = <Widget>[
-      if (!hideEmptyMetrics || likes > 0)
-        Semantics(
-          button: true,
-          selected: isLiked,
-          label: _labelWithCount(likeLabel, likes),
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: onLikeTapDown,
-            onTapCancel: onLikeTapCancel,
-            onTapUp: onLikeTapUp,
-            child: _PostActionItem(
-              icon: isLiked
-                  ? Icons.favorite_rounded
-                  : Icons.favorite_border_rounded,
-              iconColor: isLiked ? BrandColors.textSecondary : actionColor,
-              iconSize: responsiveIconSize,
-              count: likes,
-              compact: compact,
-              countFontSize: responsiveCountSize,
-              minExtent: responsiveMinExtent,
-            ),
+      // 좋아요는 개수가 0이어도 사용자가 반응을 시작할 수 있어야 하므로
+      // 빈 메트릭 숨김 정책과 관계없이 항상 노출한다.
+      Semantics(
+        button: true,
+        selected: isLiked,
+        label: _labelWithCount(likeLabel, likes),
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: onLikeTapDown,
+          onTapCancel: onLikeTapCancel,
+          onTapUp: onLikeTapUp,
+          child: _PostActionItem(
+            icon: isLiked
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            iconColor: isLiked ? BrandColors.textSecondary : actionColor,
+            iconSize: responsiveIconSize,
+            count: likes,
+            compact: compact,
+            countFontSize: responsiveCountSize,
+            minExtent: responsiveMinExtent,
           ),
         ),
+      ),
       if (!hideEmptyMetrics || comments > 0)
         Semantics(
           button: onCommentTap != null,

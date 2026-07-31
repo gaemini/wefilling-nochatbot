@@ -1,0 +1,147 @@
+{
+  "projectId": "flutterproject3-af322",
+  "semester": {
+    "id": "2026_fall",
+    "title": {"ko": "2026년 2학기", "en": "Fall 2026"},
+    "startDate": "2026-09-01T00:00:00+09:00",
+    "endDate": "2026-12-20T23:59:59+09:00",
+    "totalWeeks": 16,
+    "status": "active",
+    "currentWeekOverride": null
+  },
+  "weeks": [
+    {
+      "id": "week_01", "weekNumber": 1,
+      "startDate": "2026-09-01T00:00:00+09:00", "endDate": "2026-09-06T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "check_enrollment", "title": {"ko": "수강신청 내역 확인하기", "en": "Check your course enrollment"}, "description": {"ko": "포털에서 강의 시간과 강의실을 다시 확인하세요.", "en": "Review your class times and rooms in the student portal."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "exchange_orientation", "title": {"ko": "교환학생 오리엔테이션 확인하기", "en": "Check exchange student orientation"}, "description": {"ko": "국제처 일정과 준비물을 확인하세요.", "en": "Check the international office schedule and what to bring."}, "type": "required", "targetAudiences": ["exchange"], "sortOrder": 20, "carryOver": true},
+        {"id": "campus_welcome_meetup", "title": {"ko": "새 학기 모임 둘러보기", "en": "Explore welcome meetups"}, "description": {"ko": "관심사가 맞는 학생들과 가볍게 인사해 보세요.", "en": "Find a casual meetup and meet students with similar interests."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 30}
+      ]
+    },
+    {
+      "id": "week_02", "weekNumber": 2,
+      "startDate": "2026-09-07T00:00:00+09:00", "endDate": "2026-09-13T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "check_syllabus", "title": {"ko": "강의계획서와 평가 방식 확인하기", "en": "Review syllabi and grading policies"}, "description": {"ko": "과제, 시험, 출석 기준을 일정에 정리하세요.", "en": "Add assignments, exams, and attendance rules to your schedule."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "course_change_period", "title": {"ko": "수강 정정 기간 확인하기", "en": "Check the course add/drop period"}, "description": {"ko": "변경이 필요하다면 마감 전에 처리하세요.", "en": "Make any needed changes before the deadline."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 20, "carryOver": true},
+        {"id": "club_fair", "title": {"ko": "동아리와 학생 활동 찾아보기", "en": "Explore clubs and student activities"}, "description": {"ko": "이번 학기에 함께할 활동을 하나 찾아보세요.", "en": "Find one activity you might enjoy this semester."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 30}
+      ]
+    },
+    {
+      "id": "week_03", "weekNumber": 3,
+      "startDate": "2026-09-14T00:00:00+09:00", "endDate": "2026-09-20T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "academic_calendar", "title": {"ko": "학사 일정 저장하기", "en": "Save key academic dates"}, "description": {"ko": "시험, 휴일, 수강 철회 일정을 캘린더에 기록하세요.", "en": "Save exams, holidays, and withdrawal deadlines."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "arc_documents", "title": {"ko": "외국인등록 관련 서류 확인하기", "en": "Check residence card documents"}, "description": {"ko": "신청 대상이라면 국제처 안내와 준비 서류를 확인하세요.", "en": "If applicable, review the international office guide and documents."}, "type": "required", "targetAudiences": ["exchange"], "sortOrder": 20, "carryOver": true},
+        {"id": "language_exchange", "title": {"ko": "언어교환 모임 참여하기", "en": "Join a language exchange"}, "description": {"ko": "서로의 언어와 문화를 나눌 친구를 만나보세요.", "en": "Meet someone to share languages and cultures with."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 30}
+      ]
+    },
+    {
+      "id": "week_04", "weekNumber": 4,
+      "startDate": "2026-09-21T00:00:00+09:00", "endDate": "2026-09-27T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "campus_services", "title": {"ko": "교내 지원 서비스 알아두기", "en": "Learn about campus support services"}, "description": {"ko": "보건, 상담, 학습 지원센터의 위치와 이용 방법을 확인하세요.", "en": "Check how to use health, counseling, and academic support services."}, "type": "notice", "targetAudiences": ["exchange", "korean"], "sortOrder": 10},
+        {"id": "dorm_rules", "title": {"ko": "기숙사 생활 규칙 확인하기", "en": "Review dormitory rules"}, "description": {"ko": "거주 중이라면 출입, 분리수거, 시설 이용 규칙을 확인하세요.", "en": "If you live on campus, review access, recycling, and facility rules."}, "type": "required", "targetAudiences": ["exchange"], "sortOrder": 20, "carryOver": true},
+        {"id": "buddy_program", "title": {"ko": "버디 프로그램 찾아보기", "en": "Explore a buddy program"}, "description": {"ko": "교환학생과 한국인 학생이 함께하는 교류 프로그램을 확인하세요.", "en": "Check programs that connect exchange and Korean students."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 30}
+      ]
+    },
+    {
+      "id": "week_05", "weekNumber": 5,
+      "startDate": "2026-09-28T00:00:00+09:00", "endDate": "2026-10-04T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "assignment_check", "title": {"ko": "밀린 과제와 출석 확인하기", "en": "Check assignments and attendance"}, "description": {"ko": "과목별 누락 항목이 없는지 점검하세요.", "en": "Make sure nothing is missing for each course."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "study_meetup", "title": {"ko": "전공 또는 시험 스터디 찾아보기", "en": "Find a study meetup"}, "description": {"ko": "혼자 준비하기 어려운 과목은 함께 공부해 보세요.", "en": "Study together for a course that is difficult to prepare for alone."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_06", "weekNumber": 6,
+      "startDate": "2026-10-05T00:00:00+09:00", "endDate": "2026-10-11T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "midterm_schedule", "title": {"ko": "중간고사 일정 정리하기", "en": "Organize your midterm schedule"}, "description": {"ko": "시험일, 범위, 과제 마감일을 한곳에 정리하세요.", "en": "Collect exam dates, coverage, and assignment deadlines in one place."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "library_space", "title": {"ko": "집중할 공부 장소 찾아보기", "en": "Find a focused study spot"}, "description": {"ko": "도서관이나 교내 학습 공간을 이용해 보세요.", "en": "Try the library or another campus study space."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_07", "weekNumber": 7,
+      "startDate": "2026-10-12T00:00:00+09:00", "endDate": "2026-10-18T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "midterm_readiness", "title": {"ko": "중간고사 준비 상태 점검하기", "en": "Review your midterm readiness"}, "description": {"ko": "과목별 남은 분량과 준비 시간을 확인하세요.", "en": "Check the remaining material and study time for each course."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "study_break", "title": {"ko": "짧은 휴식 모임 참여하기", "en": "Take a short social break"}, "description": {"ko": "시험 준비 사이에 식사나 산책으로 재충전해 보세요.", "en": "Recharge with a meal or walk between study sessions."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_08", "weekNumber": 8,
+      "startDate": "2026-10-19T00:00:00+09:00", "endDate": "2026-10-25T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "midterm_followup", "title": {"ko": "시험 후 과목별 계획 다시 세우기", "en": "Reset your course plan after midterms"}, "description": {"ko": "피드백과 남은 평가 일정을 반영해 계획을 조정하세요.", "en": "Adjust your plan using feedback and the remaining assessments."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "wellbeing_check", "title": {"ko": "이번 학기 컨디션 돌아보기", "en": "Check in on your wellbeing"}, "description": {"ko": "수면, 식사, 스트레스 상태를 확인하고 필요한 도움을 받으세요.", "en": "Review sleep, meals, and stress, and seek support if needed."}, "type": "notice", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_09", "weekNumber": 9,
+      "startDate": "2026-10-26T00:00:00+09:00", "endDate": "2026-11-01T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "festival_events", "title": {"ko": "교내 행사 일정 확인하기", "en": "Check upcoming campus events"}, "description": {"ko": "축제, 공연, 전시 등 관심 있는 행사를 저장하세요.", "en": "Save festivals, performances, or exhibitions that interest you."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 10},
+        {"id": "exchange_culture_event", "title": {"ko": "문화 교류 행사 참여하기", "en": "Join a cultural exchange event"}, "description": {"ko": "다른 배경의 학생들과 자연스럽게 교류해 보세요.", "en": "Connect naturally with students from different backgrounds."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_10", "weekNumber": 10,
+      "startDate": "2026-11-02T00:00:00+09:00", "endDate": "2026-11-08T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "grade_progress", "title": {"ko": "과목별 성취도 확인하기", "en": "Review your progress in each course"}, "description": {"ko": "현재 점수와 남은 평가 비중을 확인하세요.", "en": "Check your current results and remaining assessment weights."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "academic_advising", "title": {"ko": "필요한 학업 상담 예약하기", "en": "Book academic advising if needed"}, "description": {"ko": "수업이나 학점에 고민이 있다면 담당 부서에 문의하세요.", "en": "Contact the appropriate office if you have course or credit concerns."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_11", "weekNumber": 11,
+      "startDate": "2026-11-09T00:00:00+09:00", "endDate": "2026-11-15T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "final_projects", "title": {"ko": "기말 과제와 팀 프로젝트 일정 확인하기", "en": "Check final projects and team deadlines"}, "description": {"ko": "역할, 중간 마감, 제출 형식을 미리 확인하세요.", "en": "Confirm roles, milestones, and submission formats early."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "career_program", "title": {"ko": "진로·취업 프로그램 찾아보기", "en": "Explore career programs"}, "description": {"ko": "관심 있는 진로 상담, 특강, 채용 행사를 확인하세요.", "en": "Look for advising, talks, or recruiting events relevant to you."}, "type": "recommendation", "targetAudiences": ["korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_12", "weekNumber": 12,
+      "startDate": "2026-11-16T00:00:00+09:00", "endDate": "2026-11-22T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "next_term_notice", "title": {"ko": "다음 학기 주요 일정 확인하기", "en": "Check key dates for next semester"}, "description": {"ko": "휴학, 복학, 기숙사, 수강신청 관련 일정을 확인하세요.", "en": "Review dates for leave, return, housing, and course registration."}, "type": "notice", "targetAudiences": ["exchange", "korean"], "sortOrder": 10},
+        {"id": "exchange_departure_plan", "title": {"ko": "귀국 전 행정 절차 확인하기", "en": "Review pre-departure procedures"}, "description": {"ko": "성적표, 기숙사 퇴실, 체류 관련 안내를 확인하세요.", "en": "Check transcript, housing checkout, and immigration guidance."}, "type": "required", "targetAudiences": ["exchange"], "sortOrder": 20, "carryOver": true}
+      ]
+    },
+    {
+      "id": "week_13", "weekNumber": 13,
+      "startDate": "2026-11-23T00:00:00+09:00", "endDate": "2026-11-29T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "final_schedule", "title": {"ko": "기말고사 일정 확정하기", "en": "Confirm your final exam schedule"}, "description": {"ko": "시험일, 장소, 범위와 제출 마감을 최종 확인하세요.", "en": "Confirm exam dates, rooms, coverage, and submission deadlines."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "semester_memory", "title": {"ko": "학기 마무리 모임 계획하기", "en": "Plan an end-of-semester meetup"}, "description": {"ko": "함께한 친구들과 가볍게 학기를 마무리해 보세요.", "en": "Wrap up the semester with friends you met along the way."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    },
+    {
+      "id": "week_14", "weekNumber": 14,
+      "startDate": "2026-11-30T00:00:00+09:00", "endDate": "2026-12-06T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "final_readiness", "title": {"ko": "기말 준비 상태 점검하기", "en": "Review your final exam readiness"}, "description": {"ko": "남은 학습량과 제출물을 과목별로 확인하세요.", "en": "Check remaining study material and submissions for each course."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "return_items", "title": {"ko": "대여 물품과 도서 반납 일정 확인하기", "en": "Check return dates for borrowed items"}, "description": {"ko": "도서관 도서와 교내 대여 물품의 반납일을 확인하세요.", "en": "Review due dates for library books and campus rentals."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 20, "carryOver": true}
+      ]
+    },
+    {
+      "id": "week_15", "weekNumber": 15,
+      "startDate": "2026-12-07T00:00:00+09:00", "endDate": "2026-12-13T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "final_submissions", "title": {"ko": "최종 제출물 확인하기", "en": "Confirm all final submissions"}, "description": {"ko": "제출 완료 여부와 파일 상태를 마지막으로 확인하세요.", "en": "Do one final check that every submission was received correctly."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "semester_reflection", "title": {"ko": "이번 학기 기록 돌아보기", "en": "Reflect on your semester"}, "description": {"ko": "좋았던 활동과 다음 학기에 이어갈 목표를 기록해 보세요.", "en": "Note what went well and what you want to continue next semester."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20},
+        {"id": "stay_connected", "title": {"ko": "함께한 친구들과 연락 이어가기", "en": "Stay connected with friends"}, "description": {"ko": "학기 중 만난 사람들과 다음 약속을 만들어 보세요.", "en": "Make a plan to stay in touch with people you met this semester."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 30}
+      ]
+    },
+    {
+      "id": "week_16", "weekNumber": 16,
+      "startDate": "2026-12-14T00:00:00+09:00", "endDate": "2026-12-20T23:59:59+09:00", "isPublished": true,
+      "tasks": [
+        {"id": "semester_wrap_up", "title": {"ko": "학기 마무리 항목 확인하기", "en": "Complete your semester wrap-up"}, "description": {"ko": "성적 확인 일정, 반납할 물품, 남은 행정 절차를 점검하세요.", "en": "Check grade dates, borrowed items, and any remaining administration."}, "type": "required", "targetAudiences": ["exchange", "korean"], "sortOrder": 10, "carryOver": true},
+        {"id": "next_semester_plan", "title": {"ko": "다음 학기 계획 세우기", "en": "Plan for next semester"}, "description": {"ko": "이번 학기를 돌아보고 다음 학기에 이어갈 목표를 정리하세요.", "en": "Reflect on this semester and set goals to carry into the next one."}, "type": "recommendation", "targetAudiences": ["exchange", "korean"], "sortOrder": 20}
+      ]
+    }
+  ]
+}

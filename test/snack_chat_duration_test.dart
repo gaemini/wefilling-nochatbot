@@ -52,6 +52,7 @@ void main() {
     );
 
     expect(chat.hasNoExpiration, isFalse);
+    expect(chat.isExpired(DateTime.utc(2026, 1, 2)), isTrue);
     expect(chat.isExpired(DateTime.utc(2026, 1, 2, 0, 0, 1)), isTrue);
   });
 
@@ -73,6 +74,38 @@ void main() {
     );
 
     expect(chat.participantCount, 20);
+  });
+
+  test('meetup-linked chats can start with the host only', () {
+    final now = DateTime(2026, 7, 26, 10);
+    final expiresAt = now.add(const Duration(hours: 24));
+    final chat = SnackChat(
+      id: 'meetup-chat',
+      title: 'Meetup',
+      creatorId: 'owner',
+      participantIds: const ['owner'],
+      visibleToCategoryIds: const [],
+      createdAt: now,
+      activeDurationHours: 24,
+      expiresAt: expiresAt,
+      favoriteUserIds: const [],
+      lastMessage: '',
+      lastMessageTime: now,
+      lastMessageSenderId: 'owner',
+      unreadCount: const {'owner': 0},
+      updatedAt: now,
+      meetupId: 'meetup-1',
+      allowMeetupJoin: true,
+    );
+
+    expect(chat.participantIds, const ['owner']);
+    expect(chat.participantCount, 1);
+    expect(chat.meetupId, 'meetup-1');
+    expect(chat.allowMeetupJoin, isTrue);
+    expect(chat.hasNoExpiration, isFalse);
+    expect(chat.expiresAt, expiresAt);
+    expect(chat.toFirestore()['activeDurationHours'], 24);
+    expect(chat.toFirestore()['participantIds'], const ['owner']);
   });
 
   test('chats created today stay in Today until local midnight', () {
@@ -173,5 +206,29 @@ void main() {
 
     expect(today, isEmpty);
     expect(all, isEmpty);
+  });
+
+  test('expired rooms stay visible only while favorited', () {
+    final favorited = _chat(
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 9),
+      createdAt: DateTime(2026, 7, 25, 8),
+      favorites: const ['owner'],
+    );
+    final notFavorited = _chat(
+      durationHours: 24,
+      expiresAt: DateTime(2026, 7, 25, 9),
+      createdAt: DateTime(2026, 7, 25, 8),
+    );
+
+    final all = filterSnackChatsBySection(
+      [favorited, notFavorited],
+      section: SnackChatListSection.all,
+      now: DateTime(2026, 7, 26),
+      currentUserId: 'owner',
+    );
+
+    expect(all, contains(favorited));
+    expect(all, isNot(contains(notFavorited)));
   });
 }

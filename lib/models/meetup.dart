@@ -31,9 +31,19 @@ class Meetup {
   final String? hostNickname; // 주최자 닉네임
   final String visibility; // 공개 범위: 'public', 'friends', 'category'
   final List<String> visibleToCategoryIds; // 특정 카테고리에만 공개할 경우 카테고리 ID들
+  final List<String> allowedUserIds; // 그룹 공개 대상 사용자 ID(주최자 포함)
+  final int visibilitySchemaVersion;
+  final DateTime? visibilityLockedAt;
+
+  String? get ownerId => userId;
+  String get visibilityMode => visibility;
+  List<String> get audienceUserIdsFrozen => allowedUserIds;
+  List<String> get sourceGroupIds => visibleToCategoryIds;
   final bool isCompleted; // 모임장이 "모임 완료" 버튼을 눌렀는지
   final bool hasReview; // 후기가 작성되었는지
   final bool groupChatEnabled; // 모임 단체 톡방 활성화 여부 (호스트가 켜기)
+  final bool isConfirmed; // 모임장이 모임을 확정했는지
+  final String? snackChatId; // 이 모임에서 생성된 Snack Chat
   final String? reviewId; // 작성된 후기 ID
   final int viewCount; // 조회수
   final int commentCount; // 댓글수
@@ -60,9 +70,14 @@ class Meetup {
     this.hostNickname,
     this.visibility = 'public', // 기본값: 전체 공개
     this.visibleToCategoryIds = const [],
+    this.allowedUserIds = const [],
+    this.visibilitySchemaVersion = 0,
+    this.visibilityLockedAt,
     this.isCompleted = false, // 기본값: 미완료
     this.hasReview = false, // 기본값: 후기 없음
     this.groupChatEnabled = false, // 기본값: 비활성
+    this.isConfirmed = false,
+    this.snackChatId,
     this.reviewId,
     this.viewCount = 0, // 기본값: 조회수 0
     this.commentCount = 0, // 기본값: 댓글수 0
@@ -90,9 +105,14 @@ class Meetup {
     String? hostNickname,
     String? visibility,
     List<String>? visibleToCategoryIds,
+    List<String>? allowedUserIds,
+    int? visibilitySchemaVersion,
+    DateTime? visibilityLockedAt,
     bool? isCompleted,
     bool? hasReview,
     bool? groupChatEnabled,
+    bool? isConfirmed,
+    String? snackChatId,
     String? reviewId,
     int? viewCount,
     int? commentCount,
@@ -119,14 +139,23 @@ class Meetup {
       hostNickname: hostNickname ?? this.hostNickname,
       visibility: visibility ?? this.visibility,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
+      allowedUserIds: allowedUserIds ?? this.allowedUserIds,
+      visibilitySchemaVersion:
+          visibilitySchemaVersion ?? this.visibilitySchemaVersion,
+      visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
       isCompleted: isCompleted ?? this.isCompleted,
       hasReview: hasReview ?? this.hasReview,
       groupChatEnabled: groupChatEnabled ?? this.groupChatEnabled,
+      isConfirmed: isConfirmed ?? this.isConfirmed,
+      snackChatId: snackChatId ?? this.snackChatId,
       reviewId: reviewId ?? this.reviewId,
       viewCount: viewCount ?? this.viewCount,
       commentCount: commentCount ?? this.commentCount,
     );
   }
+
+  /// 확정된 모임과 기존 완료 모임은 동일한 후기 플로우를 사용한다.
+  bool get canStartReview => isConfirmed || isCompleted;
 
   static DateTime _parseFirestoreDate(dynamic raw, {DateTime? fallback}) {
     final fb = fallback ?? DateTime.fromMillisecondsSinceEpoch(0);
@@ -494,15 +523,35 @@ class Meetup {
       date: _parseFirestoreDate(json['date'], fallback: DateTime.now()),
       createdAt: _parseFirestoreDate(json['createdAt']),
       category: json['category'] ?? '기타',
-      userId: json['userId'],
+      userId: json['ownerId'] ?? json['userId'],
       hostNickname: json['hostNickname'],
-      visibility: json['visibility'] ?? 'public',
-      visibleToCategoryIds: json['visibleToCategoryIds'] != null
-          ? List<String>.from(json['visibleToCategoryIds'] as List)
-          : [],
+      visibility: json['visibilityMode'] ?? json['visibility'] ?? 'public',
+      visibleToCategoryIds:
+          (json['sourceGroupIds'] ?? json['visibleToCategoryIds']) != null
+              ? List<String>.from(
+                  (json['sourceGroupIds'] ?? json['visibleToCategoryIds'])
+                      as List,
+                )
+              : [],
+      allowedUserIds:
+          (json['audienceUserIdsFrozen'] ?? json['allowedUserIds']) != null
+              ? List<String>.from(
+                  (json['audienceUserIdsFrozen'] ?? json['allowedUserIds'])
+                      as List,
+                )
+              : [],
+      visibilitySchemaVersion:
+          (json['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+      visibilityLockedAt: json['visibilityLockedAt'] == null
+          ? null
+          : _parseFirestoreDate(json['visibilityLockedAt']),
       isCompleted: json['isCompleted'] ?? false,
       hasReview: json['hasReview'] ?? false,
       groupChatEnabled: json['groupChatEnabled'] ?? false,
+      isConfirmed: json['isConfirmed'] ?? false,
+      snackChatId: (json['snackChatId'] ?? '').toString().trim().isEmpty
+          ? null
+          : json['snackChatId'].toString().trim(),
       reviewId: json['reviewId'],
       viewCount: json['viewCount'] ?? 0,
       commentCount: json['commentCount'] ?? 0,
@@ -545,9 +594,19 @@ class Meetup {
       'hostNickname': hostNickname,
       'visibility': visibility,
       'visibleToCategoryIds': visibleToCategoryIds,
+      'allowedUserIds': allowedUserIds,
+      'ownerId': ownerId,
+      'visibilityMode': visibilityMode,
+      'audienceUserIdsFrozen': audienceUserIdsFrozen,
+      'sourceGroupIds': sourceGroupIds,
+      'visibilitySchemaVersion': visibilitySchemaVersion,
+      if (visibilityLockedAt != null) 'visibilityLockedAt': visibilityLockedAt,
       'isCompleted': isCompleted,
       'hasReview': hasReview,
       'groupChatEnabled': groupChatEnabled,
+      'isConfirmed': isConfirmed,
+      if (snackChatId != null && snackChatId!.isNotEmpty)
+        'snackChatId': snackChatId,
       'reviewId': reviewId,
       'viewCount': viewCount,
       'commentCount': commentCount,

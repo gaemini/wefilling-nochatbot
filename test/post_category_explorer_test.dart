@@ -172,6 +172,26 @@ void main() {
     expect(icon.color, Colors.white);
   });
 
+  testWidgets('uses the supplied Study background with white foreground',
+      (tester) async {
+    await tester.pumpWidget(_app(onSelected: (_) {}));
+
+    const backgroundKey = ValueKey('post_category_background_academic_study');
+    await tester.scrollUntilVisible(find.byKey(backgroundKey), 120);
+
+    expect(
+      PostCategoryExplorer.backgroundAssetFor(PostCategory.academicStudy),
+      'assets/images/post_categories/study.png',
+    );
+    expect(find.byKey(backgroundKey), findsOneWidget);
+    final title = tester.widget<Text>(find.text('학업·스터디'));
+    final description = tester.widget<Text>(find.text('수업·과제·시험·스터디'));
+    final icon = tester.widget<Icon>(find.byIcon(Icons.school_outlined));
+    expect(title.style?.color, Colors.white);
+    expect(description.style?.color, Colors.white);
+    expect(icon.color, Colors.white);
+  });
+
   testWidgets('uses the supplied Books background with white foreground',
       (tester) async {
     await tester.pumpWidget(_app(onSelected: (_) {}));

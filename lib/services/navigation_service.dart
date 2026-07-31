@@ -9,6 +9,9 @@ import '../services/post_service.dart';
 import '../services/meetup_service.dart';
 import '../models/post.dart';
 import '../models/meetup.dart';
+import '../models/student_type.dart';
+import '../services/semester_todo_service.dart';
+import '../services/snapshot_service.dart';
 
 import '../screens/post_detail_screen.dart';
 import '../screens/meetup_detail_screen.dart';
@@ -17,9 +20,13 @@ import '../screens/ad_showcase_screen.dart';
 import '../screens/notification_screen.dart';
 import '../screens/dm_chat_screen.dart';
 import '../screens/snack_chat_screen.dart';
+import '../screens/semester_todo_screen.dart';
+import '../screens/student_type_selection_screen.dart';
+import '../screens/snapshot_detail_screen.dart';
 
 class NavigationService {
-  static final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+  static final GlobalKey<NavigatorState> navigatorKey =
+      GlobalKey<NavigatorState>();
 
   // 푸시 데이터 기반 화면 이동
   static Future<void> handlePushNavigation(Map<String, dynamic> data) async {
@@ -29,121 +36,172 @@ class NavigationService {
     final type = data['type'] as String? ?? '';
     try {
       switch (type) {
-        case 'dm_received': {
-          // DM 푸시 알림 클릭 시 대화방으로 이동
-          final conversationId = data['conversationId'] as String?;
-          final senderId = data['senderId'] as String?;
-          
-          if (conversationId != null && conversationId.isNotEmpty) {
+        case 'personalTodoReminder':
+          {
+            StudentType? studentType =
+                await SemesterTodoService.instance.getStudentType();
+            studentType ??= await nav.push<StudentType>(
+              MaterialPageRoute(
+                builder: (_) => const StudentTypeSelectionScreen(),
+              ),
+            );
+            if (studentType == null) return;
             await nav.push(
               MaterialPageRoute(
-                builder: (_) => DMChatScreen(
-                  conversationId: conversationId,
-                  otherUserId: senderId ?? '',
+                builder: (_) => SemesterTodoScreen(
+                  studentType: studentType!,
+                  focusPersonalSection: true,
                 ),
+                settings: const RouteSettings(name: '/todo'),
               ),
             );
             return;
           }
-          break;
-        }
-        case 'post_private':
-        case 'new_comment':
-        case 'new_like': {
-          final postId = data['postId'] as String?;
-          if (postId == null || postId.isEmpty) break;
-          final Post? post = await PostService().getPostById(postId);
-          if (post != null) {
-            await nav.push(MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)));
-            return;
-          }
-          break;
-        }
-        case 'meetup_full':
-        case 'meetup_cancelled': {
-          final meetupId = data['meetupId'] as String?;
-          if (meetupId == null || meetupId.isEmpty) break;
-          final Meetup? meetup = await MeetupService().getMeetupById(meetupId);
-          if (meetup != null) {
-            await nav.push(
-              MaterialPageRoute(
-                builder: (_) => MeetupDetailScreen(
-                  meetup: meetup,
-                  meetupId: meetupId,
-                  onMeetupDeleted: () {
-                    // 딥링크로 열린 화면이므로 삭제 시 뒤로 가기
-                    nav.pop();
-                  },
+        case 'dm_received':
+          {
+            // DM 푸시 알림 클릭 시 대화방으로 이동
+            final conversationId = data['conversationId'] as String?;
+            final senderId = data['senderId'] as String?;
+
+            if (conversationId != null && conversationId.isNotEmpty) {
+              await nav.push(
+                MaterialPageRoute(
+                  builder: (_) => DMChatScreen(
+                    conversationId: conversationId,
+                    otherUserId: senderId ?? '',
+                  ),
                 ),
-              ),
-            );
-            return;
-          }
-          break;
-        }
-        case 'friend_request': {
-          await nav.push(MaterialPageRoute(builder: (_) => const RequestsPage()));
-          return;
-        }
-        case 'ad_updates': {
-          await nav.push(MaterialPageRoute(builder: (_) => const AdShowcaseScreen()));
-          return;
-        }
-        case 'snack_chat_message': {
-          final snackChatId = data['snackChatId'] as String?;
-          if (snackChatId == null || snackChatId.isEmpty) break;
-          await nav.push(MaterialPageRoute(
-            builder: (_) => SnackChatScreen(
-              snackChatId: snackChatId,
-              fromPush: true,
-            ),
-          ));
-          return;
-        }
-        case 'snack_chat_invite': {
-          final snackChatId = data['snackChatId'] as String?;
-          if (snackChatId == null || snackChatId.isEmpty) break;
-
-          // 현재 참여자인지 확인 (나간 사용자 처리)
-          final uid = FirebaseAuth.instance.currentUser?.uid;
-          if (uid == null) break;
-
-          try {
-            final doc = await FirebaseFirestore.instance
-                .collection('snack_chats')
-                .doc(snackChatId)
-                .get();
-
-            if (!doc.exists) {
-              // 방이 없음 → 알림 화면
-              break;
-            }
-
-            final participants =
-                List<String>.from(doc.data()?['participantIds'] ?? []);
-            if (!participants.contains(uid)) {
-              // 이미 나간 사용자 → 참여 불가 안내 화면
-              await nav.push(MaterialPageRoute(
-                builder: (_) => const _SnackChatNotParticipantScreen(),
-              ));
+              );
               return;
             }
-
-            await nav.push(MaterialPageRoute(
-              builder: (_) => SnackChatScreen(snackChatId: snackChatId),
-            ));
-            return;
-          } catch (_) {
             break;
           }
-        }
+        case 'post_private':
+        case 'new_comment':
+        case 'new_like':
+          {
+            final postId = data['postId'] as String?;
+            if (postId == null || postId.isEmpty) break;
+            final Post? post = await PostService().getPostById(postId);
+            if (post != null) {
+              await nav.push(MaterialPageRoute(
+                  builder: (_) => PostDetailScreen(post: post)));
+              return;
+            }
+            break;
+          }
+        case 'snapshot_reaction':
+        case 'snapshot_comment':
+          {
+            final snapshotId = data['snapshotId'] as String?;
+            if (snapshotId == null || snapshotId.isEmpty) break;
+            final snapshot =
+                await SnapshotService.instance.getSnapshot(snapshotId);
+            await nav.push(
+              MaterialPageRoute(
+                builder: (_) => SnapshotDetailScreen(
+                  snapshots: [snapshot],
+                  initialIndex: 0,
+                ),
+              ),
+            );
+            return;
+          }
+        case 'meetup_full':
+        case 'meetup_cancelled':
+          {
+            final meetupId = data['meetupId'] as String?;
+            if (meetupId == null || meetupId.isEmpty) break;
+            final Meetup? meetup =
+                await MeetupService().getMeetupById(meetupId);
+            if (meetup != null) {
+              await nav.push(
+                MaterialPageRoute(
+                  builder: (_) => MeetupDetailScreen(
+                    meetup: meetup,
+                    meetupId: meetupId,
+                    onMeetupDeleted: () {
+                      // 딥링크로 열린 화면이므로 삭제 시 뒤로 가기
+                      nav.pop();
+                    },
+                  ),
+                ),
+              );
+              return;
+            }
+            break;
+          }
+        case 'friend_request':
+          {
+            await nav
+                .push(MaterialPageRoute(builder: (_) => const RequestsPage()));
+            return;
+          }
+        case 'ad_updates':
+          {
+            await nav.push(
+                MaterialPageRoute(builder: (_) => const AdShowcaseScreen()));
+            return;
+          }
+        case 'snack_chat_message':
+          {
+            final snackChatId = data['snackChatId'] as String?;
+            if (snackChatId == null || snackChatId.isEmpty) break;
+            await nav.push(MaterialPageRoute(
+              builder: (_) => SnackChatScreen(
+                snackChatId: snackChatId,
+                fromPush: true,
+              ),
+            ));
+            return;
+          }
+        case 'snack_chat_invite':
+          {
+            final snackChatId = data['snackChatId'] as String?;
+            if (snackChatId == null || snackChatId.isEmpty) break;
+
+            // 현재 참여자인지 확인 (나간 사용자 처리)
+            final uid = FirebaseAuth.instance.currentUser?.uid;
+            if (uid == null) break;
+
+            try {
+              final doc = await FirebaseFirestore.instance
+                  .collection('snack_chats')
+                  .doc(snackChatId)
+                  .get();
+
+              if (!doc.exists) {
+                // 방이 없음 → 알림 화면
+                break;
+              }
+
+              final participants =
+                  List<String>.from(doc.data()?['participantIds'] ?? []);
+              if (!participants.contains(uid)) {
+                // 이미 나간 사용자 → 참여 불가 안내 화면
+                await nav.push(MaterialPageRoute(
+                  builder: (_) => const _SnackChatNotParticipantScreen(),
+                ));
+                return;
+              }
+
+              await nav.push(MaterialPageRoute(
+                builder: (_) => SnackChatScreen(snackChatId: snackChatId),
+              ));
+              return;
+            } catch (_) {
+              break;
+            }
+          }
       }
 
       // 기본: 알림 화면으로 이동
-      await nav.push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
+      await nav
+          .push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
     } catch (_) {
       // 실패 시에도 앱이 죽지 않도록 안전 처리
-      await nav.push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
+      await nav
+          .push(MaterialPageRoute(builder: (_) => const NotificationScreen()));
     }
   }
 }
@@ -243,5 +301,3 @@ class _SnackChatNotParticipantScreen extends StatelessWidget {
     );
   }
 }
-
-

@@ -25,6 +25,7 @@ import '../widgets/country_flag_circle.dart';
 import '../ui/widgets/enhanced_comment_widget.dart';
 import '../ui/widgets/poll_post_widget.dart';
 import '../ui/widgets/user_avatar.dart';
+import '../ui/widgets/audience_ring.dart';
 import '../l10n/app_localizations.dart';
 import '../design/tokens.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
@@ -38,7 +39,6 @@ import '../services/report_service.dart';
 import '../ui/dialogs/block_dialog.dart';
 import '../ui/dialogs/report_dialog.dart';
 import '../ui/snackbar/app_snackbar.dart';
-import '../ui/widgets/friends_only_badge.dart';
 import '../ui/widgets/post_action_group.dart';
 
 class PostDetailScreen extends StatefulWidget {
@@ -866,37 +866,16 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
     final audience = <String>{};
 
-    if (post.allowedUserIds.isNotEmpty) {
-      for (final uid in post.allowedUserIds) {
-        final trimmed = uid.trim();
-        if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
-          continue;
-        }
-        audience.add(trimmed);
+    for (final uid in post.allowedUserIds) {
+      final trimmed = uid.trim();
+      if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
+        continue;
       }
-      return audience.toList(growable: false);
+      audience.add(trimmed);
     }
-
-    if (post.visibleToCategoryIds.isEmpty) return const <String>[];
-
-    for (final categoryId in post.visibleToCategoryIds) {
-      final trimmedCategoryId = categoryId.trim();
-      if (trimmedCategoryId.isEmpty) continue;
-      final snap = await _firestore
-          .collection('friend_categories')
-          .doc(trimmedCategoryId)
-          .get();
-      final friendIds =
-          List<String>.from(snap.data()?['friendIds'] ?? const []);
-      for (final uid in friendIds) {
-        final trimmed = uid.trim();
-        if (trimmed.isEmpty || trimmed == 'deleted' || trimmed == post.userId) {
-          continue;
-        }
-        audience.add(trimmed);
-      }
-    }
-
+    // 생성 당시 UID가 없는 레거시 문서를 현재 그룹으로 재계산하지 않는다.
+    // 정확한 과거 대상자를 복구할 수 없으므로 migration 전에는 작성자 외
+    // 대상 표시를 fail-closed 처리한다.
     return audience.toList(growable: false);
   }
 
@@ -1159,38 +1138,50 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
   }
 
   Widget _buildAudienceAvatarItem(_PostAudienceUser user) {
-    return GestureDetector(
-      onTap: () => _openUserProfile(
-        userId: user.uid,
-        nickname: user.nickname,
-        photoURL: user.photoURL,
-      ),
-      child: SizedBox(
-        width: 78,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            UserAvatar(
-              uid: user.uid,
-              photoUrl: user.photoURL,
-              photoVersion: user.photoVersion,
-              isAnonymous: false,
-              size: 56,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              user.nickname,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF111827),
+    final isCompact = MediaQuery.sizeOf(context).width < 360;
+    final avatarSize = isCompact ? 48.0 : 52.0;
+
+    return Semantics(
+      button: true,
+      label: user.nickname,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openUserProfile(
+          userId: user.uid,
+          nickname: user.nickname,
+          photoURL: user.photoURL,
+        ),
+        child: SizedBox(
+          width: isCompact ? 62 : 68,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              UserAvatar(
+                uid: user.uid,
+                photoUrl: user.photoURL,
+                photoVersion: user.photoVersion,
+                isAnonymous: false,
+                size: avatarSize,
               ),
-            ),
-          ],
+              SizedBox(height: isCompact ? 5 : 6),
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Text(
+                  user.nickname,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: isCompact ? 12 : 13,
+                    fontWeight: FontWeight.w500,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1202,6 +1193,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
 
     final l10n = AppLocalizations.of(context)!;
+    final isCompact = MediaQuery.sizeOf(context).width < 360;
 
     return FutureBuilder<List<_PostAudienceUser>>(
       future: _audienceUsersFuture,
@@ -1209,7 +1201,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (snapshot.connectionState != ConnectionState.done &&
             !snapshot.hasData) {
           return const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            padding: EdgeInsets.fromLTRB(8, 4, 8, 8),
             child: SizedBox(
               height: 88,
               child: Center(
@@ -1227,30 +1219,25 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         if (audienceUsers.isEmpty) return const SizedBox.shrink();
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                l10n.postAudienceTitle,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF374151),
+              MediaQuery.withClampedTextScaling(
+                maxScaleFactor: 1.2,
+                child: Text(
+                  l10n.postAudienceTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: isCompact ? 13.5 : 14,
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF374151),
+                  ),
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                l10n.postAudienceSubtitle,
-                style: const TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFF6B7280),
-                ),
-              ),
-              const SizedBox(height: 12),
+              SizedBox(height: isCompact ? 8 : 10),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -1260,7 +1247,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                         index++) ...[
                       _buildAudienceAvatarItem(audienceUsers[index]),
                       if (index != audienceUsers.length - 1)
-                        const SizedBox(width: 14),
+                        SizedBox(width: isCompact ? 6 : 8),
                     ],
                   ],
                 ),
@@ -2374,12 +2361,22 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             child: SizedBox.square(
               dimension: 44,
               child: Center(
-                child: UserAvatar(
-                  uid: _currentPost.userId,
-                  photoUrl: _currentPost.authorPhotoURL,
-                  photoVersion: 0,
-                  isAnonymous: isAnonymous,
-                  size: 34,
+                child: AudienceRing(
+                  restricted: _currentPost.visibility == 'category',
+                  size: 40,
+                  ringWidth: 2.25,
+                  innerGap: 1.25,
+                  semanticLabel:
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '선택한 그룹에 공개된 포스트'
+                          : 'Post shared with selected groups',
+                  child: UserAvatar(
+                    uid: _currentPost.userId,
+                    photoUrl: _currentPost.authorPhotoURL,
+                    photoVersion: 0,
+                    isAnonymous: isAnonymous,
+                    size: 40,
+                  ),
                 ),
               ),
             ),
@@ -2428,17 +2425,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             ],
           ),
         ),
-        if (_currentPost.visibility == 'category') ...[
-          const SizedBox(width: DesignTokens.s8),
-          FriendsOnlyBadge(
-            label: l10n.friendsOnly,
-            iconSize: 11,
-            fontSize: 11,
-            gap: DesignTokens.s4,
-            fontWeight: FontWeight.w600,
-            foregroundColor: BrandColors.textTertiary,
-          ),
-        ],
       ],
     );
   }

@@ -27,6 +27,11 @@ class DMListScreen extends StatefulWidget {
 }
 
 class _DMListScreenState extends State<DMListScreen> {
+  // DM 탭이 상위 네비게이션 변경 등으로 다시 만들어져도 마지막으로 표시한
+  // 목록을 즉시 그린다. 서버 스트림은 뒤에서 최신 상태로 교체한다.
+  // 사용자별로 분리해 로그아웃/계정 전환 시 다른 계정의 목록이 노출되지 않는다.
+  static final Map<String, List<Conversation>> _sessionConversationCache = {};
+
   final DMService _dmService = DMService();
   final RelationshipService _relationshipService = RelationshipService();
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
@@ -175,6 +180,12 @@ class _DMListScreenState extends State<DMListScreen> {
   @override
   void initState() {
     super.initState();
+    final currentUserId = _currentUser?.uid;
+    if (currentUserId != null) {
+      _lastNonEmptyConversations = List<Conversation>.unmodifiable(
+        _sessionConversationCache[currentUserId] ?? const <Conversation>[],
+      );
+    }
     // ✅ build()마다 새 스트림 생성/재구독 방지(깜빡임 감소)
     _conversationsStream = _dmService.getMyConversationsWithMeta();
     _loadHiddenConversations();
@@ -199,6 +210,7 @@ class _DMListScreenState extends State<DMListScreen> {
   Future<void> _loadHiddenConversations() async {
     final prefs = await SharedPreferences.getInstance();
     final list = prefs.getStringList('hidden_conversations') ?? <String>[];
+    if (!mounted) return;
     setState(() {
       _hiddenConversationIds = list.toSet();
     });
@@ -263,8 +275,19 @@ class _DMListScreenState extends State<DMListScreen> {
                 bool hasPendingWrites
               })>(
             stream: _conversationsStream,
+            initialData: _lastNonEmptyConversations.isEmpty
+                ? null
+                : (
+                    conversations: _lastNonEmptyConversations,
+                    isFromCache: true,
+                    hasPendingWrites: false,
+                  ),
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              // 첫 실행에 보여줄 목록이 전혀 없을 때만 스켈레톤을 사용한다.
+              // 탭 재진입/재생성 시에는 직전 목록을 유지하고 백그라운드로 동기화한다.
+              if (snapshot.connectionState == ConnectionState.waiting &&
+                  !snapshot.hasData &&
+                  _lastNonEmptyConversations.isEmpty) {
                 return _buildListSkeleton();
               }
 
@@ -302,7 +325,14 @@ class _DMListScreenState extends State<DMListScreen> {
 
               // 캐시(empty) 이벤트가 순간적으로 들어오면, 직전 목록을 유지해 깜빡임을 줄인다.
               if (conversations.isNotEmpty) {
-                _lastNonEmptyConversations = conversations;
+                _lastNonEmptyConversations =
+                    List<Conversation>.unmodifiable(conversations);
+                _sessionConversationCache[_currentUser.uid] =
+                    _lastNonEmptyConversations;
+              } else if (!isFromCache && payload != null) {
+                // 서버가 빈 목록을 확정했을 때만 이전 표시 캐시를 비운다.
+                _lastNonEmptyConversations = const <Conversation>[];
+                _sessionConversationCache.remove(_currentUser.uid);
               } else if (isFromCache && _lastNonEmptyConversations.isNotEmpty) {
                 // UI에는 직전 값을 사용하고, 실제 empty 여부는 서버 스냅샷에서 확정한다.
                 // (필터/숨김 처리 등은 아래 로직에서 동일하게 적용됨)
@@ -378,29 +408,44 @@ class _DMListScreenState extends State<DMListScreen> {
                 );
               }
 
-              return ListView.builder(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.paddingOf(context).bottom + 88,
-                ),
-                // ✅ 목록 아이템 높이는 항상 76으로 고정(카드 컨테이너)되어 있어
-                // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
-                // (최신 대화가 상단으로 재정렬되어도 스크롤/렌더가 더 안정적)
-                itemExtent: 72,
-                itemCount: filtered.length,
-                itemBuilder: (context, index) {
-                  final conversation = filtered[index];
-                  final preferLatestSkeleton =
-                      isFromCache && !_serverSnapshotSeen;
-                  // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
-                  // 각 Row의 Stream/Future 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
-                  return KeyedSubtree(
-                    key: ValueKey<String>('dm_conv_${conversation.id}'),
-                    child: _buildConversationCard(
-                      conversation,
-                      preferLatestSkeleton: preferLatestSkeleton,
+              final isRefreshing =
+                  snapshot.connectionState == ConnectionState.waiting ||
+                      (isFromCache && !_serverSnapshotSeen);
+
+              return Stack(
+                children: [
+                  ListView.builder(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.paddingOf(context).bottom + 88,
                     ),
-                  );
-                },
+                    // ✅ 목록 아이템 높이는 항상 72로 고정되어 있어
+                    // 레이아웃 계산 비용을 줄이기 위해 itemExtent를 지정한다.
+                    itemExtent: 72,
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final conversation = filtered[index];
+                      // ✅ 중요: 정렬 변경(최신 대화 상단 이동) 시에도
+                      // 각 Row의 Stream 상태가 다른 대화로 섞이지 않도록 고유 Key를 부여한다.
+                      return KeyedSubtree(
+                        key: ValueKey<String>('dm_conv_${conversation.id}'),
+                        child: _buildConversationCard(conversation),
+                      );
+                    },
+                  ),
+                  // 기존 카드를 감추지 않고 상단의 얇은 진행선만으로
+                  // 서버 동기화 중임을 알린다.
+                  if (isRefreshing)
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      top: 0,
+                      child: LinearProgressIndicator(
+                        minHeight: 1.5,
+                        color: Color(0xFF344054),
+                        backgroundColor: Colors.transparent,
+                      ),
+                    ),
+                ],
               );
             },
           ),
@@ -596,10 +641,7 @@ class _DMListScreenState extends State<DMListScreen> {
   }
 
   /// 대화방 카드 빌드 (실시간 조회)
-  Widget _buildConversationCard(
-    Conversation conversation, {
-    required bool preferLatestSkeleton,
-  }) {
+  Widget _buildConversationCard(Conversation conversation) {
     final otherUserId = conversation.getOtherUserId(_currentUser!.uid);
     final isAnonymous = conversation.isOtherUserAnonymous(_currentUser!.uid);
     final timeString = TimeFormatter.formatConversationTime(
@@ -649,7 +691,6 @@ class _DMListScreenState extends State<DMListScreen> {
         timeString: timeString,
         unreadCount: myUnread,
         hideProfile: true,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
@@ -679,14 +720,12 @@ class _DMListScreenState extends State<DMListScreen> {
         timeString: timeString,
         unreadCount: myUnread,
         hideProfile: false,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
-    // ✅ 권장 방식:
-    // - 상대방 users/{uid} 문서를 실시간 구독해 변경을 즉시 반영한다.
-    // - Firestore fromCache 스냅샷(오래된 로컬 캐시)에서는 "옛 닉/사진"을 보여주지 않고
-    //   서버에서 확인된 값(fromCache=false)부터 렌더링하여 DM 목록 플리커를 제거한다.
+    // 상대방 users/{uid} 문서는 계속 실시간 구독한다. 다만 서버 응답 전에도
+    // conversation/user cache의 마지막 정상 값을 그대로 보여주고, 최신 값이 오면
+    // 같은 카드 안에서 교체해 목록 전체가 깜빡이지 않도록 한다.
     if (isAnonymous) {
       return _buildConversationCardContent(
         conversation: conversation,
@@ -699,11 +738,14 @@ class _DMListScreenState extends State<DMListScreen> {
         unreadCount: myUnread,
         hideProfile: true,
         isTitleLoading: false,
-        isLatestPreviewLoading: preferLatestSkeleton,
       );
     }
 
     final initial = _userInfoCacheService.getCachedUserInfo(otherUserId);
+    final fallbackPhoto = conversation.getOtherUserPhoto(_currentUser.uid);
+    final hasUsableFallbackName = cachedName.trim().isNotEmpty &&
+        cachedName != 'DELETED_ACCOUNT' &&
+        cachedName != deletedLabel;
 
     return StreamBuilder<DMUserInfo?>(
       stream: _userInfoCacheService.watchUserInfo(otherUserId),
@@ -711,46 +753,48 @@ class _DMListScreenState extends State<DMListScreen> {
       builder: (context, snap) {
         final info = snap.data;
 
-        // 문서가 없으면(탈퇴 등) 삭제 계정으로 표시
+        // 첫 스트림 응답을 기다리는 동안에는 conversation에 저장된
+        // 이름/사진을 유지한다. 로딩 시점에 탈퇴 계정이나 스켈레톤으로
+        // 바뀐 뒤 다시 복구되는 깜빡임을 막는다.
         if (info == null) {
+          final waitingForFirstUserSnapshot =
+              snap.connectionState == ConnectionState.waiting;
           return _buildConversationCardContent(
             conversation: conversation,
-            displayName: deletedLabel,
+            displayName: waitingForFirstUserSnapshot && hasUsableFallbackName
+                ? cachedName
+                : deletedLabel,
             otherUserId: otherUserId,
-            otherUserPhoto: '',
+            otherUserPhoto: waitingForFirstUserSnapshot ? fallbackPhoto : '',
             otherUserPhotoVersion: 0,
             isAnonymous: false,
             timeString: timeString,
             unreadCount: myUnread,
             hideProfile: false,
-            isTitleLoading: false,
-            isLatestPreviewLoading: preferLatestSkeleton,
+            isTitleLoading:
+                waitingForFirstUserSnapshot && !hasUsableFallbackName,
           );
         }
 
-        final isServerFresh = info.isFromCache == false;
-
-        // fromCache 단계에서는 옛 정보가 보이지 않도록 타이틀은 스켈레톤 처리
-        final showTitleSkeleton = preferLatestSkeleton || !isServerFresh;
-
         final resolvedName = (info.nickname).trim();
         final displayName =
-            (resolvedName.isEmpty || resolvedName == 'DELETED_ACCOUNT')
-                ? deletedLabel
-                : resolvedName;
+            resolvedName.isNotEmpty && resolvedName != 'DELETED_ACCOUNT'
+                ? resolvedName
+                : (hasUsableFallbackName ? cachedName : deletedLabel);
+        final resolvedPhoto =
+            info.photoURL.trim().isNotEmpty ? info.photoURL : fallbackPhoto;
 
         return _buildConversationCardContent(
           conversation: conversation,
           displayName: displayName,
           otherUserId: otherUserId,
-          otherUserPhoto: isServerFresh ? info.photoURL : '',
-          otherUserPhotoVersion: isServerFresh ? info.photoVersion : 0,
+          otherUserPhoto: resolvedPhoto,
+          otherUserPhotoVersion: info.photoVersion,
           isAnonymous: false,
           timeString: timeString,
           unreadCount: myUnread,
           hideProfile: false,
-          isTitleLoading: showTitleSkeleton,
-          isLatestPreviewLoading: preferLatestSkeleton,
+          isTitleLoading: false,
         );
       },
     );

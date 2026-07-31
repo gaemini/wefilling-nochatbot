@@ -9,9 +9,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import '../models/meetup.dart';
 import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
-import '../design/tokens.dart';
 import 'main_screen.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 import '../ui/snackbar/app_snackbar.dart';
 
 class CreateMeetupReviewScreen extends StatefulWidget {
@@ -31,14 +31,15 @@ class CreateMeetupReviewScreen extends StatefulWidget {
   }) : super(key: key);
 
   @override
-  State<CreateMeetupReviewScreen> createState() => _CreateMeetupReviewScreenState();
+  State<CreateMeetupReviewScreen> createState() =>
+      _CreateMeetupReviewScreenState();
 }
 
 class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   final MeetupService _meetupService = MeetupService();
   final TextEditingController _contentController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
-  
+
   List<File> _selectedImages = []; // 최대 5장
   List<String> _imageUrls = []; // 기존 이미지 URL들
   bool _isLoading = false;
@@ -51,11 +52,13 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     if (widget.existingContent != null) {
       _contentController.text = widget.existingContent!;
     }
-    
+
     // 여러 이미지 URL 로드 (우선순위: existingImageUrls > existingImageUrl)
-    if (widget.existingImageUrls != null && widget.existingImageUrls!.isNotEmpty) {
+    if (widget.existingImageUrls != null &&
+        widget.existingImageUrls!.isNotEmpty) {
       _imageUrls = List<String>.from(widget.existingImageUrls!);
-    } else if (widget.existingImageUrl != null && widget.existingImageUrl!.isNotEmpty) {
+    } else if (widget.existingImageUrl != null &&
+        widget.existingImageUrl!.isNotEmpty) {
       _imageUrls = [widget.existingImageUrl!];
     }
   }
@@ -93,8 +96,11 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
 
       if (pickedFiles.isNotEmpty) {
         // 최대 개수만큼만 추가
-        final filesToAdd = pickedFiles.take(remainingSlots).map((xFile) => File(xFile.path)).toList();
-        
+        final filesToAdd = pickedFiles
+            .take(remainingSlots)
+            .map((xFile) => File(xFile.path))
+            .toList();
+
         setState(() {
           _selectedImages.addAll(filesToAdd);
         });
@@ -143,7 +149,8 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
       // 새로 선택한 이미지들 업로드
       for (int i = 0; i < _selectedImages.length; i++) {
         final file = _selectedImages[i];
-        final fileName = 'review_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
+        final fileName =
+            'review_${widget.meetup.id}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
         final storageRef = FirebaseStorage.instance
             .ref()
             .child('meetup_reviews')
@@ -274,27 +281,32 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
           if (requestSent) {
             AppSnackBar.show(
               context,
-              message: AppLocalizations.of(context)!.reviewCreatedAndRequestsSent(participantIds.length) ?? "",
+              message: AppLocalizations.of(context)!
+                      .reviewCreatedAndRequestsSent(participantIds.length) ??
+                  "",
               type: AppSnackBarType.success,
             );
           } else {
             AppSnackBar.show(
               context,
-              message: AppLocalizations.of(context)!.reviewCreatedButNotificationFailed ?? "",
+              message: AppLocalizations.of(context)!
+                      .reviewCreatedButNotificationFailed ??
+                  "",
               type: AppSnackBarType.warning,
             );
           }
-          
+
           // 후기 작성 완료 후 My Page 탭으로 이동
           Navigator.of(context).popUntil((route) => route.isFirst);
-          
+
           // MainScreen의 탭을 My Page로 변경
           final mainScreenContext = Navigator.of(context).context;
           if (mainScreenContext.mounted) {
             // MainScreen에 접근하여 탭 변경
             Navigator.of(context).pushReplacement(
               MaterialPageRoute(
-                builder: (context) => MainScreen(initialTabIndex: 2), // My Page 탭
+                builder: (context) =>
+                    MainScreen(initialTabIndex: 2), // My Page 탭
               ),
             );
           }
@@ -318,65 +330,74 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
     }
   }
 
-  Widget _buildImageTile({File? imageFile, String? imageUrl, required VoidCallback onRemove}) {
+  Widget _buildImageTile({
+    File? imageFile,
+    String? imageUrl,
+    required VoidCallback onRemove,
+  }) {
     return Stack(
+      clipBehavior: Clip.none,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            borderRadius: DesignTokens.radiusM,
-            border: Border.all(color: BrandColors.neutral300),
-            boxShadow: DesignTokens.shadowLight,
-          ),
-          child: ClipRRect(
-            borderRadius: DesignTokens.radiusM,
-            child: imageFile != null
-                ? Image.file(
-                    imageFile,
-                    fit: BoxFit.cover,
-                    width: double.infinity,
-                    height: double.infinity,
-                  )
-                : imageUrl != null
-                    ? Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        height: double.infinity,
-                        loadingBuilder: (context, child, loadingProgress) {
-                          if (loadingProgress == null) return child;
-                          return Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          );
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return Container(
-                            color: BrandColors.neutral200,
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: imageFile != null
+              ? Image.file(
+                  imageFile,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                )
+              : imageUrl != null
+                  ? Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return const ColoredBox(
+                          color: Color(0xFFF4F4F5),
+                          child: Center(
+                            child: SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        );
+                      },
+                      errorBuilder: (context, error, stackTrace) {
+                        return const ColoredBox(
+                          color: Color(0xFFF4F4F5),
+                          child: Center(
                             child: Icon(
                               Icons.broken_image_outlined,
-                              color: BrandColors.textTertiary,
+                              color: Color(0xFF9CA3AF),
                             ),
-                          );
-                        },
-                      )
-                    : const SizedBox.shrink(),
-          ),
+                          ),
+                        );
+                      },
+                    )
+                  : const SizedBox.shrink(),
         ),
-        // 삭제 버튼
         Positioned(
           top: 4,
           right: 4,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.6),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close,
-                color: Colors.white,
-                size: 16,
+          child: Semantics(
+            button: true,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: const BoxDecoration(
+                  color: Color(0xCC111827),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close_rounded,
+                  color: Colors.white,
+                  size: 15,
+                ),
               ),
             ),
           ),
@@ -388,279 +409,295 @@ class _CreateMeetupReviewScreenState extends State<CreateMeetupReviewScreen> {
   @override
   Widget build(BuildContext context) {
     final isEditMode = widget.existingReviewId != null;
-    
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    final l10n = AppLocalizations.of(context)!;
+    final horizontal = MediaQuery.sizeOf(context).width < 360 ? 12.0 : 16.0;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final thumbnailExtent = context.rh(82, min: 74, max: 88);
+    final selectedCount = _selectedImages.length + _imageUrls.length;
+    final isBusy = _isLoading || _isUploading;
+
+    return PopScope(
+      canPop: !isBusy,
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: true,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          isEditMode ? (AppLocalizations.of(context)!.reviewEditTitle ?? "") : AppLocalizations.of(context)!.reviewWriteTitle,
-          style: TypographyStyles.headlineMedium.copyWith(
-            color: const Color(0xFF111827),
+        resizeToAvoidBottomInset: true,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          surfaceTintColor: Colors.white,
+          centerTitle: true,
+          toolbarHeight: context.rh(56, min: 54, max: 60),
+          automaticallyImplyLeading: false,
+          leadingWidth: 48,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_back_rounded,
+              color: const Color(0xFF111827),
+              size: context.ri(22).clamp(21, 24).toDouble(),
+            ),
+            onPressed: isBusy ? null : () => Navigator.pop(context),
+            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
           ),
+          title: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: Text(
+              isEditMode ? l10n.reviewEditTitle : l10n.reviewWriteTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                fontWeight: FontWeight.w700,
+                color: const Color(0xFF111827),
+              ),
+            ),
+          ),
+          actions: [
+            SizedBox.square(
+              dimension: 48,
+              child: IconButton(
+                onPressed: isBusy ? null : _submitReview,
+                icon: isBusy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(
+                        Icons.check_rounded,
+                        size: context.ri(23).clamp(21, 25).toDouble(),
+                      ),
+                color: const Color(0xFF111827),
+                disabledColor: const Color(0xFFD1D5DB),
+                tooltip: isEditMode
+                    ? l10n.reviewEditTitle
+                    : l10n.requestReviewAcceptance,
+              ),
+            ),
+            const SizedBox(width: 2),
+          ],
         ),
-      ),
-      body: Column(
-        children: [
-          // 스크롤 가능한 콘텐츠
-          Expanded(
-            child: SingleChildScrollView(
-              padding: DesignTokens.paddingM,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 모임 정보
-                  Container(
-                    padding: DesignTokens.paddingS,
-                    decoration: BoxDecoration(
-                      color: BrandColors.primarySubtle,
-                      borderRadius: DesignTokens.radiusM,
-                      border: Border.all(
-                        color: BrandColors.primary.withOpacity(0.2),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.event_outlined,
-                          color: BrandColors.primary,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            widget.meetup.title,
-                            style: TypographyStyles.titleMedium.copyWith(
-                              color: BrandColors.primary,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 사진 선택 (최대 5장)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        AppLocalizations.of(context)!.reviewPhoto,
-                        style: TypographyStyles.titleMedium,
-                      ),
-                      Text(
-                        '${_selectedImages.length + _imageUrls.length}/$maxImages',
-                        style: TypographyStyles.bodyMedium.copyWith(
-                          color: BrandColors.textTertiary,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  
-                  // 이미지 그리드
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                    ),
-                    itemCount: _selectedImages.length + _imageUrls.length + 1,
-                    itemBuilder: (context, index) {
-                      // 기존 URL 이미지 표시
-                      if (index < _imageUrls.length) {
-                        return _buildImageTile(
-                          imageUrl: _imageUrls[index],
-                          onRemove: () => _removeImage(index, isUrl: true),
-                        );
-                      }
-                      
-                      // 새로 선택한 이미지 표시
-                      final fileIndex = index - _imageUrls.length;
-                      if (fileIndex < _selectedImages.length) {
-                        return _buildImageTile(
-                          imageFile: _selectedImages[fileIndex],
-                          onRemove: () => _removeImage(fileIndex, isUrl: false),
-                        );
-                      }
-                      
-                      // 추가 버튼
-                      if (index < maxImages) {
-                        return GestureDetector(
-                          onTap: _isLoading ? null : _pickImages,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: BrandColors.neutral100,
-                              borderRadius: DesignTokens.radiusM,
-                              border: Border.all(
-                                color: BrandColors.neutral300,
-                                style: BorderStyle.solid,
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.add_photo_alternate_outlined,
-                                  size: 32,
-                                  color: BrandColors.textTertiary,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '사진 추가',
-                                  style: TypographyStyles.labelSmall.copyWith(
-                                    color: BrandColors.textTertiary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }
-                      
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 후기 내용
-                  Text(
-                    AppLocalizations.of(context)!.reviewContent,
-                    style: TypographyStyles.titleMedium,
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _contentController,
-                    enabled: !_isLoading,
-                    maxLines: 8,
-                    maxLength: 500,
-                    style: TypographyStyles.bodyLarge,
-                    decoration: InputDecoration(
-                      hintText: AppLocalizations.of(context)!.reviewWriteHint,
-                      hintStyle: TypographyStyles.bodyLarge.copyWith(
-                        color: BrandColors.textHint,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: DesignTokens.radiusM,
-                        borderSide: BorderSide(color: BrandColors.neutral300),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: DesignTokens.radiusM,
-                        borderSide: BorderSide(color: BrandColors.neutral300),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: DesignTokens.radiusM,
-                        borderSide: BorderSide(color: BrandColors.primary, width: 2),
-                      ),
-                      filled: true,
-                      fillColor: BrandColors.neutral50,
-                      contentPadding: DesignTokens.paddingS,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // 안내 문구
-                  if (!isEditMode)
-                    Container(
-                      padding: DesignTokens.paddingS,
-                      decoration: BoxDecoration(
-                        color: BrandColors.warning.withOpacity(0.1),
-                        borderRadius: DesignTokens.radiusM,
-                        border: Border.all(
-                          color: BrandColors.warning.withOpacity(0.3),
-                        ),
+        body: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 8),
+          child: SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.fromLTRB(
+              horizontal,
+              context.rs(8).clamp(6, 10).toDouble(),
+              horizontal,
+              context.rs(24).clamp(20, 28).toDouble(),
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 720),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.symmetric(
+                        vertical: context.rs(10).clamp(8, 12).toDouble(),
                       ),
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Icon(
-                            Icons.info_outline,
-                            color: BrandColors.warning,
-                            size: 20,
+                            Icons.event_outlined,
+                            color: const Color(0xFF667085),
+                            size: context.ri(20).clamp(19, 22).toDouble(),
                           ),
-                          const SizedBox(width: 8),
+                          SizedBox(width: context.rs(10)),
                           Expanded(
                             child: Text(
-                              AppLocalizations.of(context)!.reviewRequestInfo,
-                              style: TypographyStyles.bodySmall.copyWith(
-                                color: BrandColors.warning,
+                              widget.meetup.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize:
+                                    context.rf(15).clamp(14, 16).toDouble(),
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF344054),
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  
-                  // 하단 여백 (버튼 높이 + 여백)
-                  const SizedBox(height: 100),
-                ],
-              ),
-            ),
-          ),
-          
-          // 고정된 하단 버튼 영역
-          Container(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 16, // 시스템 네비게이션 바 고려
-            ),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  offset: const Offset(0, -2),
-                  blurRadius: 8,
-                ),
-              ],
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: ElevatedButton(
-                onPressed: _isLoading || _isUploading ? null : _submitReview,
-                style: ComponentStyles.primaryButton.copyWith(
-                  backgroundColor: WidgetStateProperty.resolveWith<Color>(
-                    (Set<WidgetState> states) {
-                      if (states.contains(WidgetState.disabled)) {
-                        return BrandColors.neutral300;
-                      }
-                      return BrandColors.primary;
-                    },
-                  ),
-                ),
-                child: _isLoading || _isUploading
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    const Divider(height: 20, color: Color(0xFFE5E7EB)),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            l10n.reviewPhoto,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF111827),
+                            ),
+                          ),
                         ),
-                      )
-                    : Text(
-                        isEditMode ? (AppLocalizations.of(context)!.reviewEditTitle ?? "") : AppLocalizations.of(context)!.requestReviewAcceptance,
-                        style: TypographyStyles.buttonText.copyWith(
-                          color: Colors.white,
+                        Text(
+                          '$selectedCount/$maxImages',
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF6B7280),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: isBusy || selectedCount >= maxImages
+                            ? null
+                            : _pickImages,
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF475467),
+                          disabledForegroundColor: const Color(0xFFB8BDC7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 2,
+                            vertical: 8,
+                          ),
+                          minimumSize: const Size(44, 44),
+                        ),
+                        icon: Icon(
+                          Icons.add_photo_alternate_outlined,
+                          size: context.ri(21).clamp(20, 23).toDouble(),
+                        ),
+                        label: Text(
+                          l10n.pickPhoto,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: context.rf(13).clamp(12, 14).toDouble(),
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
+                    ),
+                    if (selectedCount > 0) ...[
+                      SizedBox(
+                        height: thumbnailExtent,
+                        child: ListView.separated(
+                          scrollDirection: Axis.horizontal,
+                          itemCount: selectedCount,
+                          separatorBuilder: (_, __) =>
+                              SizedBox(width: context.rs(8)),
+                          itemBuilder: (context, index) {
+                            if (index < _imageUrls.length) {
+                              return SizedBox.square(
+                                dimension: thumbnailExtent,
+                                child: _buildImageTile(
+                                  imageUrl: _imageUrls[index],
+                                  onRemove: () =>
+                                      _removeImage(index, isUrl: true),
+                                ),
+                              );
+                            }
+                            final fileIndex = index - _imageUrls.length;
+                            return SizedBox.square(
+                              dimension: thumbnailExtent,
+                              child: _buildImageTile(
+                                imageFile: _selectedImages[fileIndex],
+                                onRemove: () =>
+                                    _removeImage(fileIndex, isUrl: false),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                      SizedBox(height: context.rs(8)),
+                    ],
+                    Text(
+                      isKo
+                          ? '최대 $maxImages장까지 선택할 수 있어요.'
+                          : 'Select up to $maxImages photos.',
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF6B7280),
+                      ),
+                    ),
+                    SizedBox(height: context.rs(22).clamp(18, 24).toDouble()),
+                    Text(
+                      l10n.reviewContent,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w800,
+                        color: const Color(0xFF111827),
+                      ),
+                    ),
+                    const Divider(height: 18, color: Color(0xFFE5E7EB)),
+                    TextField(
+                      controller: _contentController,
+                      enabled: !isBusy,
+                      minLines:
+                          MediaQuery.sizeOf(context).height < 700 ? 7 : 10,
+                      maxLines: null,
+                      maxLength: 500,
+                      textAlignVertical: TextAlignVertical.top,
+                      style: TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF111827),
+                        height: 1.5,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: l10n.reviewWriteHint,
+                        hintStyle: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                          fontWeight: FontWeight.w400,
+                          color: const Color(0xFF9CA3AF),
+                        ),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.fromLTRB(0, 2, 0, 4),
+                        counterStyle: TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: context.rf(12).clamp(11, 13).toDouble(),
+                          fontWeight: FontWeight.w600,
+                          color: const Color(0xFF6B7280),
+                        ),
+                      ),
+                    ),
+                    if (!isEditMode) ...[
+                      SizedBox(height: context.rs(18)),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: const Color(0xFF667085),
+                            size: context.ri(19).clamp(18, 21).toDouble(),
+                          ),
+                          SizedBox(width: context.rs(8)),
+                          Expanded(
+                            child: Text(
+                              l10n.reviewRequestInfo,
+                              style: TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize:
+                                    context.rf(12).clamp(11, 13).toDouble(),
+                                fontWeight: FontWeight.w500,
+                                color: const Color(0xFF667085),
+                                height: 1.45,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
   }
 }
-

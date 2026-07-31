@@ -20,6 +20,8 @@ import 'dm_chat_screen.dart';
 import 'snack_chat_screen.dart';
 import '../widgets/notification_list_item.dart';
 import '../services/user_info_cache_service.dart';
+import '../services/snapshot_service.dart';
+import 'snapshot_detail_screen.dart';
 
 class NotificationScreen extends StatefulWidget {
   /// true면 화면이 열릴 때 "모두 읽음"을 즉시 실행한다.
@@ -42,6 +44,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   final NotificationService _notificationService = NotificationService();
   final PostService _postService = PostService();
   final UserInfoCacheService _userInfoCache = UserInfoCacheService();
+  final SnapshotService _snapshotService = SnapshotService.instance;
   final Map<String, Future<String?>> _postPreviewFutures = {};
   bool _isLoading = false;
 
@@ -76,7 +79,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   // 일관된 스타일의 스낵바 표시
   void _showStyledSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -88,7 +91,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
             color: Colors.white,
           ),
         ),
-        backgroundColor: isError 
+        backgroundColor: isError
             ? const Color(0xFFEF4444) // 에러: 빨간색
             : const Color(0xFF374151), // 일반: 진한 회색
         behavior: SnackBarBehavior.floating,
@@ -123,6 +126,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
       case 'comment_like':
         await _navigateToPost(notification);
         break;
+      case 'snapshot_reaction':
+      case 'snapshot_comment':
+        await _navigateToSnapshot(notification);
+        break;
       case 'review_comment':
       case 'review_like':
         await _navigateToReview(notification);
@@ -145,6 +152,40 @@ class _NotificationScreenState extends State<NotificationScreen> {
       default:
         // 기타 알림은 특별한 동작 없음
         break;
+    }
+  }
+
+  Future<void> _navigateToSnapshot(AppNotification notification) async {
+    final snapshotId =
+        notification.data?['snapshotId']?.toString().trim() ?? '';
+    if (snapshotId.isEmpty) {
+      _showStyledSnackBar(
+        AppLocalizations.of(context)!.notificationDataMissing,
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      final snapshot = await _snapshotService.getSnapshot(snapshotId);
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => SnapshotDetailScreen(
+            snapshots: [snapshot],
+            initialIndex: 0,
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+      _showStyledSnackBar(
+        isKorean
+            ? '이 스낵은 만료되었거나 볼 수 없어요.'
+            : 'This Snack has expired or is no longer available.',
+        isError: true,
+      );
     }
   }
 
@@ -171,7 +212,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> _navigateToMeetup(AppNotification notification) async {
     // data 필드 또는 meetupId 필드에서 meetupId 가져오기 (기존 알림 호환성)
     final meetupId = notification.data?['meetupId'] ?? notification.meetupId;
-    
+
     if (meetupId == null) {
       _showStyledSnackBar(
         AppLocalizations.of(context)!.notificationDataMissing,
@@ -233,7 +274,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> _navigateToPost(AppNotification notification) async {
     // data 필드 또는 postId 필드에서 postId 가져오기 (기존 알림 호환성)
     final postId = notification.data?['postId'] ?? notification.postId;
-    
+
     if (postId == null) {
       _showStyledSnackBar(
         AppLocalizations.of(context)!.notificationDataMissing,
@@ -291,9 +332,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
   // 후기 상세 화면으로 이동
   Future<void> _navigateToReview(AppNotification notification) async {
     // data 필드에서 reviewId와 userId 가져오기
-    final reviewId = notification.data?['reviewId'] ?? notification.data?['postId'];
+    final reviewId =
+        notification.data?['reviewId'] ?? notification.data?['postId'];
     final userId = notification.data?['userId'];
-    
+
     if (reviewId == null || userId == null) {
       _showStyledSnackBar(
         AppLocalizations.of(context)!.notificationDataMissing,
@@ -312,7 +354,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       // 후기 정보 가져오기
       final reviewService = ReviewService();
-      
+
       // getUserReviewsStream을 사용하여 해당 사용자의 모든 후기를 가져온 후 필터링
       final reviews = await reviewService.getUserReviewsStream(userId).first;
       final review = reviews.firstWhere(
@@ -389,8 +431,10 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
       // 이미지 URL 목록 가져오기 (여러 이미지 지원)
       final List<String> imageUrls = [];
-      if (notification.data?['imageUrls'] != null && notification.data?['imageUrls'] is List) {
-        imageUrls.addAll((notification.data?['imageUrls'] as List).map((e) => e.toString()));
+      if (notification.data?['imageUrls'] != null &&
+          notification.data?['imageUrls'] is List) {
+        imageUrls.addAll(
+            (notification.data?['imageUrls'] as List).map((e) => e.toString()));
       } else if (imageUrl != null && imageUrl.isNotEmpty) {
         imageUrls.add(imageUrl);
       }
@@ -424,7 +468,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     try {
       final conversationId = notification.data?['conversationId'];
       final otherUserId = notification.actorId;
-      
+
       if (conversationId == null) {
         _showStyledSnackBar(
           AppLocalizations.of(context)!.notificationDataMissing,
@@ -491,13 +535,13 @@ class _NotificationScreenState extends State<NotificationScreen> {
     if (actorId == null || actorId.isEmpty) {
       return notification.actorName ?? '';
     }
-    
+
     // 캐시된 최신 사용자 정보에서 닉네임 가져오기
     final userInfo = _userInfoCache.getCachedUserInfo(actorId);
     if (userInfo != null && userInfo.nickname.isNotEmpty) {
       return userInfo.nickname;
     }
-    
+
     // 캐시에 없으면 알림에 저장된 이름 사용 (fallback)
     return notification.actorName ?? '';
   }
@@ -513,11 +557,11 @@ class _NotificationScreenState extends State<NotificationScreen> {
   String _getLocalizedMessage(AppNotification notification) {
     final l10n = AppLocalizations.of(context);
     final data = notification.data;
-    
+
     if (data == null) {
       return notification.message; // 데이터가 없으면 기본 메시지 사용
     }
-    
+
     try {
       switch (notification.type) {
         case 'meetup_full':
@@ -528,55 +572,60 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final meetupTitle = data['meetupTitle'] ?? '';
           return l10n!.meetupCancelledMessage(meetupTitle);
         case 'meetup_participant_joined':
-          final participantName = data['participantName'] ?? _getActorName(notification);
+          final participantName =
+              data['participantName'] ?? _getActorName(notification);
           return l10n!.newParticipantJoinedMessage(
             participantName,
             data['meetupTitle'] ?? '',
           );
-        case 'meetup_participant_left': {
-          final lang = Localizations.localeOf(context).languageCode;
-          final participantName = (data['participantName'] ?? _getActorName(notification)).toString();
-          final meetupTitle = (data['meetupTitle'] ?? '').toString();
-          if (lang == 'ko') {
-            return '$participantName님이 회원님의 모임 "$meetupTitle"에서 나갔습니다.';
+        case 'meetup_participant_left':
+          {
+            final lang = Localizations.localeOf(context).languageCode;
+            final participantName =
+                (data['participantName'] ?? _getActorName(notification))
+                    .toString();
+            final meetupTitle = (data['meetupTitle'] ?? '').toString();
+            if (lang == 'ko') {
+              return '$participantName님이 회원님의 모임 "$meetupTitle"에서 나갔습니다.';
+            }
+            return '$participantName left your meetup "$meetupTitle".';
           }
-          return '$participantName left your meetup "$meetupTitle".';
-        }
         case 'new_comment':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
           final lang = Localizations.localeOf(context).languageCode;
-          
+
           // 익명 게시글이면 댓글 작성자 정보 노출 안 함
           if (postIsAnonymous) {
             return lang == 'ko'
                 ? '포스트에 새 댓글이 달렸습니다.'
                 : 'A new comment was added to your post.';
           }
-          
+
           // 일반 게시글 - 실시간 닉네임 가져오기
           final commenterName = _getActorName(notification);
           return lang == 'ko'
               ? '$commenterName님이 회원님의 포스트에 댓글을 남겼습니다.'
               : '$commenterName commented on your post.';
-        case 'comment_reply': {
-          final bool postIsAnonymous = data['postIsAnonymous'] == true;
-          if (postIsAnonymous) {
-            return l10n!.newReplyToCommentAnonymousMessage;
+        case 'comment_reply':
+          {
+            final bool postIsAnonymous = data['postIsAnonymous'] == true;
+            if (postIsAnonymous) {
+              return l10n!.newReplyToCommentAnonymousMessage;
+            }
+            final replierName = _getActorName(notification);
+            return l10n!.newReplyToCommentMessage(replierName);
           }
-          final replierName = _getActorName(notification);
-          return l10n!.newReplyToCommentMessage(replierName);
-        }
         case 'new_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
           final lang = Localizations.localeOf(context).languageCode;
-          
+
           // 익명 게시글이면 좋아요 누른 사람 정보 노출 안 함
           if (postIsAnonymous) {
             return lang == 'ko'
                 ? '포스트에 새 좋아요가 추가되었습니다.'
                 : 'A new like was added to your post.';
           }
-          
+
           // 일반 게시글 - 실시간 닉네임 가져오기
           final likerName = _getActorName(notification);
           return lang == 'ko'
@@ -584,7 +633,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
               : '$likerName liked your post.';
         case 'comment_like':
           final bool postIsAnonymous = data['postIsAnonymous'] == true;
-          
+
           // 익명 게시글의 댓글이면 좋아요 누른 사람 정보 노출 안 함
           if (postIsAnonymous) {
             final lang = Localizations.localeOf(context).languageCode;
@@ -592,7 +641,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 ? '댓글에 새 좋아요가 추가되었습니다.'
                 : 'A new like was added to your comment.';
           }
-          
+
           // 일반 댓글 - 실시간 닉네임 가져오기
           final likerName = _getActorName(notification);
           return l10n!.newCommentLikeMessage(likerName);
@@ -611,43 +660,45 @@ class _NotificationScreenState extends State<NotificationScreen> {
           final likerName = _getActorName(notification);
           final reviewTitle = data['reviewTitle'] ?? data['meetupTitle'] ?? '';
           return l10n!.newLikeMessage(likerName, reviewTitle);
-        case 'post_private': {
-          // 친구공개(허용된 사용자에게만 공개) 게시글 알림
-          final authorName = _getActorName(notification);
-          final postTitle = (data['postTitle'] ?? '').toString().trim();
-          final badge = l10n!.friendsOnlyBadge;
+        case 'post_private':
+          {
+            // 친구공개(허용된 사용자에게만 공개) 게시글 알림
+            final authorName = _getActorName(notification);
+            final postTitle = (data['postTitle'] ?? '').toString().trim();
+            final badge = l10n!.friendsOnlyBadge;
 
-          final name = authorName.isEmpty ? 'User' : authorName;
-          if (postTitle.isEmpty) {
+            final name = authorName.isEmpty ? 'User' : authorName;
+            if (postTitle.isEmpty) {
+              final lang = Localizations.localeOf(context).languageCode;
+              return lang == 'ko'
+                  ? '$name님이 $badge 포스트를 올렸습니다.'
+                  : '$name posted a $badge post.';
+            }
+
             final lang = Localizations.localeOf(context).languageCode;
             return lang == 'ko'
-                ? '$name님이 $badge 포스트를 올렸습니다.'
-                : '$name posted a $badge post.';
+                ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
+                : '$name posted a $badge post: $postTitle';
           }
-
-          final lang = Localizations.localeOf(context).languageCode;
-          return lang == 'ko'
-              ? '$name님이 $badge 포스트를 올렸습니다: $postTitle'
-              : '$name posted a $badge post: $postTitle';
-        }
-        case 'snack_chat_invite': {
-          final creatorName = _normalizeSnackChatInviterName(
-            (data['creatorName'] ?? _getActorName(notification)).toString(),
-          );
-          final chatName = (data['snackChatName'] ?? '').toString().trim();
-          final lang = Localizations.localeOf(context).languageCode;
-          final creator = creatorName.isEmpty
-              ? (lang == 'ko' ? '친구' : 'User')
-              : creatorName;
-          if (chatName.isEmpty) {
+        case 'snack_chat_invite':
+          {
+            final creatorName = _normalizeSnackChatInviterName(
+              (data['creatorName'] ?? _getActorName(notification)).toString(),
+            );
+            final chatName = (data['snackChatName'] ?? '').toString().trim();
+            final lang = Localizations.localeOf(context).languageCode;
+            final creator = creatorName.isEmpty
+                ? (lang == 'ko' ? '친구' : 'User')
+                : creatorName;
+            if (chatName.isEmpty) {
+              return lang == 'ko'
+                  ? '$creator님이 새 Snack Chat에 초대했어요.'
+                  : '$creator invited you to a new Snack Chat.';
+            }
             return lang == 'ko'
-                ? '$creator님이 새 Snack Chat에 초대했어요.'
-                : '$creator invited you to a new Snack Chat.';
+                ? '$creator님이 "$chatName"에 초대했어요.'
+                : '$creator invited you to "$chatName".';
           }
-          return lang == 'ko'
-              ? '$creator님이 "$chatName"에 초대했어요.'
-              : '$creator invited you to "$chatName".';
-        }
         default:
           return notification.message;
       }
@@ -700,7 +751,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Widget _buildNotificationItem(AppNotification notification) {
     final message = _getLocalizedMessage(notification);
     final timeText = _formatNotificationTime(notification.createdAt);
-    final previewUrlFromData = _extractPreviewImageUrlFromData(notification.data);
+    final previewUrlFromData =
+        _extractPreviewImageUrlFromData(notification.data);
 
     Future<String?>? previewFuture;
     if (previewUrlFromData == null) {
@@ -806,7 +858,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
 
           if (snapshot.hasError) {
             return Center(
-              child: Text('${AppLocalizations.of(context)!.notificationLoadError}: ${snapshot.error}'),
+              child: Text(
+                  '${AppLocalizations.of(context)!.notificationLoadError}: ${snapshot.error}'),
             );
           }
 

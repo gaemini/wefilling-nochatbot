@@ -11,6 +11,7 @@ IconData _categoryIcon(PostCategory category) {
     PostCategory.photo => Icons.photo_camera_outlined,
     PostCategory.content => Icons.movie_outlined,
     PostCategory.cafe => Icons.local_cafe_outlined,
+    PostCategory.academicStudy => Icons.school_outlined,
     PostCategory.booksWriting => Icons.auto_stories_outlined,
     PostCategory.travelLocal => Icons.explore_outlined,
     PostCategory.global => Icons.public_outlined,

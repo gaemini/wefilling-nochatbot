@@ -19,8 +19,10 @@ class StorageService {
   // ✅ 프로필 사진은 지정 버킷에만 저장/사용
   // - Firebase 옵션(storageBucket)과 동일한 "버킷 이름"을 사용한다. (gs:// prefix 불필요)
   // - iOS에서 gs:// prefix 사용 시 resumable 업로드가 불안정한 케이스가 있어 통일한다.
-  static const String _profileBucket = 'flutterproject3-af322.firebasestorage.app';
-  final FirebaseStorage _profileStorage = FirebaseStorage.instanceFor(bucket: _profileBucket);
+  static const String _profileBucket =
+      'flutterproject3-af322.firebasestorage.app';
+  final FirebaseStorage _profileStorage =
+      FirebaseStorage.instanceFor(bucket: _profileBucket);
   final Uuid _uuid = const Uuid();
 
   // 이미지 파일을 Firebase Storage에 업로드하고 다운로드 URL을 반환
@@ -35,7 +37,7 @@ class StorageService {
 
       // 고유한 파일 이름 생성
       final String fileName = '${_uuid.v4()}.jpg';
-      final String folderPath = 'posts';
+      const String folderPath = 'posts';
       final String fullPath = '$folderPath/$fileName';
 
       Logger.log('이미지 업로드 시작: $fullPath');
@@ -57,10 +59,16 @@ class StorageService {
       );
 
       // 업로드 진행 상태 모니터링 (선택사항)
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-        Logger.log('업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
-      });
+      uploadTask.snapshotEvents.listen(
+        (TaskSnapshot snapshot) {
+          final total = snapshot.totalBytes;
+          final progress = total > 0 ? snapshot.bytesTransferred / total : 0.0;
+          Logger.log('업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          Logger.error('이미지 업로드 상태 스트림 오류', error, stackTrace);
+        },
+      );
 
       // 타임아웃 처리 개선 - 타임아웃 시 업로드 작업 취소
       TaskSnapshot taskSnapshot;
@@ -70,7 +78,8 @@ class StorageService {
           onTimeout: () {
             // 타임아웃 발생 시 업로드 작업 취소
             uploadTask.cancel();
-            throw TimeoutException('이미지 업로드 타임아웃', const Duration(seconds: 180));
+            throw TimeoutException(
+                '이미지 업로드 타임아웃', const Duration(seconds: 180));
           },
         );
         Logger.log('업로드 완료: $fullPath');
@@ -120,7 +129,7 @@ class StorageService {
     String? fullPath;
 
     try {
-      compressedFile = await _compressImage(imageFile);
+      compressedFile = await _compressImage(imageFile, forceJpeg: true);
       if (compressedFile == null) {
         Logger.error('프로필 이미지 압축 실패');
         return null;
@@ -150,7 +159,8 @@ class StorageService {
         const Duration(seconds: 180),
         onTimeout: () {
           uploadTask.cancel();
-          throw TimeoutException('프로필 이미지 업로드 타임아웃', const Duration(seconds: 180));
+          throw TimeoutException(
+              '프로필 이미지 업로드 타임아웃', const Duration(seconds: 180));
         },
       );
 
@@ -176,17 +186,20 @@ class StorageService {
       // - 업로드가 서버에서 이미 finalize 된 후, SDK 내부 cancelFetcher가 뒤늦게 실행되며
       //   HTTP 400이 발생할 수 있음. (finalized 문구가 SDK 에러 메시지에 포함되지 않는 경우도 있음)
       // - 이 경우 객체는 실제로 업로드되어 있을 가능성이 있으므로 download URL 복구를 재시도한다.
-      final isHttp400 = message.contains('HTTPStatus error 400') || message.contains('Code=400');
+      final isHttp400 = message.contains('HTTPStatus error 400') ||
+          message.contains('Code=400');
       if (isHttp400 && ref != null && fullPath != null) {
         for (var attempt = 0; attempt < 3; attempt++) {
           try {
             // 짧은 지연 후 재시도 (resumable finalize/메타데이터 반영 경합 완화)
             await Future.delayed(Duration(milliseconds: 220 * (attempt + 1)));
             final recovered = await ref.getDownloadURL();
-            Logger.log('✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
+            Logger.log(
+                '✅ HTTP 400 복구 성공: downloadURL 획득 ($fullPath, attempt=${attempt + 1})');
             return (downloadUrl: recovered, path: fullPath);
           } catch (recoveryError) {
-            Logger.error('⚠️ HTTP 400 복구 재시도 실패(attempt=${attempt + 1}): $recoveryError');
+            Logger.error(
+                '⚠️ HTTP 400 복구 재시도 실패(attempt=${attempt + 1}): $recoveryError');
           }
         }
       }
@@ -212,18 +225,58 @@ class StorageService {
     required String conversationId,
     void Function(double progress)? onProgress, // 0.0 ~ 1.0
   }) async {
+    return _uploadChatImage(
+      imageFile,
+      userId: userId,
+      entityId: conversationId,
+      folderName: 'dm_images',
+      entityMetadataKey: 'conversationId',
+      logLabel: 'DM',
+      onProgress: onProgress,
+    );
+  }
+
+  /// Snack Chat 이미지 업로드.
+  /// - 경로: snack_chat_images/{userId}/{snackChatId}/{uuid}.jpg
+  Future<String?> uploadSnackChatImage(
+    File imageFile, {
+    required String userId,
+    required String snackChatId,
+    void Function(double progress)? onProgress,
+  }) async {
+    return _uploadChatImage(
+      imageFile,
+      userId: userId,
+      entityId: snackChatId,
+      folderName: 'snack_chat_images',
+      entityMetadataKey: 'snackChatId',
+      logLabel: 'Snack Chat',
+      onProgress: onProgress,
+    );
+  }
+
+  Future<String?> _uploadChatImage(
+    File imageFile, {
+    required String userId,
+    required String entityId,
+    required String folderName,
+    required String entityMetadataKey,
+    required String logLabel,
+    void Function(double progress)? onProgress,
+  }) async {
+    File? compressedFile;
     try {
-      final compressedFile = await _compressImage(imageFile);
+      compressedFile = await _compressImage(imageFile, forceJpeg: true);
       if (compressedFile == null) {
-        Logger.error('DM 이미지 압축 실패');
+        Logger.error('$logLabel 이미지 압축 실패');
         return null;
       }
 
       final String fileName = '${_uuid.v4()}.jpg';
-      final String folderPath = 'dm_images/$userId/$conversationId';
+      final String folderPath = '$folderName/$userId/$entityId';
       final String fullPath = '$folderPath/$fileName';
 
-      Logger.log('DM 이미지 업로드 시작: $fullPath');
+      Logger.log('$logLabel 이미지 업로드 시작: $fullPath');
       Logger.log('Firebase Storage 버킷: ${_storage.bucket}');
 
       final Reference ref = _storage.ref().child(folderPath).child(fileName);
@@ -234,48 +287,54 @@ class StorageService {
           contentType: 'image/jpeg',
           customMetadata: {
             'fileName': fileName,
-            'conversationId': conversationId,
+            'ownerUid': userId,
+            entityMetadataKey: entityId,
             'uploaded': DateTime.now().toString(),
           },
         ),
       );
 
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        final total = snapshot.totalBytes;
-        final progress = total > 0 ? (snapshot.bytesTransferred / total) : 0.0;
-        Logger.log('DM 이미지 업로드 진행률: ${(progress * 100).toStringAsFixed(2)}%');
-        if (onProgress != null) onProgress(progress.clamp(0.0, 1.0));
-      });
+      uploadTask.snapshotEvents.listen(
+        (TaskSnapshot snapshot) {
+          final total = snapshot.totalBytes;
+          final progress =
+              total > 0 ? (snapshot.bytesTransferred / total) : 0.0;
+          Logger.log(
+            '$logLabel 이미지 업로드 진행률: '
+            '${(progress * 100).toStringAsFixed(2)}%',
+          );
+          if (onProgress != null) onProgress(progress.clamp(0.0, 1.0));
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          Logger.error(
+            '$logLabel 이미지 업로드 상태 스트림 오류',
+            error,
+            stackTrace,
+          );
+        },
+      );
 
-      TaskSnapshot taskSnapshot;
-      try {
-        taskSnapshot = await uploadTask.timeout(
-          const Duration(seconds: 180),
-          onTimeout: () {
-            uploadTask.cancel();
-            throw TimeoutException('DM 이미지 업로드 타임아웃', const Duration(seconds: 180));
-          },
-        );
-        Logger.log('DM 이미지 업로드 완료: $fullPath');
-      } on TimeoutException catch (e) {
-        Logger.error('DM 이미지 업로드 타임아웃', e);
-        return null;
-      }
+      final taskSnapshot = await uploadTask.timeout(
+        const Duration(seconds: 180),
+        onTimeout: () {
+          uploadTask.cancel();
+          throw TimeoutException(
+            '$logLabel 이미지 업로드 타임아웃',
+            const Duration(seconds: 180),
+          );
+        },
+      );
+      Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
 
       final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      Logger.log('DM 이미지 다운로드 URL 획득: $downloadUrl');
-
-      if (compressedFile.path != imageFile.path) {
-        try {
-          await compressedFile.delete();
-        } catch (e) {
-          Logger.error('DM 임시 파일 삭제 실패: $e');
-        }
-      }
+      Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
       return downloadUrl;
+    } on TimeoutException catch (e) {
+      Logger.error('$logLabel 이미지 업로드 타임아웃', e);
+      return null;
     } catch (e) {
-      Logger.error('DM 이미지 업로드 오류: $e');
+      Logger.error('$logLabel 이미지 업로드 오류: $e');
 
       String errorDetails = '';
       if (e is FirebaseException) {
@@ -284,22 +343,31 @@ class StorageService {
       Logger.error('Firebase 오류 상세: $errorDetails');
 
       return null;
+    } finally {
+      if (compressedFile != null && compressedFile.path != imageFile.path) {
+        try {
+          await compressedFile.delete();
+        } catch (e) {
+          Logger.error('$logLabel 임시 파일 삭제 실패: $e');
+        }
+      }
     }
   }
 
   // 이미지 압축 메서드
-  Future<File?> _compressImage(File file) async {
+  Future<File?> _compressImage(File file, {bool forceJpeg = false}) async {
     try {
       // 이미지 정보 확인
       final fileSize = await file.length();
       Logger.log('원본 이미지 크기: ${(fileSize / 1024).round()}KB');
 
       // 파일 확장자 확인
-      final ext = path.extension(file.path).toLowerCase();
+      final sourceExt = path.extension(file.path).toLowerCase();
+      final outputExt = forceJpeg ? '.jpg' : sourceExt;
 
       // 임시 디렉토리 가져오기
       final tempDir = await getTemporaryDirectory();
-      final targetPath = '${tempDir.path}/${_uuid.v4()}$ext';
+      final targetPath = '${tempDir.path}/${_uuid.v4()}$outputExt';
 
       int quality = 85; // 기본 품질
 
@@ -322,7 +390,9 @@ class StorageService {
         quality: quality,
         minWidth: 1024,
         minHeight: 1024,
-        format: ext == '.png' ? CompressFormat.png : CompressFormat.jpeg,
+        format: forceJpeg || sourceExt != '.png'
+            ? CompressFormat.jpeg
+            : CompressFormat.png,
       );
 
       if (result == null) {
@@ -400,7 +470,8 @@ class StorageService {
       if (uri != null) {
         final qp = Map<String, String>.from(uri.queryParameters);
         qp.remove('alt'); // alt=media 제거 (선택)
-        cleanUrl = uri.replace(queryParameters: qp.isEmpty ? null : qp).toString();
+        cleanUrl =
+            uri.replace(queryParameters: qp.isEmpty ? null : qp).toString();
       }
 
       Logger.log('이미지 삭제 - 정제된 URL: $cleanUrl');

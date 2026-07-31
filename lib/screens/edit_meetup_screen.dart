@@ -3,15 +3,16 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import '../models/meetup.dart';
 import '../constants/app_constants.dart';
-import '../services/meetup_service.dart';
 import '../l10n/app_localizations.dart';
 import '../utils/logger.dart';
+import '../utils/responsive_helper.dart';
 
 class EditMeetupScreen extends StatefulWidget {
   final Meetup meetup;
@@ -222,6 +223,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
 
   Future<void> _updateMeetup() async {
     if (!_formKey.currentState!.validate()) return;
+    final undecidedLabel = AppLocalizations.of(context)!.undecided;
 
     setState(() {
       _isLoading = true;
@@ -234,7 +236,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
       // Firebase에서 모임 업데이트
       // 시간 필드 다국어 처리 (저장 시)
       String timeToSave = _timeController.text.trim();
-      if (timeToSave == AppLocalizations.of(context)!.undecided) {
+      if (timeToSave == undecidedLabel) {
         timeToSave = '미정';
       }
 
@@ -316,7 +318,7 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context, true); // 수정 성공을 알리며 이전 화면으로
+        await _closeScreen(result: true, shouldSaveAutofill: true);
       }
     } catch (e) {
       if (mounted) {
@@ -337,218 +339,414 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
+  double _pageHorizontalPadding(BuildContext context) =>
+      context.rs(20).clamp(16, 24).toDouble();
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+  TextStyle _sectionTitleStyle(BuildContext context) => TextStyle(
+        fontFamily: 'Pretendard',
+        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+        fontWeight: FontWeight.w700,
+        height: 1.25,
+        letterSpacing: -0.1,
+        color: const Color(0xFF111827),
+      );
+
+  TextStyle _inputStyle(BuildContext context) => TextStyle(
+        fontFamily: 'Pretendard',
+        fontSize: context.rf(15).clamp(14, 16).toDouble(),
+        fontWeight: FontWeight.w500,
+        height: 1.35,
+        color: const Color(0xFF111827),
+      );
+
+  Future<void> _closeScreen({
+    Object? result,
+    bool shouldSaveAutofill = false,
+  }) async {
+    if (!mounted) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    try {
+      TextInput.finishAutofillContext(shouldSave: shouldSaveAutofill);
+    } catch (_) {
+      // 활성화된 Autofill 세션이 없는 플랫폼에서는 무시한다.
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    if (!mounted) return;
+    Navigator.of(context).pop(result);
+  }
+
+  Future<bool> _showExitConfirmationDialog() async {
+    final l10n = AppLocalizations.of(context)!;
+    final result = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x99000000),
+      builder: (dialogContext) => Dialog(
         backgroundColor: Colors.white,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF111827)),
-          onPressed: () => Navigator.pop(context),
+        insetPadding: EdgeInsets.symmetric(
+          horizontal: context.rs(28).clamp(20, 36).toDouble(),
         ),
-        title: Text(
-          AppLocalizations.of(context)!.editMeetup,
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF111827),
-          ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
         ),
-        centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: _isLoading ? null : _updateMeetup,
-            child: _isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(AppColors.pointColor),
-                    ),
-                  )
-                : Text(
-                    AppLocalizations.of(context)!.save,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: _isLoading
-                          ? const Color(0xFF9CA3AF)
-                          : AppColors.pointColor,
-                    ),
-                  ),
-          ),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // 모임 제목
-              _buildLabel(AppLocalizations.of(context)!.meetupTitle),
-              const SizedBox(height: 8),
-              _buildTextField(
-                controller: _titleController,
-                hintText: widget.meetup.title,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)!.pleaseEnterTitle;
-                  }
-                  if (value.trim().length < 2) {
-                    return AppLocalizations.of(context)!.titleMinLengthError;
-                  }
-                  return null;
-                },
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.3,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                context.rs(22).clamp(20, 24).toDouble(),
+                context.rs(22).clamp(20, 24).toDouble(),
+                context.rs(16).clamp(12, 18).toDouble(),
+                context.rs(12).clamp(10, 14).toDouble(),
               ),
-
-              const SizedBox(height: 24),
-
-              // 썸네일 이미지
-              _buildLabel(
-                  '${AppLocalizations.of(context)!.thumbnailImage} (${AppLocalizations.of(context)!.optional})'),
-              const SizedBox(height: 8),
-              _buildImagePicker(),
-
-              const SizedBox(height: 24),
-
-              // 모임 설명
-              Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    AppLocalizations.of(context)!.meetupDescription,
-                    style: const TextStyle(
+                    l10n.exitMeetupEditing,
+                    style: TextStyle(
                       fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF374151),
+                      fontSize: context.rf(17).clamp(16, 18).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                      color: const Color(0xFF111827),
                     ),
                   ),
-                  const SizedBox(width: 4),
+                  SizedBox(height: context.rs(8).clamp(6, 10).toDouble()),
                   Text(
-                    AppLocalizations.of(context)!.optionalField,
-                    style: const TextStyle(
+                    l10n.exitMeetupEditingMessage,
+                    style: TextStyle(
                       fontFamily: 'Pretendard',
-                      fontSize: 13,
+                      fontSize: context.rf(13.5).clamp(13, 14.5).toDouble(),
                       fontWeight: FontWeight.w400,
-                      color: Color(0xFF9CA3AF),
+                      height: 1.5,
+                      color: const Color(0xFF667085),
+                    ),
+                  ),
+                  SizedBox(height: context.rs(14).clamp(12, 18).toDouble()),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: Wrap(
+                      spacing: 2,
+                      runSpacing: 2,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(false),
+                          style: _dialogActionStyle(
+                            const Color(0xFF667085),
+                          ),
+                          child: Text(
+                            l10n.stay,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext).pop(true),
+                          style: _dialogActionStyle(
+                            const Color(0xFF344054),
+                          ),
+                          child: Text(
+                            l10n.exit,
+                            style: const TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              _buildTextField(
-                controller: _descriptionController,
-                hintText: widget.meetup.description,
-                maxLines: 5,
+            ),
+          ),
+        ),
+      ),
+    );
+    return result ?? false;
+  }
+
+  ButtonStyle _dialogActionStyle(Color foregroundColor) => TextButton.styleFrom(
+        foregroundColor: foregroundColor,
+        minimumSize: const Size(64, 40),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context)!;
+    final participantItems = <int>{
+      ..._participantOptions,
+      _selectedMaxParticipants,
+    }.toList()
+      ..sort();
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop || _isLoading) return;
+        final shouldExit = await _showExitConfirmationDialog();
+        if (shouldExit && mounted) {
+          await _closeScreen();
+        }
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
+          centerTitle: true,
+          toolbarHeight: context.rh(56, min: 54, max: 60),
+          leadingWidth: 48,
+          leading: IconButton(
+            icon: Icon(
+              Icons.arrow_back_rounded,
+              size: context.ri(22).clamp(21, 24).toDouble(),
+              color: const Color(0xFF111827),
+            ),
+            onPressed: _isLoading
+                ? null
+                : () async {
+                    final shouldExit = await _showExitConfirmationDialog();
+                    if (shouldExit && mounted) await _closeScreen();
+                  },
+          ),
+          title: MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.2,
+            child: Text(
+              l10n.editMeetup,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: 'Pretendard',
+                fontSize: context.rf(18).clamp(16, 19).toDouble(),
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+                letterSpacing: -0.2,
+                color: const Color(0xFF111827),
               ),
-
-              const SizedBox(height: 24),
-
-              // 카테고리
-              _buildLabel(AppLocalizations.of(context)!.category),
-              const SizedBox(height: 8),
-              _buildDropdownField(
-                value: _selectedCategory,
-                items: _categoryKeys,
-                onChanged: (String? newValue) {
-                  if (newValue != null) {
-                    setState(() {
-                      _selectedCategory = newValue;
-                    });
-                  }
-                },
-                itemBuilder: (String categoryKey) =>
-                    _getCategoryDisplayText(categoryKey),
-              ),
-
-              const SizedBox(height: 24),
-
-              // 날짜
-              _buildLabel(AppLocalizations.of(context)!.date),
-              const SizedBox(height: 8),
-              _buildDateField(),
-
-              const SizedBox(height: 24),
-
-              // 시간
-              _buildLabel(AppLocalizations.of(context)!.time),
-              const SizedBox(height: 8),
-              _buildTextField(
-                controller: _timeController,
-                hintText: '12:00',
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)!.pleaseEnterTime;
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 24),
-
-              // 장소
-              _buildLabel(AppLocalizations.of(context)!.location),
-              const SizedBox(height: 8),
-              _buildTextField(
-                controller: _locationController,
-                hintText: widget.meetup.location,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return AppLocalizations.of(context)!.pleaseEnterLocation;
-                  }
-                  return null;
-                },
-              ),
-
-              const SizedBox(height: 40),
-
-              // 모임 수정하기 버튼
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _updateMeetup,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    disabledBackgroundColor: const Color(0xFFE5E7EB),
+            ),
+          ),
+          actions: const [SizedBox(width: 48)],
+        ),
+        body: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.fromLTRB(
+                    _pageHorizontalPadding(context),
+                    context.rs(10).clamp(8, 14).toDouble(),
+                    _pageHorizontalPadding(context),
+                    context.rs(28).clamp(24, 34).toDouble(),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2.5,
-                          ),
-                        )
-                      : Text(
-                          AppLocalizations.of(context)!.editMeetupButton,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _buildFieldLabel(l10n.date, required: true),
+                            const SizedBox(height: 2),
+                            _buildDateField(),
+                            _sectionGap(),
+                            _buildFieldLabel(l10n.title, required: true),
+                            const SizedBox(height: 2),
+                            _buildTextField(
+                              controller: _titleController,
+                              hintText: l10n.enterMeetupTitle,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return l10n.pleaseEnterTitle;
+                                }
+                                if (value.trim().length < 2) {
+                                  return l10n.titleMinLengthError;
+                                }
+                                return null;
+                              },
+                            ),
+                            _sectionGap(),
+                            _buildFieldLabel(l10n.category, required: true),
+                            const SizedBox(height: 2),
+                            _buildDropdownField<String>(
+                              value: _selectedCategory,
+                              items: _categoryKeys,
+                              onChanged: (newValue) {
+                                if (newValue == null) return;
+                                setState(() => _selectedCategory = newValue);
+                              },
+                              itemBuilder: _getCategoryDisplayText,
+                            ),
+                            _sectionGap(),
+                            _buildFieldLabel(l10n.location, required: true),
+                            const SizedBox(height: 2),
+                            _buildTextField(
+                              controller: _locationController,
+                              hintText: l10n.enterMeetupLocation,
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return l10n.pleaseEnterLocation;
+                                }
+                                return null;
+                              },
+                            ),
+                            _sectionGap(),
+                            LayoutBuilder(
+                              builder: (context, constraints) {
+                                final compact = constraints.maxWidth < 520 ||
+                                    context.isCompactLayout;
+                                final timeField = Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildFieldLabel(l10n.timeSelection,
+                                        required: true),
+                                    const SizedBox(height: 2),
+                                    _buildTextField(
+                                      controller: _timeController,
+                                      hintText: l10n.undecided,
+                                      validator: (value) {
+                                        if (value == null ||
+                                            value.trim().isEmpty) {
+                                          return l10n.pleaseEnterTime;
+                                        }
+                                        return null;
+                                      },
+                                    ),
+                                  ],
+                                );
+                                final peopleField = Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildFieldLabel(l10n.maxParticipants,
+                                        required: true),
+                                    const SizedBox(height: 2),
+                                    _buildDropdownField<int>(
+                                      value: _selectedMaxParticipants,
+                                      items: participantItems,
+                                      onChanged: (value) {
+                                        if (value == null) return;
+                                        setState(() =>
+                                            _selectedMaxParticipants = value);
+                                      },
+                                      itemBuilder: (value) =>
+                                          '$value${l10n.people}',
+                                    ),
+                                  ],
+                                );
+                                if (compact) {
+                                  return Column(
+                                    children: [
+                                      timeField,
+                                      SizedBox(height: context.rs(12)),
+                                      peopleField,
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(child: timeField),
+                                    SizedBox(width: context.rs(12)),
+                                    Expanded(child: peopleField),
+                                  ],
+                                );
+                              },
+                            ),
+                            _sectionGap(),
+                            _buildFieldLabel(
+                              l10n.description,
+                              optional: true,
+                            ),
+                            const SizedBox(height: 2),
+                            _buildTextField(
+                              controller: _descriptionController,
+                              hintText: l10n.enterMeetupDescription,
+                              minLines: MediaQuery.sizeOf(context).height < 700
+                                  ? 3
+                                  : 4,
+                              maxLines: 7,
+                            ),
+                            SizedBox(
+                              height: context.rs(18).clamp(16, 22).toDouble(),
+                            ),
+                            _buildImagePicker(),
+                          ],
                         ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
-
-              // 하단 여백 (갤럭시 네비게이션 바 고려)
-              SizedBox(height: 24 + MediaQuery.of(context).padding.bottom),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    _pageHorizontalPadding(context),
+                    8,
+                    _pageHorizontalPadding(context),
+                    10,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 720),
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.2,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _buildBottomActionButton(
+                                label: l10n.cancel,
+                                onPressed: _isLoading
+                                    ? null
+                                    : () async {
+                                        final shouldExit =
+                                            await _showExitConfirmationDialog();
+                                        if (shouldExit && mounted) {
+                                          await _closeScreen();
+                                        }
+                                      },
+                                isPrimary: false,
+                              ),
+                            ),
+                            SizedBox(
+                              width: context.rs(8).clamp(8, 12).toDouble(),
+                            ),
+                            Expanded(
+                              flex: 2,
+                              child: _buildBottomActionButton(
+                                label: l10n.save,
+                                onPressed: _isLoading ? null : _updateMeetup,
+                                isPrimary: true,
+                                isLoading: _isLoading,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -556,62 +754,78 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Text(
-      text,
-      style: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        color: Color(0xFF374151),
-      ),
+  Widget _sectionGap() => SizedBox(
+        height: context.rs(18).clamp(15, 22).toDouble(),
+      );
+
+  Widget _buildFieldLabel(
+    String text, {
+    bool required = false,
+    bool optional = false,
+  }) {
+    final l10n = AppLocalizations.of(context)!;
+    return Row(
+      children: [
+        Flexible(child: Text(text, style: _sectionTitleStyle(context))),
+        if (required) ...[
+          const SizedBox(width: 4),
+          Text(
+            '*',
+            style: _sectionTitleStyle(context).copyWith(
+              fontSize: context.rf(14).clamp(13, 15).toDouble(),
+              color: const Color(0xFF667085),
+            ),
+          ),
+        ],
+        if (optional) ...[
+          const SizedBox(width: 4),
+          Text(
+            l10n.optionalField,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: context.rf(12).clamp(11, 13).toDouble(),
+              fontWeight: FontWeight.w500,
+              color: const Color(0xFF9CA3AF),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
   Widget _buildTextField({
     required TextEditingController controller,
     required String hintText,
+    int? minLines,
     int maxLines = 1,
     String? Function(String?)? validator,
   }) {
     return TextFormField(
       controller: controller,
+      minLines: minLines,
       maxLines: maxLines,
-      style: const TextStyle(
-        fontFamily: 'Pretendard',
-        fontSize: 15,
-        color: Color(0xFF111827),
-      ),
+      style: _inputStyle(context),
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: const TextStyle(
-          fontFamily: 'Pretendard',
-          fontSize: 15,
-          color: Color(0xFF9CA3AF),
+        hintStyle: _inputStyle(context).copyWith(
+          fontWeight: FontWeight.w400,
+          color: const Color(0xFF9CA3AF),
         ),
-        filled: true,
-        fillColor: const Color(0xFFF9FAFB),
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        contentPadding: const EdgeInsets.fromLTRB(0, 10, 0, 12),
+        border: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFFEAECF0)),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB), width: 1),
+        enabledBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFFEAECF0)),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.pointColor, width: 1.5),
+        focusedBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFF667085), width: 1.4),
         ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1),
+        errorBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFFB42318)),
         ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFEF4444), width: 1.5),
+        focusedErrorBorder: const UnderlineInputBorder(
+          borderSide: BorderSide(color: Color(0xFFB42318), width: 1.4),
         ),
       ),
       validator: validator,
@@ -625,30 +839,36 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     required String Function(T) itemBuilder,
   }) {
     return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+      constraints: BoxConstraints(
+        minHeight: context.rh(48, min: 46, max: 52),
+      ),
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: Color(0xFFEAECF0)),
+        ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<T>(
           value: value,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF6B7280)),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 15,
-            color: Color(0xFF111827),
+          icon: const Icon(
+            Icons.expand_more_rounded,
+            color: Color(0xFF98A2B3),
           ),
+          style: _inputStyle(context),
           dropdownColor: Colors.white,
           borderRadius: BorderRadius.circular(12),
-          items: items.map((T item) {
-            return DropdownMenuItem<T>(
-              value: item,
-              child: Text(itemBuilder(item)),
-            );
-          }).toList(),
+          items: [
+            for (final item in items)
+              DropdownMenuItem<T>(
+                value: item,
+                child: Text(
+                  itemBuilder(item),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
           onChanged: onChanged,
         ),
       ),
@@ -658,35 +878,30 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
   Widget _buildDateField() {
     return InkWell(
       onTap: _selectDate,
-      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF9FAFB),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+        constraints: BoxConstraints(
+          minHeight: context.rh(48, min: 46, max: 52),
+        ),
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: const BoxDecoration(
+          border: Border(
+            bottom: BorderSide(color: Color(0xFFEAECF0)),
+          ),
         ),
         child: Row(
           children: [
-            const Icon(
-              Icons.calendar_today_outlined,
-              size: 20,
-              color: Color(0xFF6B7280),
-            ),
-            const SizedBox(width: 12),
-            Text(
-              DateFormat('yyyy-MM-dd').format(_selectedDate),
-              style: const TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: 15,
-                color: Color(0xFF111827),
+            Expanded(
+              child: Text(
+                _formattedSelectedDate(),
+                style: _inputStyle(context).copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-            const Spacer(),
-            const Icon(
-              Icons.keyboard_arrow_down,
-              size: 20,
-              color: Color(0xFF6B7280),
+            Icon(
+              Icons.expand_more_rounded,
+              size: context.ri(20).clamp(19, 22).toDouble(),
+              color: const Color(0xFF6B7280),
             ),
           ],
         ),
@@ -694,140 +909,148 @@ class _EditMeetupScreenState extends State<EditMeetupScreen> {
     );
   }
 
+  String _formattedSelectedDate() {
+    final locale = Localizations.localeOf(context).languageCode;
+    return locale == 'ko'
+        ? DateFormat('M월 d일 (E)', 'ko').format(_selectedDate)
+        : DateFormat('MMM d (E)', 'en').format(_selectedDate);
+  }
+
   Widget _buildImagePicker() {
     final bool hasImage = _selectedImage != null || _existingImageUrl != null;
+    final l10n = AppLocalizations.of(context)!;
 
-    return Container(
-      width: double.infinity,
-      height: 200,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-      ),
-      child: hasImage
-          ? Stack(
-              children: [
-                // 이미지 표시
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _selectedImage != null
-                      ? Image.file(
-                          _selectedImage!,
-                          width: double.infinity,
-                          height: 200,
-                          fit: BoxFit.cover,
-                        )
-                      : Image.network(
-                          _existingImageUrl!,
-                          width: double.infinity,
-                          height: 200,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Center(
-                              child: Icon(
-                                Icons.broken_image,
-                                size: 48,
-                                color: Color(0xFF9CA3AF),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                // 우측 상단 버튼들
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Row(
-                    children: [
-                      // 이미지 변경 버튼
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.edit, size: 20),
-                          color: AppColors.pointColor,
-                          onPressed: _pickImage,
-                          tooltip:
-                              AppLocalizations.of(context)!.changeImageTooltip,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 이미지 제거 버튼
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(8),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: IconButton(
-                          icon: const Icon(Icons.close, size: 20),
-                          color: const Color(0xFFEF4444),
-                          onPressed: _removeImage,
-                          tooltip:
-                              AppLocalizations.of(context)!.removeImageTooltip,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            )
-          : InkWell(
-              onTap: _pickImage,
-              borderRadius: BorderRadius.circular(12),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextButton.icon(
+          onPressed: _isLoading ? null : _pickImage,
+          style: TextButton.styleFrom(
+            foregroundColor: const Color(0xFF475467),
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+            minimumSize: const Size(44, 44),
+          ),
+          icon: Icon(
+            Icons.add_photo_alternate_outlined,
+            size: context.ri(21).clamp(20, 23).toDouble(),
+          ),
+          label: Text(
+            hasImage ? l10n.changeImageTooltip : l10n.thumbnailImage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: context.rf(13).clamp(12, 14).toDouble(),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        if (hasImage) ...[
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: SizedBox(
+              width: double.infinity,
+              height: context.rh(210, min: 180, max: 230),
+              child: Stack(
+                fit: StackFit.expand,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE5E7EB),
-                      borderRadius: BorderRadius.circular(12),
+                  if (_selectedImage != null)
+                    Image.file(_selectedImage!, fit: BoxFit.cover)
+                  else
+                    Image.network(
+                      _existingImageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const ColoredBox(
+                        color: Color(0xFFF2F4F7),
+                        child: Icon(
+                          Icons.image_not_supported_outlined,
+                          color: Color(0xFF98A2B3),
+                        ),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 48,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    AppLocalizations.of(context)!.addImage,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF6B7280),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    AppLocalizations.of(context)!.tapToSelectFromGallery,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 13,
-                      color: Color(0xFF9CA3AF),
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Semantics(
+                      button: true,
+                      label: l10n.removeImageTooltip,
+                      child: InkWell(
+                        onTap: _isLoading ? null : _removeImage,
+                        customBorder: const CircleBorder(),
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              color: Color(0xCC111827),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.all(5),
+                              child: Icon(
+                                Icons.close_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBottomActionButton({
+    required String label,
+    required VoidCallback? onPressed,
+    required bool isPrimary,
+    bool isLoading = false,
+  }) {
+    final disabled = onPressed == null || isLoading;
+    final backgroundColor = isPrimary
+        ? (disabled ? const Color(0xFFD0D5DD) : const Color(0xFF344054))
+        : Colors.transparent;
+    final foregroundColor = isPrimary
+        ? Colors.white
+        : (disabled ? const Color(0xFFB0B7C3) : const Color(0xFF475467));
+
+    return SizedBox(
+      height: context.rh(48, min: 44, max: 50),
+      child: Material(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: disabled ? null : onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Center(
+            child: isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.2,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    label,
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      fontWeight: FontWeight.w700,
+                      color: foregroundColor,
+                    ),
+                  ),
+          ),
+        ),
+      ),
     );
   }
 }

@@ -5,11 +5,12 @@
 // 날짜 관련 유틸리티 함수 제공
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../utils/profile_photo_policy.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import '../models/meetup.dart';
 import '../models/meetup_participant.dart';
+import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'content_filter_service.dart';
 import 'view_history_service.dart';
@@ -131,7 +132,8 @@ class MeetupService {
     if (parts.length < 2) return baseDay;
     final h = int.tryParse(parts[0].trim()) ?? 0;
     final m = int.tryParse(parts[1].trim()) ?? 0;
-    return DateTime(baseDay.year, baseDay.month, baseDay.day, h.clamp(0, 23), m.clamp(0, 59));
+    return DateTime(baseDay.year, baseDay.month, baseDay.day, h.clamp(0, 23),
+        m.clamp(0, 59));
   }
 
   DateTime _computeMeetupEndsAt(DateTime date, String rawTime) {
@@ -278,6 +280,19 @@ class MeetupService {
       final user = _auth.currentUser;
       if (user == null) return false;
 
+      if (!const {'public', 'friends', 'category'}.contains(visibility)) {
+        Logger.error('지원하지 않는 밋업 공개 범위: $visibility');
+        return false;
+      }
+      final normalizedCategoryIds = visibleToCategoryIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (visibility == 'category' && normalizedCategoryIds.isEmpty) {
+        Logger.error('그룹 공개 밋업에 선택된 그룹이 없습니다.');
+        return false;
+      }
       final startsAt = _computeMeetupStartsAt(date, time);
       final endsAt = _computeMeetupEndsAt(date, time);
 
@@ -309,52 +324,41 @@ class MeetupService {
           ? <File>[]
           : localFiles.take(remainingForLocal).toList();
 
-      // 사용자 데이터 가져오기
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data();
-      final nickname = userData?['nickname'] ?? '익명';
-      final nationality = userData?['nationality'] ?? ''; // 국적 가져오기
-      // ✅ 정책: 프로필 사진은 지정 Storage 버킷(profile_images/) URL만 사용
-      final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
-      final photoURL = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
-          ? rawPhotoUrl
-          : '';
-
-      // 모임 생성 시간
-      final now = FieldValue.serverTimestamp();
-
-      // 모임 데이터 생성
-      final meetupData = {
-        'userId': user.uid,
-        'hostNickname': nickname,
-        'hostPhotoURL': photoURL, // 주최자 프로필 사진 URL 추가
-        'title': title,
-        'description': description,
-        'location': location,
-        'time': time,
-        'maxParticipants': maxParticipants,
-        'currentParticipants': 1, // 주최자 포함
-        'participants': [user.uid], // 주최자 ID
-        'date': date,
-        // 약속 시작/종료 (서버 규칙에서 만료 판정에 사용 가능)
-        'startsAt': Timestamp.fromDate(startsAt),
-        'endsAt': Timestamp.fromDate(endsAt),
-        // 캘린더 날짜 기반 조회를 위한 키(타임존 영향 최소화)
-        'dateKey': _dateKey(date),
-        'createdAt': now,
-        'updatedAt': now,
-        'category': category, // 카테고리 필드 추가
-        'hostNationality': nationality, // 주최자 국적 추가
-        'thumbnailContent': thumbnailContent, // 썸네일 텍스트 컨텐츠 추가
-        if (remoteUrls.isNotEmpty) 'thumbnailImageUrl': remoteUrls.first,
-        if (remoteUrls.isNotEmpty) 'imageUrls': remoteUrls,
-        'visibility': visibility, // 공개 범위 추가
-        'visibleToCategoryIds': visibleToCategoryIds, // 특정 카테고리 공개 추가
-        _kickedUserIdsField: <String>[], // 강퇴(퇴장)된 사용자 목록
-      };
-
-      // Firestore에 저장
-      final docRef = await _firestore.collection('meetups').add(meetupData);
+      // 공개 대상 계산과 canonical 문서 생성은 서버에서 원자적으로 수행한다.
+      // 클라이언트가 임의 UID 배열을 주입하지 못하며 재시도 시 같은 ID를 쓴다.
+      final docRef = _firestore.collection('meetups').doc();
+      try {
+        await FirebaseFunctions.instance
+            .httpsCallable('createMeetupSecure')
+            .call(<String, dynamic>{
+          'meetupId': docRef.id,
+          'title': title,
+          'description': description,
+          'location': location,
+          'time': time,
+          'maxParticipants': maxParticipants,
+          'dateMillis': date.millisecondsSinceEpoch,
+          'startsAtMillis': startsAt.millisecondsSinceEpoch,
+          'endsAtMillis': endsAt.millisecondsSinceEpoch,
+          'dateKey': _dateKey(date),
+          'category': category,
+          'thumbnailContent': thumbnailContent,
+          'imageUrls': remoteUrls,
+          'visibility': visibility,
+          'visibleToCategoryIds': normalizedCategoryIds,
+        }).timeout(const Duration(seconds: 30));
+      } catch (error) {
+        // 서버가 생성한 뒤 응답만 유실된 경우를 실패/중복으로 처리하지 않는다.
+        var created = false;
+        try {
+          final document =
+              await docRef.get().timeout(const Duration(seconds: 5));
+          final data = document.data();
+          created = document.exists &&
+              (data?['ownerId'] == user.uid || data?['userId'] == user.uid);
+        } catch (_) {}
+        if (!created) Error.throwWithStackTrace(error, StackTrace.current);
+      }
 
       // 이미지 업로드 처리(최대 3장)
       if (uploadFiles.isNotEmpty) {
@@ -439,6 +443,55 @@ class MeetupService {
     return controller.stream;
   }
 
+  Future<List<Meetup>> _filterVisibleAndBlocked(
+    List<Meetup> meetups,
+  ) async {
+    final visible = await filterMeetupsForCurrentUser(meetups);
+    return ContentFilterService.filterMeetups(visible);
+  }
+
+  /// Firestore Rules가 목록을 필터처럼 처리할 수 없으므로 공개/대상/주최 쿼리를
+  /// 분리합니다. 이 경로를 통과한 문서만 기기로 내려오며, 마지막 검사는 문서에
+  /// 저장된 frozen audience와 별도 차단 정책만 사용합니다.
+  Stream<List<Meetup>> _watchAudienceScopedMeetupQuery(
+    Query<Map<String, dynamic>> baseQuery,
+  ) {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(const <Meetup>[]);
+
+    Stream<List<Meetup>> watch(Query<Map<String, dynamic>> query) =>
+        query.snapshots().map<List<Meetup>>(_convertToMeetups);
+
+    final scoped = _mergeManyMeetupStreams(<Stream<List<Meetup>>>[
+      watch(baseQuery.where('visibility', isEqualTo: 'public')),
+      watch(baseQuery.where('allowedUserIds', arrayContains: user.uid)),
+      // 레거시 비공개 문서에 allowedUserIds가 없어도 주최자는 복구할 수 있습니다.
+      watch(baseQuery.where('userId', isEqualTo: user.uid)),
+    ]);
+    return scoped.asyncMap(_filterVisibleAndBlocked);
+  }
+
+  Future<List<Meetup>> _getAudienceScopedMeetupQuery(
+    Query<Map<String, dynamic>> baseQuery,
+  ) async {
+    final user = _auth.currentUser;
+    if (user == null) return const <Meetup>[];
+
+    final snapshots =
+        await Future.wait(<Future<QuerySnapshot<Map<String, dynamic>>>>[
+      baseQuery.where('visibility', isEqualTo: 'public').get(),
+      baseQuery.where('allowedUserIds', arrayContains: user.uid).get(),
+      baseQuery.where('userId', isEqualTo: user.uid).get(),
+    ]);
+    final byId = <String, Meetup>{};
+    for (final snapshot in snapshots) {
+      for (final meetup in _convertToMeetups(snapshot)) {
+        byId[meetup.id] = meetup;
+      }
+    }
+    return _filterVisibleAndBlocked(byId.values.toList());
+  }
+
   // 요일별 모임 가져오기 - 모든 모임 표시
   Stream<List<Meetup>> getMeetupsByDay(int dayIndex, {DateTime? weekAnchor}) {
     // 해당 요일의 날짜 계산 (지정된 주차 기준 또는 현재 날짜 기준)
@@ -458,49 +511,23 @@ class MeetupService {
     final dateKey = _dateKey(startOfDay);
     final legacyCandidates = _legacyDateStringCandidates(startOfDay);
 
-    final byDateKey = _firestore
-        .collection('meetups')
-        .where('dateKey', isEqualTo: dateKey)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+    final byDateKey = _watchAudienceScopedMeetupQuery(
+        _firestore.collection('meetups').where('dateKey', isEqualTo: dateKey));
 
-    final byTimestampRange = _firestore
+    final byTimestampRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: startOfDay)
-        .where('date', isLessThanOrEqualTo: endOfDay)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .where('date', isLessThanOrEqualTo: endOfDay));
 
-    final byLegacyString1 = _firestore
+    final byLegacyString1 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[0])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
-    final byLegacyString2 = _firestore
+        .where('date', isEqualTo: legacyCandidates[0]));
+    final byLegacyString2 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[1])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
-    final byLegacyString3 = _firestore
+        .where('date', isEqualTo: legacyCandidates[1]));
+    final byLegacyString3 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[2])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .where('date', isEqualTo: legacyCandidates[2]));
 
     final byLegacyStrings = _combineMeetupStreams(byLegacyString1,
         _combineMeetupStreams(byLegacyString2, byLegacyString3));
@@ -509,12 +536,13 @@ class MeetupService {
         byDateKey, _combineMeetupStreams(byTimestampRange, byLegacyStrings));
   }
 
-  Stream<List<Meetup>> _mergeManyMeetupStreams(List<Stream<List<Meetup>>> streams) {
+  Stream<List<Meetup>> _mergeManyMeetupStreams(
+      List<Stream<List<Meetup>>> streams) {
     if (streams.isEmpty) return Stream.value(const <Meetup>[]);
     return streams.skip(1).fold<Stream<List<Meetup>>>(
-      streams.first,
-      (acc, s) => _combineMeetupStreams(acc, s),
-    );
+          streams.first,
+          (acc, s) => _combineMeetupStreams(acc, s),
+        );
   }
 
   DateTime _monthStart(DateTime d) {
@@ -542,27 +570,19 @@ class MeetupService {
     final startKey = _dateKey(monthStart);
     final endKey = _dateKey(monthEnd);
 
-    final byDateKeyRange = _firestore
+    final byDateKeyRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('dateKey', isGreaterThanOrEqualTo: startKey)
         .where('dateKey', isLessThanOrEqualTo: endKey)
-        .orderBy('dateKey', descending: false)
-        .snapshots()
-        .map(_convertToMeetups);
+        .orderBy('dateKey', descending: false));
 
-    final byTimestampRange = _firestore
+    final byTimestampRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: monthStart)
         .where('date', isLessThanOrEqualTo: monthEnd)
-        .orderBy('date', descending: false)
-        .snapshots()
-        .map(_convertToMeetups);
+        .orderBy('date', descending: false));
 
-    return _combineMeetupStreams(byDateKeyRange, byTimestampRange)
-        .asyncMap((meetups) async {
-      final visibilityFiltered = await filterMeetupsForCurrentUser(meetups);
-      return await ContentFilterService.filterMeetups(visibilityFiltered);
-    });
+    return _combineMeetupStreams(byDateKeyRange, byTimestampRange);
   }
 
   /// 내 참여/참가신청(approved/pending) 모임 ID 스트림.
@@ -573,7 +593,10 @@ class MeetupService {
     return _firestore
         .collection('meetup_participants')
         .where('userId', isEqualTo: user.uid)
-        .where('status', whereIn: const [ParticipantStatus.approved, ParticipantStatus.pending])
+        .where('status', whereIn: const [
+          ParticipantStatus.approved,
+          ParticipantStatus.pending
+        ])
         .snapshots()
         .map((snapshot) {
           final ids = <String>{};
@@ -598,14 +621,14 @@ class MeetupService {
         .where('status', isEqualTo: ParticipantStatus.approved)
         .snapshots()
         .map((snapshot) {
-          final ids = <String>{};
-          for (final d in snapshot.docs) {
-            final data = d.data();
-            final meetupId = (data['meetupId'] ?? '').toString().trim();
-            if (meetupId.isNotEmpty) ids.add(meetupId);
-          }
-          return ids;
-        });
+      final ids = <String>{};
+      for (final d in snapshot.docs) {
+        final data = d.data();
+        final meetupId = (data['meetupId'] ?? '').toString().trim();
+        if (meetupId.isNotEmpty) ids.add(meetupId);
+      }
+      return ids;
+    });
   }
 
   Stream<List<Meetup>> _watchMeetupsByIds(Set<String> ids) {
@@ -616,14 +639,24 @@ class MeetupService {
 
     for (var i = 0; i < list.length; i += 10) {
       final chunk = list.sublist(i, (i + 10).clamp(0, list.length));
-      streams.add(
-        _firestore
+      for (final id in chunk) {
+        streams.add(_firestore
             .collection('meetups')
-            .where(FieldPath.documentId, whereIn: chunk)
+            .doc(id)
             .snapshots()
-            .map(_convertToMeetups)
-            .asyncMap(ContentFilterService.filterMeetups),
-      );
+            .asyncMap((doc) async {
+          if (!doc.exists || doc.data() == null) return const <Meetup>[];
+          final meetup = Meetup.fromJson(<String, dynamic>{
+            ...doc.data()!,
+            'id': doc.id,
+          });
+          return _filterVisibleAndBlocked(<Meetup>[meetup]);
+        }).handleError((Object error) {
+          // 공개 대상에서 빠진 사용자의 기존 참여 ID가 남아 있어도 문서를
+          // 우회 조회하지 않고 해당 항목만 목록에서 제외합니다.
+          Logger.warning('접근할 수 없는 밋업 문서 제외($id): $error');
+        }));
+      }
     }
 
     return _mergeManyMeetupStreams(streams);
@@ -645,9 +678,7 @@ class MeetupService {
 
     List<Meetup> filterToMonth(List<Meetup> src) {
       final m = _monthStart(focusedMonth);
-      return src
-          .where((x) => _isSameMonth(x.date, m))
-          .toList();
+      return src.where((x) => _isSameMonth(x.date, m)).toList();
     }
 
     void emit() {
@@ -662,7 +693,8 @@ class MeetupService {
         ..sort((a, b) {
           final d = a.date.compareTo(b.date);
           if (d != 0) return d;
-          return _minutesFromMeetupTime(a.time).compareTo(_minutesFromMeetupTime(b.time));
+          return _minutesFromMeetupTime(a.time)
+              .compareTo(_minutesFromMeetupTime(b.time));
         });
       controller.add(merged);
     }
@@ -673,9 +705,10 @@ class MeetupService {
         .snapshots()
         .map(_convertToMeetups)
         .listen((meetups) async {
-          latestHosted = filterToMonth(await ContentFilterService.filterMeetups(meetups));
-          emit();
-        }, onError: controller.addError);
+      latestHosted =
+          filterToMonth(await ContentFilterService.filterMeetups(meetups));
+      emit();
+    }, onError: controller.addError);
 
     idsSub = watchMyApprovedParticipatingMeetupIds().listen((ids) {
       participatingMeetupsSub?.cancel();
@@ -703,16 +736,11 @@ class MeetupService {
         .add(const Duration(days: 1))
         .subtract(const Duration(microseconds: 1));
 
-    return _firestore
+    return _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('createdAt', isGreaterThanOrEqualTo: startOfDay)
         .where('createdAt', isLessThanOrEqualTo: endOfDay)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .orderBy('createdAt', descending: true));
   }
 
   /// Today 탭용 모임 스트림
@@ -722,8 +750,10 @@ class MeetupService {
     final today = DateTime(base.year, base.month, base.day);
 
     return _combineMeetupStreams(
-      getTodayMeetups(),
-      getMeetupsCreatedToday(now: now),
+      // 두 스트림 모두 같은 기준 시각을 사용해야 자정 경계에서도 서로 다른
+      // 날짜의 결과가 섞이지 않습니다.
+      getTodayMeetups(now: base),
+      getMeetupsCreatedToday(now: base),
     ).map((meetups) {
       // 요구사항:
       // - "오늘(약속 날짜)인 모임"을 맨 위로 묶어서
@@ -769,34 +799,24 @@ class MeetupService {
 
     // 모든 모임 가져오기인 경우
     if (category == '전체') {
-      return _firestore
+      return _watchAudienceScopedMeetupQuery(_firestore
           .collection('meetups')
           .where('date', isGreaterThanOrEqualTo: today)
-          .orderBy('date', descending: false)
-          .snapshots()
-          .asyncMap((snapshot) async {
-        final meetups = _convertToMeetups(snapshot);
-        return await ContentFilterService.filterMeetups(meetups);
-      });
+          .orderBy('date', descending: false));
     }
 
     // 특정 카테고리 모임 가져오기
-    return _firestore
+    return _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('category', isEqualTo: category)
         .where('date', isGreaterThanOrEqualTo: today)
-        .orderBy('date', descending: false)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .orderBy('date', descending: false));
   }
 
   // 오늘의 모임 가져오기
-  Stream<List<Meetup>> getTodayMeetups() {
-    final now = DateTime.now().toLocal();
-    final startOfDay = DateTime(now.year, now.month, now.day);
+  Stream<List<Meetup>> getTodayMeetups({DateTime? now}) {
+    final base = (now ?? DateTime.now()).toLocal();
+    final startOfDay = DateTime(base.year, base.month, base.day);
     final endOfDay = startOfDay
         .add(const Duration(days: 1))
         .subtract(const Duration(microseconds: 1));
@@ -804,49 +824,23 @@ class MeetupService {
     final dateKey = _dateKey(startOfDay);
     final legacyCandidates = _legacyDateStringCandidates(startOfDay);
 
-    final byDateKey = _firestore
-        .collection('meetups')
-        .where('dateKey', isEqualTo: dateKey)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+    final byDateKey = _watchAudienceScopedMeetupQuery(
+        _firestore.collection('meetups').where('dateKey', isEqualTo: dateKey));
 
-    final byTimestampRange = _firestore
+    final byTimestampRange = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
         .where('date', isGreaterThanOrEqualTo: startOfDay)
-        .where('date', isLessThanOrEqualTo: endOfDay)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .where('date', isLessThanOrEqualTo: endOfDay));
 
-    final byLegacyString1 = _firestore
+    final byLegacyString1 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[0])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
-    final byLegacyString2 = _firestore
+        .where('date', isEqualTo: legacyCandidates[0]));
+    final byLegacyString2 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[1])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
-    final byLegacyString3 = _firestore
+        .where('date', isEqualTo: legacyCandidates[1]));
+    final byLegacyString3 = _watchAudienceScopedMeetupQuery(_firestore
         .collection('meetups')
-        .where('date', isEqualTo: legacyCandidates[2])
-        .snapshots()
-        .asyncMap((snapshot) async {
-      final meetups = _convertToMeetups(snapshot);
-      return await ContentFilterService.filterMeetups(meetups);
-    });
+        .where('date', isEqualTo: legacyCandidates[2]));
 
     final byLegacyStrings = _combineMeetupStreams(byLegacyString1,
         _combineMeetupStreams(byLegacyString2, byLegacyString3));
@@ -891,14 +885,35 @@ class MeetupService {
         date: meetupDate,
         createdAt: createdAt,
         category: data['category'] ?? '기타',
-        userId: data['userId'], // 모임 주최자 ID 추가
+        userId: data['ownerId'] ?? data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-        visibility: data['visibility'] ?? 'public',
-        visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
-            ? List<String>.from(data['visibleToCategoryIds'] as List)
-            : const [],
+        visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
+        visibleToCategoryIds:
+            ((data['sourceGroupIds'] ?? data['visibleToCategoryIds']) is List)
+                ? List<String>.from(
+                    (data['sourceGroupIds'] ?? data['visibleToCategoryIds'])
+                        as List,
+                  )
+                : const [],
+        allowedUserIds:
+            ((data['audienceUserIdsFrozen'] ?? data['allowedUserIds']) is List)
+                ? List<String>.from(
+                    (data['audienceUserIdsFrozen'] ?? data['allowedUserIds'])
+                        as List,
+                  )
+                : const [],
+        visibilitySchemaVersion:
+            (data['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+        visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
+            ? (data['visibilityLockedAt'] as Timestamp).toDate()
+            : null,
         isCompleted: data['isCompleted'] ?? false,
         hasReview: data['hasReview'] ?? false,
+        groupChatEnabled: data['groupChatEnabled'] ?? false,
+        isConfirmed: data['isConfirmed'] ?? false,
+        snackChatId: (data['snackChatId'] ?? '').toString().trim().isEmpty
+            ? null
+            : data['snackChatId'].toString().trim(),
         reviewId: data['reviewId'],
         viewCount: data['viewCount'] ?? 0,
         commentCount: data['commentCount'] ?? 0,
@@ -916,7 +931,10 @@ class MeetupService {
         return null;
       }
 
-      final data = doc.data()!;
+      final data = Map<String, dynamic>.from(doc.data()!);
+
+      // 공개 대상은 게시 시점 데이터 그대로 읽는다. 상세 화면 진입 시 현재
+      // 친구/그룹 상태로 과거 allowedUserIds를 보정하지 않는다.
 
       final meetupDate = _parseMeetupDateFromFirestore(data);
 
@@ -947,12 +965,28 @@ class MeetupService {
                 : const []),
         date: meetupDate,
         category: data['category'] ?? '기타', // 카테고리 필드 추가
-        userId: data['userId'], // 모임 주최자 ID 추가
+        userId: data['ownerId'] ?? data['userId'], // 모임 주최자 ID 추가
         hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-        visibility: data['visibility'] ?? 'public',
-        visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
-            ? List<String>.from(data['visibleToCategoryIds'] as List)
-            : const [],
+        visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
+        visibleToCategoryIds:
+            ((data['sourceGroupIds'] ?? data['visibleToCategoryIds']) is List)
+                ? List<String>.from(
+                    (data['sourceGroupIds'] ?? data['visibleToCategoryIds'])
+                        as List,
+                  )
+                : const [],
+        allowedUserIds:
+            ((data['audienceUserIdsFrozen'] ?? data['allowedUserIds']) is List)
+                ? List<String>.from(
+                    (data['audienceUserIdsFrozen'] ?? data['allowedUserIds'])
+                        as List,
+                  )
+                : const [],
+        visibilitySchemaVersion:
+            (data['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+        visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
+            ? (data['visibilityLockedAt'] as Timestamp).toDate()
+            : null,
         isCompleted: data['isCompleted'] ?? false, // 모임 완료 여부
         hasReview: data['hasReview'] ?? false, // 후기 작성 여부
         reviewId: data['reviewId'], // 후기 ID
@@ -990,103 +1024,19 @@ class MeetupService {
     try {
       final user = _auth.currentUser;
       if (user == null) return [];
-
-      // ✅ 최신 친구 시스템: friendships/{pairId} 문서의 uids: [uidA, uidB]
-      // - accepted 친구만 friendships에 존재
-      final friendIds = <String>{};
-      try {
-        final snap = await _firestore
-            .collection('friendships')
-            .where('uids', arrayContains: user.uid)
-            .get();
-        for (final d in snap.docs) {
-          final data = d.data();
-          final uids =
-              (data['uids'] is List) ? List<String>.from(data['uids']) : const <String>[];
-          for (final uid in uids) {
-            if (uid.trim().isEmpty) continue;
-            if (uid != user.uid) friendIds.add(uid);
-          }
-        }
-      } catch (e) {
-        Logger.error('friendships 기반 친구 ID 로드 오류: $e');
-      }
-
-      // ✅ 레거시(relationships) fallback: 데이터가 남아있는 경우 대비
-      try {
-        final rel = _firestore.collection('relationships');
-        final a = await rel
-            .where('userId', isEqualTo: user.uid)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-        final b = await rel
-            .where('friendId', isEqualTo: user.uid)
-            .where('status', isEqualTo: 'accepted')
-            .get();
-        for (final d in a.docs) {
-          final id = (d.data()['friendId'] ?? '').toString().trim();
-          if (id.isNotEmpty) friendIds.add(id);
-        }
-        for (final d in b.docs) {
-          final id = (d.data()['userId'] ?? '').toString().trim();
-          if (id.isNotEmpty) friendIds.add(id);
-        }
-      } catch (e) {
-        Logger.error('relationships 기반 친구 ID 로드 오류: $e');
-      }
-
-      // 내가 속한 카테고리(상대방의 friend_categories에서 나를 포함하는 문서)
-      final userCategoriesSnapshot = await _firestore
-          .collection('friend_categories')
-          .where('friendIds', arrayContains: user.uid)
-          .get();
-      final userCategoryIds =
-          userCategoriesSnapshot.docs.map((doc) => doc.id).toSet();
-
-      final filtered = <Meetup>[];
-      for (final meetup in meetups) {
-        // 내 모임은 항상 표시
-        if (meetup.userId == user.uid) {
-          filtered.add(meetup);
-          continue;
-        }
-
-        switch (meetup.visibility) {
-          case 'public':
-            filtered.add(meetup);
-            break;
-          case 'friends':
-            if (friendIds.contains(meetup.userId)) {
-              filtered.add(meetup);
-            }
-            break;
-          case 'category':
-            bool shouldShow = false;
-            if (categoryIds == null) {
-              // 기본 보기: 내가 해당 카테고리에 속해있는지
-              for (final categoryId in meetup.visibleToCategoryIds) {
-                if (userCategoryIds.contains(categoryId)) {
-                  shouldShow = true;
-                  break;
-                }
-              }
-            } else {
-              // 특정 카테고리 필터: 모임이 해당 카테고리에 공개되는지
-              shouldShow = meetup.visibleToCategoryIds.any(
-                  (visibleCategoryId) =>
-                      categoryIds.contains(visibleCategoryId));
-            }
-            if (shouldShow) {
-              filtered.add(meetup);
-            }
-            break;
-          default:
-            // 알 수 없는 값은 안전하게 숨김
-            break;
-        }
-      }
-
-      return filtered;
+      return meetups.where((meetup) {
+        final canRead = FrozenAudiencePolicy.canRead(
+          viewerId: user.uid,
+          ownerId: meetup.userId ?? '',
+          visibilityMode: meetup.visibility,
+          audienceUserIdsFrozen: meetup.allowedUserIds,
+        );
+        if (!canRead) return false;
+        // 화면의 그룹 필터는 sourceGroupIds 표시에만 사용한다. 실제 접근 권한은
+        // 생성 시 고정된 allowedUserIds로 이미 판정했다.
+        return categoryIds == null ||
+            meetup.visibleToCategoryIds.any(categoryIds.contains);
+      }).toList(growable: false);
     } catch (e) {
       Logger.error('❌ 모임 공개 범위 필터링 오류: $e');
       return [];
@@ -1112,6 +1062,7 @@ class MeetupService {
 
       final testQuery = await _firestore
           .collection('meetups')
+          .where('visibility', isEqualTo: 'public')
           .limit(1)
           .get(const GetOptions(source: Source.server));
 
@@ -1142,97 +1093,21 @@ class MeetupService {
     final today = DateTime(now.year, now.month, now.day);
     Logger.log('📅 [SERVICE] 검색 기준 날짜: $today');
 
-    return _firestore
-        .collection('meetups')
-        .where('date', isGreaterThanOrEqualTo: today)
-        .orderBy('date', descending: false)
-        .snapshots()
-        .asyncMap((snapshot) async {
-      Logger.log('📡 [SERVICE] Firestore 스냅샷 수신: ${snapshot.docs.length}개 문서');
-
-      final matchedMeetups = <Meetup>[];
-
-      for (final doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-
-          // 검색어와 일치하는지 확인 (제목, 내용, 위치, 호스트 닉네임)
-          final title = (data['title'] as String? ?? '').toLowerCase();
-          final description =
-              (data['description'] as String? ?? '').toLowerCase();
-          final location = (data['location'] as String? ?? '').toLowerCase();
-          final hostNickname =
-              (data['hostNickname'] as String? ?? '').toLowerCase();
-
-          // 제목, 내용, 위치, 호스트 닉네임에서 검색
-          final isMatch = title.contains(lowercaseQuery) ||
-              description.contains(lowercaseQuery) ||
-              location.contains(lowercaseQuery) ||
-              hostNickname.contains(lowercaseQuery);
-
-          if (isMatch) {
-            Logger.log('✅ [SERVICE] 매치된 모임: ${data['title']} (${doc.id})');
-
-            // Timestamp에서 DateTime으로 변환
-            DateTime meetupDate;
-            if (data['date'] is Timestamp) {
-              meetupDate = (data['date'] as Timestamp).toDate();
-            } else {
-              meetupDate = DateTime.now();
-            }
-
-            final meetup = Meetup(
-              id: doc.id,
-              title: data['title'] ?? '',
-              description: data['description'] ?? '',
-              location: data['location'] ?? '',
-              time: data['time'] ?? '',
-              maxParticipants: data['maxParticipants'] ?? 0,
-              currentParticipants: data['currentParticipants'] ?? 1,
-              host: data['hostNickname'] ?? '익명',
-              hostNationality: data['hostNationality'] ?? '',
-              imageUrl: data['thumbnailImageUrl'] ?? '',
-              thumbnailContent: data['thumbnailContent'] ?? '',
-              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-              imageUrls: (data['imageUrls'] is List)
-                  ? List<String>.from(data['imageUrls'] as List)
-                      .map((e) => e.toString())
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty)
-                      .toList()
-                  : const [],
-              date: meetupDate,
-              category: data['category'] ?? '기타',
-              userId: data['userId'],
-              hostNickname: data['hostNickname'],
-              visibility: (data['visibility'] ?? 'public').toString(),
-              visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
-                  ? List<String>.from(data['visibleToCategoryIds'] as List)
-                  : const [],
-              isCompleted: data['isCompleted'] ?? false,
-              hasReview: data['hasReview'] ?? false,
-              reviewId: data['reviewId'],
-              viewCount: data['viewCount'] ?? 0,
-              commentCount: data['commentCount'] ?? 0,
-            );
-
-            matchedMeetups.add(meetup);
-          }
-        } catch (e) {
-          Logger.error('❌ [SERVICE] 모임 파싱 오류: $e (문서 ID: ${doc.id})');
-        }
-      }
-
-      // 🔒 검색에서도 Home과 동일한 공개 범위 필터 적용
-      final visibilityFiltered =
-          await filterMeetupsForCurrentUser(matchedMeetups);
-
-      // 차단/차단당함 콘텐츠 제거
-      final blockedFiltered =
-          await ContentFilterService.filterMeetups(visibilityFiltered);
-
-      Logger.log('📋 [SERVICE] 최종 검색 결과: ${blockedFiltered.length}개');
-      return blockedFiltered;
+    return _watchAudienceScopedMeetupQuery(_firestore
+            .collection('meetups')
+            .where('date', isGreaterThanOrEqualTo: today)
+            .orderBy('date', descending: false))
+        .map((meetups) {
+      final matched = meetups.where((meetup) {
+        return meetup.title.toLowerCase().contains(lowercaseQuery) ||
+            meetup.description.toLowerCase().contains(lowercaseQuery) ||
+            meetup.location.toLowerCase().contains(lowercaseQuery) ||
+            (meetup.hostNickname ?? meetup.host)
+                .toLowerCase()
+                .contains(lowercaseQuery);
+      }).toList();
+      Logger.log('📋 [SERVICE] 최종 검색 결과: ${matched.length}개');
+      return matched;
     }).handleError((error) {
       Logger.error('❌ [SERVICE] 검색 스트림 오류: $error');
       throw error;
@@ -1250,90 +1125,18 @@ class MeetupService {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
 
-      final snapshot = await _firestore
+      final meetups = await _getAudienceScopedMeetupQuery(_firestore
           .collection('meetups')
           .where('date', isGreaterThanOrEqualTo: today)
-          .orderBy('date', descending: false)
-          .get();
-
-      final matched = <Meetup>[];
-
-      for (final doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-
-          // 검색어와 일치하는지 확인 (제목, 설명, 위치, 호스트 닉네임)
-          final title = (data['title'] as String? ?? '').toLowerCase();
-          final description =
-              (data['description'] as String? ?? '').toLowerCase();
-          final location = (data['location'] as String? ?? '').toLowerCase();
-          final hostNickname =
-              (data['hostNickname'] as String? ?? '').toLowerCase();
-
-          final isMatch = title.contains(lowercaseQuery) ||
-              description.contains(lowercaseQuery) ||
-              location.contains(lowercaseQuery) ||
-              hostNickname.contains(lowercaseQuery);
-
-          if (!isMatch) continue;
-
-          // Timestamp에서 DateTime으로 변환
-          DateTime meetupDate;
-          if (data['date'] is Timestamp) {
-            meetupDate = (data['date'] as Timestamp).toDate();
-          } else {
-            meetupDate = DateTime.now();
-          }
-
-          matched.add(
-            Meetup(
-              id: doc.id,
-              title: data['title'] ?? '',
-              description: data['description'] ?? '',
-              location: data['location'] ?? '',
-              time: data['time'] ?? '',
-              maxParticipants: data['maxParticipants'] ?? 0,
-              currentParticipants: data['currentParticipants'] ?? 1,
-              host: data['hostNickname'] ?? '익명',
-              hostNationality: data['hostNationality'] ?? '',
-              imageUrl: data['thumbnailImageUrl'] ?? '',
-              thumbnailContent: data['thumbnailContent'] ?? '',
-              thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-              imageUrls: (data['imageUrls'] is List)
-                  ? List<String>.from(data['imageUrls'] as List)
-                      .map((e) => e.toString())
-                      .map((s) => s.trim())
-                      .where((s) => s.isNotEmpty)
-                      .toList()
-                  : const [],
-              date: meetupDate,
-              category: data['category'] ?? '기타',
-              userId: data['userId'], // 모임 주최자 ID 추가
-              hostNickname: data['hostNickname'], // 주최자 닉네임 추가
-              visibility: (data['visibility'] ?? 'public').toString(),
-              visibleToCategoryIds: (data['visibleToCategoryIds'] is List)
-                  ? List<String>.from(data['visibleToCategoryIds'] as List)
-                  : const [],
-              viewCount: data['viewCount'] ?? 0,
-              commentCount: data['commentCount'] ?? 0,
-              isCompleted: data['isCompleted'] ?? false,
-              hasReview: data['hasReview'] ?? false,
-              reviewId: data['reviewId'],
-            ),
-          );
-        } catch (e) {
-          Logger.error('모임 검색 파싱 오류: $e');
-        }
-      }
-
-      // 🔒 검색에서도 Home과 동일한 공개 범위 필터 적용
-      final visibilityFiltered = await filterMeetupsForCurrentUser(matched);
-
-      // 차단/차단당함 콘텐츠 제거
-      final blockedFiltered =
-          await ContentFilterService.filterMeetups(visibilityFiltered);
-
-      return blockedFiltered;
+          .orderBy('date', descending: false));
+      return meetups.where((meetup) {
+        return meetup.title.toLowerCase().contains(lowercaseQuery) ||
+            meetup.description.toLowerCase().contains(lowercaseQuery) ||
+            meetup.location.toLowerCase().contains(lowercaseQuery) ||
+            (meetup.hostNickname ?? meetup.host)
+                .toLowerCase()
+                .contains(lowercaseQuery);
+      }).toList();
     } catch (e) {
       Logger.error('모임 검색 오류: $e');
       return [];
@@ -1354,107 +1157,19 @@ class MeetupService {
         Logger.log('❌ 로그인 필요');
         return false;
       }
-
-      // 이미 참여 중인지 확인
-      final existingParticipation = await getUserParticipationStatus(meetupId);
-      if (existingParticipation != null) {
-        Logger.log('⚠️ 이미 참여 중인 모임: $meetupId');
-        return false;
-      }
-
-      // 모임 정보 가져오기
-      final meetupDoc =
-          await _firestore.collection('meetups').doc(meetupId).get();
-      if (!meetupDoc.exists) {
-        Logger.log('❌ 모임 문서가 존재하지 않음: $meetupId');
-        return false;
-      }
-
-      final meetupData = meetupDoc.data()!;
-      // ⛔️ 과거(만료) 모임은 참가 불가 (상태 유지)
-      if (_isMeetupExpiredFromMeetupDocData(meetupData)) {
-        Logger.log('⛔️ 만료된 모임 참여 차단: $meetupId');
-        return false;
-      }
-      final hostId = meetupData['userId'];
-      final meetupTitle = meetupData['title'] ?? '';
-      final maxParticipants = meetupData['maxParticipants'] ?? 1;
-      final currentParticipants = meetupData['currentParticipants'] ?? 1;
-
-      // ✅ 강퇴(퇴장)된 사용자는 참여 불가
-      final kickedUserIds =
-          List<String>.from(meetupData[_kickedUserIdsField] ?? const []);
-      if (kickedUserIds.contains(user.uid)) {
-        Logger.log('⛔️ 강퇴된 사용자 참여 차단: $meetupId / ${user.uid}');
-        return false;
-      }
-
-      // 정원 초과 확인
-      if (currentParticipants >= maxParticipants) {
-        Logger.log('❌ 모임 정원 초과: $meetupId');
-        return false;
-      }
-
-      // 사용자 정보 가져오기
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      if (!userDoc.exists) {
-        Logger.log('❌ 사용자 정보 없음');
-        return false;
-      }
-
-      final userData = userDoc.data()!;
-      final participantId = '${meetupId}_${user.uid}';
-      final participantName = (userData['nickname'] ?? '').toString().trim().isNotEmpty
-          ? userData['nickname'].toString().trim()
-          : '익명';
-
-      // meetup_participants에 즉시 승인 상태로 참여 정보 생성
-      final participant = MeetupParticipant(
-        id: participantId,
-        meetupId: meetupId,
-        userId: user.uid,
-        userName: participantName,
-        userEmail: user.email ?? '',
-        userProfileImage: userData['photoURL'],
-        joinedAt: DateTime.now(),
-        status: ParticipantStatus.approved, // 즉시 승인
-        message: null,
-        userCountry: userData['nationality'] ?? '', // 국가 정보 추가
-      );
-
-      await _firestore
-          .collection('meetup_participants')
-          .doc(participantId)
-          .set(participant.toJson());
-
-      // meetups 문서의 currentParticipants 증가
-      await _firestore.collection('meetups').doc(meetupId).update({
-        'currentParticipants': FieldValue.increment(1),
-        'updatedAt': FieldValue.serverTimestamp(),
+      final callable =
+          FirebaseFunctions.instance.httpsCallable('joinMeetupSecure');
+      final response = await callable.call<Map<String, dynamic>>({
+        'meetupId': meetupId,
       });
+      if (response.data['joined'] != true) return false;
 
-      // 동기화 검증 (선택적)
-      await _validateParticipantCount(meetupId);
-
-      Logger.log('✅ 모임 참여 성공: $meetupId');
-
-      // ✅ 참여 이벤트 로그
-      if (hostId != null && hostId.toString().isNotEmpty) {
-        unawaited(_logParticipantEvent(
-          meetupId: meetupId,
-          meetupTitle: meetupTitle.toString(),
-          type: 'join',
-          actorId: user.uid,
-          actorName: participantName,
-          targetUserId: user.uid,
-          targetUserName: participantName,
-        ));
-      }
-
-      // 🔧 캐시 무효화 (참여 상태 변경됨)
       _cacheService.invalidateCache(meetupId, user.uid);
-
+      Logger.log('✅ 서버 검증 기반 모임 참여 성공: $meetupId');
       return true;
+    } on FirebaseFunctionsException catch (e) {
+      Logger.warning('모임 참여 서버 차단: ${e.code} / ${e.message}');
+      return false;
     } catch (e) {
       Logger.error('모임 참여 오류: $e');
       return false;
@@ -1634,6 +1349,12 @@ class MeetupService {
       Logger.log(
           '📄 후기 정보: hasReview=${data['hasReview']}, reviewId=${data['reviewId']}');
 
+      // 확정된 모임은 어떤 클라이언트 경로에서도 취소(삭제)할 수 없다.
+      if (data['isConfirmed'] == true) {
+        Logger.warning('⛔ 확정된 모임 삭제 차단: $meetupId');
+        return false;
+      }
+
       // 권한 체크: userId가 있으면 userId로, 없으면 hostNickname/host로 비교
       bool isOwner = false;
 
@@ -1746,12 +1467,13 @@ class MeetupService {
       final querySnapshot = await _firestore
           .collection('meetup_participants')
           .where('meetupId', isEqualTo: meetupId)
-          .orderBy('joinedAt', descending: false)
           .get();
 
-      return querySnapshot.docs
+      final participants = querySnapshot.docs
           .map((doc) => MeetupParticipant.fromJson(doc.data()))
           .toList();
+      participants.sort((a, b) => a.joinedAt.compareTo(b.joinedAt));
+      return participants;
     } catch (e) {
       Logger.error('참여자 목록 조회 오류: $e');
       return [];
@@ -1999,7 +1721,8 @@ class MeetupService {
           await _firestore.collection('meetups').doc(meetupId).get();
       final meetupData = meetupDoc.data() ?? const <String, dynamic>{};
       // ⛔️ 과거(만료) 모임은 나가기(상태 변경) 불가
-      if (meetupData.isNotEmpty && _isMeetupExpiredFromMeetupDocData(meetupData)) {
+      if (meetupData.isNotEmpty &&
+          _isMeetupExpiredFromMeetupDocData(meetupData)) {
         Logger.log('⛔️ 만료된 모임 나가기 차단: $meetupId');
         return false;
       }
@@ -2078,151 +1801,30 @@ class MeetupService {
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
 
-      final snapshot = await _firestore
+      final allMeetups = await _getAudienceScopedMeetupQuery(_firestore
           .collection('meetups')
           .where('date', isGreaterThanOrEqualTo: today)
-          .orderBy('date', descending: false)
-          .get();
+          .orderBy('date', descending: false));
 
-      final allMeetups = snapshot.docs.map((doc) {
-        final data = doc.data();
-
-        // 날짜 처리
-        DateTime meetupDate;
-        if (data['date'] is Timestamp) {
-          meetupDate = (data['date'] as Timestamp).toDate();
-        } else {
-          final now = DateTime.now();
-          meetupDate = DateTime(now.year, now.month, now.day);
-        }
-
-        final meetup = Meetup(
-          id: doc.id,
-          title: data['title'] ?? '',
-          description: data['description'] ?? '',
-          location: data['location'] ?? '',
-          time: data['time'] ?? '',
-          maxParticipants: data['maxParticipants'] ?? 0,
-          currentParticipants: data['currentParticipants'] ?? 1,
-          host: data['hostNickname'] ?? '익명',
-          hostNationality: data['hostNationality'] ?? '',
-          imageUrl: data['thumbnailImageUrl'] ?? '',
-          thumbnailContent: data['thumbnailContent'] ?? '',
-          thumbnailImageUrl: data['thumbnailImageUrl'] ?? '',
-          date: meetupDate,
-          category: data['category'] ?? '기타',
-          userId: data['userId'],
-          hostNickname: data['hostNickname'],
-          visibility: data['visibility'] ?? 'public',
-          visibleToCategoryIds:
-              List<String>.from(data['visibleToCategoryIds'] ?? []),
-          isCompleted: data['isCompleted'] ?? false,
-          hasReview: data['hasReview'] ?? false,
-          reviewId: data['reviewId'],
-          viewCount: data['viewCount'] ?? 0,
-          commentCount: data['commentCount'] ?? 0,
-        );
-
-        // 디버그: Logger.log('📄 모임 로드: ${meetup.title}');
-        return meetup;
-      }).toList();
-
-      // 2. 친구 관계 가져오기(양방향)
-      final rel = _firestore.collection('relationships');
-      final a = await rel
-          .where('userId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-      final b = await rel
-          .where('friendId', isEqualTo: user.uid)
-          .where('status', isEqualTo: 'accepted')
-          .get();
-      final friendIds = <String>{};
-      for (final d in a.docs) {
-        final id = (d.data()['friendId'] ?? '').toString().trim();
-        if (id.isNotEmpty) friendIds.add(id);
-      }
-      for (final d in b.docs) {
-        final id = (d.data()['userId'] ?? '').toString().trim();
-        if (id.isNotEmpty) friendIds.add(id);
-      }
-
-      // 3. 친구 카테고리 가져오기 (categoryIds가 지정된 경우)
-      Set<String> targetFriendIds = {};
-      if (categoryIds != null && categoryIds.isNotEmpty) {
-        final categoriesSnapshot = await _firestore
-            .collection('friend_categories')
-            .where('userId', isEqualTo: user.uid)
-            .where(FieldPath.documentId, whereIn: categoryIds)
-            .get();
-
-        for (final categoryDoc in categoriesSnapshot.docs) {
-          final categoryData = categoryDoc.data();
-          final categoryFriendIds =
-              List<String>.from(categoryData['friendIds'] ?? []);
-          targetFriendIds.addAll(categoryFriendIds);
-        }
-      } else if (categoryIds == null) {
-        // 모든 친구
-        targetFriendIds = friendIds;
-      }
-      // categoryIds가 빈 리스트면 targetFriendIds도 빈 상태 유지 (전체 공개만)
-
-      // 4. 모든 사용자 카테고리 정보 미리 가져오기 (성능 최적화)
-      final userCategoriesSnapshot = await _firestore
-          .collection('friend_categories')
-          .where('friendIds', arrayContains: user.uid)
-          .get();
-
-      final userCategoryIds =
-          userCategoriesSnapshot.docs.map((doc) => doc.id).toSet();
-
-      // 5. 모임 필터링
+      // 공개 대상은 생성 시점에 고정된다. 현재 친구/그룹 문서를 다시 읽으면
+      // 과거 모임의 공개 범위가 소급 변경되므로 저장된 스냅샷만 사용한다.
       final filteredMeetups = <Meetup>[];
       for (final meetup in allMeetups) {
-        // 내 모임은 항상 표시
-        if (meetup.userId == user.uid) {
-          filteredMeetups.add(meetup);
-          continue;
-        }
+        final canRead = FrozenAudiencePolicy.canRead(
+          viewerId: user.uid,
+          ownerId: meetup.userId ?? '',
+          visibilityMode: meetup.visibility,
+          audienceUserIdsFrozen: meetup.allowedUserIds,
+        );
+        if (!canRead) continue;
 
-        // 공개 범위에 따른 필터링
-        switch (meetup.visibility) {
-          case 'public':
-            filteredMeetups.add(meetup); // 전체 공개는 항상 표시
-            break;
-
-          case 'friends':
-            // 친구에게만 공개 - 모임 주최자가 내 친구인지 확인
-            if (friendIds.contains(meetup.userId)) {
-              filteredMeetups.add(meetup);
-            }
-            break;
-
-          case 'category':
-            // 특정 카테고리에만 공개
-            bool shouldShow = false;
-
-            if (categoryIds == null) {
-              // 모든 친구 보기 모드: 내가 해당 카테고리에 속해있는지 확인
-              for (final categoryId in meetup.visibleToCategoryIds) {
-                if (userCategoryIds.contains(categoryId)) {
-                  shouldShow = true;
-                  break;
-                }
-              }
-            } else {
-              // 특정 카테고리 필터링 모드: 모임이 선택된 카테고리에 공개되는지 확인
-              shouldShow = meetup.visibleToCategoryIds.any(
-                  (visibleCategoryId) =>
-                      categoryIds.contains(visibleCategoryId));
-            }
-
-            if (shouldShow) {
-              filteredMeetups.add(meetup);
-            }
-            break;
-        }
+        // 이 인자는 콘텐츠 공개 범위를 다시 계산하는 값이 아니라, 생성 당시
+        // 저장된 sourceGroupIds를 기준으로 화면을 좁히는 로컬 필터일 뿐이다.
+        final matchesRequestedFilter = categoryIds == null ||
+            (categoryIds.isEmpty
+                ? meetup.visibility == 'public'
+                : meetup.sourceGroupIds.any(categoryIds.contains));
+        if (matchesRequestedFilter) filteredMeetups.add(meetup);
       }
 
       return filteredMeetups;
@@ -2233,6 +1835,31 @@ class MeetupService {
   }
 
   // ===== 모임 후기 관련 메서드 =====
+
+  /// 모임장이 예정된 모임을 확정한다.
+  Future<bool> confirmMeetup(String meetupId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+      final ref = _firestore.collection('meetups').doc(meetupId);
+      return _firestore.runTransaction<bool>((transaction) async {
+        final snapshot = await transaction.get(ref);
+        if (!snapshot.exists) return false;
+        final data = snapshot.data() ?? const <String, dynamic>{};
+        if ((data['userId'] ?? '').toString() != user.uid) return false;
+        if (data['isConfirmed'] == true) return true;
+        transaction.update(ref, <String, dynamic>{
+          'isConfirmed': true,
+          'confirmedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
+      });
+    } catch (error, stackTrace) {
+      Logger.error('모임 확정 실패: $error\n$stackTrace');
+      return false;
+    }
+  }
 
   /// 모임 완료 처리
   Future<bool> markMeetupAsCompleted(String meetupId) async {
@@ -2270,7 +1897,9 @@ class MeetupService {
       // - currentParticipants는 호스트 포함 값으로 유지되고 있으므로 그대로 사용한다.
       final currentParticipants = (meetupData['currentParticipants'] is int)
           ? (meetupData['currentParticipants'] as int)
-          : int.tryParse((meetupData['currentParticipants'] ?? '0').toString()) ?? 0;
+          : int.tryParse(
+                  (meetupData['currentParticipants'] ?? '0').toString()) ??
+              0;
       if (currentParticipants < 3) {
         Logger.log(
             '⏭️ [SERVICE] 완료 처리 불가: 참여자 수 부족 ($currentParticipants명, 최소 3명 필요)');
@@ -2341,9 +1970,14 @@ class MeetupService {
         return null;
       }
 
-      // 모임 완료 여부 확인
-      if (!meetup.isCompleted) {
-        Logger.log('❌ 모임이 완료되지 않음');
+      // 확정된 모임은 기존 완료 모임과 동일한 후기 플로우를 사용한다.
+      if (!meetup.canStartReview) {
+        Logger.log('❌ 확정되거나 완료된 모임이 아님');
+        return null;
+      }
+
+      if (meetup.hasReview) {
+        Logger.log('❌ 이미 후기가 작성된 모임');
         return null;
       }
 
@@ -2357,9 +1991,10 @@ class MeetupService {
 
       // 사용자 정보 가져오기
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final authorName = (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
-          ? userDoc.data()!['nickname'].toString().trim()
-          : '익명';
+      final authorName =
+          (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
+              ? userDoc.data()!['nickname'].toString().trim()
+              : '익명';
 
       // 후기 생성
       final reviewDoc = await _firestore.collection('meetup_reviews').add({
@@ -2383,6 +2018,9 @@ class MeetupService {
       await _firestore.collection('meetups').doc(meetupId).update({
         'hasReview': true,
         'reviewId': reviewId,
+        // 확정 상태에서 후기를 작성하면 기존 후기 플로우와
+        // 동일하게 추가 참여를 막기 위해 완료 상태로 전환한다.
+        'isCompleted': true,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -2665,29 +2303,43 @@ class MeetupService {
       }
 
       final reviewData = reviewDoc.data()!;
+      if ((reviewData['authorId'] ?? '').toString() != user.uid) {
+        Logger.log('❌ 후기 작성자만 수락 요청을 보낼 수 있음');
+        return false;
+      }
       final meetupId = reviewData['meetupId'];
       final meetupTitle = reviewData['meetupTitle'];
       final imageUrl = reviewData['imageUrl'];
+      final imageUrls = List<String>.from(
+        reviewData['imageUrls'] ??
+            <String>[(reviewData['imageUrl'] ?? '').toString()],
+      ).where((url) => url.trim().isNotEmpty).toList(growable: false);
       final content = reviewData['content'];
 
       // 사용자 정보 가져오기
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final requesterName = (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
-          ? userDoc.data()!['nickname'].toString().trim()
-          : '익명';
+      final requesterName =
+          (userDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
+              ? userDoc.data()!['nickname'].toString().trim()
+              : '익명';
 
       // 각 참여자에게 요청 생성
       for (final participantId in participantIds) {
         // 참여자 정보 가져오기
         final participantDoc =
             await _firestore.collection('users').doc(participantId).get();
-        final recipientName =
-            (participantDoc.data()?['nickname'] ?? '').toString().trim().isNotEmpty
-                ? participantDoc.data()!['nickname'].toString().trim()
-                : '익명';
+        final recipientName = (participantDoc.data()?['nickname'] ?? '')
+                .toString()
+                .trim()
+                .isNotEmpty
+            ? participantDoc.data()!['nickname'].toString().trim()
+            : '익명';
 
         // review_request 생성
-        await _firestore.collection('review_requests').add({
+        await _firestore
+            .collection('review_requests')
+            .doc('${reviewId}_$participantId')
+            .set({
           'meetupId': meetupId,
           'requesterId': user.uid,
           'requesterName': requesterName,
@@ -2695,7 +2347,8 @@ class MeetupService {
           'recipientName': recipientName,
           'meetupTitle': meetupTitle,
           'message': content,
-          'imageUrls': [imageUrl],
+          'imageUrls': imageUrls,
+          'imageUrl': imageUrl,
           'status': 'pending',
           'createdAt': FieldValue.serverTimestamp(),
           'respondedAt': null,
@@ -2709,6 +2362,73 @@ class MeetupService {
       return true;
     } catch (e) {
       Logger.error('❌ 후기 수락 요청 전송 오류: $e');
+      return false;
+    }
+  }
+
+  /// 레거시 후기에서 누락된 본인의 수락 요청만 복구한다.
+  Future<bool> ensureMyReviewApprovalRequest({
+    required String reviewId,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return false;
+
+      final reviewDoc =
+          await _firestore.collection('meetup_reviews').doc(reviewId).get();
+      if (!reviewDoc.exists) return false;
+      final reviewData = reviewDoc.data()!;
+      final pendingParticipants =
+          List<String>.from(reviewData['pendingParticipants'] ?? const []);
+      if (!pendingParticipants.contains(user.uid)) return false;
+
+      final meetupId = (reviewData['meetupId'] ?? '').toString();
+      final authorId = (reviewData['authorId'] ?? '').toString();
+      if (meetupId.isEmpty || authorId.isEmpty) return false;
+
+      final participantDoc = await _firestore
+          .collection('meetup_participants')
+          .doc('${meetupId}_${user.uid}')
+          .get();
+      if (!participantDoc.exists ||
+          participantDoc.data()?['status'] != 'approved') {
+        return false;
+      }
+
+      final users = _firestore.collection('users');
+      final requesterDoc = await users.doc(authorId).get();
+      final recipientDoc = await users.doc(user.uid).get();
+      final requesterName =
+          (requesterDoc.data()?['nickname'] ?? '').toString().trim();
+      final recipientName =
+          (recipientDoc.data()?['nickname'] ?? '').toString().trim();
+      final imageUrls = List<String>.from(
+        reviewData['imageUrls'] ??
+            <String>[(reviewData['imageUrl'] ?? '').toString()],
+      ).where((url) => url.trim().isNotEmpty).toList();
+
+      await _firestore
+          .collection('review_requests')
+          .doc('${reviewId}_${user.uid}')
+          .set({
+        'meetupId': meetupId,
+        'requesterId': authorId,
+        'requesterName': requesterName.isEmpty ? '익명' : requesterName,
+        'recipientId': user.uid,
+        'recipientName': recipientName.isEmpty ? '익명' : recipientName,
+        'meetupTitle': (reviewData['meetupTitle'] ?? '').toString(),
+        'message': (reviewData['content'] ?? '').toString(),
+        'imageUrls': imageUrls,
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+        'respondedAt': null,
+        'expiresAt':
+            Timestamp.fromDate(DateTime.now().add(const Duration(days: 7))),
+        'metadata': {'reviewId': reviewId},
+      });
+      return true;
+    } catch (error, stackTrace) {
+      Logger.error('후기 수락 요청 복구 실패: $error\n$stackTrace');
       return false;
     }
   }
@@ -2757,27 +2477,49 @@ class MeetupService {
         return false;
       }
 
-      // 이미 응답한 경우 중복 처리 방지
-      final currentStatus = requestData['status'];
-      if (currentStatus == 'accepted' || currentStatus == 'rejected') {
-        Logger.log('⚠️ 이미 응답한 요청입니다: $currentStatus');
+      final reviewId = (requestData['metadata']?['reviewId'] ?? '').toString();
+      if (reviewId.isEmpty) {
+        Logger.log('❌ 후기 ID 누락');
         return false;
       }
 
-      final reviewId = requestData['metadata']['reviewId'];
+      // 과거에 수락 상태만 저장되고 프로필 게시가 누락된 경우에도
+      // 동일 요청을 다시 열면 프로필 문서를 복구한다.
+      final currentStatus = requestData['status'];
+      if (currentStatus == 'accepted') {
+        await _publishReviewToUserProfile(
+          userId: user.uid,
+          reviewId: reviewId,
+          reviewData: requestData,
+        );
+        Logger.log('✅ 기존 수락 후기 프로필 게시 상태 확인 완료');
+        return true;
+      }
+      if (currentStatus == 'rejected') {
+        Logger.log('⚠️ 이미 거절한 요청입니다');
+        return false;
+      }
 
-      // 요청 상태 업데이트
-      await _firestore.collection('review_requests').doc(requestId).update({
-        'status': accept ? 'accepted' : 'rejected',
-        'respondedAt': FieldValue.serverTimestamp(),
-      });
+      final reviewRef = _firestore.collection('meetup_reviews').doc(reviewId);
+      final reviewDoc = await reviewRef.get();
+      if (!reviewDoc.exists) {
+        Logger.log('❌ 후기를 찾을 수 없음: $reviewId');
+        return false;
+      }
+      final reviewData = reviewDoc.data()!;
+      final approvedParticipants =
+          List<String>.from(reviewData['approvedParticipants'] ?? const []);
+      final rejectedParticipants =
+          List<String>.from(reviewData['rejectedParticipants'] ?? const []);
 
       // 후기에 사용자 추가/제거
       if (accept) {
-        await _firestore.collection('meetup_reviews').doc(reviewId).update({
-          'approvedParticipants': FieldValue.arrayUnion([user.uid]),
-          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
-        });
+        if (!approvedParticipants.contains(user.uid)) {
+          await reviewRef.update({
+            'approvedParticipants': FieldValue.arrayUnion([user.uid]),
+            'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+          });
+        }
 
         // 후기를 사용자 프로필에 게시
         await _publishReviewToUserProfile(
@@ -2786,11 +2528,22 @@ class MeetupService {
           reviewData: requestData,
         );
 
+        await _firestore.collection('review_requests').doc(requestId).update({
+          'status': 'accepted',
+          'respondedAt': FieldValue.serverTimestamp(),
+        });
+
         Logger.log('✅ 후기 수락 완료 및 프로필에 게시됨');
       } else {
-        await _firestore.collection('meetup_reviews').doc(reviewId).update({
-          'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
-          'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+        if (!rejectedParticipants.contains(user.uid)) {
+          await reviewRef.update({
+            'rejectedParticipants': FieldValue.arrayUnion([user.uid]),
+            'pendingParticipants': FieldValue.arrayRemove([user.uid]),
+          });
+        }
+        await _firestore.collection('review_requests').doc(requestId).update({
+          'status': 'rejected',
+          'respondedAt': FieldValue.serverTimestamp(),
         });
         Logger.log('✅ 후기 거절 완료');
       }
@@ -2826,6 +2579,51 @@ class MeetupService {
     }
   }
 
+  /// 수락은 완료됐지만 프로필 게시가 누락된 과거 후기를 복구한다.
+  /// 문서 ID가 reviewId로 고정되어 있어 여러 번 실행해도 중복 생성되지 않는다.
+  Future<int> ensureAcceptedReviewsPublishedToCurrentProfile() async {
+    final user = _auth.currentUser;
+    if (user == null) return 0;
+
+    try {
+      final requests = await _firestore
+          .collection('review_requests')
+          .where('recipientId', isEqualTo: user.uid)
+          .get();
+      var repairedCount = 0;
+
+      for (final request in requests.docs) {
+        final data = request.data();
+        if (data['status'] != 'accepted') continue;
+        final reviewId = (data['metadata']?['reviewId'] ?? '').toString();
+        if (reviewId.isEmpty) continue;
+
+        final profilePost = await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .collection('posts')
+            .doc(reviewId)
+            .get();
+        if (profilePost.exists) continue;
+
+        await _publishReviewToUserProfile(
+          userId: user.uid,
+          reviewId: reviewId,
+          reviewData: data,
+        );
+        repairedCount++;
+      }
+
+      if (repairedCount > 0) {
+        Logger.log('✅ 누락된 수락 후기 프로필 복구 완료: $repairedCount개');
+      }
+      return repairedCount;
+    } catch (error, stackTrace) {
+      Logger.error('❌ 수락 후기 프로필 복구 실패: $error\n$stackTrace');
+      return 0;
+    }
+  }
+
   /// 후기를 사용자 프로필에 게시 (내부 헬퍼 메서드)
   Future<void> _publishReviewToUserProfile({
     required String userId,
@@ -2847,9 +2645,29 @@ class MeetupService {
       final fullReviewData = reviewDoc.data()!;
       Logger.log('📊 fullReviewData: $fullReviewData');
 
+      final profilePostRef = _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('posts')
+          .doc(reviewId);
+      if ((await profilePostRef.get()).exists) {
+        Logger.log('ℹ️ 프로필 후기 이미 게시됨: userId=$userId, reviewId=$reviewId');
+        return;
+      }
+
+      final profileUserDoc =
+          await _firestore.collection('users').doc(userId).get();
+      final profileUserData =
+          profileUserDoc.data() ?? const <String, dynamic>{};
+      final profileOwnerName =
+          (profileUserData['nickname'] ?? '').toString().trim();
+
       final postData = {
         'type': 'meetup_review',
         'authorId': userId,
+        'authorName': profileOwnerName.isEmpty ? '익명' : profileOwnerName,
+        'authorProfileImage': (profileUserData['photoURL'] ?? '').toString(),
+        'profileOwnerId': userId,
         'meetupId': fullReviewData['meetupId'],
         'meetupTitle': fullReviewData['meetupTitle'],
         'imageUrls': fullReviewData['imageUrls'] ?? [], // 여러 이미지 지원
@@ -2868,12 +2686,7 @@ class MeetupService {
       Logger.log('📍 저장 경로: users/$userId/posts/$reviewId');
 
       // users/{userId}/posts 컬렉션에 후기 게시
-      await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('posts')
-          .doc(reviewId) // reviewId를 문서 ID로 사용하여 중복 방지
-          .set(postData);
+      await profilePostRef.set(postData, SetOptions(merge: true));
 
       Logger.log('✅ 프로필에 후기 게시 완료: userId=$userId, reviewId=$reviewId');
       Logger.log('✅ 저장된 경로: users/$userId/posts/$reviewId');

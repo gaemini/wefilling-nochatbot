@@ -72,7 +72,7 @@ post_install do |installer|
         if target.name == 'Runner'
           entitlements_file = case config.name
           when 'Debug'
-            'Runner/Runner.entitlements'
+            'Runner/RunnerDebug.entitlements'
           when 'Profile'
             'Runner/RunnerProfile.entitlements'
           when 'Release'

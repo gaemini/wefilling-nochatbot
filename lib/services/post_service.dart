@@ -7,9 +7,11 @@
 import 'dart:io';
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/post.dart';
 import '../models/post_category.dart';
+import '../security/frozen_audience_policy.dart';
 import 'notification_service.dart';
 import 'storage_service.dart';
 import 'content_filter_service.dart';
@@ -17,7 +19,6 @@ import 'content_hide_service.dart';
 import 'cache/post_cache_manager.dart';
 import 'cache/cache_feature_flags.dart';
 import 'view_history_service.dart';
-import '../utils/profile_photo_policy.dart';
 import '../utils/logger.dart';
 
 class PostCategoryPage {
@@ -41,6 +42,7 @@ class PostService {
   // - 전체 히스토리까지 실시간으로 받을 필요가 없고,
   // - 일부 계정에서 docs 수가 커지면 파싱/필터링이 느려져 UI가 "로딩처럼" 보일 수 있음
   static const int _feedRealtimeLimit = 300;
+  static const Duration _categoryQueryTimeout = Duration(seconds: 8);
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -55,7 +57,7 @@ class PostService {
   // If we subscribe to posts + blocks per StreamBuilder, reads can double.
   Stream<List<Post>>? _postsStreamCached;
   StreamController<List<Post>>? _postsStreamController;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _postsSub;
+  StreamSubscription<List<Post>>? _postsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blocksByMeSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _blockedBySub;
   StreamSubscription<User?>? _authSub;
@@ -82,7 +84,12 @@ class PostService {
           parsed.where((p) => _canUserReadPost(p, currentUser)).toList();
     } else {
       visibilityFiltered = parsed
-          .where((p) => p.visibility == 'public' || p.visibility.isEmpty)
+          .where((p) => FrozenAudiencePolicy.canRead(
+                viewerId: currentUser?.uid,
+                ownerId: p.userId,
+                visibilityMode: p.visibility,
+                audienceUserIdsFrozen: p.allowedUserIds,
+              ))
           .toList();
     }
 
@@ -140,71 +147,89 @@ class PostService {
     }
   }
 
-  /// 레거시/누락 데이터 보강용:
-  /// - visibility == 'category' 인데 allowedUserIds가 비어있는 경우
-  /// - visibleToCategoryIds(친구 카테고리 문서 ID들) 기반으로 현재 유저 포함 여부를 계산
-  ///
-  /// 주의: Firestore whereIn은 최대 10개 제한이 있으므로 청크 처리.
-  Future<bool> _isUserIncludedByVisibleCategories({
-    required String userId,
-    required List<String> visibleToCategoryIds,
-  }) async {
-    final ids = visibleToCategoryIds
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
-    if (ids.isEmpty) return false;
-
-    const chunkSize = 10;
-    for (var i = 0; i < ids.length; i += chunkSize) {
-      final chunk = ids.sublist(i, (i + chunkSize).clamp(0, ids.length));
-      try {
-        final snap = await _firestore
-            .collection('friend_categories')
-            .where(FieldPath.documentId, whereIn: chunk)
-            .get();
-
-        for (final d in snap.docs) {
-          final data = d.data();
-          final friendIds = List<String>.from(data['friendIds'] ?? const []);
-          if (friendIds.contains(userId)) {
-            return true;
-          }
-        }
-      } catch (e) {
-        // 인덱스/권한/네트워크 이슈가 있어도 보안적으로는 "숨김"이 안전
-        Logger.error('카테고리 포함 여부 확인 오류: $e');
-        return false;
-      }
-    }
-    return false;
+  bool _canUserReadPost(Post post, User? user) {
+    return FrozenAudiencePolicy.canRead(
+      viewerId: user?.uid,
+      ownerId: post.userId,
+      visibilityMode: post.visibility,
+      audienceUserIdsFrozen: post.allowedUserIds,
+    );
   }
 
-  bool _canUserReadPost(Post post, User? user) {
-    // 로그인하지 않은 경우 전체 공개만 허용
-    if (user == null) {
-      return post.visibility == 'public' || post.visibility.isEmpty;
+  Stream<List<Post>> _combinePostStreams(
+    List<Stream<List<Post>>> streams, {
+    int? limit,
+  }) {
+    if (streams.isEmpty) return Stream.value(const <Post>[]);
+    late final StreamController<List<Post>> controller;
+    final subscriptions = <StreamSubscription<List<Post>>>[];
+    final latest = List<List<Post>>.generate(
+      streams.length,
+      (_) => const <Post>[],
+    );
+
+    void emit() {
+      final byId = <String, Post>{};
+      for (final posts in latest) {
+        for (final post in posts) {
+          byId[post.id] = post;
+        }
+      }
+      var merged = byId.values.toList()
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (limit != null && merged.length > limit) {
+        merged = merged.take(limit).toList(growable: false);
+      }
+      if (!controller.isClosed) controller.add(merged);
     }
 
-    final visibility = post.visibility;
+    controller = StreamController<List<Post>>.broadcast(
+      onListen: () {
+        for (var i = 0; i < streams.length; i++) {
+          subscriptions.add(streams[i].listen((posts) {
+            latest[i] = posts;
+            emit();
+          }, onError: controller.addError));
+        }
+      },
+      onCancel: () async {
+        for (final subscription in subscriptions) {
+          await subscription.cancel();
+        }
+      },
+    );
+    return controller.stream;
+  }
 
-    // visibility 필드가 없으면 전체 공개로 간주 (레거시 데이터 호환)
-    if (visibility == 'public' || visibility.isEmpty) {
-      return true;
-    }
+  /// Firestore Rules가 결과 전체의 접근 권한을 증명할 수 있는 쿼리만 사용합니다.
+  /// 공개 글, 공개 대상에 포함된 글, 작성한 글을 합치고 ID로 중복 제거합니다.
+  Stream<List<Post>> _watchAccessiblePosts({required int limit}) {
+    final user = _auth.currentUser;
+    if (user == null) return Stream.value(const <Post>[]);
 
-    if (visibility == 'category') {
-      // 작성자 본인은 항상 허용
-      if (post.userId == user.uid) return true;
+    Stream<List<Post>> watch(Query<Map<String, dynamic>> query) => query
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
+            .where((post) => _canUserReadPost(post, user))
+            .toList(growable: false));
 
-      // allowedUserIds가 비어있으면 차단 (엄격)
-      if (post.allowedUserIds.isEmpty) return false;
-
-      return post.allowedUserIds.contains(user.uid);
-    }
-
-    // 알 수 없는 visibility는 차단
-    return false;
+    return _combinePostStreams(
+      [
+        watch(_firestore
+            .collection('posts')
+            .where('visibility', isEqualTo: 'public')),
+        watch(_firestore
+            .collection('posts')
+            .where('allowedUserIds', arrayContains: user.uid)),
+        watch(_firestore
+            .collection('posts')
+            .where('userId', isEqualTo: user.uid)),
+      ],
+      limit: limit,
+    );
   }
 
   List<PollOption> _parsePollOptions(dynamic raw) {
@@ -241,17 +266,24 @@ class PostService {
       category: data['category'] ?? '일반',
       categoryKey: data['categoryKey']?.toString(),
       createdAt: createdAt,
-      userId: data['userId'] ?? '',
+      userId: data['ownerId'] ?? data['userId'] ?? '',
       commentCount: data['commentCount'] ?? 0,
       likes: data['likes'] ?? 0,
       viewCount: data['viewCount'] ?? 0,
       likedBy: List<String>.from(data['likedBy'] ?? []),
       imageUrls: List<String>.from(data['imageUrls'] ?? []),
-      visibility: data['visibility'] ?? 'public',
+      visibility: data['visibilityMode'] ?? data['visibility'] ?? 'public',
       isAnonymous: data['isAnonymous'] ?? false,
-      visibleToCategoryIds:
-          List<String>.from(data['visibleToCategoryIds'] ?? []),
-      allowedUserIds: List<String>.from(data['allowedUserIds'] ?? []),
+      visibleToCategoryIds: List<String>.from(
+          data['sourceGroupIds'] ?? data['visibleToCategoryIds'] ?? []),
+      allowedUserIds: List<String>.from(
+        data['audienceUserIdsFrozen'] ?? data['allowedUserIds'] ?? [],
+      ),
+      visibilitySchemaVersion:
+          (data['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+      visibilityLockedAt: data['visibilityLockedAt'] is Timestamp
+          ? (data['visibilityLockedAt'] as Timestamp).toDate()
+          : null,
       type: data['type'] ?? 'text',
       pollOptions: _parsePollOptions(data['pollOptions']),
       pollTotalVotes: data['pollTotalVotes'] ?? 0,
@@ -279,20 +311,21 @@ class PostService {
       if (user == null) {
         throw Exception('로그인이 필요합니다');
       }
+      if (!const {'public', 'category'}.contains(visibility)) {
+        throw ArgumentError.value(visibility, 'visibility');
+      }
+      final normalizedCategoryIds = visibleToCategoryIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+      if (visibility == 'category' && normalizedCategoryIds.isEmpty) {
+        throw Exception('그룹 공개 게시글에 선택된 그룹이 없습니다.');
+      }
 
-      // 사용자 데이터 가져오기
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      final userData = userDoc.data();
-      final nickname = userData?['nickname'] ?? '익명';
-      final nationality = userData?['nationality'] ?? ''; // 국적 정보 가져오기
-      // ✅ 정책: 프로필 사진은 지정 Storage 버킷(profile_images/) URL만 사용
-      final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
-      final photoURL = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
-          ? rawPhotoUrl
-          : '';
-
-      // 게시글 작성 시간
-      final now = FieldValue.serverTimestamp();
+      // 요청 시작 시 ID를 고정해 재시도/응답 유실 시에도 같은 콘텐츠를
+      // 식별할 수 있게 한다. Callable은 동일 ID+작성자의 중복 요청을 멱등 처리한다.
+      final postId = _firestore.collection('posts').doc().id;
 
       // 이미지 파일이 있는 경우 업로드 (병렬 처리로 성능 향상)
       List<String> imageUrls = [];
@@ -313,68 +346,26 @@ class PostService {
           imageUrls =
               results.where((url) => url != null).cast<String>().toList();
 
-          // 모든 이미지 업로드에 실패한 경우
-          if (imageUrls.isEmpty && imageFiles.isNotEmpty) {
-            Logger.error('모든 이미지 업로드 실패');
+          // 사용자가 선택한 이미지 중 하나라도 실패하면 불완전한 게시글을
+          // 만들지 않는다. 이미 올라간 파일은 아래 catch에서 정리한다.
+          if (imageUrls.length != imageFiles.length) {
+            for (final url in imageUrls) {
+              try {
+                await _storageService.deleteImage(url);
+              } catch (_) {}
+            }
+            imageUrls = [];
+            throw StateError('post-image-upload-incomplete');
           }
         } catch (e) {
           Logger.error('이미지 병렬 업로드 중 오류: $e');
-          // 오류가 발생해도 게시글은 계속 생성 (이미지 없이)
+          // 선택한 이미지가 있는 요청은 이미지 없이 조용히 게시하지 않는다.
+          rethrow;
         }
       }
 
-      // 카테고리별 공개인 경우 allowedUserIds 계산
-      List<String> allowedUserIds = [];
-      if (visibility == 'category' && visibleToCategoryIds.isNotEmpty) {
-        try {
-          // 각 카테고리의 친구 ID들을 가져와서 합침
-          final Set<String> uniqueFriendIds = {};
-          for (final categoryId in visibleToCategoryIds) {
-            final categoryDoc = await _firestore
-                .collection('friend_categories')
-                .doc(categoryId)
-                .get();
-
-            if (categoryDoc.exists) {
-              final categoryData = categoryDoc.data();
-              final friendIds =
-                  List<String>.from(categoryData?['friendIds'] ?? []);
-              uniqueFriendIds.addAll(friendIds);
-            }
-          }
-
-          // 작성자 본인도 포함
-          uniqueFriendIds.add(user.uid);
-          allowedUserIds = uniqueFriendIds.toList();
-        } catch (e) {
-          Logger.error('allowedUserIds 계산 오류: $e');
-          // 오류 발생 시 작성자만 볼 수 있도록 설정
-          allowedUserIds = [user.uid];
-        }
-      }
-
-      // 게시글 데이터 생성
-      final Map<String, dynamic> postData = {
-        'userId': user.uid,
-        'authorNickname': nickname,
-        'authorNationality': nationality, // 작성자 국적 추가
-        'authorPhotoURL': photoURL, // 작성자 프로필 사진 URL 추가
-        'title': title,
-        'content': content,
-        'categoryKey': categoryKey,
-        'imageUrls': imageUrls,
-        'createdAt': now,
-        'updatedAt': now,
-        'visibility': visibility, // 공개 범위
-        'isAnonymous': isAnonymous, // 익명 여부
-        'visibleToCategoryIds': visibleToCategoryIds, // 공개할 카테고리 ID 목록
-        'allowedUserIds': allowedUserIds, // 허용된 사용자 ID 목록
-        'likes': 0,
-        'likedBy': [],
-        'commentCount': 0,
-      };
-
-      // 투표형 게시글 데이터
+      // 투표형 게시글 데이터 검증. 실제 문서와 frozen audience는 서버에서 만든다.
+      var cleanedPollOptions = const <String>[];
       if (type == 'poll') {
         final cleaned = pollOptions
             .map((e) => e.trim())
@@ -391,21 +382,48 @@ class PostService {
           throw Exception('투표 선택지는 최대 2개까지 가능합니다');
         }
 
-        postData['type'] = 'poll';
-        postData['pollOptions'] = List.generate(cleaned.length, (i) {
-          return {
-            'id': '$i',
-            'text': cleaned[i],
-            'votes': 0,
-          };
-        });
-        postData['pollTotalVotes'] = 0;
-      } else {
-        postData['type'] = 'text';
+        cleanedPollOptions = cleaned;
       }
 
-      // Firestore에 저장
-      await _firestore.collection('posts').add(postData);
+      try {
+        await FirebaseFunctions.instance
+            .httpsCallable('createPostSecure')
+            .call(<String, dynamic>{
+          'postId': postId,
+          'title': title,
+          'content': content,
+          'categoryKey': categoryKey,
+          'imageUrls': imageUrls,
+          'visibility': visibility,
+          'visibleToCategoryIds': normalizedCategoryIds,
+          'isAnonymous': isAnonymous,
+          'type': type,
+          'pollOptions': cleanedPollOptions,
+        }).timeout(const Duration(seconds: 30));
+      } catch (error) {
+        // Callable 응답만 유실됐을 수 있다. 동일 ID의 서버 문서를 먼저 확인해
+        // 성공한 게시글 이미지를 지우거나 중복 게시하지 않도록 한다.
+        var created = false;
+        try {
+          final document = await _firestore
+              .collection('posts')
+              .doc(postId)
+              .get()
+              .timeout(const Duration(seconds: 5));
+          final data = document.data();
+          created = document.exists &&
+              (data?['ownerId'] == user.uid || data?['userId'] == user.uid);
+        } catch (_) {}
+        if (!created) {
+          // 문서 생성 전에 올린 파일은 best-effort로 정리해 orphan을 줄인다.
+          for (final url in imageUrls) {
+            try {
+              await _storageService.deleteImage(url);
+            } catch (_) {}
+          }
+          Error.throwWithStackTrace(error, StackTrace.current);
+        }
+      }
 
       // 캐시 무효화 (새 게시글이 추가되었으므로 목록 캐시 삭제)
       if (CacheFeatureFlags.isPostCacheEnabled) {
@@ -589,64 +607,8 @@ class PostService {
 
   // 모든 게시글 가져오기
   Stream<List<Post>> getAllPosts() {
-    final user = _auth.currentUser;
-
-    return _firestore
-        .collection('posts')
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) {
-      final posts = snapshot.docs.map((doc) {
-        final data = doc.data();
-        final post = _buildPostFromFirestore(doc.id, data);
-
-        // 비공개 게시글은 필터링 로직에서 처리
-
-        return post;
-      }).toList();
-
-      // 클라이언트 측 필수 필터링: 비공개 게시글 차단
-      if (user != null) {
-        final filteredPosts = posts.where((post) {
-          // visibility 필드가 없으면 전체 공개로 간주
-          final visibility = post.visibility;
-
-          // 전체 공개 게시글은 모두 표시
-          if (visibility == 'public' || visibility.isEmpty) {
-            return true;
-          }
-
-          // 카테고리별 비공개 게시글 - 매우 엄격하게 필터링
-          if (visibility == 'category') {
-            // 1. 작성자 본인인 경우만 무조건 표시
-            if (post.userId == user.uid) {
-              return true;
-            }
-
-            // 2. allowedUserIds 배열이 없거나 비어있으면 차단
-            if (post.allowedUserIds.isEmpty) {
-              return false;
-            }
-
-            // 3. allowedUserIds에 정확히 포함되어 있는지 확인
-            return post.allowedUserIds.contains(user.uid);
-          }
-
-          // 알 수 없는 visibility 값은 차단
-          return false;
-        }).toList();
-
-        return ContentHideService.filterPostsSync(filteredPosts);
-      }
-
-      // 로그인하지 않은 경우 전체 공개 게시글만 표시
-      return ContentHideService.filterPostsSync(
-        posts
-            .where((post) =>
-                post.visibility == 'public' || post.visibility.isEmpty)
-            .toList(),
-      );
-    });
+    return _watchAccessiblePosts(limit: _feedRealtimeLimit)
+        .map(ContentHideService.filterPostsSync);
   }
 
   // 특정 게시글 가져오기
@@ -900,54 +862,71 @@ class PostService {
       if (cached != null) return cached;
     }
 
-    final rawDocs = <QueryDocumentSnapshot<Map<String, dynamic>>>[];
-    DocumentSnapshot<Map<String, dynamic>>? cursor = startAfter;
-    var hasMore = true;
-
-    if (category == PostCategory.other) {
-      // Bounded compatibility scan. In normal legacy data the first chunk is
-      // mostly missing categoryKey and fills the page immediately.
-      const maxChunksPerPage = 4;
-      final chunkSize = (normalizedPageSize * 2).clamp(20, 100);
-      for (var chunk = 0;
-          chunk < maxChunksPerPage &&
-              rawDocs.length < normalizedPageSize &&
-              hasMore;
-          chunk++) {
-        Query<Map<String, dynamic>> query = _firestore
-            .collection('posts')
-            .orderBy('createdAt', descending: true)
-            .limit(chunkSize);
-        if (cursor != null) query = query.startAfterDocument(cursor);
-
-        final snapshot = await query.get();
-        if (snapshot.docs.isEmpty) {
-          hasMore = false;
-          break;
-        }
-        cursor = snapshot.docs.last;
-        hasMore = snapshot.docs.length == chunkSize;
-        for (final doc in snapshot.docs) {
-          if (PostCategory.fromKey(doc.data()['categoryKey']) == category) {
-            rawDocs.add(doc);
-            if (rawDocs.length == normalizedPageSize) break;
-          }
-        }
-      }
-    } else {
-      Query<Map<String, dynamic>> query = _firestore
-          .collection('posts')
-          .where('categoryKey', isEqualTo: category.key)
-          .orderBy('createdAt', descending: true)
-          .limit(normalizedPageSize);
-      if (cursor != null) query = query.startAfterDocument(cursor);
-      final snapshot = await query.get();
-      rawDocs.addAll(snapshot.docs);
-      if (snapshot.docs.isNotEmpty) cursor = snapshot.docs.last;
-      hasMore = snapshot.docs.length == normalizedPageSize;
+    final user = _auth.currentUser;
+    if (user == null) {
+      return const PostCategoryPage(posts: [], cursor: null, hasMore: false);
     }
 
-    final parsed = rawDocs
+    final beforeCreatedAt = startAfter?.data()?['createdAt'];
+    final fetchLimit = category == PostCategory.other
+        ? (normalizedPageSize * 3).clamp(30, 150)
+        : normalizedPageSize;
+
+    Future<QuerySnapshot<Map<String, dynamic>>> fetch(
+      Query<Map<String, dynamic>> query,
+    ) {
+      var scoped = query;
+      if (category != PostCategory.other) {
+        scoped = scoped.where('categoryKey', isEqualTo: category.key);
+      }
+      if (beforeCreatedAt is Timestamp) {
+        scoped = scoped.where('createdAt', isLessThan: beforeCreatedAt);
+      }
+      return scoped
+          .orderBy('createdAt', descending: true)
+          .limit(fetchLimit)
+          .get()
+          .timeout(_categoryQueryTimeout);
+    }
+
+    final snapshots = await Future.wait([
+      fetch(_firestore
+          .collection('posts')
+          .where('visibility', isEqualTo: 'public')),
+      fetch(_firestore
+          .collection('posts')
+          .where('allowedUserIds', arrayContains: user.uid)),
+      fetch(
+          _firestore.collection('posts').where('userId', isEqualTo: user.uid)),
+    ], eagerError: true);
+    final byId = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+    for (final snapshot in snapshots) {
+      for (final doc in snapshot.docs) {
+        if (category == PostCategory.other &&
+            PostCategory.fromKey(doc.data()['categoryKey']) != category) {
+          continue;
+        }
+        byId[doc.id] = doc;
+      }
+    }
+    final rawDocs = byId.values.toList()
+      ..sort((a, b) {
+        final at = a.data()['createdAt'];
+        final bt = b.data()['createdAt'];
+        final aDate = at is Timestamp
+            ? at.toDate()
+            : DateTime.fromMillisecondsSinceEpoch(0);
+        final bDate = bt is Timestamp
+            ? bt.toDate()
+            : DateTime.fromMillisecondsSinceEpoch(0);
+        return bDate.compareTo(aDate);
+      });
+    final pageDocs = rawDocs.take(normalizedPageSize).toList(growable: false);
+    final cursor = pageDocs.isEmpty ? startAfter : pageDocs.last;
+    final hasMore = rawDocs.length > normalizedPageSize ||
+        snapshots.any((snapshot) => snapshot.docs.length == fetchLimit);
+
+    final parsed = pageDocs
         .map((doc) => _buildPostFromFirestore(doc.id, doc.data()))
         .where((post) => _canUserReadPost(post, _auth.currentUser))
         .where(
@@ -1111,41 +1090,12 @@ class PostService {
             }
 
             // posts snapshots
-            _postsSub = _firestore
-                .collection('posts')
-                .orderBy('createdAt', descending: true)
-                .limit(_feedRealtimeLimit)
-                .snapshots()
-                .listen((snapshot) async {
+            _postsSub = _watchAccessiblePosts(limit: _feedRealtimeLimit).listen(
+                (posts) async {
               if (_debugPostsSnapshotLogs < 6) {
                 _debugPostsSnapshotLogs++;
-                Logger.log('📰 posts snapshot: ${snapshot.docs.length}');
+                Logger.log('📰 accessible posts snapshot: ${posts.length}');
               }
-              final posts = snapshot.docs.map((doc) {
-                try {
-                  return _buildPostFromFirestore(doc.id, doc.data());
-                } catch (e) {
-                  Logger.error('포스트 파싱 오류: $e');
-                  return Post(
-                    id: doc.id,
-                    title: '제목 없음',
-                    content: '내용을 불러올 수 없습니다.',
-                    author: '알 수 없음',
-                    category: '일반',
-                    createdAt: DateTime.now(),
-                    userId: '',
-                    imageUrls: [],
-                    visibility: 'public',
-                    isAnonymous: false,
-                    visibleToCategoryIds: [],
-                    likes: 0,
-                    type: 'text',
-                    pollOptions: const [],
-                    pollTotalVotes: 0,
-                  );
-                }
-              }).toList();
-
               _lastParsedPosts = posts;
               unawaited(emitFiltered());
             }, onError: (e) {
@@ -1235,43 +1185,47 @@ class PostService {
 
       final lowercaseQuery = query.toLowerCase();
 
-      // 기본 쿼리
-      Query<Map<String, dynamic>> queryRef = _firestore
-          .collection('posts')
-          .orderBy('createdAt', descending: true)
-          .limit(600);
-
-      // 카테고리 필터 추가
-      if (category != null && category.isNotEmpty) {
-        queryRef = queryRef.where('category', isEqualTo: category);
+      Query<Map<String, dynamic>> withCategory(
+        Query<Map<String, dynamic>> source,
+      ) {
+        if (category == null || category.isEmpty) return source;
+        return source.where('categoryKey', isEqualTo: category);
       }
 
-      final snapshot = await queryRef.get();
+      Future<QuerySnapshot<Map<String, dynamic>>> fetch(
+        Query<Map<String, dynamic>> source,
+      ) =>
+          withCategory(source)
+              .orderBy('createdAt', descending: true)
+              .limit(600)
+              .get();
+
+      final snapshots = await Future.wait([
+        fetch(_firestore
+            .collection('posts')
+            .where('visibility', isEqualTo: 'public')),
+        fetch(_firestore
+            .collection('posts')
+            .where('allowedUserIds', arrayContains: user.uid)),
+        fetch(_firestore
+            .collection('posts')
+            .where('userId', isEqualTo: user.uid)),
+      ]);
+      final docsById = <String, QueryDocumentSnapshot<Map<String, dynamic>>>{};
+      for (final snapshot in snapshots) {
+        for (final doc in snapshot.docs) {
+          docsById[doc.id] = doc;
+        }
+      }
 
       final matched = <Post>[];
 
-      for (final doc in snapshot.docs) {
+      for (final doc in docsById.values) {
         try {
           final data = doc.data();
           final post = _buildPostFromFirestore(doc.id, data);
 
-          // 🔒 검색에서도 동일한 공개범위/허용 사용자 필터 적용
-          // - 기본: allowedUserIds 기반
-          // - 보강: 레거시 데이터(allowedUserIds 누락/비어있음)는 visibleToCategoryIds 기반으로 계산
-          bool canRead = _canUserReadPost(post, user);
-          if (!canRead && post.visibility == 'category') {
-            // 작성자 본인은 항상 허용 (안전장치)
-            if (post.userId == user.uid) {
-              canRead = true;
-            } else if (post.allowedUserIds.isEmpty &&
-                post.visibleToCategoryIds.isNotEmpty) {
-              canRead = await _isUserIncludedByVisibleCategories(
-                userId: user.uid,
-                visibleToCategoryIds: post.visibleToCategoryIds,
-              );
-            }
-          }
-          if (!canRead) continue;
+          if (!_canUserReadPost(post, user)) continue;
 
           // 검색어와 일치하는지 확인
           final title = (data['title'] as String? ?? '').toLowerCase();

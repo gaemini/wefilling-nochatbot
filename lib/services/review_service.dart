@@ -13,6 +13,15 @@ class ReviewService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  List<String> _imageUrlsFromProfilePost(Map<String, dynamic> data) {
+    final urls = List<String>.from(data['imageUrls'] ?? const <String>[])
+        .where((url) => url.trim().isNotEmpty)
+        .toList(growable: false);
+    if (urls.isNotEmpty) return urls;
+    final legacyUrl = (data['imageUrl'] ?? '').toString().trim();
+    return legacyUrl.isEmpty ? const <String>[] : <String>[legacyUrl];
+  }
+
   Future<List<ReviewPost>> _filterBlockedReviews(
     List<ReviewPost> reviews,
   ) async {
@@ -47,16 +56,20 @@ class ReviewService {
       if (q.isEmpty) return [];
 
       final lowercaseQuery = q.toLowerCase();
-      final snapshot =
-          await _firestore.collection('reviews').orderBy('createdAt', descending: true).get();
+      final snapshot = await _firestore
+          .collection('reviews')
+          .orderBy('createdAt', descending: true)
+          .get();
 
       final results = <ReviewPost>[];
       for (final doc in snapshot.docs) {
         try {
           final data = doc.data();
-          final meetupTitle = (data['meetupTitle'] as String? ?? '').toLowerCase();
+          final meetupTitle =
+              (data['meetupTitle'] as String? ?? '').toLowerCase();
           final content = (data['content'] as String? ?? '').toLowerCase();
-          final authorName = (data['authorName'] as String? ?? '').toLowerCase();
+          final authorName =
+              (data['authorName'] as String? ?? '').toLowerCase();
 
           if (meetupTitle.contains(lowercaseQuery) ||
               content.contains(lowercaseQuery) ||
@@ -92,18 +105,20 @@ class ReviewService {
           .snapshots()
           .asyncMap((snapshot) async {
         final reviews = <ReviewPost>[];
-        
+
         // 실제 사용자 정보 한 번만 조회
         String authorName = '익명';
         String authorProfileImage = '';
-        
+
         try {
-          final userDoc = await _firestore.collection('users').doc(user.uid).get();
+          final userDoc =
+              await _firestore.collection('users').doc(user.uid).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
-            authorName = (userData['nickname'] ?? '').toString().trim().isNotEmpty
-                ? userData['nickname'].toString().trim()
-                : '익명';
+            authorName =
+                (userData['nickname'] ?? '').toString().trim().isNotEmpty
+                    ? userData['nickname'].toString().trim()
+                    : '익명';
             final raw = (userData['photoURL'] ?? '').toString();
             authorProfileImage =
                 ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
@@ -111,29 +126,37 @@ class ReviewService {
         } catch (e) {
           Logger.error('⚠️ 사용자 정보 조회 실패: $e');
         }
-        
+
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data();
-            
+
             // 본인 프로필에서는 숨긴 후기도 표시 (hidden 필드만 설정)
             // 다른 사람이 볼 때는 Firestore 규칙에서 차단됨
-            
-            // 실제 사용자 정보로 ReviewPost 생성
+
+            final storedAuthorName =
+                (data['authorName'] ?? '').toString().trim();
+            final storedAuthorProfileImage =
+                (data['authorProfileImage'] ?? '').toString().trim();
+
+            // 프로필에 게시된 공유 후기는 해당 프로필 소유자를 작성자로 표시한다.
             final review = ReviewPost(
               id: doc.id,
-              authorId: user.uid,
-              authorName: authorName,
-              authorProfileImage: authorProfileImage,
+              authorId: (data['authorId'] ?? user.uid).toString(),
+              authorName:
+                  storedAuthorName.isEmpty ? authorName : storedAuthorName,
+              authorProfileImage: storedAuthorProfileImage.isEmpty
+                  ? authorProfileImage
+                  : storedAuthorProfileImage,
               meetupId: data['meetupId'] ?? '',
               meetupTitle: data['meetupTitle'] ?? '모임',
-              imageUrls: List<String>.from(data['imageUrls'] ?? (data['imageUrl'] != null ? [data['imageUrl']] : [])),
+              imageUrls: _imageUrlsFromProfilePost(data),
               content: data['content'] ?? '',
               category: '모임', // 모임 후기는 항상 '모임' 카테고리
               rating: 5, // 기본 평점
               taggedUserIds: [],
-              createdAt: data['createdAt'] is Timestamp 
-                  ? (data['createdAt'] as Timestamp).toDate() 
+              createdAt: data['createdAt'] is Timestamp
+                  ? (data['createdAt'] as Timestamp).toDate()
                   : DateTime.now(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: data['commentCount'] ?? 0,
@@ -141,14 +164,14 @@ class ReviewService {
               sourceReviewId: data['reviewId'],
               hidden: data['isHidden'] == true,
             );
-            
+
             reviews.add(review);
           } catch (e) {
             Logger.error('개별 후기 파싱 오류', e);
             // 개별 문서 오류는 건너뛰고 계속 진행
           }
         }
-        
+
         // 메모리에서 정렬 (인덱스 문제 회피)
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         return reviews;
@@ -165,7 +188,7 @@ class ReviewService {
   // PrivacyLevel 파싱 헬퍼 메서드
   PrivacyLevel _parsePrivacyLevel(dynamic value) {
     if (value == null) return PrivacyLevel.friends;
-    
+
     try {
       switch (value.toString()) {
         case 'private':
@@ -281,15 +304,14 @@ class ReviewService {
         .collection('reviews')
         .orderBy('createdAt', descending: true)
         .snapshots()
-          .asyncMap((snapshot) async {
-      final reviews =
-          snapshot.docs.map((doc) {
-            final data = doc.data();
-            return ReviewPost.fromMap({
-              'id': doc.id,
-              ...data,
-            });
-          }).toList();
+        .asyncMap((snapshot) async {
+      final reviews = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return ReviewPost.fromMap({
+          'id': doc.id,
+          ...data,
+        });
+      }).toList();
       return await _filterBlockedReviews(reviews);
     });
   }
@@ -327,16 +349,16 @@ class ReviewService {
         }
 
         final reviews = <ReviewPost>[];
-        
+
         for (var doc in snapshot.docs) {
           try {
             final data = doc.data();
-            
+
             // 다른 사람 프로필: isHidden이 true인 경우 건너뛰기
             if (data['isHidden'] == true) {
               continue;
             }
-            
+
             // 기본값으로 안전한 ReviewPost 생성
             final review = ReviewPost(
               id: doc.id,
@@ -345,13 +367,13 @@ class ReviewService {
               authorProfileImage: data['authorProfileImage'] ?? '',
               meetupId: data['meetupId'] ?? '',
               meetupTitle: data['meetupTitle'] ?? '모임',
-              imageUrls: data['imageUrl'] != null ? [data['imageUrl']] : [],
+              imageUrls: _imageUrlsFromProfilePost(data),
               content: data['content'] ?? '',
               category: '모임', // 모임 후기는 항상 '모임' 카테고리
               rating: 5, // 기본 평점
               taggedUserIds: [],
-              createdAt: data['createdAt'] is Timestamp 
-                  ? (data['createdAt'] as Timestamp).toDate() 
+              createdAt: data['createdAt'] is Timestamp
+                  ? (data['createdAt'] as Timestamp).toDate()
                   : DateTime.now(),
               likedBy: List<String>.from(data['likedBy'] ?? []),
               commentCount: data['commentCount'] ?? 0,
@@ -359,14 +381,14 @@ class ReviewService {
               sourceReviewId: data['reviewId'],
               hidden: data['isHidden'] == true,
             );
-            
+
             reviews.add(review);
           } catch (e) {
             Logger.error('후기 파싱 오류', e);
             // 개별 문서 오류는 무시하고 계속 진행
           }
         }
-        
+
         // 메모리에서 정렬
         reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
         Logger.log('📋 최종 친구 후기 목록: ${reviews.length}개');
@@ -504,34 +526,41 @@ class ReviewService {
         }
 
         final data = snapshot.data()!;
-        
-        // 실제 사용자 정보 가져오기
-        String authorName = '익명';
-        String authorProfileImage = '';
-        
+
+        final authorId = (data['authorId'] ?? userId).toString();
+        String authorName = (data['authorName'] ?? '').toString().trim();
+        String authorProfileImage =
+            (data['authorProfileImage'] ?? '').toString().trim();
+
         try {
-          final userDoc = await _firestore.collection('users').doc(userId).get();
+          final userDoc =
+              await _firestore.collection('users').doc(authorId).get();
           if (userDoc.exists) {
             final userData = userDoc.data()!;
-            authorName = (userData['nickname'] ?? '').toString().trim().isNotEmpty
-                ? userData['nickname'].toString().trim()
-                : '익명';
-            final raw = (userData['photoURL'] ?? '').toString();
-            authorProfileImage =
-                ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
+            if (authorName.isEmpty) {
+              authorName =
+                  (userData['nickname'] ?? '').toString().trim().isNotEmpty
+                      ? userData['nickname'].toString().trim()
+                      : '익명';
+            }
+            if (authorProfileImage.isEmpty) {
+              final raw = (userData['photoURL'] ?? '').toString();
+              authorProfileImage =
+                  ProfilePhotoPolicy.isAllowedProfilePhotoUrl(raw) ? raw : '';
+            }
           }
         } catch (e) {
           Logger.error('⚠️ 사용자 정보 조회 실패: $e');
         }
-        
+
         final review = ReviewPost(
           id: snapshot.id,
-          authorId: userId,
-          authorName: authorName,
+          authorId: authorId,
+          authorName: authorName.isEmpty ? '익명' : authorName,
           authorProfileImage: authorProfileImage,
           meetupId: data['meetupId'] ?? '',
           meetupTitle: data['meetupTitle'] ?? '모임',
-          imageUrls: List<String>.from(data['imageUrls'] ?? (data['imageUrl'] != null ? [data['imageUrl']] : [])),
+          imageUrls: _imageUrlsFromProfilePost(data),
           content: data['content'] ?? '',
           category: '모임',
           rating: 5,
@@ -554,5 +583,4 @@ class ReviewService {
       return Stream.value(null);
     }
   }
-
 }

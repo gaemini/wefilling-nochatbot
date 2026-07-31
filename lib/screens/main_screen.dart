@@ -19,6 +19,7 @@ import '../ui/widgets/app_icon_button.dart';
 import '../utils/logger.dart';
 import '../widgets/adaptive_bottom_navigation.dart';
 import '../widgets/notification_badge.dart';
+import '../widgets/semester_todo_app_bar_button.dart';
 import 'ad_showcase_screen.dart';
 import 'board_screen.dart';
 import 'dm_list_screen.dart';
@@ -27,7 +28,6 @@ import 'home_screen.dart';
 import 'mypage_screen.dart';
 import 'notification_screen.dart';
 import 'unified_search_screen.dart';
-import 'my_meetup_calendar_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTabIndex;
@@ -347,20 +347,7 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
                 semanticLabel: AppLocalizations.of(context)!.settings,
                 visualDensity: VisualDensity.compact,
               ),
-              AppIconButton(
-                icon: Icons.calendar_month_outlined,
-                iconSize: 23,
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const MyMeetupCalendarScreen(),
-                    ),
-                  );
-                },
-                semanticLabel: '내 모임 달력',
-                visualDensity: VisualDensity.compact,
-              ),
+              const SemesterTodoAppBarButton(),
             ],
             // 알림 아이콘
             StreamBuilder<int>(
@@ -407,8 +394,8 @@ class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
         stream: _dmService.getTotalUnreadCount(),
         builder: (context, dmSnapshot) {
           return StreamBuilder<int>(
-            // ✅ 즐겨찾기 스냅챗만 카운트
-            stream: _snackChatService.getFavoritedUnreadCount(),
+            // 현재 계정의 Today/All 목록에 실제로 표시되는 방만 카운트한다.
+            stream: _snackChatService.getTotalUnreadCount(),
             builder: (context, scSnapshot) {
               final l10n = AppLocalizations.of(context)!;
 

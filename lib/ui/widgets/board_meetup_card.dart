@@ -1,265 +1,242 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../constants/app_constants.dart';
+
 import '../../l10n/app_localizations.dart';
 import '../../models/meetup.dart';
+import '../../utils/responsive_helper.dart';
+import 'audience_ring.dart';
 
-/// 게시글(Today)에서만 사용하는 **간단한 모임 카드**.
-/// - 참여/나가기 버튼 없음 (탭하면 상세로 이동)
-/// - 참여자 수는 외부에서 스트림으로 주입받아 실시간 반영
+/// 포스트 피드용 밋업 요약.
+/// 날짜를 고정된 레일로 분리하고 관련 정보를 한 덩어리로 묶어 빠르게 훑을 수 있게 한다.
 class BoardMeetupCard extends StatelessWidget {
   final Meetup meetup;
   final int? currentParticipants;
   final VoidCallback onTap;
+  final VoidCallback? onLocationTap;
+  final Widget? trailingAction;
 
   const BoardMeetupCard({
     super.key,
     required this.meetup,
     required this.onTap,
     this.currentParticipants,
+    this.onLocationTap,
+    this.trailingAction,
   });
 
-  String _startTimeLabel(BuildContext context, String raw) {
-    final l10n = AppLocalizations.of(context);
-    final undecided = l10n?.undecided ?? '미정';
-    final t = raw.trim();
-    if (t.isEmpty) return undecided;
-    // 레거시/로컬라이즈 값 모두 "미정"으로 통일 표기
-    if (t == '미정' || t == 'Undecided' || t == 'TBD') return undecided;
-    if (!t.contains(':')) return t; // 예: "오후 2시" 같은 포맷도 그대로
-    return t.split('~').first.trim();
+  bool _isKorean(BuildContext context) =>
+      Localizations.localeOf(context).languageCode == 'ko';
+
+  String _monthLabel(BuildContext context) {
+    final localDate = meetup.date.toLocal();
+    if (_isKorean(context)) return '${localDate.month}월';
+    return DateFormat('MMM', 'en_US').format(localDate).toUpperCase();
   }
 
-  String _dateLabel(BuildContext context, DateTime date) {
-    final code = Localizations.localeOf(context).languageCode;
-    final locale = code == 'ko' ? 'ko_KR' : 'en_US';
-    final local = date.toLocal();
-    return code == 'ko'
-        ? DateFormat('M월 d일 (E)', locale).format(local)
-        : DateFormat('MMM d (EEE)', locale).format(local);
-  }
+  String _dayLabel() => '${meetup.date.toLocal().day}';
 
-  bool _isToday(DateTime date) {
-    final now = DateTime.now().toLocal();
-    final d = date.toLocal();
-    return now.year == d.year && now.month == d.month && now.day == d.day;
-  }
-
-  String _compactDateForCard(BuildContext context, DateTime date) {
-    final code = Localizations.localeOf(context).languageCode;
-    final local = date.toLocal();
-    if (code == 'ko') {
-      return '${local.month}월 ${local.day}일';
+  String _weekdayLabel(BuildContext context) {
+    final localDate = meetup.date.toLocal();
+    if (_isKorean(context)) {
+      const weekdays = ['월', '화', '수', '목', '금', '토', '일'];
+      return weekdays[localDate.weekday - 1];
     }
-    return '${local.month}/${local.day}';
+    return DateFormat('EEE', 'en_US').format(localDate).toUpperCase();
+  }
+
+  String _timeLabel(BuildContext context) {
+    final raw = meetup.time.trim();
+    if (raw.isEmpty || raw == '미정' || raw == 'Undecided' || raw == 'TBD') {
+      return AppLocalizations.of(context)?.undecided ?? 'TBD';
+    }
+    // 피드에서는 시작 시각만 보여주고 전체 시간 범위는 상세 화면에 유지한다.
+    return raw.split('~').first.trim();
   }
 
   @override
   Widget build(BuildContext context) {
     final participants = currentParticipants ?? meetup.currentParticipants;
-    final timeLabel = _startTimeLabel(context, meetup.time);
-    final undecidedLabel = AppLocalizations.of(context)?.undecided ?? '미정';
-    final isTimeUndecided = timeLabel == undecidedLabel;
-    final isToday = _isToday(meetup.date);
-    final dateLabel =
-        isToday ? 'Today' : _compactDateForCard(context, meetup.date);
-    final remainingSlots = (meetup.maxParticipants - participants);
-    final isAlmostFull = remainingSlots == 1;
-    final countColor = isAlmostFull ? const Color(0xFFEF4444) : const Color(0xFF6B7280);
+    final horizontal = context.rs(16).clamp(14.0, 18.0).toDouble();
+    final metaSize = context.rf(12.5).clamp(12.0, 13.0).toDouble();
+    final metaStyle = TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: metaSize,
+      fontWeight: FontWeight.w600,
+      height: 1.18,
+      color: const Color(0xFF667085),
+    );
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 날짜/시간(핵심 정보) 강조
-                  Container(
-                    width: 86,
-                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: isToday ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: const Color(0xFFE5E7EB)),
-                    ),
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.2,
+      child: Material(
+        color: Colors.white,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                AudienceRing(
+                  restricted: meetup.visibility != 'public',
+                  size: context.rs(66).clamp(66.0, 68.0).toDouble(),
+                  innerGap: 1.5,
+                  borderRadius: BorderRadius.circular(
+                    context.rs(16).clamp(14.0, 18.0).toDouble(),
+                  ),
+                  semanticLabel: _isKorean(context)
+                      ? '공개 범위가 제한된 모임'
+                      : 'Limited audience meetup',
+                  child: ColoredBox(
+                    color: Colors.white,
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        // 날짜/Today: 박스 폭에 맞게 자동 축소(줄바꿈/깨짐 방지)
-                        SizedBox(
-                          height: 22,
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              dateLabel,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: isToday
-                                    ? AppColors.pointColor
-                                    : const Color(0xFF111827),
-                                height: 1.1,
-                              ),
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.clip,
-                              softWrap: false,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
                         Text(
-                          timeLabel,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            // 요구사항: 글자 크기를 줄이지 않고(고정),
-                            // 표기 자체를 짧게(TBD) 만들어 잘림을 방지한다.
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF6B7280),
-                            height: 1.15,
-                          ),
-                          textAlign: TextAlign.center,
+                          '${_monthLabel(context)} · ${_weekdayLabel(context)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize:
+                                context.rf(9.5).clamp(9.0, 10.0).toDouble(),
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                            letterSpacing: 0.2,
+                            color: const Color(0xFF667085),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          _dayLabel(),
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize:
+                                context.rf(23).clamp(21.0, 24.0).toDouble(),
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                            letterSpacing: -0.5,
+                            color: const Color(0xFF101828),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _timeLabel(context),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize:
+                                context.rf(10.5).clamp(10.0, 11.0).toDouble(),
+                            fontWeight: FontWeight.w700,
+                            height: 1.05,
+                            color: const Color(0xFF667085),
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                meetup.title,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF111827),
-                                  height: 1.25,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            const Icon(
-                              Icons.chevron_right_rounded,
-                              size: 22,
-                              color: Color(0xFF9CA3AF),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.location_on_outlined,
-                              size: 16,
-                              color: Color(0xFF6B7280),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                meetup.location,
-                                style: const TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF6B7280),
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.people_outline,
-                              size: 16,
-                              color: Color(0xFF6B7280),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '$participants/${meetup.maxParticipants}명',
+                ),
+                SizedBox(width: context.rs(14).clamp(12.0, 16.0).toDouble()),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              meetup.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                 fontFamily: 'Pretendard',
-                                fontSize: 14,
+                                fontSize: context
+                                    .rf(15.5)
+                                    .clamp(14.5, 16.0)
+                                    .toDouble(),
                                 fontWeight: FontWeight.w800,
-                                color: countColor,
+                                height: 1.18,
+                                letterSpacing: -0.2,
+                                color: const Color(0xFF101828),
                               ),
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              const Divider(height: 1),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 16,
-                    backgroundColor: const Color(0xFFE5E7EB),
-                    backgroundImage: meetup.hostPhotoURL.isNotEmpty
-                        ? NetworkImage(meetup.hostPhotoURL)
-                        : null,
-                    child: meetup.hostPhotoURL.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            size: 16,
-                            color: Color(0xFF6B7280),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      meetup.hostNickname ?? '익명',
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF111827),
+                          ),
+                          const SizedBox(width: 5),
+                          const Icon(
+                            Icons.chevron_right_rounded,
+                            size: 19,
+                            color: Color(0xFF98A2B3),
+                          ),
+                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                      const SizedBox(height: 5),
+                      _InlineMeta(
+                        icon: Icons.location_on_outlined,
+                        text: meetup.location,
+                        style: metaStyle,
+                        onTap: onLocationTap,
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 10,
+                            backgroundColor: const Color(0xFFF2F4F7),
+                            backgroundImage: meetup.hostPhotoURL.isNotEmpty
+                                ? NetworkImage(meetup.hostPhotoURL)
+                                : null,
+                            child: meetup.hostPhotoURL.isEmpty
+                                ? const Icon(
+                                    Icons.person_outline,
+                                    size: 11,
+                                    color: Color(0xFF667085),
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              meetup.hostNickname ??
+                                  AppLocalizations.of(context)!.anonymous,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: metaStyle.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFF344054),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          const Icon(
+                            Icons.people_outline_rounded,
+                            size: 15,
+                            color: Color(0xFF667085),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$participants / ${meetup.maxParticipants}',
+                            maxLines: 1,
+                            style: metaStyle.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFF475467),
+                            ),
+                          ),
+                          if (trailingAction != null) ...[
+                            const SizedBox(width: 8),
+                            trailingAction!,
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -267,3 +244,46 @@ class BoardMeetupCard extends StatelessWidget {
   }
 }
 
+class _InlineMeta extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final TextStyle style;
+  final VoidCallback? onTap;
+
+  const _InlineMeta({
+    required this.icon,
+    required this.text,
+    required this.style,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Row(
+      children: [
+        Icon(
+          icon,
+          size: context.ri(15).clamp(14.0, 15.5).toDouble(),
+          color: const Color(0xFF667085),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: style.copyWith(
+              decoration: onTap == null ? null : TextDecoration.underline,
+            ),
+          ),
+        ),
+      ],
+    );
+    if (onTap == null) return content;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: content,
+    );
+  }
+}

@@ -71,6 +71,13 @@ class Post {
   final bool isAnonymous; // 익명 여부
   final List<String> visibleToCategoryIds; // 공개할 카테고리 ID 목록
   final List<String> allowedUserIds; // 이 게시글을 볼 수 있는 사용자 ID 목록 (비공개용)
+  final int visibilitySchemaVersion;
+  final DateTime? visibilityLockedAt;
+
+  String get ownerId => userId;
+  String get visibilityMode => visibility;
+  List<String> get audienceUserIdsFrozen => allowedUserIds;
+  List<String> get sourceGroupIds => visibleToCategoryIds;
 
   // 캐시된 번역 결과
   String? _translatedTitle;
@@ -99,6 +106,8 @@ class Post {
     this.isAnonymous = false, // 익명 여부 (기본값: 실명)
     this.visibleToCategoryIds = const [], // 공개할 카테고리 목록 (기본값: 빈 리스트)
     this.allowedUserIds = const [], // 허용된 사용자 ID 목록 (기본값: 빈 리스트)
+    this.visibilitySchemaVersion = 0,
+    this.visibilityLockedAt,
   }) : categoryKey = PostCategory.fromKey(categoryKey).key;
 
   PostCategory get postCategory => PostCategory.fromKey(categoryKey);
@@ -194,6 +203,8 @@ class Post {
     bool? isAnonymous,
     List<String>? visibleToCategoryIds,
     List<String>? allowedUserIds,
+    int? visibilitySchemaVersion,
+    DateTime? visibilityLockedAt,
   }) {
     return Post(
       id: id ?? this.id,
@@ -218,6 +229,9 @@ class Post {
       isAnonymous: isAnonymous ?? this.isAnonymous,
       visibleToCategoryIds: visibleToCategoryIds ?? this.visibleToCategoryIds,
       allowedUserIds: allowedUserIds ?? this.allowedUserIds,
+      visibilitySchemaVersion:
+          visibilitySchemaVersion ?? this.visibilitySchemaVersion,
+      visibilityLockedAt: visibilityLockedAt ?? this.visibilityLockedAt,
     );
   }
 
@@ -246,6 +260,13 @@ class Post {
       'isAnonymous': isAnonymous,
       'visibleToCategoryIds': visibleToCategoryIds,
       'allowedUserIds': allowedUserIds,
+      'ownerId': ownerId,
+      'visibilityMode': visibilityMode,
+      'audienceUserIdsFrozen': audienceUserIdsFrozen,
+      'sourceGroupIds': sourceGroupIds,
+      'visibilitySchemaVersion': visibilitySchemaVersion,
+      if (visibilityLockedAt != null)
+        'visibilityLockedAt': visibilityLockedAt!.millisecondsSinceEpoch,
     };
   }
 
@@ -271,7 +292,7 @@ class Post {
       createdAt: map['createdAt'] is int
           ? DateTime.fromMillisecondsSinceEpoch(map['createdAt'])
           : DateTime.now(),
-      userId: map['userId'] ?? '',
+      userId: map['ownerId'] ?? map['userId'] ?? '',
       commentCount: map['commentCount'] ?? 0,
       viewCount: map['viewCount'] ?? 0,
       likes: map['likes'] ?? 0,
@@ -280,11 +301,18 @@ class Post {
       type: map['type'] ?? 'text',
       pollOptions: parsedPollOptions,
       pollTotalVotes: map['pollTotalVotes'] ?? 0,
-      visibility: map['visibility'] ?? 'public',
+      visibility: map['visibilityMode'] ?? map['visibility'] ?? 'public',
       isAnonymous: map['isAnonymous'] ?? false,
-      visibleToCategoryIds:
-          List<String>.from(map['visibleToCategoryIds'] ?? []),
-      allowedUserIds: List<String>.from(map['allowedUserIds'] ?? []),
+      visibleToCategoryIds: List<String>.from(
+          map['sourceGroupIds'] ?? map['visibleToCategoryIds'] ?? []),
+      allowedUserIds: List<String>.from(
+        map['audienceUserIdsFrozen'] ?? map['allowedUserIds'] ?? [],
+      ),
+      visibilitySchemaVersion:
+          (map['visibilitySchemaVersion'] as num?)?.toInt() ?? 0,
+      visibilityLockedAt: map['visibilityLockedAt'] is int
+          ? DateTime.fromMillisecondsSinceEpoch(map['visibilityLockedAt'])
+          : null,
     );
   }
 }

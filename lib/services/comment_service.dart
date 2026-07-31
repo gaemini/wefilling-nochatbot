@@ -249,30 +249,51 @@ class CommentService {
     if (ids.isEmpty) return {};
 
     const chunkSize = 10;
-    final result = <String, int>{};
+    const queryTimeout = Duration(seconds: 5);
+    final chunks = <List<String>>[];
 
     for (int i = 0; i < ids.length; i += chunkSize) {
-      final chunk = ids.sublist(i, i + chunkSize > ids.length ? ids.length : i + chunkSize);
+      chunks.add(ids.sublist(
+        i,
+        i + chunkSize > ids.length ? ids.length : i + chunkSize,
+      ));
+    }
+
+    Future<Map<String, int>> fetchChunk(List<String> chunk) async {
+      final counts = <String, int>{};
       try {
         final snap = await _firestore
             .collection('comments')
             .where('postId', whereIn: chunk)
-            .get();
+            .get()
+            .timeout(queryTimeout);
 
         for (final doc in snap.docs) {
           final data = doc.data();
           final postId = data['postId']?.toString();
           if (postId == null || postId.isEmpty) continue;
-          result[postId] = (result[postId] ?? 0) + 1;
+          counts[postId] = (counts[postId] ?? 0) + 1;
         }
 
         // whereIn 대상이지만 댓글이 0개인 경우도 0으로 채움
         for (final id in chunk) {
-          result[id] = result[id] ?? 0;
+          counts[id] = counts[id] ?? 0;
         }
       } catch (e) {
-        Logger.error('댓글 수 일괄 조회 오류: $e');
+        // 실패한 청크는 기존 카드 값을 유지한다. 빈 결과를 반환하면 호출 측에서
+        // 정상 완료되어 RefreshIndicator가 무한 대기하지 않는다.
+        Logger.error('댓글 수 일괄 조회 오류(${chunk.length}개): $e');
       }
+      return counts;
+    }
+
+    final result = <String, int>{};
+    final chunkResults = await Future.wait(
+      chunks.map(fetchChunk),
+      eagerError: false,
+    );
+    for (final counts in chunkResults) {
+      result.addAll(counts);
     }
 
     return result;

@@ -5,10 +5,117 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function currentUserAccountAllowed() {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isDeleted', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('deleted', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('disabled', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('isSuspended', false) != true
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('status', '') != 'deleted'
+        && firestore.get(
+          /databases/(default)/documents/users/$(request.auth.uid)
+        ).data.get('status', '') != 'suspended';
+    }
+
+    function contentBlockFree(ownerId) {
+      return !firestore.exists(/databases/(default)/documents/blocks/$(request.auth.uid + '_' + ownerId))
+        && !firestore.exists(/databases/(default)/documents/blocks/$(ownerId + '_' + request.auth.uid));
+    }
+
     // Firestore conversations/{conversationId}.participants 기반으로 참여자 여부 확인
     function isConversationParticipant(conversationId) {
-      return firestore.exists(/databases/(default)/documents/conversations/$(conversationId)) &&
-        request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conversationId)).data.participants;
+      return currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/conversations/$(conversationId))
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/conversations/$(conversationId)
+        ).data.participants;
+    }
+
+    // Firestore snack_chats/{snackChatId}.participantIds 기반 참여자 여부 확인
+    function isSnackChatParticipant(snackChatId) {
+      return currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/snack_chats/$(snackChatId))
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/snack_chats/$(snackChatId)
+        ).data.participantIds
+        && (
+          !firestore.get(
+            /databases/(default)/documents/snack_chats/$(snackChatId)
+          ).data.keys().hasAll(['meetupId', 'allowMeetupJoin'])
+          || firestore.get(
+            /databases/(default)/documents/snack_chats/$(snackChatId)
+          ).data.allowMeetupJoin != true
+          || canReadMeetup(firestore.get(
+            /databases/(default)/documents/snack_chats/$(snackChatId)
+          ).data.meetupId)
+        );
+    }
+
+    function canReadMeetup(meetupId) {
+      return currentUserAccountAllowed()
+        && meetupId is string
+        && firestore.exists(/databases/(default)/documents/meetups/$(meetupId))
+        && (
+          request.auth.uid == firestore.get(
+            /databases/(default)/documents/meetups/$(meetupId)
+          ).data.get('ownerId', firestore.get(
+            /databases/(default)/documents/meetups/$(meetupId)
+          ).data.get('userId', ''))
+          || (
+            contentBlockFree(firestore.get(
+              /databases/(default)/documents/meetups/$(meetupId)
+            ).data.get('ownerId', firestore.get(
+              /databases/(default)/documents/meetups/$(meetupId)
+            ).data.get('userId', '')))
+            && (
+              firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get('visibilityMode', firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get('visibility', '')) == 'public'
+              || request.auth.uid in firestore.get(
+                /databases/(default)/documents/meetups/$(meetupId)
+              ).data.get(
+                'audienceUserIdsFrozen', firestore.get(
+                  /databases/(default)/documents/meetups/$(meetupId)
+                ).data.get('allowedUserIds', [])
+              )
+            )
+          )
+        );
+    }
+
+    function snapshotExists(snapshotId) {
+      return firestore.exists(/databases/(default)/documents/snapshots/$(snapshotId));
+    }
+
+    // Storage Rules에서는 한 요청당 Firestore 문서를 최대 2개만 읽을 수 있다.
+    // 서버가 공개범위와 양방향 차단을 검증해 생성한 개인 feed를 이미지 접근
+    // 권한 원본으로 사용한다. 사용자 계정 문서 + feed 문서만 읽어 한도를 지킨다.
+    function canReadSnapshotImage(snapshotId) {
+      let feedPath = /databases/(default)/documents/users/$(request.auth.uid)/snapshot_feed/$(snapshotId);
+      let feed = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)/snapshot_feed/$(snapshotId)
+      );
+      return currentUserAccountAllowed()
+        && firestore.exists(feedPath)
+        && feed.data.snapshotId == snapshotId
+        && feed.data.status == 'active'
+        && feed.data.expiresAt is timestamp
+        && request.time < feed.data.expiresAt
+        && feed.data.get('ownerId', feed.data.get('authorId', '')) is string
+        && feed.data.get('ownerId', feed.data.get('authorId', '')).size() > 0;
     }
 
     // ✅ 프로필 이미지: 유저별 폴더로 격리
@@ -33,8 +140,10 @@ service firebase.storage {
 
     // 모임 이미지 (meetupId 기반)
     match /meetup_images/{meetupId}/{fileName} {
-      allow read: if true;
-      allow write: if isSignedIn();
+      allow read: if canReadMeetup(meetupId);
+      allow write: if currentUserAccountAllowed()
+        && firestore.exists(/databases/(default)/documents/meetups/$(meetupId))
+        && firestore.get(/databases/(default)/documents/meetups/$(meetupId)).data.userId == request.auth.uid;
     }
 
     // 모임 후기 이미지 (리뷰 작성 시 업로드)
@@ -43,10 +152,45 @@ service firebase.storage {
       allow write: if isSignedIn();
     }
 
+    // 스낵샷은 다운로드 URL을 공개하지 않고 인증 기반 getData로만 읽는다.
+    // 최종 canonical 문서가 생긴 뒤에는 클라이언트 직접 삭제도 막고
+    // Callable/예약 함수(Admin SDK)만 정리할 수 있다.
+    match /snapshots/{snapshotId}/final.jpg {
+      allow read: if canReadSnapshotImage(snapshotId);
+      allow create: if currentUserAccountAllowed()
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snapshotId == snapshotId;
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && !snapshotExists(snapshotId)
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snapshotId == snapshotId;
+    }
+
     // DM 이미지: 대화 참여자만 읽기, 업로더(경로의 userId)만 쓰기
     match /dm_images/{userId}/{conversationId}/{fileName} {
       allow read: if isSignedIn() && isConversationParticipant(conversationId);
       allow write: if isSignedIn() && request.auth.uid == userId && isConversationParticipant(conversationId);
+    }
+
+    // Snack Chat 이미지: 해당 방 참여자만 읽고, 본인 폴더에만 업로드 가능
+    match /snack_chat_images/{userId}/{snackChatId}/{fileName} {
+      allow read: if isSnackChatParticipant(snackChatId);
+      allow create: if isSnackChatParticipant(snackChatId)
+        && request.auth.uid == userId
+        && request.resource.size > 0
+        && request.resource.size <= 15 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg'
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.metadata.snackChatId == snackChatId;
+      allow update: if false;
+      allow delete: if isSnackChatParticipant(snackChatId)
+        && request.auth.uid == userId
+        && resource.metadata.ownerUid == request.auth.uid
+        && resource.metadata.snackChatId == snackChatId;
     }
 
     match /{allPaths=**} {

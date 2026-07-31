@@ -16,6 +16,7 @@ export const COL = {
   posts: 'posts',
   comments: 'comments',
   meetups: 'meetups',
+  snapshots: 'snapshots',
 
   // DM / Notifications
   conversations: 'conversations',
@@ -79,4 +80,3 @@ export const DocId = {
     return `${blockerUid}_${blockedUid}`;
   },
 } as const;
-

@@ -323,9 +323,16 @@ class ContentFilterService {
 
   /// 게시물 목록에서 차단된 사용자의 게시물을 필터링합니다
   static Future<List<Post>> filterPosts(List<Post> posts) async {
-    final blockedUserIds = await _getBlockedUserIds();
-    final blockedByUserIds = await _getBlockedByUserIds();
-    final blockedAnonymousPostIds = await _getBlockedAnonymousPostIds();
+    // 세 조회는 서로 독립적입니다. 순차 대기하면 오프라인에서 각 타임아웃이
+    // 누적되므로 병렬로 끝내 페이지 갱신 시간을 상한 안에 유지합니다.
+    final blockLists = await Future.wait<Set<String>>([
+      _getBlockedUserIds(),
+      _getBlockedByUserIds(),
+      _getBlockedAnonymousPostIds(),
+    ]);
+    final blockedUserIds = blockLists[0];
+    final blockedByUserIds = blockLists[1];
+    final blockedAnonymousPostIds = blockLists[2];
     
     final hiddenApplied = ContentHideService.filterPostsSync(posts);
 

@@ -19,6 +19,7 @@ import '../services/cache/app_image_cache_manager.dart';
 import '../services/cache/my_page_cache_service.dart';
 import '../models/review_post.dart';
 import '../models/post.dart';
+import '../models/social_profile_data.dart';
 import '../constants/app_constants.dart';
 import '../design/tokens.dart';
 import '../ui/dialogs/logout_dialog.dart';
@@ -33,9 +34,9 @@ import 'post_detail_screen.dart';
 import 'saved_posts_screen.dart';
 import 'review_detail_screen.dart';
 import 'friends_page.dart';
+import 'semester_todo_admin_screen.dart';
 import '../ui/widgets/profile_image_viewer.dart';
 import '../utils/profile_photo_policy.dart';
-import '../utils/responsive_helper.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({Key? key}) : super(key: key);
@@ -165,8 +166,6 @@ class _MyPageScreenState extends State<MyPageScreen>
       if (cached != null) _userReviews = cached.items;
       _isLoadingReviews = cached == null;
     });
-    if (cached?.isFresh == true) return;
-
     try {
       final reviews = await _reviewService
           .getUserReviews()
@@ -253,7 +252,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                     controller: _tabController,
                     labelColor: const Color(0xFF111827),
                     unselectedLabelColor: const Color(0xFF9CA3AF),
-                    indicatorColor: const Color(0xFF2563EB),
+                    indicatorColor: AppColors.pointColor,
                     indicatorWeight: 2,
                     dividerColor: const Color(0xFFF1F3F5),
                     labelStyle: AppTheme.labelMedium.copyWith(
@@ -341,11 +340,22 @@ class _MyPageScreenState extends State<MyPageScreen>
     final authProvider = Provider.of<AuthProvider>(context);
     final user = authProvider.user;
     final userData = authProvider.userData;
-    final nationality = userData?['nationality'];
+    // Firestore의 과거 문서에는 프로필 필드가 String 이외의 형식으로
+    // 저장된 경우가 있다. 화면 build 중 강제 캐스팅이 실패하면 마이페이지
+    // 전체가 빈 화면이 되므로 표시용 값은 항상 안전하게 정규화한다.
+    final nickname = (userData?['nickname'] ?? '').toString().trim();
+    final nationality = (userData?['nationality'] ?? '').toString().trim();
+    final bio = (userData?['bio'] ?? '').toString().trim();
+    final social = SocialProfileData.fromMap(userData);
     final rawPhotoUrl = (userData?['photoURL'] ?? '').toString();
     final photoUrl = ProfilePhotoPolicy.isAllowedProfilePhotoUrl(rawPhotoUrl)
         ? rawPhotoUrl
         : '';
+    final profileCompletion = social.completionFor(
+      hasProfilePhoto: photoUrl.isNotEmpty,
+    );
+    const profileSize = 100.0;
+    const profileIconSize = 50.0;
 
     return Container(
       color: Colors.white,
@@ -364,8 +374,8 @@ class _MyPageScreenState extends State<MyPageScreen>
                 child: Hero(
                   tag: 'profile_image_${user?.uid ?? 'me'}',
                   child: Container(
-                    width: 100,
-                    height: 100,
+                    width: profileSize,
+                    height: profileSize,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: const Color(0xFFE5E7EB),
@@ -385,28 +395,28 @@ class _MyPageScreenState extends State<MyPageScreen>
                             child: _buildCachedImage(
                               photoUrl,
                               fit: BoxFit.cover,
-                              errorWidget: const ColoredBox(
-                                color: Color(0xFFE5E7EB),
+                              errorWidget: ColoredBox(
+                                color: const Color(0xFFE5E7EB),
                                 child: Icon(
                                   Icons.person,
-                                  size: 50,
-                                  color: Color(0xFF6B7280),
+                                  size: profileIconSize,
+                                  color: const Color(0xFF6B7280),
                                 ),
                               ),
-                              placeholder: const ColoredBox(
-                                color: Color(0xFFE5E7EB),
+                              placeholder: ColoredBox(
+                                color: const Color(0xFFE5E7EB),
                                 child: Icon(
                                   Icons.person,
-                                  size: 50,
-                                  color: Color(0xFF6B7280),
+                                  size: profileIconSize,
+                                  color: const Color(0xFF6B7280),
                                 ),
                               ),
                             ),
                           )
-                        : const Icon(
+                        : Icon(
                             Icons.person,
-                            size: 50,
-                            color: Color(0xFF6B7280),
+                            size: profileIconSize,
+                            color: const Color(0xFF6B7280),
                           ),
                   ),
                 ),
@@ -421,8 +431,9 @@ class _MyPageScreenState extends State<MyPageScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      userData?['nickname'] ??
-                          AppLocalizations.of(context)!.user,
+                      nickname.isNotEmpty
+                          ? nickname
+                          : AppLocalizations.of(context)!.user,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 20,
@@ -433,7 +444,7 @@ class _MyPageScreenState extends State<MyPageScreen>
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 8),
-                    if (nationality != null && nationality.isNotEmpty)
+                    if (nationality.isNotEmpty)
                       Row(
                         children: [
                           CountryFlagCircle(
@@ -462,11 +473,10 @@ class _MyPageScreenState extends State<MyPageScreen>
                       ),
 
                     // 한 줄 소개 (국기 아래)
-                    if (userData?['bio'] != null &&
-                        (userData!['bio'] as String).isNotEmpty) ...[
+                    if (bio.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text(
-                        userData!['bio'],
+                        bio,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
                           fontSize: 14,
@@ -484,6 +494,106 @@ class _MyPageScreenState extends State<MyPageScreen>
               ),
             ],
           ),
+
+          if (social.interests.isNotEmpty ||
+              social.preferredActivities.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  ...social.interests.map(
+                    (id) => _socialTagLabel(
+                      SocialProfileCatalog.labelFor(
+                        id,
+                        SocialProfileCatalog.interests,
+                        Localizations.localeOf(context).languageCode,
+                      ),
+                    ),
+                  ),
+                  ...social.preferredActivities.map(
+                    (id) => _socialTagLabel(
+                      SocialProfileCatalog.labelFor(
+                        id,
+                        SocialProfileCatalog.activities,
+                        Localizations.localeOf(context).languageCode,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (profileCompletion < 100) ...[
+            const SizedBox(height: 16),
+            InkWell(
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ProfileEditScreen(),
+                  ),
+                );
+              },
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 5),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 34,
+                      height: 34,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          CircularProgressIndicator(
+                            value: profileCompletion / 100,
+                            strokeWidth: 3,
+                            backgroundColor: const Color(0xFFE2E8F0),
+                            color: AppColors.pointColor,
+                          ),
+                          Center(
+                            child: Text(
+                              '$profileCompletion',
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        Localizations.localeOf(context).languageCode == 'ko'
+                            ? (social.interests.isEmpty
+                                ? '관심사를 추가하면 비슷한 친구들이 더 쉽게 다가올 수 있어요.'
+                                : '대화 질문을 설정하면 첫 DM이 더 자연스러워져요.')
+                            : (social.interests.isEmpty
+                                ? 'Add interests so similar people can find you.'
+                                : 'Add a question to make the first DM easier.'),
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF475569),
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 20, color: Color(0xFF94A3B8)),
+                  ],
+                ),
+              ),
+            ),
+          ],
 
           const SizedBox(height: 20),
 
@@ -532,6 +642,18 @@ class _MyPageScreenState extends State<MyPageScreen>
     );
   }
 
+  Widget _socialTagLabel(String value) {
+    return Text(
+      '#$value',
+      style: const TextStyle(
+        fontFamily: 'Pretendard',
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppColors.pointColor,
+      ),
+    );
+  }
+
   Widget _buildReviewGrid() {
     // 실제 로그인된 사용자 ID 가져오기
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -546,7 +668,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Icon(
               Icons.login_rounded,
               size: 64,
-              color: Color(0xFF6366F1),
+              color: AppColors.pointColor,
             ),
             SizedBox(height: 16),
             Text(
@@ -576,7 +698,7 @@ class _MyPageScreenState extends State<MyPageScreen>
     if (_isLoadingReviews && reviews == null) {
       return const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+          valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
         ),
       );
     }
@@ -761,27 +883,6 @@ class _MyPageScreenState extends State<MyPageScreen>
                       ),
                     ),
                   ),
-
-                // 메뉴 버튼
-                Positioned(
-                  top: 4,
-                  left: 4,
-                  child: GestureDetector(
-                    onTap: () => _showReviewOptions(review),
-                    child: Container(
-                      padding: EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        Icons.more_vert,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
-                  ),
-                ),
               ],
             ),
           ),
@@ -826,7 +927,7 @@ class _MyPageScreenState extends State<MyPageScreen>
             Icon(
               Icons.login_rounded,
               size: 64,
-              color: Color(0xFF6366F1),
+              color: AppColors.pointColor,
             ),
             SizedBox(height: 16),
             Text(
@@ -856,7 +957,7 @@ class _MyPageScreenState extends State<MyPageScreen>
     if (_isLoadingUserPosts && posts == null) {
       return const Center(
         child: CircularProgressIndicator(
-          valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF6366F1)),
+          valueColor: AlwaysStoppedAnimation<Color>(AppColors.pointColor),
         ),
       );
     }
@@ -977,7 +1078,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   Widget _buildPostCollectionControls() {
     final l10n = AppLocalizations.of(context)!;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 8, 6),
+      padding: const EdgeInsets.fromLTRB(16, 6, 10, 4),
       child: Row(
         children: [
           Expanded(
@@ -1037,13 +1138,13 @@ class _MyPageScreenState extends State<MyPageScreen>
             key: const ValueKey('mypage_posts_grid_toggle'),
             tooltip: 'Grid',
             onPressed: () => setState(() => _showPostsAsGrid = true),
-            iconSize: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            iconSize: 19,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
             icon: Icon(
               Icons.grid_view_rounded,
               color: _showPostsAsGrid
-                  ? const Color(0xFF2563EB)
+                  ? AppColors.pointColor
                   : const Color(0xFF9CA3AF),
             ),
           ),
@@ -1051,13 +1152,13 @@ class _MyPageScreenState extends State<MyPageScreen>
             key: const ValueKey('mypage_posts_list_toggle'),
             tooltip: 'List',
             onPressed: () => setState(() => _showPostsAsGrid = false),
-            iconSize: 20,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+            iconSize: 19,
+            padding: const EdgeInsets.all(6),
+            constraints: const BoxConstraints.tightFor(width: 36, height: 36),
             icon: Icon(
               Icons.format_list_bulleted_rounded,
               color: !_showPostsAsGrid
-                  ? const Color(0xFF2563EB)
+                  ? AppColors.pointColor
                   : const Color(0xFF9CA3AF),
             ),
           ),
@@ -1072,7 +1173,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   }) {
     return ListView.separated(
       key: PageStorageKey('$storageKey.list'),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
       itemCount: posts.length,
       separatorBuilder: (_, __) => const Divider(
@@ -1089,20 +1190,21 @@ class _MyPageScreenState extends State<MyPageScreen>
     final metadata = post.content.trim().isEmpty
         ? post.postCategory.label(l10n)
         : post.content.trim();
+    const thumbnailSize = 84.0;
 
     return Material(
       color: Colors.white,
       child: InkWell(
         onTap: () => _openPostDetail(post.id),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              _buildPostThumbnail(post, size: 92),
-              const SizedBox(width: 16),
+              _buildPostThumbnail(post, size: thumbnailSize),
+              const SizedBox(width: 12),
               Expanded(
                 child: SizedBox(
-                  height: 92,
+                  height: thumbnailSize,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -1112,18 +1214,18 @@ class _MyPageScreenState extends State<MyPageScreen>
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 17,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF111827),
                           height: 1.25,
                         ),
                       ),
-                      const SizedBox(height: 7),
+                      const SizedBox(height: 5),
                       Text(
                         DateFormat('yyyy.MM.dd').format(post.createdAt),
                         style: const TextStyle(
                           fontFamily: 'Pretendard',
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
                           color: Color(0xFF9CA3AF),
                         ),
@@ -1156,53 +1258,31 @@ class _MyPageScreenState extends State<MyPageScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               SizedBox(
-                height: 92,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    PopupMenuButton<String>(
-                      tooltip: 'More',
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(
-                        Icons.more_horiz_rounded,
-                        color: Color(0xFF9CA3AF),
+                height: thumbnailSize,
+                child: Align(
+                  alignment: Alignment.bottomRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.favorite_rounded,
+                        size: 18,
+                        color: BrandColors.textSecondary,
                       ),
-                      onSelected: (_) => _openPostDetail(post.id),
-                      itemBuilder: (_) => [
-                        PopupMenuItem(
-                          value: 'open',
-                          child: Text(
-                            Localizations.localeOf(context).languageCode == 'ko'
-                                ? '게시물 보기'
-                                : 'View post',
-                          ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${post.likes}',
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF6B7280),
                         ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.favorite_rounded,
-                          size: 19,
-                          color: BrandColors.textSecondary,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          '${post.likes}',
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF6B7280),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1218,7 +1298,7 @@ class _MyPageScreenState extends State<MyPageScreen>
   }) {
     return GridView.builder(
       key: PageStorageKey('$storageKey.grid'),
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
       scrollCacheExtent: const ScrollCacheExtent.viewport(1.25),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 3,
@@ -1288,19 +1368,19 @@ class _MyPageScreenState extends State<MyPageScreen>
           constraints.maxWidth,
           pixelRatio,
         );
-        final targetHeight = _cacheDimension(
-          constraints.maxHeight,
-          pixelRatio,
-        );
 
         return CachedNetworkImage(
           imageUrl: imageUrl,
           cacheManager: AppImageCacheManager.instance,
           fit: fit,
+          alignment: Alignment.center,
           width: double.infinity,
           height: double.infinity,
+          // Supplying both cache dimensions uses ResizeImagePolicy.exact and
+          // decodes every source into the viewport's aspect ratio. That makes
+          // portrait and landscape photos look squashed before BoxFit.cover
+          // can crop them. Constraining one axis keeps the source aspect ratio.
           memCacheWidth: targetWidth,
-          memCacheHeight: targetHeight,
           fadeInDuration: Duration.zero,
           fadeOutDuration: Duration.zero,
           useOldImageOnUrlChange: true,
@@ -1428,7 +1508,7 @@ class _MyPageScreenState extends State<MyPageScreen>
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -1863,9 +1943,9 @@ class _MyPageScreenState extends State<MyPageScreen>
               maxScaleFactor: 1.2,
               child: Text(
                 AppLocalizations.of(context)!.friends,
-                style: TextStyle(
+                style: const TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: context.rf(18).clamp(17, 19).toDouble(),
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                   color: const Color(0xFF111827),
                 ),
@@ -1995,6 +2075,23 @@ class MyPageSettingsSheet {
                     );
                   },
                 ),
+                if (authProvider.userData?['isAdmin'] == true)
+                  _menuItem(
+                    sheetContext,
+                    Localizations.localeOf(sheetContext).languageCode == 'ko'
+                        ? '학기 To-do 관리'
+                        : 'Semester To-do Admin',
+                    Icons.admin_panel_settings_outlined,
+                    () {
+                      Navigator.pop(sheetContext);
+                      Navigator.push(
+                        rootContext,
+                        MaterialPageRoute(
+                          builder: (_) => const SemesterTodoAdminScreen(),
+                        ),
+                      );
+                    },
+                  ),
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 8),
                   height: 1,

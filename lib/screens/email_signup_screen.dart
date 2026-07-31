@@ -1,23 +1,22 @@
-// lib/screens/email_signup_screen.dart
-// 이메일 회원가입 화면
-// 한양메일 인증 후 개인 이메일과 비밀번호를 설정하는 화면
+// 한양메일 인증 후 로그인 이메일과 비밀번호를 설정하는 화면
 
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_functions/cloud_functions.dart';
-import '../providers/auth_provider.dart' as app_auth;
-import '../screens/nickname_setup_screen.dart';
+
 import '../l10n/app_localizations.dart';
-import '../constants/app_constants.dart';
+import '../providers/auth_provider.dart' as app_auth;
+import '../widgets/signup_flow_widgets.dart';
+import 'nickname_setup_screen.dart';
 
 class EmailSignUpScreen extends StatefulWidget {
-  final String verifiedHanyangEmail;
-
   const EmailSignUpScreen({
-    Key? key,
+    super.key,
     required this.verifiedHanyangEmail,
-  }) : super(key: key);
+  });
+
+  final String verifiedHanyangEmail;
 
   @override
   State<EmailSignUpScreen> createState() => _EmailSignUpScreenState();
@@ -42,7 +41,6 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     super.dispose();
   }
 
-  // 비밀번호 유효성 검사
   String? _validatePassword(String? value) {
     if (value == null || value.isEmpty) {
       return AppLocalizations.of(context)!.pleaseEnterPassword;
@@ -53,7 +51,6 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     return null;
   }
 
-  // 비밀번호 확인 유효성 검사
   String? _validateConfirmPassword(String? value) {
     if (value == null || value.isEmpty) {
       return AppLocalizations.of(context)!.pleaseEnterPassword;
@@ -64,11 +61,8 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     return null;
   }
 
-  // 회원가입 처리
   Future<void> _handleSignUp() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
+    if (_isLoading || !(_formKey.currentState?.validate() ?? false)) return;
 
     setState(() {
       _isLoading = true;
@@ -76,566 +70,249 @@ class _EmailSignUpScreenState extends State<EmailSignUpScreen> {
     });
 
     try {
-      final authProvider = Provider.of<app_auth.AuthProvider>(context, listen: false);
-
+      final authProvider = context.read<app_auth.AuthProvider>();
       final success = await authProvider.signUpWithEmail(
         email: _emailController.text.trim(),
         password: _passwordController.text,
         hanyangEmail: widget.verifiedHanyangEmail,
       );
 
-      if (mounted && success) {
-        // 회원가입 성공 시 닉네임 설정 화면으로 이동
+      if (!mounted) return;
+      if (success) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(
-            builder: (_) => const NicknameSetupScreen(),
-          ),
+          MaterialPageRoute(builder: (_) => const NicknameSetupScreen()),
         );
-      } else if (mounted) {
-        setState(() {
-          _errorMessage = AppLocalizations.of(context)!.signupFailed;
-          _isLoading = false;
-        });
+        return;
       }
-    } on FirebaseFunctionsException catch (e) {
-      // Cloud Functions 오류 (한양메일 등록 관련)
-      if (mounted) {
-        String errorMsg = AppLocalizations.of(context)!.signupFailed;
-        
-        if (e.code == 'already-exists') {
-          errorMsg = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
-        } else {
-          errorMsg = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
-        }
-        
-        setState(() {
-          _errorMessage = errorMsg;
-          _isLoading = false;
-        });
+      setState(() {
+        _errorMessage = AppLocalizations.of(context)!.signupFailed;
+        _isLoading = false;
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      setState(() {
+        _errorMessage = error.code == 'already-exists'
+            ? l10n.hanyangEmailAlreadyUsed
+            : '${l10n.error}: ${error.message ?? error.code}';
+        _isLoading = false;
+      });
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context)!;
+      var message = l10n.signupFailed;
+      switch (error.code) {
+        case 'email-already-in-use':
+          message = l10n.emailAlreadyInUse;
+          break;
+        case 'invalid-email':
+          message = l10n.errorInvalidEmail;
+          break;
+        case 'weak-password':
+          message = l10n.weakPassword;
+          break;
+        default:
+          message = '${l10n.error}: ${error.message ?? error.code}';
       }
-    } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        String errorMsg = AppLocalizations.of(context)!.signupFailed;
-        
-        switch (e.code) {
-          case 'email-already-in-use':
-            errorMsg = AppLocalizations.of(context)!.emailAlreadyInUse;
-            break;
-          case 'invalid-email':
-            errorMsg = AppLocalizations.of(context)!.errorInvalidEmail;
-            break;
-          case 'weak-password':
-            errorMsg = AppLocalizations.of(context)!.weakPassword;
-            break;
-          default:
-            errorMsg = '${AppLocalizations.of(context)!.error}: ${e.message}';
-        }
-        
-        setState(() {
-          _errorMessage = errorMsg;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _errorMessage = '회원가입 실패: $e';
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _errorMessage = message;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _errorMessage = AppLocalizations.of(context)!.signupFailed;
+        _isLoading = false;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFDEEFFF),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
-          onPressed: () => Navigator.pop(context),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            color: Color(0xFF0F172A),
+            size: 22,
+          ),
+          onPressed: _isLoading ? null : () => Navigator.pop(context),
         ),
         title: Text(
-          AppLocalizations.of(context)!.emailSignUpTitle,
+          l10n.emailSignUpTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
           ),
         ),
-        centerTitle: true,
       ),
       body: SafeArea(
         top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-
-              // 안내 텍스트
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.pointColor,
-                      AppColors.pointColor.withOpacity(0.8),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.pointColor.withOpacity(0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.person_add_outlined,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      AppLocalizations.of(context)!.emailSignUpTitle,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: -0.5,
-                        height: 1.3,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        AppLocalizations.of(context)!.emailSignUpDescription,
-                        style: TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w400,
-                          color: Colors.white.withOpacity(0.95),
-                          height: 1.7,
-                          letterSpacing: -0.2,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth < 360 ? 18.0 : 24.0;
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                20,
+                horizontalPadding,
+                28 + bottomInset,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SignupPageIntro(
+                          icon: Icons.person_add_alt_1_outlined,
+                          title: l10n.emailSignUpTitle,
+                          description: l10n.emailSignUpDescription,
                         ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 인증된 한양메일 표시
-              Container(
-                padding: const EdgeInsets.all(18),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFBBF7D0),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.verified_user,
-                      color: Color(0xFF10B981),
-                      size: 24,
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.verifiedHanyangEmailLabel,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF065F46),
-                              letterSpacing: -0.2,
-                            ),
+                        const SizedBox(height: 32),
+                        SignupVerifiedEmail(
+                          label: l10n.verifiedHanyangEmailLabel,
+                          email: widget.verifiedHanyangEmail,
+                        ),
+                        const SizedBox(height: 34),
+                        SignupSectionLabel(text: l10n.emailId),
+                        const SizedBox(height: 4),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.newUsername],
+                          decoration: signupInputDecoration(
+                            hintText: 'example@gmail.com',
+                            icon: Icons.mail_outline_rounded,
+                            helperText: l10n.emailHelperText,
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.verifiedHanyangEmail,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF065F46),
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 이메일 입력 레이블
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: Text(
-                  AppLocalizations.of(context)!.emailId,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-
-              // 이메일 입력
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    hintText: 'example@gmail.com',
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      color: Color(0xFFCBD5E1),
-                      letterSpacing: -0.2,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.email_outlined,
-                      color: AppColors.pointColor,
-                      size: 22,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 18,
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.2,
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)!.pleaseEnterEmail;
-                    }
-                    if (!value.contains('@')) {
-                      return AppLocalizations.of(context)!.validEmailFormat;
-                    }
-                    return null;
-                  },
-                ),
-              ),
-
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: Text(
-                  AppLocalizations.of(context)!.emailHelperText,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 12,
-                    color: Color(0xFF94A3B8),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // 비밀번호 입력 레이블
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: Text(
-                  AppLocalizations.of(context)!.password,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-
-              // 비밀번호 입력
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.passwordInputHint,
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      color: Color(0xFFCBD5E1),
-                      letterSpacing: -0.2,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.lock_outline,
-                      color: AppColors.pointColor,
-                      size: 22,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: const Color(0xFF94A3B8),
-                        size: 22,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 18,
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.2,
-                  ),
-                  validator: _validatePassword,
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // 비밀번호 확인 레이블
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: Text(
-                  AppLocalizations.of(context)!.confirmPassword,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-              ),
-
-              // 비밀번호 확인 입력
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _confirmPasswordController,
-                  obscureText: _obscureConfirmPassword,
-                  decoration: InputDecoration(
-                    hintText: AppLocalizations.of(context)!.confirmPasswordPlaceholder,
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      color: Color(0xFFCBD5E1),
-                      letterSpacing: -0.2,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.lock_outline,
-                      color: AppColors.pointColor,
-                      size: 22,
-                    ),
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirmPassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: const Color(0xFF94A3B8),
-                        size: 22,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscureConfirmPassword = !_obscureConfirmPassword;
-                        });
-                      },
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 18,
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.2,
-                  ),
-                  validator: _validateConfirmPassword,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 회원가입 버튼
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _handleSignUp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    disabledBackgroundColor: const Color(0xFFE2E8F0),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : Text(
-                          AppLocalizations.of(context)!.signUpComplete,
                           style: const TextStyle(
                             fontFamily: 'Pretendard',
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // 에러 메시지
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFFECACA),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: Color(0xFFDC2626),
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
+                            fontSize: 16,
                             fontWeight: FontWeight.w500,
-                            color: Color(0xFF991B1B),
-                            height: 1.5,
-                            letterSpacing: -0.2,
+                            color: Color(0xFF0F172A),
                           ),
+                          validator: (value) {
+                            final email = value?.trim() ?? '';
+                            if (email.isEmpty) return l10n.pleaseEnterEmail;
+                            if (!email.contains('@') ||
+                                !email.split('@').last.contains('.')) {
+                              return l10n.validEmailFormat;
+                            }
+                            return null;
+                          },
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        SignupSectionLabel(text: l10n.password),
+                        const SizedBox(height: 4),
+                        TextFormField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.next,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          autofillHints: const [AutofillHints.newPassword],
+                          decoration: signupInputDecoration(
+                            hintText: l10n.passwordInputHint,
+                            icon: Icons.lock_outline_rounded,
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword ? 'Show' : 'Hide',
+                              onPressed: () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: const Color(0xFF64748B),
+                                size: 21,
+                              ),
+                            ),
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF0F172A),
+                          ),
+                          validator: _validatePassword,
+                        ),
+                        const SizedBox(height: 24),
+                        SignupSectionLabel(text: l10n.confirmPassword),
+                        const SizedBox(height: 4),
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          obscureText: _obscureConfirmPassword,
+                          textInputAction: TextInputAction.done,
+                          autocorrect: false,
+                          enableSuggestions: false,
+                          onFieldSubmitted: (_) => _handleSignUp(),
+                          decoration: signupInputDecoration(
+                            hintText: l10n.confirmPasswordPlaceholder,
+                            icon: Icons.lock_outline_rounded,
+                            suffixIcon: IconButton(
+                              tooltip:
+                                  _obscureConfirmPassword ? 'Show' : 'Hide',
+                              onPressed: () => setState(
+                                () => _obscureConfirmPassword =
+                                    !_obscureConfirmPassword,
+                              ),
+                              icon: Icon(
+                                _obscureConfirmPassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                color: const Color(0xFF64748B),
+                                size: 21,
+                              ),
+                            ),
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF0F172A),
+                          ),
+                          validator: _validateConfirmPassword,
+                        ),
+                        const SizedBox(height: 30),
+                        SignupPrimaryButton(
+                          label: l10n.signUpComplete,
+                          isLoading: _isLoading,
+                          onPressed: _isLoading ? null : _handleSignUp,
+                        ),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 18),
+                          SignupInlineError(message: _errorMessage!),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
-            ],
-          ),
-        ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 }
-

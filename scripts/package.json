@@ -6,8 +6,12 @@
     "add-drinks": "node add_drinks_places.js",
     "migrate-post-category:dry-run": "node migrate_post_category.js",
     "migrate-post-category:apply": "node migrate_post_category.js --apply",
+    "migrate-frozen-audience:dry-run": "node migrate_frozen_audience.js",
+    "migrate-frozen-audience:apply": "node migrate_frozen_audience.js --apply",
     "test-post-category-migration": "node --test migrate_post_category.test.js",
-    "setup-places": "node setup_recommended_places.js"
+    "setup-places": "node setup_recommended_places.js",
+    "seed-semester:dry-run": "node seed_semester_todos.js",
+    "seed-semester:apply": "node seed_semester_todos.js --apply"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0"

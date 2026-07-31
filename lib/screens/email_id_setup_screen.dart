@@ -1,18 +1,18 @@
-// lib/screens/email_id_setup_screen.dart
-// 아이디(이메일) 설정 화면 - 1단계
-
 import 'package:flutter/material.dart';
-import '../constants/app_constants.dart';
+
 import '../l10n/app_localizations.dart';
+import '../widgets/signup_flow_widgets.dart';
 import 'password_setup_screen.dart';
 
+/// Legacy two-step email sign-up entry kept visually aligned with the active
+/// sign-up flow for callers that still navigate here.
 class EmailIdSetupScreen extends StatefulWidget {
-  final String verifiedHanyangEmail;
-
   const EmailIdSetupScreen({
-    Key? key,
+    super.key,
     required this.verifiedHanyangEmail,
-  }) : super(key: key);
+  });
+
+  final String verifiedHanyangEmail;
 
   @override
   State<EmailIdSetupScreen> createState() => _EmailIdSetupScreenState();
@@ -29,22 +29,14 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
     super.dispose();
   }
 
-  // 다음 단계로 이동
   void _goToNextStep() {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final email = _emailController.text.trim();
-
-    // 비밀번호 설정 화면으로 이동
-    // 이메일 중복은 회원가입 시점에서 체크
+    if (!(_formKey.currentState?.validate() ?? false)) return;
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => PasswordSetupScreen(
           verifiedHanyangEmail: widget.verifiedHanyangEmail,
-          loginEmail: email,
+          loginEmail: _emailController.text.trim(),
         ),
       ),
     );
@@ -53,365 +45,132 @@ class _EmailIdSetupScreenState extends State<EmailIdSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFDEEFFF),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
           onPressed: () => Navigator.pop(context),
+          icon: const Icon(
+            Icons.arrow_back_ios_new_rounded,
+            size: 22,
+            color: Color(0xFF0F172A),
+          ),
         ),
         title: Text(
           l10n.emailIdSetupTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontFamily: 'Pretendard',
             fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
           ),
         ),
-        centerTitle: true,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // 헤더 섹션
-                Container(
-                  padding: const EdgeInsets.all(32),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.pointColor,
-                        AppColors.pointColor.withOpacity(0.8),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.pointColor.withOpacity(0.3),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.email_outlined,
-                        size: 56,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        l10n.emailIdSetupTitle,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 24,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: -0.5,
-                          height: 1.3,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 16),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Text(
-                          l10n.emailIdSetupDescription,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w400,
-                            color: Colors.white.withOpacity(0.95),
-                            height: 1.7,
-                            letterSpacing: -0.2,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // 인증된 한양메일 표시
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDCFCE7),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFF86EFAC),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.check_circle,
-                        color: Colors.green.shade700,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              l10n.verifiedHanyangEmailLabel,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.green.shade800,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              widget.verifiedHanyangEmail,
-                              style: TextStyle(
-                                fontFamily: 'Pretendard',
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.green.shade900,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // 아이디(이메일) 입력 레이블
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 12),
-                  child: Text(
-                    l10n.loginEmailLabel,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-
-                // 아이디 입력
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFE2E8F0),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: InputDecoration(
-                      hintText: 'example@gmail.com / example@hanyang.ac.kr',
-                      helperText: l10n.loginEmailHelper,
-                      helperStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12,
-                        color: Color(0xFF94A3B8),
-                      ),
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        color: Color(0xFFCBD5E1),
-                        letterSpacing: -0.2,
-                      ),
-                      prefixIcon: Icon(
-                        Icons.email_outlined,
-                        color: AppColors.pointColor,
-                        size: 22,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 18,
-                      ),
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF1E293B),
-                      letterSpacing: -0.2,
-                    ),
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return '로그인 이메일을 입력해주세요';
-                      }
-                      if (!value.contains('@') || !value.contains('.')) {
-                        return '유효한 이메일 형식이 아닙니다';
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // 한양메일 사용 버튼
-                OutlinedButton.icon(
-                  onPressed: () {
-                    _emailController.text = widget.verifiedHanyangEmail;
-                  },
-                  icon: Icon(
-                    Icons.school,
-                    size: 18,
-                    color: Colors.green.shade700,
-                  ),
-                  label: Text(
-                    l10n.useVerifiedHanyangEmail,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.green.shade700,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    side: BorderSide(
-                      color: Colors.green.shade700,
-                      width: 1.5,
-                    ),
-                    backgroundColor: Colors.green.shade50,
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
-                // 안내 메시지
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0F9FF),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: const Color(0xFFBAE6FD),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        color: Colors.blue.shade700,
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          l10n.emailIdSetupInfo,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.blue.shade900,
-                            height: 1.6,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 32),
-
-                // 다음 버튼
-                ElevatedButton(
-                  onPressed: _goToNextStep,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.pointColor,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 18),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    elevation: 2,
-                    shadowColor: AppColors.pointColor.withOpacity(0.4),
-                  ),
-                  child: Text(
-                    l10n.next,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
-                ),
-
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 20),
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: const Color(0xFFFECACA),
-                        width: 1,
-                      ),
-                    ),
-                    child: Row(
+        top: false,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final horizontalPadding = constraints.maxWidth < 360 ? 18.0 : 24.0;
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                20,
+                horizontalPadding,
+                28 + bottomInset,
+              ),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Icon(
-                          Icons.error_outline,
-                          color: Colors.red.shade700,
-                          size: 22,
+                        SignupPageIntro(
+                          icon: Icons.alternate_email_rounded,
+                          title: l10n.emailIdSetupTitle,
+                          description: l10n.emailIdSetupDescription,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            _errorMessage!,
-                            style: TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.red.shade900,
-                              height: 1.5,
+                        const SizedBox(height: 32),
+                        SignupVerifiedEmail(
+                          label: l10n.verifiedHanyangEmailLabel,
+                          email: widget.verifiedHanyangEmail,
+                        ),
+                        const SizedBox(height: 34),
+                        SignupSectionLabel(text: l10n.loginEmailLabel),
+                        const SizedBox(height: 4),
+                        TextFormField(
+                          controller: _emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.done,
+                          autocorrect: false,
+                          autofillHints: const [AutofillHints.newUsername],
+                          onFieldSubmitted: (_) => _goToNextStep(),
+                          decoration: signupInputDecoration(
+                            hintText: 'example@gmail.com',
+                            icon: Icons.mail_outline_rounded,
+                            helperText: l10n.loginEmailHelper,
+                          ),
+                          style: const TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF0F172A),
+                          ),
+                          validator: (value) {
+                            final email = value?.trim() ?? '';
+                            if (email.isEmpty) return l10n.pleaseEnterEmail;
+                            if (!email.contains('@') ||
+                                !email.split('@').last.contains('.')) {
+                              return l10n.validEmailFormat;
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () {
+                              _emailController.text =
+                                  widget.verifiedHanyangEmail;
+                            },
+                            icon: const Icon(Icons.school_outlined, size: 18),
+                            label: Text(l10n.useVerifiedHanyangEmail),
+                            style: TextButton.styleFrom(
+                              foregroundColor: const Color(0xFF475569),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 0,
+                                vertical: 10,
+                              ),
                             ),
                           ),
                         ),
+                        const SizedBox(height: 20),
+                        SignupPrimaryButton(
+                          label: l10n.next,
+                          onPressed: _goToNextStep,
+                        ),
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 18),
+                          SignupInlineError(message: _errorMessage!),
+                        ],
                       ],
                     ),
                   ),
-                ],
-              ],
-            ),
-          ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );

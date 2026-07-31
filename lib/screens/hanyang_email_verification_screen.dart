@@ -8,23 +8,50 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../providers/auth_provider.dart';
 import '../screens/signup_method_selection_screen.dart';
 import '../l10n/app_localizations.dart';
-import '../constants/app_constants.dart';
+import '../widgets/signup_flow_widgets.dart';
+import 'password_setup_screen.dart';
 
-class HanyangEmailVerificationScreen extends StatefulWidget {
-  const HanyangEmailVerificationScreen({Key? key}) : super(key: key);
-
-  @override
-  State<HanyangEmailVerificationScreen> createState() => _HanyangEmailVerificationScreenState();
+enum SignupEmailPolicy {
+  hanyangOnly,
+  anyVerifiedEmail,
+  hanyangProfile,
 }
 
-class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificationScreen> {
+class HanyangEmailVerificationScreen extends StatefulWidget {
+  const HanyangEmailVerificationScreen({
+    super.key,
+  }) : emailPolicy = SignupEmailPolicy.hanyangOnly;
+
+  const HanyangEmailVerificationScreen.general({super.key})
+      : emailPolicy = SignupEmailPolicy.anyVerifiedEmail;
+
+  const HanyangEmailVerificationScreen.profile({super.key})
+      : emailPolicy = SignupEmailPolicy.hanyangProfile;
+
+  /// 영어 가입 경로에서는 학교 도메인 제한 없이 이메일 소유권만 확인한다.
+  final SignupEmailPolicy emailPolicy;
+
+  @override
+  State<HanyangEmailVerificationScreen> createState() =>
+      _HanyangEmailVerificationScreenState();
+}
+
+class _HanyangEmailVerificationScreenState
+    extends State<HanyangEmailVerificationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _verificationCodeController = TextEditingController();
-  
+
   bool _isCodeSent = false;
   bool _isLoading = false;
   String? _errorMessage;
+  String _cancellationToken = '';
+
+  bool get _allowsAnyEmail =>
+      widget.emailPolicy == SignupEmailPolicy.anyVerifiedEmail;
+
+  bool get _isProfileVerification =>
+      widget.emailPolicy == SignupEmailPolicy.hanyangProfile;
 
   @override
   void dispose() {
@@ -37,17 +64,25 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _sendVerificationCode() async {
     if (_emailController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.verificationCodeRequired ?? "";
+        _errorMessage = AppLocalizations.of(context)!.pleaseEnterEmail;
       });
       return;
     }
 
     final email = _emailController.text.trim();
-    
-    // hanyang.ac.kr 도메인 검증
-    if (!email.endsWith('@hanyang.ac.kr')) {
+
+    final validEmail = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
+    if (!validEmail) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.hanyangEmailRequired ?? "";
+        _errorMessage = AppLocalizations.of(context)!.validEmailFormat;
+      });
+      return;
+    }
+
+    // 한국어 회원가입 경로의 한양메일 정책은 그대로 유지한다.
+    if (!_allowsAnyEmail && !email.toLowerCase().endsWith('@hanyang.ac.kr')) {
+      setState(() {
+        _errorMessage = AppLocalizations.of(context)!.hanyangEmailRequired;
       });
       return;
     }
@@ -62,23 +97,29 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       final result = await authProvider.sendEmailVerificationCode(
         email,
         locale: Localizations.localeOf(context),
+        purpose: _allowsAnyEmail
+            ? SignupEmailVerificationPurpose.general
+            : SignupEmailVerificationPurpose.hanyang,
       );
-      
+
       if (result['success'] && mounted) {
         setState(() {
           _isCodeSent = true;
+          _cancellationToken =
+              (result['cancellationToken'] ?? '').toString().trim();
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(AppLocalizations.of(context)!.verificationCodeSent ?? ""),
+            content: Text(AppLocalizations.of(context)!.verificationCodeSent),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 5),
           ),
         );
       } else if (mounted) {
         setState(() {
-          _errorMessage = result['message'] ?? AppLocalizations.of(context)!.error;
+          _errorMessage =
+              result['message'] ?? AppLocalizations.of(context)!.error;
         });
       }
     } on FirebaseFunctionsException catch (e) {
@@ -86,12 +127,15 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
       if (mounted) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
+            _errorMessage = _allowsAnyEmail
+                ? AppLocalizations.of(context)!.emailAlreadyInUse
+                : AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
         } else {
           setState(() {
-            _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
+            _errorMessage =
+                '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
             _isLoading = false;
           });
         }
@@ -116,7 +160,7 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
   Future<void> _verifyAndComplete() async {
     if (_verificationCodeController.text.trim().isEmpty) {
       setState(() {
-        _errorMessage = AppLocalizations.of(context)!.verificationCodeRequired ?? "";
+        _errorMessage = AppLocalizations.of(context)!.verificationCodeRequired;
       });
       return;
     }
@@ -128,51 +172,109 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
 
     try {
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      
-      // 인증번호 확인
+
+      // 인증번호 확인. 일반 이메일은 계정 생성 함수가 소비할 일회성 토큰도
+      // 함께 받아 인증과 실제 계정 생성 사이의 위조/재사용을 막는다.
       bool verified = false;
+      String? verificationToken;
       try {
-        verified = await authProvider.verifyEmailCode(
-          _emailController.text.trim(),
-          _verificationCodeController.text.trim(),
-        );
+        if (_allowsAnyEmail) {
+          verificationToken = await authProvider.verifyGeneralSignupEmailCode(
+            _emailController.text.trim(),
+            _verificationCodeController.text.trim(),
+          );
+          verified = verificationToken != null;
+        } else {
+          verificationToken = await authProvider.verifyHanyangSignupEmailCode(
+            _emailController.text.trim(),
+            _verificationCodeController.text.trim(),
+          );
+          verified = verificationToken != null;
+        }
       } on FirebaseFunctionsException catch (e) {
         if (e.code == 'already-exists') {
           setState(() {
-            _errorMessage = AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
+            _errorMessage = _allowsAnyEmail
+                ? AppLocalizations.of(context)!.emailAlreadyInUse
+                : AppLocalizations.of(context)!.hanyangEmailAlreadyUsed;
             _isLoading = false;
           });
           return;
         }
         setState(() {
-          _errorMessage = '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
-          _isLoading = false;
-        });
-        return;
-      }
-      
-      if (!verified && mounted) {
-        setState(() {
-          _errorMessage = AppLocalizations.of(context)!.verificationCodeInvalid ?? "";
+          _errorMessage =
+              '${AppLocalizations.of(context)!.error}: ${e.message ?? e.code}';
           _isLoading = false;
         });
         return;
       }
 
-      // 인증 성공 시 이메일 가입 화면으로 이동
+      if (!verified && mounted) {
+        setState(() {
+          _errorMessage = AppLocalizations.of(context)!.verificationCodeInvalid;
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // 프로필에서 시작한 인증은 가입 상태를 건드리지 않고 학교 인증만 추가한다.
       if (verified && mounted) {
+        if (_isProfileVerification) {
+          final completed =
+              await authProvider.completeHanyangProfileVerification(
+            hanyangEmail: _emailController.text.trim(),
+            verificationToken: verificationToken!,
+          );
+          if (!mounted) return;
+          if (!completed) {
+            setState(() {
+              _errorMessage = Localizations.localeOf(context).languageCode ==
+                      'ko'
+                  ? '한양메일 인증을 완료하지 못했어요. 잠시 후 다시 시도해주세요.'
+                  : 'Could not complete Hanyang email verification. Please try again.';
+            });
+            return;
+          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                Localizations.localeOf(context).languageCode == 'ko'
+                    ? '한양메일 인증이 완료되었어요.'
+                    : 'Your Hanyang email is now verified.',
+              ),
+            ),
+          );
+          Navigator.pop(context, true);
+          return;
+        }
+
         setState(() {
           _isLoading = false;
         });
-        
-        // 가입 방식 선택 화면으로 이동하며 인증된 한양메일 전달
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => SignUpMethodSelectionScreen(
-                verifiedHanyangEmail: _emailController.text.trim()),
-          ),
-        );
+
+        if (_allowsAnyEmail) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PasswordSetupScreen(
+                verifiedHanyangEmail: '',
+                loginEmail: _emailController.text.trim(),
+                generalEmailVerificationToken: verificationToken,
+              ),
+            ),
+          );
+        } else {
+          // 기존 한양메일 플로우는 소셜/이메일 가입 방식 선택으로 이어진다.
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => SignUpMethodSelectionScreen(
+                verifiedHanyangEmail: _emailController.text.trim(),
+                hanyangEmailVerificationToken: verificationToken,
+              ),
+            ),
+          );
+        }
         return;
       }
     } catch (e) {
@@ -190,465 +292,270 @@ class _HanyangEmailVerificationScreenState extends State<HanyangEmailVerificatio
     }
   }
 
+  Future<void> _leaveSignup() async {
+    if (_isLoading) return;
+    if (!_isProfileVerification &&
+        (!await showSignupExitConfirmation(context) || !mounted)) return;
+
+    final email = _emailController.text.trim();
+    if (email.isNotEmpty && _cancellationToken.isNotEmpty) {
+      await context.read<AuthProvider>().cancelPendingEmailSignup(
+            email: email,
+            verificationToken: _cancellationToken,
+          );
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFDEEFFF),
-      appBar: AppBar(
+    final l10n = AppLocalizations.of(context)!;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) {
+          _leaveSignup();
+        }
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF1E293B)),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          AppLocalizations.of(context)!.emailVerificationRequired ?? "",
-          style: const TextStyle(
-            fontFamily: 'Pretendard',
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: Color(0xFF1E293B),
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          leading: IconButton(
+            icon: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF0F172A),
+              size: 22,
+            ),
+            onPressed: _isLoading ? null : _leaveSignup,
           ),
+          title: Text(
+            _isProfileVerification
+                ? (Localizations.localeOf(context).languageCode == 'ko'
+                    ? '한양메일 인증'
+                    : 'Verify Hanyang email')
+                : (_allowsAnyEmail
+                    ? l10n.generalEmailVerificationTitle
+                    : l10n.emailVerificationRequired),
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF0F172A),
+              letterSpacing: -0.3,
+            ),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20.0),
-          child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-              
-              // 안내 텍스트
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.pointColor,
-                      AppColors.pointColor.withOpacity(0.8),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.pointColor.withOpacity(0.3),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
+        body: SafeArea(
+          top: false,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final horizontalPadding =
+                  constraints.maxWidth < 360 ? 18.0 : 24.0;
+
+              return SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  20,
+                  horizontalPadding,
+                  28 + bottomInset,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.school_outlined,
-                        size: 48,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // 헤드라인은 2줄 중앙 정렬 (요구사항)
-                    Center(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 520),
+                    child: Form(
+                      key: _formKey,
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Text(
-                            AppLocalizations.of(context)!.hanyangEmailHeadlineLine1,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.5,
-                              height: 1.15,
-                            ),
-                            textAlign: TextAlign.center,
+                          SignupPageIntro(
+                            icon: _allowsAnyEmail
+                                ? Icons.mark_email_read_outlined
+                                : Icons.school_outlined,
+                            title: _isProfileVerification
+                                ? (Localizations.localeOf(context)
+                                            .languageCode ==
+                                        'ko'
+                                    ? '한양메일로 학교를 인증하세요'
+                                    : 'Verify your school email')
+                                : (_allowsAnyEmail
+                                    ? l10n.generalEmailVerificationHeading
+                                    : '${l10n.hanyangEmailHeadlineLine1}\n${l10n.hanyangEmailHeadlineLine2}'),
+                            description: _isProfileVerification
+                                ? (Localizations.localeOf(context)
+                                            .languageCode ==
+                                        'ko'
+                                    ? '4자리 인증번호를 확인하면 프로필에 한양대학교 인증 상태가 표시돼요.'
+                                    : 'Enter the 4-digit code to add Hanyang University verification to your profile.')
+                                : (_allowsAnyEmail
+                                    ? l10n.generalEmailVerificationDescription
+                                    : l10n.hanyangEmailDescription),
                           ),
+                          const SizedBox(height: 36),
+                          SignupSectionLabel(text: l10n.email),
                           const SizedBox(height: 4),
-                          Text(
-                            AppLocalizations.of(context)!.hanyangEmailHeadlineLine2,
+                          TextFormField(
+                            controller: _emailController,
+                            keyboardType: TextInputType.emailAddress,
+                            textInputAction: _isCodeSent
+                                ? TextInputAction.done
+                                : TextInputAction.send,
+                            autocorrect: false,
+                            enabled: !_isCodeSent,
+                            onFieldSubmitted: (_) {
+                              if (!_isCodeSent && !_isLoading) {
+                                _sendVerificationCode();
+                              }
+                            },
+                            decoration: signupInputDecoration(
+                              hintText: _allowsAnyEmail
+                                  ? 'name@example.com'
+                                  : 'example@hanyang.ac.kr',
+                              icon: Icons.mail_outline_rounded,
+                            ),
                             style: const TextStyle(
                               fontFamily: 'Pretendard',
-                              fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.5,
-                              height: 1.15,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.2,
                             ),
-                            textAlign: TextAlign.center,
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return l10n.required;
+                              }
+                              final email = value.trim();
+                              if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                                  .hasMatch(email)) {
+                                return l10n.validEmailFormat;
+                              }
+                              if (!_allowsAnyEmail &&
+                                  !email
+                                      .toLowerCase()
+                                      .endsWith('@hanyang.ac.kr')) {
+                                return l10n.hanyangEmailRequired;
+                              }
+                              return null;
+                            },
                           ),
+                          const SizedBox(height: 24),
+                          if (!_isCodeSent)
+                            SignupPrimaryButton(
+                              isLoading: _isLoading,
+                              label: l10n.sendVerificationCode,
+                              onPressed:
+                                  _isLoading ? null : _sendVerificationCode,
+                            ),
+                          if (_isCodeSent) ...[
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.check_circle_rounded,
+                                  color: Color(0xFF16A34A),
+                                  size: 19,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    l10n.verificationCodeSent,
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF475569),
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 28),
+                            SignupSectionLabel(text: l10n.verificationCode),
+                            const SizedBox(height: 4),
+                            TextFormField(
+                              controller: _verificationCodeController,
+                              keyboardType: TextInputType.number,
+                              textInputAction: TextInputAction.done,
+                              maxLength: 4,
+                              autofocus: true,
+                              onFieldSubmitted: (_) {
+                                if (!_isLoading) _verifyAndComplete();
+                              },
+                              decoration: signupInputDecoration(
+                                hintText: l10n.verificationCodePlaceholder,
+                                icon: Icons.lock_outline_rounded,
+                                counterText: '',
+                              ),
+                              style: const TextStyle(
+                                fontFamily: 'Pretendard',
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                                letterSpacing: 3,
+                              ),
+                              validator: (value) {
+                                if (value == null || value.trim().isEmpty) {
+                                  return l10n.verificationCodeRequired;
+                                }
+                                if (value.length != 4) {
+                                  return l10n.verificationCodeLength;
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 24),
+                            SignupPrimaryButton(
+                              isLoading: _isLoading,
+                              label: l10n.verifyCode,
+                              onPressed: _isLoading ? null : _verifyAndComplete,
+                            ),
+                            const SizedBox(height: 8),
+                            TextButton(
+                              onPressed: _isLoading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _isCodeSent = false;
+                                        _verificationCodeController.clear();
+                                        _errorMessage = null;
+                                      });
+                                    },
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF475569),
+                                minimumSize: const Size(48, 48),
+                              ),
+                              child: Text(
+                                l10n.retryAction,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (_errorMessage != null) ...[
+                            const SizedBox(height: 18),
+                            SignupInlineError(message: _errorMessage!),
+                          ],
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          AppLocalizations.of(context)!.hanyangEmailDescription,
-                          style: TextStyle(
-                            fontFamily: 'Pretendard',
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white.withOpacity(0.98),
-                            height: 1.7,
-                            letterSpacing: -0.2,
-                          ),
-                          textAlign: TextAlign.left,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              
-              const SizedBox(height: 32),
-
-              // 이메일 입력 레이블
-              Padding(
-                padding: const EdgeInsets.only(left: 4, bottom: 12),
-                child: Text(
-                  AppLocalizations.of(context)!.email,
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF334155),
-                    letterSpacing: -0.2,
                   ),
                 ),
-              ),
-
-              // 이메일 입력
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: const Color(0xFFE2E8F0),
-                    width: 1,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: TextFormField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  enabled: !_isCodeSent,
-                  decoration: InputDecoration(
-                    hintText: 'example@hanyang.ac.kr',
-                    hintStyle: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 16,
-                      color: Color(0xFFCBD5E1),
-                      letterSpacing: -0.2,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.email_outlined,
-                      color: AppColors.pointColor,
-                      size: 22,
-                    ),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 18,
-                    ),
-                  ),
-                  style: const TextStyle(
-                    fontFamily: 'Pretendard',
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF1E293B),
-                    letterSpacing: -0.2,
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return AppLocalizations.of(context)!.required ?? "";
-                    }
-                    if (!value.endsWith('@hanyang.ac.kr')) {
-                      return AppLocalizations.of(context)!.hanyangEmailRequired ?? "";
-                    }
-                    return null;
-                  },
-                ),
-              ),
-              
-              const SizedBox(height: 20),
-
-              // 인증번호 전송 버튼
-              if (!_isCodeSent)
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _sendVerificationCode,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.pointColor,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : Text(
-                            AppLocalizations.of(context)!.sendVerificationCode,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                  ),
-                ),
-
-              // 인증번호 입력 및 확인
-              if (_isCodeSent) ...[
-                Container(
-                  padding: const EdgeInsets.all(18),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFBBF7D0),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: Color(0xFF10B981),
-                        size: 24,
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          AppLocalizations.of(context)!.verificationCodeSent,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF065F46),
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-
-                // 인증번호 입력 레이블
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, bottom: 12),
-                  child: Text(
-                    AppLocalizations.of(context)!.verificationCode,
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF334155),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: const Color(0xFFE2E8F0),
-                      width: 1,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: TextFormField(
-                    controller: _verificationCodeController,
-                    keyboardType: TextInputType.number,
-                    maxLength: 4,
-                    decoration: InputDecoration(
-                      hintText: AppLocalizations.of(context)!.verificationCodePlaceholder,
-                      hintStyle: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 16,
-                        color: Color(0xFFCBD5E1),
-                        letterSpacing: -0.2,
-                      ),
-                      prefixIcon: const Icon(
-                        Icons.lock_outline,
-                        color: AppColors.pointColor,
-                        size: 22,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 20,
-                        vertical: 18,
-                      ),
-                      counterText: '',
-                    ),
-                    style: const TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E293B),
-                      letterSpacing: 4,
-                    ),
-                    textAlign: TextAlign.center,
-                    validator: (value) {
-                      if (value == null || value.trim().isEmpty) {
-                        return AppLocalizations.of(context)!.verificationCodeRequired ?? "";
-                      }
-                      if (value.length != 4) {
-                        return AppLocalizations.of(context)!.verificationCodeLength ?? "";
-                      }
-                      return null;
-                    },
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _verifyAndComplete,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF10B981),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      disabledBackgroundColor: const Color(0xFFE2E8F0),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : Text(
-                            AppLocalizations.of(context)!.verifyCode,
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 17,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                  ),
-                ),
-                
-                const SizedBox(height: 16),
-
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _isCodeSent = false;
-                      _verificationCodeController.clear();
-                      _errorMessage = null;
-                    });
-                  },
-                  child: Text(
-                    AppLocalizations.of(context)!.retryAction,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.pointColor,
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 20),
-
-              // 에러 메시지
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFEF2F2),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFFECACA),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.error_outline,
-                        color: Color(0xFFDC2626),
-                        size: 22,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: const TextStyle(
-                            fontFamily: 'Pretendard',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: Color(0xFF991B1B),
-                            height: 1.5,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
+              );
+            },
           ),
-        ),
         ),
       ),
     );
   }
 }
-

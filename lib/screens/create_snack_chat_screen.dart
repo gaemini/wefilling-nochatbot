@@ -121,6 +121,8 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
   }
 
   Future<void> _create() async {
+    if (_isSubmitting) return;
+
     final l10n = AppLocalizations.of(context)!;
     final title = _titleController.text.trim();
     if (title.isEmpty) {
@@ -284,93 +286,50 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                 ),
               )
             else
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.only(right: 12),
-                  child: Text(
-                    '2/2',
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF64748B),
-                    ),
-                  ),
+              TextButton(
+                onPressed: _isSubmitting || !canCreate
+                    ? null
+                    : () {
+                        FocusManager.instance.primaryFocus?.unfocus();
+                        _create();
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF111827),
+                  disabledForegroundColor: const Color(0xFFCBD5E1),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  minimumSize: const Size(0, 40),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
+                child: _isSubmitting
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Color(0xFF344054),
+                        ),
+                      )
+                    : Text(
+                        l10n.confirm,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
               ),
           ],
         ),
-        body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
-            : AnimatedSwitcher(
-                duration: const Duration(milliseconds: 220),
-                child: _stepIndex == 0
-                    ? _buildInviteStep(key: const ValueKey('invite'))
-                    : _buildDetailsStep(key: const ValueKey('details')),
-              ),
-        bottomNavigationBar:
-            _stepIndex == 0 ? null : _buildCreateActionBar(l10n, canCreate),
-      ),
-    );
-  }
-
-  Widget _buildCreateActionBar(AppLocalizations l10n, bool canCreate) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          _pageHorizontalPadding(context),
-          8,
-          _pageHorizontalPadding(context),
-          12,
-        ),
-        // Center/Align을 사용하지 않고 바의 실제 높이를 고정해
-        // Scaffold가 본문 공간을 정확하게 계산할 수 있게 한다.
-        child: SizedBox(
-          height: context.rh(48, min: 44, max: 50),
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: _isSubmitting || !canCreate ? null : _create,
-            style: ElevatedButton.styleFrom(
-              elevation: 0,
-              backgroundColor: const Color(0xFF344054),
-              foregroundColor: Colors.white,
-              disabledBackgroundColor: const Color(0xFFD0D5DD),
-              disabledForegroundColor: const Color(0xFF98A2B3),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: MediaQuery.withClampedTextScaling(
-              maxScaleFactor: 1.2,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_isSubmitting) ...[
-                    const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    _isSubmitting
-                        ? l10n.snackChatCreating
-                        : l10n.snackChatCreate,
-                    style: TextStyle(
-                      fontFamily: 'Pretendard',
-                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        body: SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 8),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 220),
+                  child: _stepIndex == 0
+                      ? _buildInviteStep(key: const ValueKey('invite'))
+                      : _buildDetailsStep(key: const ValueKey('details')),
+                ),
         ),
       ),
     );
@@ -596,7 +555,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
         horizontalPadding,
         context.rs(20).clamp(16, 24).toDouble(),
         horizontalPadding,
-        96,
+        MediaQuery.paddingOf(context).bottom + 24,
       ),
       children: [
         Center(
@@ -621,6 +580,12 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
                     controller: _titleController,
                     maxLength: 40,
                     textInputAction: TextInputAction.done,
+                    onSubmitted: (_) {
+                      if (!_isSubmitting &&
+                          _titleController.text.trim().isNotEmpty) {
+                        _create();
+                      }
+                    },
                     style: TextStyle(
                       fontFamily: 'Pretendard',
                       fontSize: context.rf(15).clamp(14, 16).toDouble(),
@@ -878,7 +843,7 @@ class _CreateSnackChatScreenState extends State<CreateSnackChatScreen> {
           fontFamily: 'Pretendard',
           fontSize: avatarSize * 0.34,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF6B7280),
+          color: const Color(0xFF6B7280),
         ),
       ),
     );

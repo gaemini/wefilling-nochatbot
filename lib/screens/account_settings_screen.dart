@@ -17,7 +17,6 @@ import 'licenses_screen.dart';
 import '../main.dart';
 import '../l10n/app_localizations.dart';
 import '../constants/app_constants.dart';
-import '../utils/ui_utils.dart';
 
 class AccountSettingsScreen extends StatefulWidget {
   const AccountSettingsScreen({Key? key}) : super(key: key);
@@ -38,7 +37,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     final user = _auth.currentUser;
     final isGoogleLogin =
         user?.providerData.any((info) => info.providerId == 'google.com') ??
-        false;
+            false;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -60,129 +59,141 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
         ),
         centerTitle: false,
       ),
-      body:
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 계정 정보 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.accountInfo),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.email,
-                      Icons.email_outlined,
-                      null,
-                      subtitle: user?.email ?? AppLocalizations.of(context)!.email,
-                    ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 계정 정보 섹션
+                  _buildSectionTitle(AppLocalizations.of(context)!.accountInfo),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.email,
+                    Icons.email_outlined,
+                    null,
+                    subtitle:
+                        user?.email ?? AppLocalizations.of(context)!.email,
+                  ),
+                  _buildDivider(),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.loginMethod,
+                    Icons.lock_outline,
+                    null,
+                    subtitle: isGoogleLogin
+                        ? (AppLocalizations.of(context)!.googleAccount ?? "")
+                        : AppLocalizations.of(context)!.emailPassword,
+                  ),
+
+                  if (isGoogleLogin) ...[
                     _buildDivider(),
-                    
                     _buildListItem(
-                      AppLocalizations.of(context)!.loginMethod,
-                      Icons.lock_outline,
-                      null,
-                      subtitle: isGoogleLogin ? (AppLocalizations.of(context)!.googleAccount ?? "") : AppLocalizations.of(context)!.emailPassword,
+                      AppLocalizations.of(context)!.manageGoogleAccount,
+                      Icons.open_in_new,
+                      _openGoogleAccount,
                     ),
-                    
-                    if (isGoogleLogin) ...[
-                      _buildDivider(),
-                      _buildListItem(
-                        AppLocalizations.of(context)!.manageGoogleAccount,
-                        Icons.open_in_new,
-                        _openGoogleAccount,
-                      ),
-                    ],
-
-                    const SizedBox(height: 32),
-
-                    // 언어 설정 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.languageSettings),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.language,
-                      Icons.language,
-                      () => _showLanguageDialog(context),
-                      subtitle: Localizations.localeOf(context).languageCode == 'ko' 
-                          ? (AppLocalizations.of(context)!.korean ?? "") : AppLocalizations.of(context)!.english,
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // 법적 정보 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.legalInfo),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.termsOfService,
-                      Icons.description_outlined,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const TermsScreen()),
-                      ),
-                    ),
-                    _buildDivider(),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.privacyPolicy,
-                      Icons.privacy_tip_outlined,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const PrivacyPolicyScreen()),
-                      ),
-                    ),
-                    _buildDivider(),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.openSourceLicenses,
-                      Icons.code,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const LicensesScreen()),
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // 개인정보 보호 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.privacyProtection),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.blockList,
-                      Icons.block,
-                      () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const BlockedUsersScreen()),
-                      ),
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // 계정 관리 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.accountManagement),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.deleteAccount,
-                      Icons.delete_forever,
-                      () => _showDeleteAccountConfirmation(context),
-                      color: Colors.red,
-                    ),
-
-                    const SizedBox(height: 32),
-
-                    // 앱 정보 섹션
-                    _buildSectionTitle(AppLocalizations.of(context)!.appInfo),
-                    
-                    _buildListItem(
-                      AppLocalizations.of(context)!.appInfo,
-                      Icons.info_outline,
-                      _showAppInfoDialog,
-                      subtitle: '${AppLocalizations.of(context)!.appVersion} 1.0.0',
-                    ),
-
-                    const SizedBox(height: 32),
                   ],
-                ),
+
+                  const SizedBox(height: 32),
+
+                  // 언어 설정 섹션
+                  _buildSectionTitle(
+                      AppLocalizations.of(context)!.languageSettings),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.language,
+                    Icons.language,
+                    () => _showLanguageDialog(context),
+                    subtitle:
+                        Localizations.localeOf(context).languageCode == 'ko'
+                            ? (AppLocalizations.of(context)!.korean ?? "")
+                            : AppLocalizations.of(context)!.english,
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // 법적 정보 섹션
+                  _buildSectionTitle(AppLocalizations.of(context)!.legalInfo),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.termsOfService,
+                    Icons.description_outlined,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const TermsScreen()),
+                    ),
+                  ),
+                  _buildDivider(),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.privacyPolicy,
+                    Icons.privacy_tip_outlined,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const PrivacyPolicyScreen()),
+                    ),
+                  ),
+                  _buildDivider(),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.openSourceLicenses,
+                    Icons.code,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const LicensesScreen()),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // 개인정보 보호 섹션
+                  _buildSectionTitle(
+                      AppLocalizations.of(context)!.privacyProtection),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.blockList,
+                    Icons.block,
+                    () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (context) => const BlockedUsersScreen()),
+                    ),
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // 계정 관리 섹션
+                  _buildSectionTitle(
+                      AppLocalizations.of(context)!.accountManagement),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.deleteAccount,
+                    Icons.delete_forever,
+                    () => _showDeleteAccountConfirmation(context),
+                    color: Colors.red,
+                  ),
+
+                  const SizedBox(height: 32),
+
+                  // 앱 정보 섹션
+                  _buildSectionTitle(AppLocalizations.of(context)!.appInfo),
+
+                  _buildListItem(
+                    AppLocalizations.of(context)!.appInfo,
+                    Icons.info_outline,
+                    _showAppInfoDialog,
+                    subtitle:
+                        '${AppLocalizations.of(context)!.appVersion} 1.0.0',
+                  ),
+
+                  const SizedBox(height: 32),
+                ],
               ),
+            ),
     );
   }
 
@@ -273,7 +284,7 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       ),
     );
   }
-  
+
   /// 언어 선택 다이얼로그 (국기 없이)
   void _showLanguageDialog(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
@@ -288,20 +299,38 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       context: context,
       isScrollControlled: false,
       backgroundColor: Colors.white,
-      showDragHandle: true,
+      useSafeArea: true,
+      showDragHandle: false,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
       ),
       builder: (sheetContext) {
         return SafeArea(
+          top: false,
+          minimum: const EdgeInsets.only(bottom: 8),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const Align(
+                  alignment: Alignment.center,
+                  child: SizedBox(
+                    width: 40,
+                    child: Divider(
+                      height: 4,
+                      thickness: 4,
+                      color: Color(0xFFD1D5DB),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 22),
                 Text(
                   l10n.selectLanguage,
+                  textScaler: MediaQuery.textScalerOf(
+                    sheetContext,
+                  ).clamp(maxScaleFactor: 1.2),
                   style: const TextStyle(
                     fontFamily: 'Pretendard',
                     fontSize: 20,
@@ -309,40 +338,39 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                     color: Color(0xFF111827),
                   ),
                 ),
-                const SizedBox(height: 12),
-
+                const SizedBox(height: 14),
                 _LanguageOptionTile(
-                  title: l10n.korean ?? "",
+                  title: l10n.korean,
                   code: 'KR',
                   selected: currentLocale == 'ko',
                   onTap: () => applyAndClose('ko', sheetContext),
                 ),
-                const SizedBox(height: 8),
+                const Padding(
+                  padding: EdgeInsets.only(left: 44),
+                  child: Divider(height: 1, color: Color(0xFFF0F2F5)),
+                ),
                 _LanguageOptionTile(
                   title: l10n.english,
                   code: 'EN',
                   selected: currentLocale == 'en',
                   onTap: () => applyAndClose('en', sheetContext),
                 ),
-
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton(
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.center,
+                  child: TextButton(
                     onPressed: () => Navigator.pop(sheetContext),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF6B7280),
-                      side: const BorderSide(color: Color(0xFFE5E7EB)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF667085),
+                      minimumSize: const Size(88, 44),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
                     ),
                     child: Text(
-                      l10n.cancel ?? "",
+                      l10n.cancel,
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
-                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -355,48 +383,50 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     );
   }
 
-
   // 비밀번호 재설정 이메일 전송 다이얼로그
   void _showResetPasswordDialog() {
     showDialog(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(AppLocalizations.of(context)!.resetPassword),
-            content: Text(AppLocalizations.of(context)!.sendResetEmailConfirm),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(AppLocalizations.of(context)!.cancel),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  setState(() => _isLoading = true);
-
-                  try {
-                    await _auth.sendPasswordResetEmail(
-                      email: _auth.currentUser?.email ?? '',
-                    );
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text(AppLocalizations.of(context)!.resetEmailSent)),
-                      );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${e.toString()}')),
-                      );
-                    }
-                  } finally {
-                    setState(() => _isLoading = false);
-                  }
-                },
-                child: Text(AppLocalizations.of(context)!.confirm),
-              ),
-            ],
+      builder: (context) => AlertDialog(
+        title: Text(AppLocalizations.of(context)!.resetPassword),
+        content: Text(AppLocalizations.of(context)!.sendResetEmailConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(AppLocalizations.of(context)!.cancel),
           ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              setState(() => _isLoading = true);
+
+              try {
+                await _auth.sendPasswordResetEmail(
+                  email: _auth.currentUser?.email ?? '',
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content:
+                            Text(AppLocalizations.of(context)!.resetEmailSent)),
+                  );
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(
+                            '${AppLocalizations.of(context)!.error}: ${e.toString()}')),
+                  );
+                }
+              } finally {
+                setState(() => _isLoading = false);
+              }
+            },
+            child: Text(AppLocalizations.of(context)!.confirm),
+          ),
+        ],
+      ),
     );
   }
 
@@ -408,14 +438,18 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
       await _auth.currentUser?.sendEmailVerification();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.verificationEmailSent)),
+          SnackBar(
+              content:
+                  Text(AppLocalizations.of(context)!.verificationEmailSent)),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('${AppLocalizations.of(context)!.error}: ${e.toString()}')));
+        ).showSnackBar(SnackBar(
+            content: Text(
+                '${AppLocalizations.of(context)!.error}: ${e.toString()}')));
       }
     } finally {
       setState(() => _isLoading = false);
@@ -437,7 +471,8 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
     const String url = 'https://myaccount.google.com/';
     final Uri uri = Uri.parse(url);
     try {
-      final bool launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final bool launched =
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!launched && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Failed to open: $url')),
@@ -486,17 +521,17 @@ class _AccountSettingsScreenState extends State<AccountSettingsScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              
+
               // 저작권
               Text(
                 AppLocalizations.of(context)!.copyright,
                 style: const TextStyle(fontSize: 12),
               ),
               const SizedBox(height: 16),
-              
+
               const Divider(),
               const SizedBox(height: 16),
-              
+
               // 특허 정보
               Row(
                 children: [
@@ -585,70 +620,59 @@ class _LanguageOptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final borderColor =
-        selected ? AppColors.pointColor : const Color(0xFFE5E7EB);
-    final bgColor =
-        selected ? UIUtils.safeColorWithOpacity(AppColors.pointColor, 0.08) : const Color(0xFFF9FAFB);
-
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: bgColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: borderColor, width: selected ? 2 : 1),
-        ),
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 16),
         child: Row(
           children: [
-            Container(
+            SizedBox(
               width: 36,
-              height: 28,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              alignment: Alignment.center,
               child: Text(
                 code,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF111827),
-                  letterSpacing: 0.4,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color:
+                      selected ? AppColors.pointColor : const Color(0xFF98A2B3),
+                  letterSpacing: 0.5,
                 ),
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textScaler: MediaQuery.textScalerOf(
+                  context,
+                ).clamp(maxScaleFactor: 1.2),
+                style: TextStyle(
                   fontFamily: 'Pretendard',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF111827),
+                  color:
+                      selected ? AppColors.pointColor : const Color(0xFF111827),
                 ),
               ),
             ),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: 22,
-              height: 22,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: selected ? AppColors.pointColor : Colors.transparent,
-                border: Border.all(
-                  color: selected ? AppColors.pointColor : const Color(0xFFD1D5DB),
-                  width: 2,
-                ),
-              ),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 160),
               child: selected
-                  ? const Icon(Icons.check, size: 14, color: Colors.white)
-                  : null,
+                  ? const Icon(
+                      Icons.check_rounded,
+                      key: ValueKey('selected'),
+                      size: 24,
+                      color: AppColors.pointColor,
+                    )
+                  : const SizedBox(
+                      key: ValueKey('not-selected'),
+                      width: 24,
+                      height: 24,
+                    ),
             ),
           ],
         ),

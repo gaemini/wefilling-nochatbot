@@ -13,3 +13,24 @@ final DateTime snackChatListPolicyStartUtc = DateTime.utc(2026, 7, 23, 15);
 bool isEligibleForCurrentSnackChatListPolicy(DateTime createdAt) {
   return !createdAt.toUtc().isBefore(snackChatListPolicyStartUtc);
 }
+
+/// Whether a Snack Chat is visible to [currentUserId] under the same policy
+/// used by the Today/All lists.
+///
+/// Unread badges must use this exact rule so legacy or expired rooms that are
+/// absent from the UI cannot leave a stale badge behind.
+bool isSnackChatVisibleForCurrentUser({
+  required DateTime createdAt,
+  required int activeDurationHours,
+  required DateTime expiresAt,
+  required Iterable<String> favoriteUserIds,
+  required String currentUserId,
+  DateTime? now,
+}) {
+  if (!isEligibleForCurrentSnackChatListPolicy(createdAt)) return false;
+  if (activeDurationHours == 0) return true;
+
+  final currentTime = now ?? DateTime.now();
+  final isExpired = !currentTime.isBefore(expiresAt);
+  return !isExpired || favoriteUserIds.contains(currentUserId);
+}

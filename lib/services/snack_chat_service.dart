@@ -78,6 +78,7 @@ class SnackChatService {
     late final StreamController<List<SnackChat>> controller;
     StreamSubscription<List<SnackChat>>? subscription;
     Timer? dateBoundaryTimer;
+    Timer? expirationTimer;
     List<SnackChat>? latestChats;
 
     void emitCurrentSection() {
@@ -87,7 +88,31 @@ class SnackChatService {
         filterSnackChatsBySection(
           chats,
           section: section,
+          currentUserId: uid,
         ),
+      );
+    }
+
+    void scheduleExpirationRefresh() {
+      expirationTimer?.cancel();
+      final chats = latestChats;
+      if (chats == null) return;
+      final now = DateTime.now();
+      DateTime? nextExpiration;
+      for (final chat in chats) {
+        if (chat.hasNoExpiration || chat.isFavoritedBy(uid)) continue;
+        if (!chat.expiresAt.isAfter(now)) continue;
+        if (nextExpiration == null || chat.expiresAt.isBefore(nextExpiration)) {
+          nextExpiration = chat.expiresAt;
+        }
+      }
+      if (nextExpiration == null) return;
+      expirationTimer = Timer(
+        nextExpiration.difference(now) + const Duration(milliseconds: 100),
+        () {
+          emitCurrentSection();
+          scheduleExpirationRefresh();
+        },
       );
     }
 
@@ -113,10 +138,12 @@ class SnackChatService {
           (chats) {
             latestChats = chats;
             emitCurrentSection();
+            scheduleExpirationRefresh();
           },
           onError: controller.addError,
           onDone: () {
             dateBoundaryTimer?.cancel();
+            expirationTimer?.cancel();
             if (!controller.isClosed) controller.close();
           },
         );
@@ -124,6 +151,7 @@ class SnackChatService {
       },
       onCancel: () {
         dateBoundaryTimer?.cancel();
+        expirationTimer?.cancel();
         final previousSubscription = subscription;
         subscription = null;
         if (previousSubscription != null) {
@@ -294,29 +322,130 @@ class SnackChatService {
     }
   }
 
-  /// 방장이 아닌 참여자가 채팅방에서 나가기
+  /// 참여자가 채팅방에서 나가기.
+  /// 생성자가 나가면 남은 첫 참여자에게 관리 권한을 넘긴다.
   Future<void> leaveRoom(String snackChatId) async {
     final uid = _uid;
-    if (uid == null) return;
+    if (uid == null) {
+      throw StateError('로그인된 사용자만 채팅방에서 나갈 수 있습니다.');
+    }
 
     final roomRef = _collection.doc(snackChatId);
-    final roomDoc = await roomRef.get();
-    if (!roomDoc.exists) return;
+    try {
+      await _firestore.runTransaction((transaction) async {
+        final roomDoc = await transaction.get(roomRef);
+        if (!roomDoc.exists) return;
+        final room = SnackChat.fromFirestore(roomDoc);
+        // 재시도되거나 이미 다른 기기에서 나간 경우도 성공으로 간주한다.
+        if (!room.participantIds.contains(uid)) return;
 
-    final room = SnackChat.fromFirestore(roomDoc);
-    if (room.creatorId == uid) {
-      throw StateError('방장은 채팅방을 나갈 수 없습니다.');
+        final nextParticipants =
+            room.participantIds.where((id) => id != uid).toList();
+        final nextUnread = Map<String, int>.from(room.unreadCount)..remove(uid);
+        final update = <String, dynamic>{
+          'participantIds': nextParticipants,
+          'unreadCount': nextUnread,
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        };
+        if (room.creatorId == uid) {
+          update['creatorId'] =
+              nextParticipants.isEmpty ? '' : nextParticipants.first;
+        }
+        transaction.update(roomRef, update);
+      });
+    } catch (error, stackTrace) {
+      Logger.error(
+        'Snack Chat 나가기 실패: room=$snackChatId, uid=$uid',
+        error,
+        stackTrace,
+      );
+      rethrow;
     }
-    if (!room.participantIds.contains(uid)) return;
+  }
 
-    final nextParticipants =
-        room.participantIds.where((id) => id != uid).toList();
-    final nextUnread = Map<String, int>.from(room.unreadCount)..remove(uid);
+  /// 모임장이 해당 모임에 연결된 Snack Chat을 한 번만 생성한다.
+  Future<String?> createMeetupSnackChat({
+    required String meetupId,
+    required String meetupTitle,
+    required List<String> visibleToCategoryIds,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return null;
+    final meetupRef = _firestore.collection('meetups').doc(meetupId);
+    final roomRef = _collection.doc();
+    final now = DateTime.now();
+    final expiresAt = now.add(const Duration(hours: 24));
 
-    await roomRef.update({
-      'participantIds': nextParticipants,
-      'unreadCount': nextUnread,
-      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    return _firestore.runTransaction<String?>((transaction) async {
+      final meetupDoc = await transaction.get(meetupRef);
+      if (!meetupDoc.exists) throw StateError('모임을 찾을 수 없습니다.');
+      final meetupData = meetupDoc.data() ?? const <String, dynamic>{};
+      if ((meetupData['userId'] ?? '').toString() != uid) {
+        throw StateError('모임 생성자만 Snack Chat을 만들 수 있습니다.');
+      }
+      final existingId = (meetupData['snackChatId'] ?? '').toString().trim();
+      if (existingId.isNotEmpty) return existingId;
+
+      final normalizedTitle =
+          meetupTitle.trim().isEmpty ? 'Meetup Snack Chat' : meetupTitle.trim();
+      final title = normalizedTitle.length <= 40
+          ? normalizedTitle
+          : normalizedTitle.substring(0, 40);
+      transaction.set(roomRef, <String, dynamic>{
+        'title': title,
+        'creatorId': uid,
+        'participantIds': <String>[uid],
+        'visibleToCategoryIds': visibleToCategoryIds,
+        'meetupId': meetupId,
+        'allowMeetupJoin': true,
+        'createdAt': Timestamp.fromDate(now),
+        'listPolicyVersion': currentSnackChatListPolicyVersion,
+        'activeDurationHours': 24,
+        'expiresAt': Timestamp.fromDate(expiresAt),
+        'favoriteUserIds': <String>[],
+        'lastMessage': '',
+        'lastMessageTime': Timestamp.fromDate(now),
+        'lastMessageSenderId': uid,
+        'unreadCount': <String, int>{uid: 0},
+        'updatedAt': Timestamp.fromDate(now),
+      });
+      transaction.update(meetupRef, <String, dynamic>{
+        'snackChatId': roomRef.id,
+        'groupChatEnabled': true,
+        'updatedAt': Timestamp.fromDate(now),
+      });
+      return roomRef.id;
+    });
+  }
+
+  /// 모임 상세에서 공개된 참여 버튼으로 연결 Snack Chat에 참가한다.
+  Future<bool> joinMeetupSnackChat({
+    required String snackChatId,
+    required String meetupId,
+  }) async {
+    final uid = _uid;
+    if (uid == null) return false;
+    final roomRef = _collection.doc(snackChatId);
+    final meetupRef = _firestore.collection('meetups').doc(meetupId);
+
+    return _firestore.runTransaction<bool>((transaction) async {
+      final roomDoc = await transaction.get(roomRef);
+      final meetupDoc = await transaction.get(meetupRef);
+      if (!roomDoc.exists || !meetupDoc.exists) return false;
+      final room = SnackChat.fromFirestore(roomDoc);
+      if (!room.allowMeetupJoin || room.meetupId != meetupId) return false;
+      if (room.participantIds.contains(uid)) return true;
+
+      final nextParticipants = <String>[...room.participantIds, uid];
+      final nextUnread = Map<String, int>.from(room.unreadCount)..[uid] = 0;
+      final update = <String, dynamic>{
+        'participantIds': nextParticipants,
+        'unreadCount': nextUnread,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      };
+      if (room.participantIds.isEmpty) update['creatorId'] = uid;
+      transaction.update(roomRef, update);
+      return true;
     });
   }
 
@@ -518,6 +647,7 @@ class SnackChatService {
     return _watchMySnackChats().map((chats) {
       int total = 0;
       for (final chat in chats) {
+        if (chat.isExpired() && !chat.isFavoritedBy(uid)) continue;
         final v = chat.unreadCount[uid];
         if (v != null && v > 0) total += v;
       }
@@ -554,13 +684,21 @@ List<SnackChat> filterSnackChatsBySection(
   List<SnackChat> chats, {
   required SnackChatListSection section,
   DateTime? now,
+  String? currentUserId,
 }) {
   final currentTime = now ?? DateTime.now();
   final startOfToday = startOfLocalCalendarDay(currentTime);
   final startOfTomorrow = startOfNextLocalCalendarDay(currentTime);
 
   return chats.where((chat) {
-    if (!isEligibleForCurrentSnackChatListPolicy(chat.createdAt)) {
+    if (!isSnackChatVisibleForCurrentUser(
+      createdAt: chat.createdAt,
+      activeDurationHours: chat.activeDurationHours,
+      expiresAt: chat.expiresAt,
+      favoriteUserIds: chat.favoriteUserIds,
+      currentUserId: currentUserId ?? '',
+      now: currentTime,
+    )) {
       return false;
     }
     final createdAt = chat.createdAt.toLocal();

@@ -21,6 +21,8 @@ class SnackChat {
   final String lastMessageSenderId;
   final Map<String, int> unreadCount;
   final DateTime updatedAt;
+  final String? meetupId;
+  final bool allowMeetupJoin;
 
   const SnackChat({
     required this.id,
@@ -37,6 +39,8 @@ class SnackChat {
     required this.lastMessageSenderId,
     required this.unreadCount,
     required this.updatedAt,
+    this.meetupId,
+    this.allowMeetupJoin = false,
   }) : assert(
           activeDurationHours == 0 || activeDurationHours == 24,
           'Snack Chat duration must be 0 or 24 hours.',
@@ -48,7 +52,7 @@ class SnackChat {
   bool isExpired([DateTime? now]) {
     if (hasNoExpiration) return false;
     final base = now ?? DateTime.now();
-    return expiresAt.isBefore(base);
+    return !base.isBefore(expiresAt);
   }
 
   bool isHardExpired([DateTime? now]) {
@@ -107,6 +111,10 @@ class SnackChat {
       lastMessageSenderId: (data['lastMessageSenderId'] ?? '').toString(),
       unreadCount: Map<String, int>.from(data['unreadCount'] ?? const {}),
       updatedAt: parseDate(data['updatedAt'], DateTime.now()),
+      meetupId: (data['meetupId'] ?? '').toString().trim().isEmpty
+          ? null
+          : data['meetupId'].toString().trim(),
+      allowMeetupJoin: data['allowMeetupJoin'] == true,
     );
   }
 
@@ -125,6 +133,8 @@ class SnackChat {
       'lastMessageSenderId': lastMessageSenderId,
       'unreadCount': unreadCount,
       'updatedAt': Timestamp.fromDate(updatedAt),
+      if (meetupId != null && meetupId!.isNotEmpty) 'meetupId': meetupId,
+      'allowMeetupJoin': allowMeetupJoin,
     };
   }
 
@@ -136,6 +146,8 @@ class SnackChat {
     String? lastMessageSenderId,
     Map<String, int>? unreadCount,
     DateTime? updatedAt,
+    String? meetupId,
+    bool? allowMeetupJoin,
   }) {
     return SnackChat(
       id: id,
@@ -152,6 +164,8 @@ class SnackChat {
       lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
       unreadCount: unreadCount ?? this.unreadCount,
       updatedAt: updatedAt ?? this.updatedAt,
+      meetupId: meetupId ?? this.meetupId,
+      allowMeetupJoin: allowMeetupJoin ?? this.allowMeetupJoin,
     );
   }
 

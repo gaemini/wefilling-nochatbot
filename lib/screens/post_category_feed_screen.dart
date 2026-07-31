@@ -12,17 +12,31 @@ import '../ui/widgets/skeletons.dart';
 import 'create_post_screen.dart';
 import 'post_detail_screen.dart';
 
+typedef PostCategoryPageLoader = Future<PostCategoryPage> Function({
+  required PostCategory category,
+  DocumentSnapshot<Map<String, dynamic>>? startAfter,
+  int pageSize,
+  bool forceRefresh,
+});
+
 class PostCategoryFeedScreen extends StatefulWidget {
-  const PostCategoryFeedScreen({super.key, required this.category});
+  const PostCategoryFeedScreen({
+    super.key,
+    required this.category,
+    this.pageLoader,
+  });
+
+  static const Duration pageLoadTimeout = Duration(seconds: 12);
 
   final PostCategory category;
+  final PostCategoryPageLoader? pageLoader;
 
   @override
   State<PostCategoryFeedScreen> createState() => _PostCategoryFeedScreenState();
 }
 
 class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
-  final PostService _postService = PostService();
+  PostService? _postService;
   final ScrollController _scrollController = ScrollController();
   final List<Post> _posts = [];
 
@@ -31,6 +45,7 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   bool _isLoadingMore = false;
   bool _hasMore = true;
   Object? _error;
+  int _requestGeneration = 0;
 
   @override
   void initState() {
@@ -52,59 +67,76 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
     if (_scrollController.position.extentAfter < 480) _loadMore();
   }
 
+  Future<PostCategoryPage> _loadPage({
+    DocumentSnapshot<Map<String, dynamic>>? startAfter,
+    bool forceRefresh = false,
+  }) {
+    final loader = widget.pageLoader ??
+        (_postService ??= PostService()).getPostsByCategoryPage;
+    return loader(
+      category: widget.category,
+      startAfter: startAfter,
+      pageSize: 20,
+      forceRefresh: forceRefresh,
+    ).timeout(PostCategoryFeedScreen.pageLoadTimeout);
+  }
+
   Future<void> _loadInitial({bool forceRefresh = false}) async {
+    final generation = ++_requestGeneration;
     if (mounted) {
       setState(() {
         _isLoading = true;
+        _isLoadingMore = false;
         _error = null;
       });
     }
     try {
-      if (forceRefresh) _postService.clearCategoryCache(widget.category);
-      final page = await _postService.getPostsByCategoryPage(
-        category: widget.category,
-        forceRefresh: forceRefresh,
-      );
-      if (!mounted) return;
+      if (forceRefresh && widget.pageLoader == null) {
+        (_postService ??= PostService()).clearCategoryCache(widget.category);
+      }
+      final page = await _loadPage(forceRefresh: forceRefresh);
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _posts
           ..clear()
           ..addAll(page.posts);
         _cursor = page.cursor;
         _hasMore = page.hasMore;
-        _isLoading = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _error = error;
-        _isLoading = false;
       });
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   Future<void> _loadMore() async {
     if (!_hasMore || _isLoadingMore) return;
+    final generation = _requestGeneration;
     setState(() => _isLoadingMore = true);
     try {
-      final page = await _postService.getPostsByCategoryPage(
-        category: widget.category,
-        startAfter: _cursor,
-      );
-      if (!mounted) return;
+      final page = await _loadPage(startAfter: _cursor);
+      if (!mounted || generation != _requestGeneration) return;
       final knownIds = _posts.map((post) => post.id).toSet();
       setState(() {
         _posts.addAll(page.posts.where((post) => knownIds.add(post.id)));
         _cursor = page.cursor;
         _hasMore = page.hasMore;
-        _isLoadingMore = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || generation != _requestGeneration) return;
       setState(() {
         _error = error;
-        _isLoadingMore = false;
       });
+    } finally {
+      if (mounted && generation == _requestGeneration) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
 

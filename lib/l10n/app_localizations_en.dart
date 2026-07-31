@@ -211,7 +211,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get todayPostsSectionTitle => 'Today\'s Posts';
 
   @override
-  String get todayNoMeetups => 'No meetups posted today.';
+  String get todayNoMeetups => 'No meetups created or scheduled for today.';
 
   @override
   String get todayNoPosts => 'No posts yet today.';
@@ -2755,11 +2755,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get signUpMethodSelectionTitle => 'Choose Sign Up Method';
 
   @override
-  String get signUpMethodSelectionHeading => 'Choose how you want to sign up';
+  String get signUpMethodSelectionHeading => 'Choose a sign-up method';
 
   @override
   String get signUpMethodSelectionDescription =>
-      'Hanyang email verification is complete.\nPlease choose your preferred sign up method.';
+      'Select an account to continue.';
 
   @override
   String get signUpWithApple => 'Sign up with Apple';
@@ -2772,6 +2772,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get signUpWithId => 'Sign up with Email';
+
+  @override
+  String get generalEmailVerificationTitle => 'Email Verification';
+
+  @override
+  String get generalEmailVerificationHeading => 'Verify your email';
+
+  @override
+  String get generalEmailVerificationDescription =>
+      'Enter any email address. We’ll send a 4-digit verification code.';
+
+  @override
+  String get verifiedEmailLabel => 'Verified email';
+
+  @override
+  String get generalEmailPasswordDescription =>
+      'Create a password for this verified email.\nIt must be at least 8 characters.';
 
   @override
   String get appleSignupIosOnlyError =>
@@ -3045,6 +3062,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Are you sure you want to exit?\nYour entered information will not be saved.';
 
   @override
+  String get exitMeetupEditing => 'Exit Meetup Editing';
+
+  @override
+  String get exitMeetupEditingMessage =>
+      'Are you sure you want to exit?\nYour changes will not be saved.';
+
+  @override
   String get exit => 'Exit';
 
   @override
@@ -3119,6 +3143,13 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get postCategoryCafeDescription => 'Cafes, desserts & spaces';
+
+  @override
+  String get postCategoryAcademicStudy => 'Academics & Study';
+
+  @override
+  String get postCategoryAcademicStudyDescription =>
+      'Classes, assignments, exams & study groups';
 
   @override
   String get postCategoryBooksWriting => 'Books & Writing';

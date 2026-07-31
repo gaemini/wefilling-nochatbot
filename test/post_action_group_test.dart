@@ -123,6 +123,36 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('zero-like posts always keep the heart action visible',
+      (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PostActionGroup(
+            likes: 0,
+            comments: 0,
+            views: 0,
+            isLiked: false,
+            likeLabel: 'Like',
+            commentLabel: 'Comments',
+            viewsLabel: 'Views',
+            hideEmptyMetrics: true,
+            onLikeTapUp: (_) => tapped = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.favorite_border_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsNothing);
+    expect(find.byIcon(Icons.visibility_outlined), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.favorite_border_rounded));
+    expect(tapped, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('detail mode keeps DM and save actions at the right edge',
       (tester) async {
     await tester.pumpWidget(

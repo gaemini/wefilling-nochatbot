@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../screens/terms_screen.dart';
 import '../screens/privacy_policy_screen.dart';
 import '../l10n/app_localizations.dart';
+import '../constants/app_constants.dart';
+import '../widgets/signup_flow_widgets.dart';
 
 class TermsAgreementSheet extends StatefulWidget {
   const TermsAgreementSheet({Key? key}) : super(key: key);
@@ -22,170 +24,137 @@ class _TermsAgreementSheetState extends State<TermsAgreementSheet> {
   Future<void> _saveAgreement() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('terms_agreed', true);
-    await prefs.setInt('terms_agreed_timestamp', DateTime.now().millisecondsSinceEpoch);
+    await prefs.setInt(
+        'terms_agreed_timestamp', DateTime.now().millisecondsSinceEpoch);
   }
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
+    final l10n = AppLocalizations.of(context)!;
+    final screenHeight = MediaQuery.sizeOf(context).height;
 
-    return Container(
-      height: size.height * 0.5,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
-          // 드래그 핸들
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade300,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // 타이틀
-                  Text(
-                    AppLocalizations.of(context)!.welcomeTitle,
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade800,
-                    ),
+    return SafeArea(
+      top: false,
+      child: Container(
+        constraints: BoxConstraints(maxHeight: screenHeight * 0.72),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE2E8F0),
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    AppLocalizations.of(context)!.termsAgreementDescription,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey.shade700,
-                      height: 1.4,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 32),
-
-                  // 약관 동의 체크박스
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Checkbox(
-                              value: _acceptedTerms,
-                              onChanged: (v) => setState(() => _acceptedTerms = v ?? false),
-                              activeColor: Colors.blue.shade600,
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                l10n.welcomeTitle,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0F172A),
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.termsAgreementDescription,
+                style: const TextStyle(
+                  fontFamily: 'Pretendard',
+                  fontSize: 14,
+                  color: Color(0xFF64748B),
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Checkbox(
+                            value: _acceptedTerms,
+                            activeColor: AppColors.pointColor,
+                            visualDensity: VisualDensity.compact,
+                            onChanged: (value) => setState(
+                              () => _acceptedTerms = value ?? false,
                             ),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: Text(
-                                  AppLocalizations.of(context)!.loginTermsNotice,
-                                  style: const TextStyle(
-                                    fontFamily: 'Pretendard',
-                                    fontSize: 14,
-                                    color: Color(0xFF334155),
-                                    height: 1.4,
-                                  ),
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Text(
+                                l10n.loginTermsNotice,
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 14,
+                                  color: Color(0xFF334155),
+                                  height: 1.45,
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          ),
+                        ],
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 38),
+                        child: Wrap(
+                          spacing: 4,
                           children: [
                             TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const TermsScreen(),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                AppLocalizations.of(context)!.termsOfService,
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const TermsScreen(),
+                                ),
                               ),
+                              child: Text(l10n.termsOfService),
                             ),
                             TextButton(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const PrivacyPolicyScreen(),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                AppLocalizations.of(context)!.privacyPolicy,
+                              onPressed: () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PrivacyPolicyScreen(),
+                                ),
                               ),
+                              child: Text(l10n.privacyPolicy),
                             ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
-
-                  const Spacer(),
-
-                  // 동의 버튼
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: _acceptedTerms
-                          ? () async {
-                              await _saveAgreement();
-                              if (mounted) {
-                                Navigator.pop(context, true);
-                              }
-                            }
-                          : null,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue.shade600,
-                        foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade300,
-                        disabledForegroundColor: Colors.grey.shade500,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
                       ),
-                      child: Text(
-                        AppLocalizations.of(context)!.confirm,
-                        style: const TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+              const SizedBox(height: 18),
+              SignupPrimaryButton(
+                label: l10n.confirm,
+                onPressed: _acceptedTerms
+                    ? () async {
+                        await _saveAgreement();
+                        if (mounted) Navigator.pop(context, true);
+                      }
+                    : null,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -200,7 +169,7 @@ class TermsAgreementHelper {
 
   static Future<void> showTermsAgreementSheet(BuildContext context) async {
     final hasAgreed = await hasAgreedToTerms();
-    
+
     if (!hasAgreed && context.mounted) {
       await showModalBottomSheet<bool>(
         context: context,

@@ -10,12 +10,14 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/snack_chat.dart';
 import '../models/snack_chat_message.dart';
+import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
 import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_service.dart';
 import '../services/storage_service.dart';
 import '../services/user_info_cache_service.dart';
 import '../ui/widgets/fullscreen_image_viewer.dart';
+import '../ui/widgets/snack_chat_chrome.dart';
 import '../utils/responsive_helper.dart';
 import '../utils/snack_chat_message_grouping.dart';
 import 'friend_categories_screen.dart';
@@ -37,7 +39,7 @@ class SnackChatScreen extends StatefulWidget {
 }
 
 class _SnackChatScreenState extends State<SnackChatScreen> {
-  static const Color _chatBackground = Color(0xFFF4F5F3);
+  static const Color _chatBackground = SnackChatBackdrop.backgroundColor;
   static const Color _outgoingBubble = Color(0xFF344054);
   static const Color _incomingBubble = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF667085);
@@ -55,8 +57,10 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   bool _isSending = false;
   bool _isUploadingImage = false;
+  bool _isLeavingRoom = false;
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
+  Future<void>? _markAsReadOperation;
   final Map<String, String> _senderNameCache = {};
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
@@ -69,6 +73,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   bool _hasMore = true;
   bool _isLoadingMore = false;
   bool _isInitialLoading = true; // 초기 로딩 상태 추가
+  SnackChat? _lastRoom;
 
   @override
   void initState() {
@@ -82,18 +87,23 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   /// DM의 _scheduleAutoMarkAsRead와 동일한 패턴 (250ms debounce)
   void _scheduleMarkAsRead() {
-    if (!mounted) return;
+    if (!mounted || _isLeavingRoom) return;
     if (_autoMarkReadInFlight) return;
     _autoMarkReadDebounce?.cancel();
     _autoMarkReadDebounce = Timer(const Duration(milliseconds: 250), () async {
-      if (!mounted) return;
+      if (!mounted || _isLeavingRoom) return;
       if (_autoMarkReadInFlight) return;
       _autoMarkReadInFlight = true;
+      final operation = _snackChatService.markAsRead(widget.snackChatId);
+      _markAsReadOperation = operation;
       try {
-        await _snackChatService.markAsRead(widget.snackChatId);
+        await operation;
       } catch (_) {
         // best-effort
       } finally {
+        if (identical(_markAsReadOperation, operation)) {
+          _markAsReadOperation = null;
+        }
         _autoMarkReadInFlight = false;
       }
     });
@@ -102,7 +112,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   void _subscribeToMessages() {
     _msgSub =
         _snackChatService.watchMessages(widget.snackChatId).listen((incoming) {
-      if (!mounted) return;
+      if (!mounted || _isLeavingRoom) return;
       _scheduleMarkAsRead();
       setState(() {
         // 초기 로딩 완료
@@ -131,7 +141,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
         .doc(widget.snackChatId)
         .snapshots()
         .listen((snap) {
-      if (!mounted) return;
+      if (!mounted || _isLeavingRoom) return;
       final data = snap.data();
       if (data == null) return;
       final unreadMap = data['unreadCount'] as Map<String, dynamic>? ?? {};
@@ -196,6 +206,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   @override
   void dispose() {
+    _isLeavingRoom = true;
     _autoMarkReadDebounce?.cancel();
     _roomSub?.cancel();
     if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
@@ -209,7 +220,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
 
   Future<void> _send() async {
     final text = _messageController.text.trim();
-    if (text.isEmpty || _isSending) return;
+    if (text.isEmpty || _isSending || _isLeavingRoom) return;
     setState(() => _isSending = true);
     try {
       final ok = await _snackChatService.sendMessage(widget.snackChatId, text);
@@ -222,7 +233,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
   }
 
   Future<void> _pickAndSendImage() async {
-    if (_isUploadingImage || _isSending) return;
+    if (_isUploadingImage || _isSending || _isLeavingRoom) return;
     final uid = _uid;
     if (uid == null) return;
 
@@ -236,10 +247,10 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       if (picked == null) return;
 
       setState(() => _isUploadingImage = true);
-      final imageUrl = await _storageService.uploadDmImage(
+      final imageUrl = await _storageService.uploadSnackChatImage(
         File(picked.path),
         userId: uid,
-        conversationId: widget.snackChatId,
+        snackChatId: widget.snackChatId,
       );
       if (imageUrl == null || imageUrl.isEmpty) {
         if (!mounted) return;
@@ -253,7 +264,9 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
         widget.snackChatId,
         imageUrl: imageUrl,
       );
-      if (!ok && mounted) {
+      if (!ok) {
+        await _storageService.deleteImage(imageUrl);
+        if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('이미지 전송에 실패했습니다.')),
         );
@@ -263,13 +276,97 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     }
   }
 
+  /// 방을 나가기 전에 읽음 타이머와 Firestore 구독을 먼저 중단한다.
+  /// 나가기 트랜잭션과 markAsRead/stream callback이 경합해 이미 제거된
+  /// 참여자의 필드를 다시 쓰는 상황을 방지한다.
+  Future<void> _leaveRoomFromInfo() async {
+    if (_isLeavingRoom) return;
+    if (!mounted) {
+      throw StateError('채팅 화면이 이미 닫혔습니다.');
+    }
+    setState(() => _isLeavingRoom = true);
+    _autoMarkReadDebounce?.cancel();
+    _autoMarkReadDebounce = null;
+
+    // 아래 StreamBuilder까지 null stream으로 교체되는 프레임을 기다려
+    // 방 문서 접근 권한이 제거된 뒤 기존 listener가 재조회하지 않게 한다.
+    await WidgetsBinding.instance.endOfFrame;
+
+    final roomSubscription = _roomSub;
+    final messageSubscription = _msgSub;
+    _roomSub = null;
+    _msgSub = null;
+
+    try {
+      await Future.wait<void>([
+        if (roomSubscription != null) roomSubscription.cancel(),
+        if (messageSubscription != null) messageSubscription.cancel(),
+      ]);
+      final pendingRead = _markAsReadOperation;
+      if (pendingRead != null) await pendingRead;
+      await _snackChatService.leaveRoom(widget.snackChatId);
+    } catch (_) {
+      // 나가기에 실패했다면 현재 채팅 화면을 계속 사용할 수 있도록
+      // 중단했던 구독과 읽음 처리를 복구한다.
+      if (mounted) {
+        setState(() => _isLeavingRoom = false);
+        _subscribeToMessages();
+        _subscribeToRoom();
+        _scheduleMarkAsRead();
+      } else {
+        _isLeavingRoom = false;
+      }
+      rethrow;
+    }
+  }
+
+  Future<void> _openRoomInfo(SnackChat room) async {
+    if (_isLeavingRoom) return;
+    final infoRoute = MaterialPageRoute<bool>(
+      builder: (_) => SnackChatInfoScreen(
+        snackChatId: room.id,
+        onLeave: _leaveRoomFromInfo,
+      ),
+    );
+    final didLeave = await Navigator.of(context).push<bool>(infoRoute);
+    if (!mounted || didLeave != true) return;
+
+    // push()의 Future는 reverse transition이 끝나기 전에 완료될 수 있다.
+    // 정보 화면의 overlay가 완전히 제거된 뒤 채팅 화면을 닫아 연속 pop으로
+    // 인한 framework dependency assertion을 방지한다.
+    await infoRoute.completed;
+    if (!mounted) return;
+
+    if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+      SnackChatActiveConversation.setActive(null);
+    }
+
+    if (widget.fromPush) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(
+          builder: (_) => const MainScreen(
+            initialGroupTabIndex: snackChatTabIndex,
+          ),
+        ),
+        (_) => false,
+      );
+      return;
+    }
+    Navigator.of(context).pop(true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final l10n = AppLocalizations.of(context)!;
     return StreamBuilder<SnackChat?>(
-      stream: _snackChatService.watchSnackChat(widget.snackChatId),
+      stream: _isLeavingRoom
+          ? null
+          : _snackChatService.watchSnackChat(widget.snackChatId),
       builder: (context, roomSnap) {
-        final room = roomSnap.data;
+        final incomingRoom = roomSnap.data;
+        if (incomingRoom != null) _lastRoom = incomingRoom;
+        final room = incomingRoom ?? _lastRoom;
         if (room == null) {
           return Scaffold(
             appBar: AppBar(),
@@ -291,62 +388,28 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
               surfaceTintColor: Colors.white,
               elevation: 0,
               scrolledUnderElevation: 0,
-              toolbarHeight: context.rh(50, min: 48, max: 52),
-              leadingWidth: 46,
-              centerTitle: false,
-              titleSpacing: 0,
+              toolbarHeight: context.rh(58, min: 56, max: 62),
+              leadingWidth: 48,
+              centerTitle: true,
+              titleSpacing: 4,
               iconTheme: IconThemeData(
                 color: const Color(0xFF111827),
-                size: context.ri(20).clamp(19, 21).toDouble(),
+                size: context.ri(22).clamp(21, 24).toDouble(),
               ),
-              title: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.2,
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        room.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontFamily: 'Pretendard',
-                          fontSize:
-                              context.rf(15.5).clamp(14.5, 16.5).toDouble(),
-                          fontWeight: FontWeight.w700,
-                          color: const Color(0xFF111827),
-                        ),
-                      ),
-                    ),
-                    SizedBox(width: context.rs(6).clamp(4, 7).toDouble()),
-                    Text(
-                      '${room.participantCount}',
-                      maxLines: 1,
-                      style: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: context.rf(13).clamp(12, 14).toDouble(),
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF6B7280),
-                      ),
-                    ),
-                  ],
-                ),
+              title: SnackChatHeaderTitle(
+                roomTitle: room.title,
+                contextLabel: l10n.snackChat,
+                participantLabel:
+                    l10n.snackChatParticipantCount(room.participantCount),
               ),
               actions: [
                 IconButton(
-                  onPressed: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            SnackChatInfoScreen(snackChatId: room.id),
-                      ),
-                    );
-                  },
+                  onPressed: _isLeavingRoom ? null : () => _openRoomInfo(room),
                   icon: const Icon(
-                    Icons.menu_rounded,
+                    Icons.info_outline_rounded,
                     color: Color(0xFF344054),
                   ),
-                  iconSize: context.ri(20).clamp(19, 21).toDouble(),
+                  iconSize: context.ri(22).clamp(21, 24).toDouble(),
                   constraints: const BoxConstraints.tightFor(
                     width: 44,
                     height: 44,
@@ -360,126 +423,128 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
             body: Column(
               children: [
                 Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 760),
-                      child: _isInitialLoading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                color: _secondaryText,
-                              ),
-                            )
-                          : _messages.isEmpty
-                              ? Center(
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(
-                                        Icons.chat_bubble_outline,
-                                        size: context
-                                            .ri(42)
-                                            .clamp(38, 46)
-                                            .toDouble(),
-                                        color: _tertiaryText,
-                                      ),
-                                      SizedBox(height: context.rs(10)),
-                                      Text(
-                                        isKo
-                                            ? '아직 메시지가 없습니다.\n첫 메시지를 보내보세요!'
-                                            : 'No messages yet.\nSend the first message!',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontFamily: 'Pretendard',
-                                          fontSize: context
-                                              .rf(14)
-                                              .clamp(13, 15)
-                                              .toDouble(),
-                                          color: _secondaryText,
-                                          height: 1.5,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : ListView.builder(
-                                  controller: _scrollController,
-                                  reverse: true,
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  scrollCacheExtent:
-                                      const ScrollCacheExtent.viewport(1.25),
-                                  padding: EdgeInsets.fromLTRB(
-                                    context.rs(10).clamp(8, 14).toDouble(),
-                                    context.rs(10).clamp(8, 14).toDouble(),
-                                    context.rs(10).clamp(8, 14).toDouble(),
-                                    context.rs(6).clamp(4, 8).toDouble(),
-                                  ),
-                                  itemCount:
-                                      _messages.length + (_hasMore ? 1 : 0),
-                                  itemBuilder: (context, index) {
-                                    // 맨 아래(오래된 쪽)에 로딩 인디케이터
-                                    if (index == _messages.length) {
-                                      return Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 12),
-                                        child: Center(
-                                          child: _isLoadingMore
-                                              ? const SizedBox(
-                                                  width: 20,
-                                                  height: 20,
-                                                  child:
-                                                      CircularProgressIndicator(
-                                                    strokeWidth: 2,
-                                                    color: _secondaryText,
-                                                  ),
-                                                )
-                                              : const SizedBox.shrink(),
-                                        ),
-                                      );
-                                    }
-                                    final msg = _messages[index];
-                                    final isMe = msg.senderId == _uid;
-
-                                    // 날짜 구분선 표시 여부
-                                    final bool showDateDivider =
-                                        _shouldShowDateDivider(index);
-
-                                    final String timeText =
-                                        _formatTime(msg.createdAt);
-                                    final groupedWithNewer = index > 0 &&
-                                        shouldGroupSnackChatMessages(
-                                          msg,
-                                          _messages[index - 1],
-                                        );
-                                    final groupedWithOlder =
-                                        index < _messages.length - 1 &&
-                                            shouldGroupSnackChatMessages(
-                                              msg,
-                                              _messages[index + 1],
-                                            );
-                                    final showTimeText = !groupedWithNewer;
-                                    final showSenderName =
-                                        !isMe && !groupedWithOlder;
-
-                                    return Column(
+                  child: SnackChatBackdrop(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 760),
+                        child: _isInitialLoading
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: _secondaryText,
+                                ),
+                              )
+                            : _messages.isEmpty
+                                ? Center(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
                                       children: [
-                                        // 날짜 구분선
-                                        if (showDateDivider)
-                                          _buildDateDivider(msg.createdAt),
-                                        // 메시지 버블
-                                        _buildMessageBubble(
-                                          message: msg,
-                                          isMe: isMe,
-                                          timeText: timeText,
-                                          showTimeText: showTimeText,
-                                          showSenderName: showSenderName,
-                                          groupedWithNewer: groupedWithNewer,
-                                          groupedWithOlder: groupedWithOlder,
+                                        Icon(
+                                          Icons.forum_outlined,
+                                          size: context
+                                              .ri(42)
+                                              .clamp(38, 46)
+                                              .toDouble(),
+                                          color: _tertiaryText,
+                                        ),
+                                        SizedBox(height: context.rs(10)),
+                                        Text(
+                                          isKo
+                                              ? '스낵챗의 첫 메시지를 보내보세요.'
+                                              : 'Send the first message in this Snack Chat.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontFamily: 'Pretendard',
+                                            fontSize: context
+                                                .rf(14)
+                                                .clamp(13, 15)
+                                                .toDouble(),
+                                            color: _secondaryText,
+                                            height: 1.5,
+                                          ),
                                         ),
                                       ],
-                                    );
-                                  },
-                                ),
+                                    ),
+                                  )
+                                : ListView.builder(
+                                    controller: _scrollController,
+                                    reverse: true,
+                                    keyboardDismissBehavior:
+                                        ScrollViewKeyboardDismissBehavior.onDrag,
+                                    scrollCacheExtent:
+                                        const ScrollCacheExtent.viewport(1.25),
+                                    padding: EdgeInsets.fromLTRB(
+                                      context.rs(10).clamp(8, 14).toDouble(),
+                                      context.rs(10).clamp(8, 14).toDouble(),
+                                      context.rs(10).clamp(8, 14).toDouble(),
+                                      context.rs(6).clamp(4, 8).toDouble(),
+                                    ),
+                                    itemCount:
+                                        _messages.length + (_hasMore ? 1 : 0),
+                                    itemBuilder: (context, index) {
+                                      // 맨 아래(오래된 쪽)에 로딩 인디케이터
+                                      if (index == _messages.length) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 12),
+                                          child: Center(
+                                            child: _isLoadingMore
+                                                ? const SizedBox(
+                                                    width: 20,
+                                                    height: 20,
+                                                    child:
+                                                        CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                      color: _secondaryText,
+                                                    ),
+                                                  )
+                                                : const SizedBox.shrink(),
+                                          ),
+                                        );
+                                      }
+                                      final msg = _messages[index];
+                                      final isMe = msg.senderId == _uid;
+
+                                      // 날짜 구분선 표시 여부
+                                      final bool showDateDivider =
+                                          _shouldShowDateDivider(index);
+
+                                      final String timeText =
+                                          _formatTime(msg.createdAt);
+                                      final groupedWithNewer = index > 0 &&
+                                          shouldGroupSnackChatMessages(
+                                            msg,
+                                            _messages[index - 1],
+                                          );
+                                      final groupedWithOlder =
+                                          index < _messages.length - 1 &&
+                                              shouldGroupSnackChatMessages(
+                                                msg,
+                                                _messages[index + 1],
+                                              );
+                                      final showTimeText = !groupedWithNewer;
+                                      final showSenderName =
+                                          !isMe && !groupedWithOlder;
+
+                                      return Column(
+                                        children: [
+                                          // 날짜 구분선
+                                          if (showDateDivider)
+                                            _buildDateDivider(msg.createdAt),
+                                          // 메시지 버블
+                                          _buildMessageBubble(
+                                            message: msg,
+                                            isMe: isMe,
+                                            timeText: timeText,
+                                            showTimeText: showTimeText,
+                                            showSenderName: showSenderName,
+                                            groupedWithNewer: groupedWithNewer,
+                                            groupedWithOlder: groupedWithOlder,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
+                      ),
                     ),
                   ),
                 ),
@@ -703,7 +768,7 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
     final textStyle = TextStyle(
       fontFamily: 'Pretendard',
       fontSize: context.rf(14).clamp(13.5, 15).toDouble(),
-      fontWeight: FontWeight.w600,
+      fontWeight: FontWeight.w500,
       height: 1.35,
       color: isMe ? Colors.white : const Color(0xFF111827),
     );
@@ -974,27 +1039,21 @@ class _SnackChatScreenState extends State<SnackChatScreen> {
       }
     }
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: context.rs(12).clamp(10, 14).toDouble(),
-      ),
-      child: Row(
-        children: [
-          const Expanded(child: Divider(color: Color(0xFFD9DDE3))),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: context.rs(10)),
-            child: Text(
-              dateText,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: context.rf(12).clamp(11, 12.5).toDouble(),
-                fontWeight: FontWeight.w600,
-                color: _secondaryText,
-              ),
-            ),
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(
+          vertical: context.rs(12).clamp(10, 14).toDouble(),
+          horizontal: context.rs(12).clamp(10, 16).toDouble(),
+        ),
+        child: Text(
+          dateText,
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(11.5).clamp(10.5, 12).toDouble(),
+            fontWeight: FontWeight.w600,
+            color: _secondaryText,
           ),
-          const Expanded(child: Divider(color: Color(0xFFD9DDE3))),
-        ],
+        ),
       ),
     );
   }

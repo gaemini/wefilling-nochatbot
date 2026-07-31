@@ -724,7 +724,6 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
     // breakpoints instead of scaling continuously with the device size.
     final itemHeight = isCompact ? 30.0 : (isExpanded ? 34.0 : 32.0);
     final outerVerticalPadding = isCompact ? 5.0 : 6.0;
-    final dividerWidth = isCompact ? 18.0 : 20.0;
     final labelSize = isCompact ? 12.5 : (isExpanded ? 13.5 : 13.0);
     final categories = [
       {'key': 'all', 'label': AppLocalizations.of(context)!.all},
@@ -741,12 +740,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
         horizontal: isCompact ? 10 : (isExpanded ? 16 : 12),
         vertical: outerVerticalPadding,
       ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFE5E7EB), width: 1),
-        ),
-      ),
+      color: Colors.white,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: SizedBox(
@@ -754,16 +748,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           child: Row(
             children: [
               for (var i = 0; i < categories.length; i++) ...[
-                if (i != 0)
-                  SizedBox(
-                    width: dividerWidth,
-                    height: 20,
-                    child: const VerticalDivider(
-                      width: 1,
-                      thickness: 1,
-                      color: Color(0xFFD1D5DB),
-                    ),
-                  ),
+                if (i != 0) SizedBox(width: isCompact ? 5 : 8),
                 _CategoryTabItem(
                   label: categories[i]['label']!,
                   selected: _selectedCategoryKey == categories[i]['key']!,
@@ -877,6 +862,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                 focusedDay: _focusedMonth,
                 locale: lang == 'ko' ? 'ko_KR' : 'en_US',
                 calendarFormat: CalendarFormat.month,
+                rowHeight: MediaQuery.sizeOf(context).width < 360 ? 40 : 44,
+                daysOfWeekHeight: 30,
                 startingDayOfWeek: StartingDayOfWeek.sunday,
                 onPageChanged: (focusedDay) {
                   setState(() {
@@ -1024,11 +1011,8 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
   @override
   Widget build(BuildContext context) {
-    final selectedKey = _dayKey(_selectedDay);
-    final isPastSelected = _isPastDay(selectedKey);
-
     return Scaffold(
-      backgroundColor: const Color(0xFFEBEBEB),
+      backgroundColor: Colors.white,
       body: SafeArea(
         top: false,
         child: StreamBuilder<List<Meetup>>(
@@ -1046,17 +1030,6 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                 final visibleByDay = _groupByDay(visibleMeetups);
                 final myByDay = _groupByDay(myMeetups);
 
-                final selectedMeetups = (isPastSelected
-                        ? (myByDay[selectedKey] ?? const <Meetup>[])
-                        : (visibleByDay[selectedKey] ?? const <Meetup>[]))
-                    .toList();
-
-                final showSkeleton = isPastSelected
-                    ? (mySnap.connectionState == ConnectionState.waiting &&
-                        !mySnap.hasData)
-                    : (visibleSnap.connectionState == ConnectionState.waiting &&
-                        !visibleSnap.hasData);
-
                 return Column(
                   children: [
                     // 상단 고정: 카테고리 칩
@@ -1065,7 +1038,7 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                     _buildCalendarHeader(),
                     _buildCalendar(
                         visibleByDay: visibleByDay, myByDay: myByDay),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     // PageView로 날짜별 리스트 슬라이드
                     Expanded(
                       child: PageView.builder(
@@ -1095,13 +1068,16 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
 
                           return pageShowSkeleton
                               ? ListView(
-                                  padding:
-                                      const EdgeInsets.fromLTRB(12, 8, 12, 90),
+                                  padding: EdgeInsets.fromLTRB(
+                                    0,
+                                    4,
+                                    0,
+                                    88 + MediaQuery.paddingOf(context).bottom,
+                                  ),
                                   children: List.generate(
                                     3,
                                     (i) => Padding(
-                                      padding:
-                                          const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.only(bottom: 4),
                                       child: _buildMeetupSkeleton(),
                                     ),
                                   ),
@@ -1135,14 +1111,20 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                                       child: ListView.builder(
                                         physics:
                                             const AlwaysScrollableScrollPhysics(),
-                                        padding: const EdgeInsets.fromLTRB(
-                                            12, 8, 12, 90),
+                                        padding: EdgeInsets.fromLTRB(
+                                          0,
+                                          4,
+                                          0,
+                                          88 +
+                                              MediaQuery.paddingOf(context)
+                                                  .bottom,
+                                        ),
                                         itemCount: pageMeetups.length,
                                         itemBuilder: (context, index) {
                                           final meetup = pageMeetups[index];
                                           return Padding(
                                             padding: const EdgeInsets.only(
-                                                bottom: 12),
+                                                bottom: 4),
                                             child: _buildMeetupCard(
                                               meetup,
                                               forceIsParticipating:
@@ -1164,67 +1146,47 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
           },
         ),
       ),
-      floatingActionButton: AppFab(
-        icon: Icons.add,
-        onPressed: _navigateToCreateMeetup,
-        semanticLabel: '모임 생성',
+      floatingActionButton: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: AppFab(
+          icon: Icons.add,
+          onPressed: _navigateToCreateMeetup,
+          semanticLabel: '모임 생성',
+        ),
       ),
     );
   }
 
   // 기존 스켈레톤 컴포넌트(로딩 시 사용)
   Widget _buildMeetupSkeleton() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 9, 16, 10),
+      child: Row(
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: AppSkeleton(
-                    height: 20,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                AppSkeleton(
-                  width: 60,
-                  height: 24,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ],
-            ),
+          AppSkeleton(
+            width: 66,
+            height: 66,
+            borderRadius: BorderRadius.circular(16),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+          const SizedBox(width: 14),
+          Expanded(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    AppSkeleton(
-                      width: 16,
-                      height: 16,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                    const SizedBox(width: 4),
                     Expanded(
                       child: AppSkeleton(
-                        height: 14,
+                        height: 16,
                         borderRadius: BorderRadius.circular(4),
                       ),
+                    ),
+                    const SizedBox(width: 10),
+                    AppSkeleton(
+                      width: 19,
+                      height: 19,
+                      borderRadius: BorderRadius.circular(4),
                     ),
                   ],
                 ),
@@ -1232,43 +1194,41 @@ class _MeetupHomePageState extends State<MeetupHomePage> with PreloadMixin {
                 Row(
                   children: [
                     AppSkeleton(
-                      width: 16,
-                      height: 16,
+                      width: 15,
+                      height: 15,
                       borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(width: 4),
-                    AppSkeleton(
-                      width: 60,
-                      height: 14,
-                      borderRadius: BorderRadius.circular(4),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: AppSkeleton(
+                        height: 12,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                AppSkeleton(
-                  width: 32,
-                  height: 32,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: AppSkeleton(
-                    height: 14,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                AppSkeleton(
-                  width: 70,
-                  height: 32,
-                  borderRadius: BorderRadius.circular(16),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    AppSkeleton(
+                      width: 20,
+                      height: 20,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: AppSkeleton(
+                        height: 12,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    AppSkeleton(
+                      width: 40,
+                      height: 12,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1298,15 +1258,14 @@ class _CategoryTabItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const selectedBg = Color(0xFFE5E7EB);
-    const selectedText = Color(0xFF4B5563);
-    const unselectedText = Color(0xFF111827);
+    const selectedText = Color(0xFF111827);
+    const unselectedText = Color(0xFF667085);
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(4),
         child: AnimatedContainer(
           height: height,
           duration: const Duration(milliseconds: 160),
@@ -1314,8 +1273,11 @@ class _CategoryTabItem extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: selected ? selectedBg : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
+            border: selected
+                ? const Border(
+                    bottom: BorderSide(color: Color(0xFF111827), width: 2),
+                  )
+                : null,
           ),
           child: MediaQuery.withClampedTextScaling(
             maxScaleFactor: 1.2,
@@ -1324,7 +1286,7 @@ class _CategoryTabItem extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Pretendard',
                 fontSize: fontSize,
-                fontWeight: FontWeight.w700,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                 color: selected ? selectedText : unselectedText,
                 height: 1.1,
               ),

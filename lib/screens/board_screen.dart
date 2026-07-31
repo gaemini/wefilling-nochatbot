@@ -20,7 +20,9 @@ import '../ui/widgets/optimized_post_card.dart';
 import '../ui/widgets/board_meetup_card.dart';
 import '../ui/widgets/post_category_explorer.dart';
 import '../ui/snackbar/app_snackbar.dart';
+import '../snapshot/snapshot_today_section.dart';
 import 'create_post_screen.dart';
+import 'create_snapshot_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_category_feed_screen.dart';
 import 'meetup_detail_screen.dart';
@@ -36,17 +38,84 @@ class BoardScreen extends StatefulWidget {
   State<BoardScreen> createState() => BoardScreenState();
 }
 
-class BoardScreenState extends State<BoardScreen>
-    with SingleTickerProviderStateMixin {
+class _CreateMenuRow extends StatelessWidget {
+  const _CreateMenuRow({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 72),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Icon(icon, size: 23, color: const Color(0xFF475467)),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF111827),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      description,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        fontSize: 12.5,
+                        height: 1.3,
+                        color: Color(0xFF667085),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 21,
+                color: Color(0xFF98A2B3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class BoardScreenState extends State<BoardScreen> {
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final MeetupService _meetupService = MeetupService();
-  late TabController _tabController;
   Timer? _midnightTimer;
   late final Stream<List<Meetup>> _todayMeetupsStream;
 
   List<Meetup>? _cachedTodayMeetups;
-  DateTime? _lastNonEmptyMeetupsAt;
 
   // 수동 새로고침 시 계산한 댓글 수 오버라이드 (postId -> count)
   final Map<String, int> _commentCountOverrides = {};
@@ -65,15 +134,15 @@ class BoardScreenState extends State<BoardScreen>
   double get _sectionHorizontalPadding =>
       context.rs(16).clamp(12.0, 18.0).toDouble();
 
-  double get _sectionTitleSize => context.rf(15).clamp(14.0, 16.0).toDouble();
+  double get _sectionTitleSize => context.rf(14.5).clamp(13.5, 15.0).toDouble();
 
-  double get _sectionBodySize => context.rf(13.5).clamp(12.5, 14.0).toDouble();
+  double get _sectionBodySize => context.rf(13).clamp(12.0, 13.5).toDouble();
 
-  // 스크롤 위치 복원을 위한 ScrollController들
+  // 스크롤 위치 복원을 위한 컨트롤러. All 컨트롤러는 이전 버전의
+  // PageStorage 키를 안전하게 정리하기 위해 당분간 유지한다.
   late final ScrollController _todayScrollController;
   late final ScrollController _allScrollController;
   bool _controllersInitialized = false;
-  static const String _psTabIndexId = 'board.tabIndex.v1';
   static const String _psTodayOffsetId = 'board.todayScrollOffset.v1';
   static const String _psAllOffsetId = 'board.allScrollOffset.v1';
 
@@ -106,10 +175,10 @@ class BoardScreenState extends State<BoardScreen>
     super.initState();
     _loadCachedData();
     _scheduleMidnightRefresh();
-    // Today 밋업 섹션은 "공개 범위"와 무관하게:
+    // Today 밋업 섹션은 현재 사용자의 공개 범위 안에서:
     // - 오늘 생성된 모임
     // - 약속 날짜가 오늘인 모임
-    // 만 노출한다. (필터링은 MeetupService.getTodayTabMeetups에서 강제)
+    // 만 노출한다. (공개 범위 필터링은 MeetupService에서 강제)
     _todayMeetupsStream = _meetupService.getTodayTabMeetups();
 
     // 컨트롤러 초기화/상태 복원은 didChangeDependencies에서 처리
@@ -125,20 +194,12 @@ class BoardScreenState extends State<BoardScreen>
     if (_controllersInitialized) return;
 
     final storage = PageStorage.of(context);
-    final savedTabIndex =
-        (storage.readState(context, identifier: _psTabIndexId) as int?) ?? 0;
     final savedTodayOffset =
         (storage.readState(context, identifier: _psTodayOffsetId) as double?) ??
             0.0;
     final savedAllOffset =
         (storage.readState(context, identifier: _psAllOffsetId) as double?) ??
             0.0;
-
-    _tabController = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: savedTabIndex.clamp(0, 1),
-    );
     _todayScrollController = ScrollController(
       initialScrollOffset: savedTodayOffset < 0 ? 0 : savedTodayOffset,
     );
@@ -146,10 +207,9 @@ class BoardScreenState extends State<BoardScreen>
       initialScrollOffset: savedAllOffset < 0 ? 0 : savedAllOffset,
     );
 
-    // 스크롤 상태 감지 (Today/All 탭 모두)
+    // 피드 스크롤 위치를 보존한다.
     _todayScrollController.addListener(_handleScrollChanged);
     _allScrollController.addListener(_handleScrollChanged);
-    _tabController.addListener(_handleTabChanged);
 
     _controllersInitialized = true;
 
@@ -162,12 +222,6 @@ class BoardScreenState extends State<BoardScreen>
 
   void _persistBoardState({bool persistOffsets = true}) {
     final storage = PageStorage.of(context);
-    storage.writeState(
-      context,
-      _tabController.index,
-      identifier: _psTabIndexId,
-    );
-
     if (!persistOffsets) return;
     if (_todayScrollController.hasClients) {
       storage.writeState(
@@ -262,10 +316,8 @@ class BoardScreenState extends State<BoardScreen>
         _persistBoardState();
       } catch (_) {}
 
-      _tabController.removeListener(_handleTabChanged);
       _todayScrollController.removeListener(_handleScrollChanged);
       _allScrollController.removeListener(_handleScrollChanged);
-      _tabController.dispose();
       _todayScrollController.dispose();
       _allScrollController.dispose();
     }
@@ -326,17 +378,7 @@ class BoardScreenState extends State<BoardScreen>
   }
 
   ScrollController get _activeScrollController {
-    // index 0: Today, index 1: All
-    return _tabController.index == 0
-        ? _todayScrollController
-        : _allScrollController;
-  }
-
-  void _handleTabChanged() {
-    // 탭 전환 시 상태 저장
-    if (!mounted) return;
-    if (_tabController.indexIsChanging) return;
-    _persistBoardState(persistOffsets: false);
+    return _todayScrollController;
   }
 
   void _handleScrollChanged() {
@@ -357,85 +399,29 @@ class BoardScreenState extends State<BoardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final tabFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
-    final tabHeight = context.rh(46, min: 44, max: 48);
-
     return Scaffold(
-      backgroundColor:
-          const Color(0xFFEBEBEB), // 연한 회색 배경 (L: 92%, 친구 카드와 6% 명도 차이)
+      backgroundColor: Colors.white,
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          constraints: const BoxConstraints(maxWidth: 600),
           child: SizedBox(
             width: double.infinity,
-            child: Column(
-              children: [
-                // 탭 바
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: MediaQuery.withClampedTextScaling(
-                    maxScaleFactor: 1.25,
-                    child: TabBar(
-                      controller: _tabController,
-                      indicatorColor: AppColors.pointColor,
-                      indicatorWeight: 2.5,
-                      dividerColor: const Color(0xFFE5E7EB),
-                      labelColor: const Color(0xFF111827),
-                      unselectedLabelColor: const Color(0xFF6B7280),
-                      labelStyle: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: tabFontSize,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      unselectedLabelStyle: TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: tabFontSize,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      overlayColor: WidgetStateProperty.all(
-                        Colors.black.withValues(alpha: 0.04),
-                      ),
-                      tabs: [
-                        Tab(height: tabHeight, text: 'Today'),
-                        Tab(height: tabHeight, text: 'All'),
-                      ],
-                    ),
-                  ),
-                ),
-                // 게시글 목록 (광고 배너가 스크롤 영역 안으로 이동)
-                Expanded(
-                  child: StreamBuilder<List<Post>>(
-                    stream: _postService.getPostsStream(),
-                    builder: (context, postSnap) {
-                      return TabBarView(
-                        controller: _tabController,
-                        children: [
-                          // Today
-                          _buildTodayPostsTab(postSnap),
-                          // All
-                          _buildAllPostsTab(postSnap),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
+            child: StreamBuilder<List<Post>>(
+              stream: _postService.getPostsStream(),
+              builder: (context, postSnap) {
+                return _buildTodayPostsTab(postSnap);
+              },
             ),
           ),
         ),
       ),
-      floatingActionButton: AppFab.write(
-        onPressed: _openCreatePost,
-        heroTag: 'board_write_fab',
+      floatingActionButton: SafeArea(
+        top: false,
+        minimum: const EdgeInsets.only(bottom: 8),
+        child: AppFab.write(
+          onPressed: _openCreateMenu,
+          heroTag: 'board_write_fab',
+        ),
       ),
     );
   }
@@ -536,8 +522,9 @@ class BoardScreenState extends State<BoardScreen>
   Widget _buildTodaySectionHeader({
     required IconData icon,
     required String title,
-    int? count,
     bool isLoading = false,
+    String? actionLabel,
+    VoidCallback? onAction,
   }) {
     final horizontal = _sectionHorizontalPadding;
     final iconSize = context.ri(18).clamp(17.0, 19.0).toDouble();
@@ -546,12 +533,12 @@ class BoardScreenState extends State<BoardScreen>
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(horizontal, 9, horizontal, 7),
+        padding: EdgeInsets.fromLTRB(horizontal, 6, horizontal, 4),
         child: Row(
           children: [
             Icon(icon, size: iconSize, color: const Color(0xFF111827)),
             SizedBox(width: gap),
-            Flexible(
+            Expanded(
               child: Text(
                 title,
                 maxLines: 1,
@@ -564,23 +551,37 @@ class BoardScreenState extends State<BoardScreen>
                 ),
               ),
             ),
-            if (isLoading || count != null) SizedBox(width: gap),
+            if (isLoading) SizedBox(width: gap),
             if (isLoading)
               const SizedBox.square(
                 dimension: 14,
                 child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else if (count != null)
-              Text(
-                '$count',
-                maxLines: 1,
-                style: TextStyle(
-                  fontFamily: 'Pretendard',
-                  fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF6B7280),
+              ),
+            if (actionLabel != null && onAction != null) ...[
+              const SizedBox(width: 12),
+              TextButton(
+                onPressed: onAction,
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF344054),
+                  minimumSize: const Size(44, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(12.5).clamp(12.0, 13.0).toDouble(),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(actionLabel),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right_rounded, size: 17),
+                  ],
                 ),
               ),
+            ],
           ],
         ),
       ),
@@ -641,28 +642,15 @@ class BoardScreenState extends State<BoardScreen>
                 !meetupSnapshot.hasData &&
                 _cachedTodayMeetups == null;
 
-        final todayMeetups =
-            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
-
-        // 캐시 업데이트:
-        // - empty가 순간적으로 들어와도(재구독/중간 emit) 카드가 사라졌다가 생기는 현상을 줄이기 위해
-        //   "최근에 non-empty를 받았다면" 짧게는 non-empty 캐시를 유지한다.
+        // 공개 대상이 바뀌어 빈 목록이 도착했을 때 이전 카드를 유지하면 비대상자가
+        // 카드와 참여 버튼을 계속 볼 수 있습니다. 명시적인 스트림 결과는 빈 목록도
+        // 즉시 반영하고, 캐시는 아직 첫 결과가 오지 않은 동안에만 사용합니다.
         if (meetupSnapshot.hasData) {
           final incoming = meetupSnapshot.data ?? const <Meetup>[];
-          final now = DateTime.now();
-          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
-            _cachedTodayMeetups = incoming;
-            _lastNonEmptyMeetupsAt =
-                incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
-          } else {
-            // incoming empty + cached non-empty
-            final last = _lastNonEmptyMeetupsAt;
-            if (last == null ||
-                now.difference(last) > const Duration(seconds: 3)) {
-              _cachedTodayMeetups = incoming;
-            }
-          }
+          _cachedTodayMeetups = incoming;
         }
+        final todayMeetups =
+            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
 
         return RefreshIndicator(
           color: AppColors.pointColor,
@@ -850,67 +838,39 @@ class BoardScreenState extends State<BoardScreen>
   }
 
   Widget _buildMeetupSkeletonCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return const Padding(
+      padding: EdgeInsets.fromLTRB(16, 9, 16, 10),
+      child: Row(
         children: [
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child:
-                AppTextSkeleton(width: 180, height: 16, lines: 2, spacing: 10),
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
+          SizedBox(
+            width: 56,
             child: Column(
               children: [
-                Row(
-                  children: [
-                    AppSkeleton(width: 16, height: 16),
-                    SizedBox(width: 8),
-                    Expanded(child: AppTextSkeleton(height: 14)),
-                  ],
-                ),
-                SizedBox(height: 10),
-                Row(
-                  children: [
-                    AppSkeleton(width: 16, height: 16),
-                    SizedBox(width: 8),
-                    AppTextSkeleton(width: 120, height: 14),
-                  ],
-                ),
+                AppTextSkeleton(width: 28, height: 9),
+                SizedBox(height: 4),
+                AppTextSkeleton(width: 24, height: 22),
+                SizedBox(height: 5),
+                AppTextSkeleton(width: 48, height: 9),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
-            child: const Row(
+          SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                AppAvatarSkeleton(size: 32),
-                SizedBox(width: 8),
-                Expanded(child: AppTextSkeleton(width: 90, height: 14)),
-                AppSkeleton(
-                    width: 72,
-                    height: 32,
-                    borderRadius: BorderRadius.all(Radius.circular(20))),
+                AppTextSkeleton(width: 180, height: 16),
+                SizedBox(height: 8),
+                AppTextSkeleton(width: 130, height: 12),
+                SizedBox(height: 9),
+                Row(
+                  children: [
+                    AppAvatarSkeleton(size: 20),
+                    SizedBox(width: 6),
+                    Expanded(child: AppTextSkeleton(width: 80, height: 12)),
+                    AppTextSkeleton(width: 38, height: 12),
+                  ],
+                ),
               ],
             ),
           ),
@@ -919,11 +879,14 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
-  /// All 탭은 게시글 대신 고정 Post 카테고리 탐색을 먼저 표시합니다.
-  Widget _buildAllPostsTab(AsyncSnapshot<List<Post>> _) {
-    return PostCategoryExplorer(
-      scrollController: _allScrollController,
-      onSelected: _openPostCategory,
+  Future<void> _openPostExplorer() async {
+    await Navigator.push<void>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _BoardPostExplorerScreen(
+          onSelected: _openPostCategory,
+        ),
+      ),
     );
   }
 
@@ -966,25 +929,13 @@ class BoardScreenState extends State<BoardScreen>
                 !meetupSnapshot.hasData &&
                 _cachedTodayMeetups == null;
 
-        final todayMeetups =
-            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
-
-        // meetups cache update (기존 로직 유지)
+        // 보안 필터가 빈 목록을 반환하면 이전 비공개 카드 캐시를 즉시 폐기합니다.
         if (meetupSnapshot.hasData) {
           final incoming = meetupSnapshot.data ?? const <Meetup>[];
-          final now = DateTime.now();
-          if (incoming.isNotEmpty || _cachedTodayMeetups == null) {
-            _cachedTodayMeetups = incoming;
-            _lastNonEmptyMeetupsAt =
-                incoming.isNotEmpty ? now : _lastNonEmptyMeetupsAt;
-          } else {
-            final last = _lastNonEmptyMeetupsAt;
-            if (last == null ||
-                now.difference(last) > const Duration(seconds: 3)) {
-              _cachedTodayMeetups = incoming;
-            }
-          }
+          _cachedTodayMeetups = incoming;
         }
+        final todayMeetups =
+            meetupSnapshot.data ?? _cachedTodayMeetups ?? const <Meetup>[];
 
         final meetupsCount = isMeetupsLoading
             ? 2
@@ -1000,7 +951,8 @@ class BoardScreenState extends State<BoardScreen>
                 ? 1
                 : (todayCombined.isNotEmpty ? todayCombined.length : 1));
 
-        final itemCount = 1 + // banner
+        final itemCount = 1 + // snapshots
+            1 + // banner
             1 + // meetups header
             meetupsCount +
             1 + // posts header
@@ -1027,7 +979,13 @@ class BoardScreenState extends State<BoardScreen>
             itemBuilder: (context, index) {
               var i = index;
 
-              // 0) banner
+              // 0) snapshots: Today 전용이며 All/일반 게시물 수에는 포함하지 않는다.
+              if (i == 0) {
+                return const SnapshotTodaySection();
+              }
+              i -= 1;
+
+              // 1) banner
               if (i == 0) {
                 return AdBannerWidget(
                   key: const ValueKey('board_banner_today'),
@@ -1041,7 +999,6 @@ class BoardScreenState extends State<BoardScreen>
                 return _buildTodaySectionHeader(
                   icon: Icons.event_available_rounded,
                   title: todayMeetupsTitle,
-                  count: isMeetupsLoading ? null : todayMeetups.length,
                   isLoading: isMeetupsLoading,
                 );
               }
@@ -1087,6 +1044,11 @@ class BoardScreenState extends State<BoardScreen>
                 return _buildTodaySectionHeader(
                   icon: Icons.article_rounded,
                   title: todayPostsTitle,
+                  actionLabel:
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '카테고리'
+                          : 'Browse',
+                  onAction: _openPostExplorer,
                 );
               }
               i -= 1;
@@ -1342,6 +1304,52 @@ class BoardScreenState extends State<BoardScreen>
     );
   }
 
+  Future<void> _openCreateMenu() async {
+    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      barrierColor: Colors.black.withValues(alpha: 0.46),
+      showDragHandle: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        top: false,
+        minimum: const EdgeInsets.fromLTRB(18, 0, 18, 18),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _CreateMenuRow(
+              icon: Icons.add_a_photo_outlined,
+              title: isKorean ? '스낵' : 'Snack',
+              description:
+                  isKorean ? '24시간 동안 공유되는 사진' : 'A photo shared for 24 hours',
+              onTap: () => Navigator.pop(sheetContext, 'snapshot'),
+            ),
+            const Divider(height: 1, indent: 42, color: Color(0xFFEAECF0)),
+            _CreateMenuRow(
+              icon: Icons.article_outlined,
+              title: isKorean ? '포스트' : 'Post',
+              description:
+                  isKorean ? '계속 남겨두고 싶은 이야기' : 'A story you want to keep',
+              onTap: () => Navigator.pop(sheetContext, 'post'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || selected == null) return;
+    if (selected == 'snapshot') {
+      await Navigator.of(context).push<bool>(
+        MaterialPageRoute(builder: (_) => const CreateSnapshotScreen()),
+      );
+      return;
+    }
+    _openCreatePost();
+  }
+
   /// 에러 위젯 빌드
   Widget _buildErrorWidget(String error) {
     return Center(
@@ -1562,6 +1570,66 @@ class BoardScreenState extends State<BoardScreen>
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BoardPostExplorerScreen extends StatefulWidget {
+  final ValueChanged<PostCategory> onSelected;
+
+  const _BoardPostExplorerScreen({required this.onSelected});
+
+  @override
+  State<_BoardPostExplorerScreen> createState() =>
+      _BoardPostExplorerScreenState();
+}
+
+class _BoardPostExplorerScreenState extends State<_BoardPostExplorerScreen> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
+        title: Text(
+          isKo ? '포스트 카테고리' : 'Post categories',
+          style: TextStyle(
+            fontFamily: 'Pretendard',
+            fontSize: context.rf(18).clamp(17.0, 20.0).toDouble(),
+            fontWeight: FontWeight.w800,
+            color: const Color(0xFF101828),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 600),
+            child: PostCategoryExplorer(
+              scrollController: _scrollController,
+              onSelected: widget.onSelected,
+            ),
+          ),
+        ),
       ),
     );
   }

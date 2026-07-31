@@ -12,7 +12,6 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter/widgets.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'dart:ui' as ui;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'badge_service.dart';
 import 'navigation_service.dart';
@@ -21,6 +20,8 @@ import 'snack_chat_active_conversation.dart';
 import 'language_service.dart';
 import '../utils/logger.dart';
 import 'dart:io';
+
+const String _pushSessionUserIdPreferenceKey = 'active_push_session_user_id';
 
 enum PushInitState {
   idle,
@@ -34,15 +35,26 @@ enum PushInitState {
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  final badgeStr = message.data['badge'];
-  if (badgeStr != null) {
-    final badge = int.tryParse(badgeStr.toString());
-    if (badge != null && badge >= 0) {
-      try {
+  try {
+    final recipientUserId =
+        (message.data['recipientUserId'] ?? '').toString().trim();
+    if (recipientUserId.isEmpty) return;
+
+    // A delayed push for the previous account must never overwrite the badge
+    // after this device has switched users.
+    final preferences = await SharedPreferences.getInstance();
+    final activeUserId =
+        preferences.getString(_pushSessionUserIdPreferenceKey) ?? '';
+    if (activeUserId != recipientUserId) return;
+
+    final badgeStr = message.data['badge'];
+    if (badgeStr != null) {
+      final badge = int.tryParse(badgeStr.toString());
+      if (badge != null && badge >= 0) {
         await AppBadgePlus.updateBadge(badge);
-      } catch (_) {}
+      }
     }
-  }
+  } catch (_) {}
 }
 
 class FCMService {
@@ -79,8 +91,9 @@ class FCMService {
 
   Future<void> _waitUntilAppActive(int epoch) async {
     Logger.log('🔍 [FCM 진단] _waitUntilAppActive 시작');
-    Logger.log('  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
-    
+    Logger.log(
+        '  - 현재 lifecycleState: ${WidgetsBinding.instance.lifecycleState}');
+
     if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
       _setState(PushInitState.appActive, reason: 'already_resumed');
       Logger.log('🔍 [FCM 진단] 앱이 이미 resumed 상태');
@@ -100,7 +113,7 @@ class FCMService {
 
     await _appActiveCompleter!.future;
     Logger.log('🔍 [FCM 진단] 앱 resumed 대기 완료');
-    
+
     if (epoch != _activeEpoch) {
       Logger.log('🔍 [FCM 진단] stale epoch 감지 - 중단');
       throw StateError('stale epoch while waiting app active');
@@ -112,11 +125,13 @@ class FCMService {
     _delayedTokenSyncTimer?.cancel();
     _delayedTokenSyncTimer = Timer(const Duration(seconds: 15), () {
       if (epoch != _activeEpoch) {
-        Logger.log('⏭️ 지연 토큰 동기화 취소: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
+        Logger.log(
+            '⏭️ 지연 토큰 동기화 취소: stale epoch (현재=$_activeEpoch, 요청=$epoch)');
         return;
       }
       if (_initializedUserId != userId) {
-        Logger.log('⏭️ 지연 토큰 동기화 취소: stale user (현재=$_initializedUserId, 요청=$userId)');
+        Logger.log(
+            '⏭️ 지연 토큰 동기화 취소: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
       _startTokenSync(userId, epoch);
@@ -233,6 +248,12 @@ class FCMService {
     _onMessageOpenedAppSub = null;
     _initializingFuture = null;
     _initializedUserId = null;
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_pushSessionUserIdPreferenceKey);
+    } catch (e) {
+      Logger.error('푸시 세션 사용자 초기화 실패', e);
+    }
     _setState(PushInitState.idle, reason: 'reset');
   }
 
@@ -292,6 +313,13 @@ class FCMService {
 
     if (_initializedUserId != null && _initializedUserId != userId) {
       await reset();
+    }
+
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(_pushSessionUserIdPreferenceKey, userId);
+    } catch (e) {
+      Logger.error('푸시 세션 사용자 저장 실패', e);
     }
 
     _sessionEpoch += 1;
@@ -455,6 +483,12 @@ class FCMService {
             // - iOS는 위에서 alert=false로 해뒀기 때문에, 여기서 로컬 알림을 "선택적으로" 띄운다.
             // - DM 채팅방을 보고 있는 경우(해당 conversationId 활성) DM 알림은 띄우지 않는다.
             final type = (message.data['type'] ?? '').toString();
+            final recipientUserId =
+                (message.data['recipientUserId'] ?? '').toString().trim();
+            if (recipientUserId.isNotEmpty && recipientUserId != userId) {
+              Logger.log('⏭️ 이전 계정 대상 포어그라운드 푸시 무시');
+              return;
+            }
             final conversationId =
                 (message.data['conversationId'] ?? '').toString();
             final snackChatId = (message.data['snackChatId'] ?? '').toString();
@@ -474,8 +508,11 @@ class FCMService {
 
               final badgeStr = (message.data['badge'] ?? '').toString();
               final badge = int.tryParse(badgeStr);
-              if (badge != null && badge >= 0) {
-                unawaited(BadgeService.applyBadgeFromPush(badge));
+              if (badge != null && badge >= 0 && recipientUserId.isNotEmpty) {
+                unawaited(BadgeService.applyBadgeFromPush(
+                  badge,
+                  recipientUserId: recipientUserId,
+                ));
               }
 
               unawaited(_showLocalNotification(message));
@@ -496,6 +533,12 @@ class FCMService {
           try {
             Logger.log('📱 백그라운드에서 앱 열림: ${message.messageId}');
             Logger.log('📱 데이터: ${message.data}');
+            final recipientUserId =
+                (message.data['recipientUserId'] ?? '').toString().trim();
+            if (recipientUserId.isNotEmpty && recipientUserId != userId) {
+              Logger.log('⏭️ 이전 계정 대상 푸시 딥링크 무시');
+              return;
+            }
             await NavigationService.handlePushNavigation(message.data);
           } catch (e) {
             Logger.error('백그라운드 메시지 처리 실패', e);
@@ -518,7 +561,13 @@ class FCMService {
         if (initialMessage != null) {
           Logger.log('📱 앱 종료 상태에서 알림으로 열림: ${initialMessage.messageId}');
           Logger.log('📱 데이터: ${initialMessage.data}');
-          await NavigationService.handlePushNavigation(initialMessage.data);
+          final recipientUserId =
+              (initialMessage.data['recipientUserId'] ?? '').toString().trim();
+          if (recipientUserId.isEmpty || recipientUserId == userId) {
+            await NavigationService.handlePushNavigation(initialMessage.data);
+          } else {
+            Logger.log('⏭️ 이전 계정 대상 초기 푸시 딥링크 무시');
+          }
         }
       } catch (e) {
         Logger.error('초기 메시지 처리 실패 - 계속 진행', e);
@@ -561,7 +610,8 @@ class FCMService {
         return;
       }
       if (_initializedUserId != userId) {
-        Logger.log('⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
+        Logger.log(
+            '⏭️ 토큰 동기화 중단: stale user (현재=$_initializedUserId, 요청=$userId)');
         return;
       }
 
@@ -602,7 +652,8 @@ class FCMService {
             Logger.log('📱 FCM 토큰 준비됨: ${token.substring(0, 20)}...');
             await _saveFCMToken(userId, token);
             if (!_isStaleEpoch(epoch) && _initializedUserId == userId) {
-              Logger.log('✅ [FCM] 토큰 동기화 성공 - userId=$userId, token=${token.substring(0, 20)}... (시도 ${i + 1}/${retrySeconds.length})');
+              Logger.log(
+                  '✅ [FCM] 토큰 동기화 성공 - userId=$userId, token=${token.substring(0, 20)}... (시도 ${i + 1}/${retrySeconds.length})');
               _setState(PushInitState.tokenSynced, reason: 'token_uploaded');
             } else {
               Logger.log('⏭️ [FCM] 토큰 저장 완료 후 stale 감지 - 상태 업데이트 생략');
@@ -704,21 +755,12 @@ class FCMService {
       Logger.log('🔍 [FCM 진단 1단계] FCM 토큰 저장 시작');
       Logger.log('  - userId: $userId');
       Logger.log('  - token (첫 20자): ${token.substring(0, 20)}...');
-      
+
       // ✅ 서버에서 "토큰 중복(다른 계정에 남아있는 토큰)"을 정리하고,
       //    토큰 단위 locale(lang)까지 함께 저장하도록 Cloud Functions를 우선 사용.
       //    (한국어/영어 알림이 연속으로 2번 오는 문제의 핵심 원인 방지)
-      final locale = ui.PlatformDispatcher.instance.locale;
-      final String localeTag = (() {
-        try {
-          return locale.toLanguageTag();
-        } catch (_) {
-          final cc = locale.countryCode;
-          return cc == null || cc.isEmpty
-              ? locale.languageCode
-              : '${locale.languageCode}-$cc';
-        }
-      })();
+      // 푸시 언어도 OS locale이 아니라 앱에서 선택한 언어와 일치시킨다.
+      final localeTag = await _languageService.getLanguage();
       Logger.log('  - locale: $localeTag');
 
       final String? platform = (() {
@@ -744,15 +786,17 @@ class FCMService {
           },
         );
         Logger.log('✅ FCM 토큰 등록 완료 (서버 정리 + locale 저장)');
-        
+
         // 🔍 진단: 실제로 Firestore에 저장되었는지 확인
         try {
-          final userDoc = await _firestore.collection('users').doc(userId).get();
+          final userDoc =
+              await _firestore.collection('users').doc(userId).get();
           if (userDoc.exists) {
             final data = userDoc.data();
             Logger.log('🔍 [FCM 진단 1단계] Firestore 확인:');
             Logger.log('  - fcmToken 존재: ${data?['fcmToken'] != null}');
-            Logger.log('  - fcmTokens 길이: ${(data?['fcmTokens'] as List?)?.length ?? 0}');
+            Logger.log(
+                '  - fcmTokens 길이: ${(data?['fcmTokens'] as List?)?.length ?? 0}');
             Logger.log('  - fcmTokenUpdatedAt: ${data?['fcmTokenUpdatedAt']}');
           } else {
             Logger.log('⚠️ [FCM 진단 1단계] users/{$userId} 문서가 없음!');
@@ -760,7 +804,7 @@ class FCMService {
         } catch (e) {
           Logger.error('⚠️ [FCM 진단 1단계] Firestore 확인 실패: $e');
         }
-        
+
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         return;
       } catch (e) {
@@ -781,6 +825,17 @@ class FCMService {
     } catch (e) {
       Logger.error('❌ [FCM 진단 1단계] FCM 토큰 저장 실패: $e');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    }
+  }
+
+  /// 언어 변경 직후 현재 토큰의 locale을 서버에 다시 등록한다.
+  Future<void> refreshTokenLocale(String userId) async {
+    try {
+      final token = await _messaging.getToken();
+      if (token == null || token.trim().isEmpty) return;
+      await _saveFCMToken(userId, token);
+    } catch (e) {
+      Logger.error('⚠️ FCM 토큰 locale 갱신 실패(다음 동기화에서 재시도): $e');
     }
   }
 

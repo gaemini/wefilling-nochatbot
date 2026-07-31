@@ -28,13 +28,13 @@ class NotificationListItem extends StatelessWidget {
     if (actorId == null || actorId.isEmpty) {
       return notification.actorName ?? '';
     }
-    
+
     final cache = UserInfoCacheService();
     final userInfo = cache.getCachedUserInfo(actorId);
     if (userInfo != null && userInfo.nickname.isNotEmpty) {
       return userInfo.nickname;
     }
-    
+
     return notification.actorName ?? '';
   }
 
@@ -98,18 +98,20 @@ class NotificationListItem extends StatelessWidget {
                               );
 
                               // 익명 알림인지 확인 (actorId가 없거나 actorName이 없으면 익명)
-                              final isAnonymous = notification.actorId == null || 
-                                                  notification.actorId!.isEmpty ||
-                                                  notification.actorName == null ||
-                                                  notification.actorName!.isEmpty;
-                              
+                              final isAnonymous =
+                                  notification.actorId == null ||
+                                      notification.actorId!.isEmpty ||
+                                      notification.actorName == null ||
+                                      notification.actorName!.isEmpty;
+
                               // 익명 알림이면 전체 텍스트를 굵게 표시
                               if (isAnonymous) {
                                 return <InlineSpan>[
-                                  TextSpan(text: primaryText, style: strongStyle),
+                                  TextSpan(
+                                      text: primaryText, style: strongStyle),
                                 ];
                               }
-                              
+
                               // 일반 알림: 메시지에서 "아이디(actorName)"만 굵게 처리
                               // 실시간 닉네임 가져오기
                               final latestActorName = _getLatestActorName();
@@ -123,14 +125,16 @@ class NotificationListItem extends StatelessWidget {
 
                               if (key == null || key.isEmpty) {
                                 return <InlineSpan>[
-                                  TextSpan(text: primaryText, style: strongStyle),
+                                  TextSpan(
+                                      text: primaryText, style: strongStyle),
                                 ];
                               }
 
                               final idx = primaryText.indexOf(key);
                               if (idx < 0) {
                                 return <InlineSpan>[
-                                  TextSpan(text: primaryText, style: strongStyle),
+                                  TextSpan(
+                                      text: primaryText, style: strongStyle),
                                 ];
                               }
 
@@ -154,7 +158,9 @@ class NotificationListItem extends StatelessWidget {
                                 height: 1.25,
                                 fontWeight: FontWeight.w500,
                                 color: secondaryColor.withAlpha(
-                                  theme.brightness == Brightness.dark ? 217 : 191,
+                                  theme.brightness == Brightness.dark
+                                      ? 217
+                                      : 191,
                                 ),
                               ),
                             ),
@@ -179,7 +185,7 @@ class NotificationListItem extends StatelessWidget {
   Widget _buildLeadingAvatar(BuildContext context) {
     // 익명 게시글인지 확인 (data에서 postIsAnonymous 플래그 확인)
     final isAnonymousPost = notification.data?['postIsAnonymous'] == true;
-    
+
     // 익명 게시글이면 actorId를 null로 처리 (시스템 아이콘 표시)
     final actorId = isAnonymousPost ? null : notification.actorId;
     final badge = _badgeSpecForType(notification.type);
@@ -335,33 +341,45 @@ _BadgeSpec _badgeSpecForType(String type) {
     case 'comment_like':
     case 'review_like':
       return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFFEF4444));
+    case 'snapshot_reaction':
+      return const _BadgeSpec(icon: Icons.favorite, color: Color(0xFF111827));
+    case 'snapshot_comment':
+      return const _BadgeSpec(
+          icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'new_comment':
     case 'comment_reply':
       // 게시글 댓글 알림: 댓글 아이콘은 파란색으로 강조
-      return const _BadgeSpec(icon: Icons.chat_bubble, color: AppColors.pointColor);
+      return const _BadgeSpec(
+          icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'review_comment':
-      return const _BadgeSpec(icon: Icons.chat_bubble, color: AppColors.pointColor);
+      return const _BadgeSpec(
+          icon: Icons.chat_bubble, color: AppColors.pointColor);
     case 'dm_received':
       return const _BadgeSpec(icon: Icons.send, color: AppColors.pointColor);
     case 'friend_request':
-      return const _BadgeSpec(icon: Icons.person_add, color: AppColors.pointColor);
+      return const _BadgeSpec(
+          icon: Icons.person_add, color: AppColors.pointColor);
     case 'meetup_cancelled':
       return const _BadgeSpec(icon: Icons.event_busy, color: Color(0xFFEF4444));
     case 'meetup_full':
       return const _BadgeSpec(icon: Icons.group, color: Color(0xFFF59E0B));
     case 'meetup_participant_joined':
-      return const _BadgeSpec(icon: Icons.person_add, color: AppColors.pointColor);
+      return const _BadgeSpec(
+          icon: Icons.person_add, color: AppColors.pointColor);
     case 'meetup_participant_left':
-      return const _BadgeSpec(icon: Icons.logout_rounded, color: Color(0xFFEF4444));
+      return const _BadgeSpec(
+          icon: Icons.logout_rounded, color: Color(0xFFEF4444));
     case 'review_approval_request':
-      return const _BadgeSpec(icon: Icons.rate_review, color: AppColors.pointColor);
+      return const _BadgeSpec(
+          icon: Icons.rate_review, color: AppColors.pointColor);
     case 'ad_updates':
       return const _BadgeSpec(icon: Icons.campaign, color: Color(0xFFF59E0B));
     case 'post_private':
       // 친구공개(allowed users) 게시글 알림: 자물쇠 대신 일반 게시글 느낌으로 표시
       return const _BadgeSpec(icon: Icons.article, color: Color(0xFF9CA3AF));
     default:
-      return const _BadgeSpec(icon: Icons.notifications, color: Color(0xFF6B7280));
+      return const _BadgeSpec(
+          icon: Icons.notifications, color: Color(0xFF6B7280));
   }
 }
 
@@ -395,4 +413,3 @@ class _NotificationBadge extends StatelessWidget {
     );
   }
 }
-

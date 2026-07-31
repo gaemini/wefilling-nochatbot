@@ -3,12 +3,28 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.expireSnackChats = exports.cleanupExpiredEmailVerifications = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.onFriendCategoryDeletedSyncPostAllowedUsers = exports.onFriendCategoryUpdatedSyncPostAllowedUsers = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.finalizeEnglishSocialSignup = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = void 0;
-exports.fixNegativeUnreadCounts = exports.onSnackChatMessageCreated = void 0;
+exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.expireSnackChats = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotReactionStatus = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.createMeetupSecure = exports.createPostSecure = void 0;
+exports.fixNegativeUnreadCounts = exports.onSnackChatMessageCreated = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 const firestore_paths_1 = require("./firestore_paths");
+var content_creation_1 = require("./content_creation");
+Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
+Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
+var snapshot_1 = require("./snapshot");
+Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get: function () { return snapshot_1.getSnapshotServerTime; } });
+Object.defineProperty(exports, "createSnapshot", { enumerable: true, get: function () { return snapshot_1.createSnapshot; } });
+Object.defineProperty(exports, "syncMySnapshotFeed", { enumerable: true, get: function () { return snapshot_1.syncMySnapshotFeed; } });
+Object.defineProperty(exports, "updateSnapshotVisibility", { enumerable: true, get: function () { return snapshot_1.updateSnapshotVisibility; } });
+Object.defineProperty(exports, "getSnapshotReactionStatus", { enumerable: true, get: function () { return snapshot_1.getSnapshotReactionStatus; } });
+Object.defineProperty(exports, "toggleSnapshotReaction", { enumerable: true, get: function () { return snapshot_1.toggleSnapshotReaction; } });
+Object.defineProperty(exports, "sendSnapshotComment", { enumerable: true, get: function () { return snapshot_1.sendSnapshotComment; } });
+Object.defineProperty(exports, "deleteSnapshot", { enumerable: true, get: function () { return snapshot_1.deleteSnapshot; } });
+Object.defineProperty(exports, "cleanupExpiredSnapshots", { enumerable: true, get: function () { return snapshot_1.cleanupExpiredSnapshots; } });
+Object.defineProperty(exports, "cleanupOrphanSnapshotUploads", { enumerable: true, get: function () { return snapshot_1.cleanupOrphanSnapshotUploads; } });
+Object.defineProperty(exports, "onSnapshotBlockChanged", { enumerable: true, get: function () { return snapshot_1.onSnapshotBlockChanged; } });
 // Firebase Admin 초기화
 admin.initializeApp();
 // Firestore 인스턴스
@@ -28,6 +44,94 @@ function toInt(v) {
 function toNonNegativeInt(v) {
     const n = toInt(v);
     return n < 0 ? 0 : n;
+}
+// Keep this instant in sync with lib/utils/snack_chat_list_policy.dart.
+const SNACK_CHAT_LIST_POLICY_START_MS = Date.UTC(2026, 6, 23, 15, 0, 0, 0);
+function firestoreTimeToMillis(value) {
+    if (value instanceof admin.firestore.Timestamp)
+        return value.toMillis();
+    if (value instanceof Date)
+        return value.getTime();
+    return null;
+}
+function isSnackChatVisibleForUser(roomData, userId, nowMs = Date.now()) {
+    const createdAtMs = firestoreTimeToMillis(roomData === null || roomData === void 0 ? void 0 : roomData.createdAt);
+    if (createdAtMs == null || createdAtMs < SNACK_CHAT_LIST_POLICY_START_MS) {
+        return false;
+    }
+    // activeDurationHours=0 means no expiration. Legacy/malformed non-zero
+    // values are interpreted as the supported 24-hour mode, like the client.
+    if ((roomData === null || roomData === void 0 ? void 0 : roomData.activeDurationHours) === 0)
+        return true;
+    const expiresAtMs = firestoreTimeToMillis(roomData === null || roomData === void 0 ? void 0 : roomData.expiresAt);
+    if (expiresAtMs == null || nowMs < expiresAtMs)
+        return true;
+    const favorites = Array.isArray(roomData === null || roomData === void 0 ? void 0 : roomData.favoriteUserIds)
+        ? roomData.favoriteUserIds.map((value) => String(value))
+        : [];
+    if (favorites.includes(userId))
+        return true;
+    // Compatibility for rooms created before favoriteUserIds was introduced.
+    return (roomData === null || roomData === void 0 ? void 0 : roomData.isFavorited) === true &&
+        String((roomData === null || roomData === void 0 ? void 0 : roomData.creatorId) || '') === userId;
+}
+async function getVisibleSnackChatUnreadTotal(userId) {
+    var _a;
+    const snapshot = await db.collection('snack_chats')
+        .where('participantIds', 'array-contains', userId)
+        .get();
+    const nowMs = Date.now();
+    let total = 0;
+    for (const doc of snapshot.docs) {
+        const data = doc.data();
+        if (!isSnackChatVisibleForUser(data, userId, nowMs))
+            continue;
+        total += toNonNegativeInt((_a = data === null || data === void 0 ? void 0 : data.unreadCount) === null || _a === void 0 ? void 0 : _a[userId]);
+    }
+    return total;
+}
+async function filterPushTokensOwnedByUser(userId, candidateTokens) {
+    const tokens = Array.from(new Set(candidateTokens.filter((token) => token.length > 0)));
+    if (tokens.length === 0)
+        return [];
+    try {
+        const refs = tokens.map((token) => db.collection('fcm_tokens').doc(token));
+        const snapshots = await db.getAll(...refs);
+        const allowed = new Set();
+        const registryMissing = [];
+        tokens.forEach((token, index) => {
+            var _a;
+            const snapshot = snapshots[index];
+            if (!(snapshot === null || snapshot === void 0 ? void 0 : snapshot.exists)) {
+                registryMissing.push(token);
+                return;
+            }
+            if (String(((_a = snapshot.data()) === null || _a === void 0 ? void 0 : _a.userId) || '') === userId) {
+                allowed.add(token);
+            }
+        });
+        // Legacy fallback tokens have no registry document. Keep one only when
+        // user documents prove that this exact token belongs to one account.
+        for (const token of registryMissing) {
+            const [arrayOwners, singleOwners] = await Promise.all([
+                db.collection('users').where('fcmTokens', 'array-contains', token).limit(3).get(),
+                db.collection('users').where('fcmToken', '==', token).limit(3).get(),
+            ]);
+            const ownerIds = new Set();
+            arrayOwners.docs.forEach((doc) => ownerIds.add(doc.id));
+            singleOwners.docs.forEach((doc) => ownerIds.add(doc.id));
+            if (ownerIds.size === 1 && ownerIds.has(userId)) {
+                allowed.add(token);
+            }
+        }
+        return tokens.filter((token) => allowed.has(token));
+    }
+    catch (error) {
+        console.warn(`⚠️ FCM 토큰 소유자 검증 실패(userId=${userId})`, error);
+        // Registry verification is fail-closed to prevent a previous account's
+        // stale legacy token from receiving this user's push.
+        return [];
+    }
 }
 function normalizeUidLoose(v) {
     return (v !== null && v !== void 0 ? v : '').toString().trim();
@@ -414,10 +518,119 @@ async function sendAdminEmail(subject, htmlContent) {
 function normalizeEmail(email) {
     return email.trim().toLowerCase();
 }
+const GENERAL_EMAIL_SIGNUP_PURPOSE = 'general_signup';
+const HANYANG_EMAIL_SIGNUP_PURPOSE = 'hanyang_signup';
+function hashEmailVerificationToken(token) {
+    return crypto.createHash('sha256').update(token).digest('hex');
+}
+function timestampLikeToDate(value) {
+    try {
+        if ((value === null || value === void 0 ? void 0 : value.toDate) && typeof value.toDate === 'function') {
+            return value.toDate();
+        }
+        if (value instanceof Date)
+            return value;
+        if (typeof value === 'number')
+            return new Date(value);
+        if (typeof value === 'string') {
+            const parsed = new Date(value);
+            return Number.isNaN(parsed.getTime()) ? null : parsed;
+        }
+    }
+    catch (_) {
+        return null;
+    }
+    return null;
+}
 function assertHanyangDomain(email) {
     if (!/^[^\s@]+@hanyang\.ac\.kr$/i.test(email)) {
         throw new functions.https.HttpsError('invalid-argument', '한양대학교 이메일 주소만 사용할 수 있습니다.');
     }
+}
+function parseCompletedRegistrationProfile(raw) {
+    const profile = raw && typeof raw === 'object' ? raw : {};
+    const nickname = String(profile.nickname || '').trim();
+    const nationality = String(profile.nationality || '').trim();
+    if (nickname.length < 2 || nickname.length > 20 ||
+        !/^[a-zA-Z0-9가-힣_.]+$/.test(nickname)) {
+        throw new functions.https.HttpsError('invalid-argument', '닉네임 형식이 올바르지 않습니다.');
+    }
+    if (!nationality || nationality.length > 80) {
+        throw new functions.https.HttpsError('invalid-argument', '국적 정보를 확인해주세요.');
+    }
+    const strings = (value) => Array.isArray(value)
+        ? Array.from(new Set(value
+            .filter((item) => typeof item === 'string')
+            .map((item) => item.trim())
+            .filter((item) => item.length > 0)))
+            .slice(0, 5)
+        : [];
+    const limited = (value, max) => String(value || '').trim().slice(0, max);
+    const completionRaw = Number(profile.profileCompletion || 0);
+    const studentType = String(profile.studentType || '').trim();
+    if (studentType !== 'exchange' && studentType !== 'korean') {
+        throw new functions.https.HttpsError('invalid-argument', '학생 유형을 선택해주세요.');
+    }
+    const requestedLanguage = String(profile.languageCode || '').trim();
+    const languageCode = requestedLanguage === 'ko' ? 'ko' : 'en';
+    return {
+        nickname,
+        nationality,
+        bio: limited(profile.bio, 60),
+        interests: strings(profile.interests),
+        preferredActivities: strings(profile.preferredActivities),
+        conversationStarter: limited(profile.conversationStarter, 160),
+        friendshipPrompt: limited(profile.friendshipPrompt, 160),
+        profileCompletion: Number.isFinite(completionRaw)
+            ? Math.max(0, Math.min(100, Math.trunc(completionRaw)))
+            : 0,
+        studentType,
+        languageCode,
+    };
+}
+function completedProfileFields(profile) {
+    return {
+        nickname: profile.nickname,
+        nationality: profile.nationality,
+        bio: profile.bio,
+        interests: profile.interests,
+        preferredActivities: profile.preferredActivities,
+        conversationStarter: profile.conversationStarter,
+        friendshipPrompt: profile.friendshipPrompt,
+        profileCompletion: profile.profileCompletion,
+        studentType: profile.studentType,
+        todoOnboardingCompleted: true,
+        languageCode: profile.languageCode,
+        emailVerified: true,
+        registrationStatus: 'complete',
+        registrationCompletedAt: admin.firestore.FieldValue.serverTimestamp(),
+        profileUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+}
+function isCompletedRegistrationData(data) {
+    if (!data || data.emailVerified !== true ||
+        String(data.nickname || '').trim().length === 0) {
+        return false;
+    }
+    // 배포 전 가입을 정상 완료한 사용자는 상태 필드가 없을 수 있다.
+    return data.registrationStatus === 'complete' ||
+        data.registrationStatus == null ||
+        String(data.registrationStatus).trim() === '';
+}
+function isHanyangEmailVerifiedData(data) {
+    if (!data)
+        return false;
+    if (typeof data.hanyangEmailVerified === 'boolean') {
+        return data.hanyangEmailVerified === true;
+    }
+    const email = String(data.hanyangEmail || '').trim().toLowerCase();
+    if (!email.endsWith('@hanyang.ac.kr'))
+        return false;
+    const method = String(data.schoolVerificationMethod || data.verificationMethod || '').trim();
+    if (method === 'social_en_bypass' || method === 'email_code')
+        return false;
+    return data.emailVerified === true &&
+        (method === '' || method === 'hanyang_email_code');
 }
 // email_verifications 컬렉션을 콘솔에서 안정적으로 확인하기 위한 고정 메타 문서 ID
 const EMAIL_VERIFICATIONS_META_DOC_ID = '_meta';
@@ -440,16 +653,47 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
         }
         assertHanyangDomain(emailRaw);
         const email = normalizeEmail(emailRaw);
+        const verificationToken = typeof (data === null || data === void 0 ? void 0 : data.verificationToken) === 'string'
+            ? data.verificationToken.trim()
+            : '';
+        if (!verificationToken) {
+            throw new functions.https.HttpsError('failed-precondition', '한양메일 인증을 다시 완료해주세요.');
+        }
+        const expectedTokenHash = hashEmailVerificationToken(verificationToken);
+        const profile = parseCompletedRegistrationProfile(data === null || data === void 0 ? void 0 : data.profile);
+        const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
+            .where('nickname', '==', profile.nickname)
+            .get();
+        if (nicknameOwner.docs.some((doc) => doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
+            throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
+        }
         const result = await db.runTransaction(async (tx) => {
             const claimRef = db.collection(firestore_paths_1.COL.emailClaims).doc(email);
             const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
+            const verificationRef = db.collection(firestore_paths_1.COL.emailVerifications).doc(email);
+            const verificationSnap = await tx.get(verificationRef);
+            const verification = verificationSnap.data();
+            const verifiedExpiresAt = timestampLikeToDate(verification === null || verification === void 0 ? void 0 : verification.verifiedExpiresAt);
+            const storedHash = String((verification === null || verification === void 0 ? void 0 : verification.verificationTokenHash) || '');
+            const storedBuffer = Buffer.from(storedHash);
+            const expectedBuffer = Buffer.from(expectedTokenHash);
+            const tokenMatches = storedBuffer.length === expectedBuffer.length &&
+                crypto.timingSafeEqual(storedBuffer, expectedBuffer);
+            if (!verificationSnap.exists ||
+                (verification === null || verification === void 0 ? void 0 : verification.purpose) !== HANYANG_EMAIL_SIGNUP_PURPOSE ||
+                (verification === null || verification === void 0 ? void 0 : verification.status) !== 'verified' ||
+                !verifiedExpiresAt ||
+                verifiedExpiresAt.getTime() <= Date.now() ||
+                !tokenMatches) {
+                throw new functions.https.HttpsError('failed-precondition', '한양메일 인증이 만료되었거나 유효하지 않습니다. 다시 인증해주세요.');
+            }
             // ✅ "계정 하나당 한양메일 하나" 강제
             // - 이미 다른 한양메일이 등록된 계정은 추가 등록을 막는다.
             const userSnap = await tx.get(userRef);
             if (userSnap.exists) {
                 const userData = userSnap.data();
                 const existingEmailRaw = ((userData === null || userData === void 0 ? void 0 : userData.hanyangEmail) || '').toString();
-                const existingVerified = (userData === null || userData === void 0 ? void 0 : userData.emailVerified) === true;
+                const existingVerified = isHanyangEmailVerifiedData(userData);
                 if (existingVerified && existingEmailRaw) {
                     const existingNormalized = normalizeEmail(existingEmailRaw);
                     if (existingNormalized && existingNormalized !== email) {
@@ -549,7 +793,8 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
                 schemaFill.updatedAt = admin.firestore.FieldValue.serverTimestamp();
             if (missing('lastLogin'))
                 schemaFill.lastLogin = admin.firestore.FieldValue.serverTimestamp();
-            tx.set(userRef, Object.assign(Object.assign({}, schemaFill), { hanyangEmail: email, emailVerified: true, updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            tx.set(userRef, Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), { hanyangEmail: email, hanyangEmailVerified: true, hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(), schoolVerificationMethod: 'hanyang_email_code', signupLanguage: 'ko', verificationMethod: 'hanyang_email_code', updatedAt: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            tx.delete(verificationRef);
             return { success: true };
         });
         return result;
@@ -561,6 +806,84 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
         throw new functions.https.HttpsError('internal', '이메일 최종 확인 중 오류가 발생했습니다.');
     }
 });
+// 가입 완료 계정이 프로필에서 한양메일 소속 인증만 추가하는 경로입니다.
+// 로그인 이메일 인증/가입 완료 상태는 변경하지 않습니다.
+exports.completeHanyangProfileVerification = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    }
+    const uid = context.auth.uid;
+    const emailRaw = typeof (data === null || data === void 0 ? void 0 : data.email) === 'string' ? data.email.trim() : '';
+    const verificationToken = typeof (data === null || data === void 0 ? void 0 : data.verificationToken) === 'string'
+        ? data.verificationToken.trim()
+        : '';
+    assertHanyangDomain(emailRaw);
+    if (!verificationToken) {
+        throw new functions.https.HttpsError('failed-precondition', '한양메일 인증을 다시 완료해주세요.');
+    }
+    const email = normalizeEmail(emailRaw);
+    const expectedTokenHash = hashEmailVerificationToken(verificationToken);
+    const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
+    const verificationRef = db.collection(firestore_paths_1.COL.emailVerifications).doc(email);
+    const claimRef = db.collection(firestore_paths_1.COL.emailClaims).doc(email);
+    await db.runTransaction(async (tx) => {
+        var _a;
+        const [userSnap, verificationSnap, claimSnap] = await Promise.all([
+            tx.get(userRef),
+            tx.get(verificationRef),
+            tx.get(claimRef),
+        ]);
+        const userData = userSnap.data();
+        if (!userSnap.exists || !isCompletedRegistrationData(userData)) {
+            throw new functions.https.HttpsError('failed-precondition', '가입을 완료한 계정에서만 학교 인증을 추가할 수 있습니다.');
+        }
+        const verification = verificationSnap.data();
+        const verifiedExpiresAt = timestampLikeToDate(verification === null || verification === void 0 ? void 0 : verification.verifiedExpiresAt);
+        const storedHash = String((verification === null || verification === void 0 ? void 0 : verification.verificationTokenHash) || '');
+        const storedBuffer = Buffer.from(storedHash);
+        const expectedBuffer = Buffer.from(expectedTokenHash);
+        const tokenMatches = storedBuffer.length === expectedBuffer.length &&
+            crypto.timingSafeEqual(storedBuffer, expectedBuffer);
+        if (!verificationSnap.exists ||
+            (verification === null || verification === void 0 ? void 0 : verification.purpose) !== HANYANG_EMAIL_SIGNUP_PURPOSE ||
+            (verification === null || verification === void 0 ? void 0 : verification.status) !== 'verified' ||
+            !verifiedExpiresAt ||
+            verifiedExpiresAt.getTime() <= Date.now() ||
+            !tokenMatches) {
+            throw new functions.https.HttpsError('failed-precondition', '한양메일 인증이 만료되었거나 유효하지 않습니다. 다시 인증해주세요.');
+        }
+        const existingHanyangEmail = String((userData === null || userData === void 0 ? void 0 : userData.hanyangEmail) || '').trim();
+        if (isHanyangEmailVerifiedData(userData) &&
+            existingHanyangEmail &&
+            normalizeEmail(existingHanyangEmail) !== email) {
+            throw new functions.https.HttpsError('failed-precondition', '이미 다른 한양메일이 인증되어 있습니다.');
+        }
+        if (claimSnap.exists) {
+            const claim = claimSnap.data();
+            if (((claim === null || claim === void 0 ? void 0 : claim.status) || 'active') === 'active' && (claim === null || claim === void 0 ? void 0 : claim.uid) !== uid) {
+                throw new functions.https.HttpsError('already-exists', '이미 사용 중인 한양메일입니다.');
+            }
+        }
+        tx.set(claimRef, {
+            email,
+            uid,
+            status: 'active',
+            createdAt: claimSnap.exists
+                ? ((_a = claimSnap.data()) === null || _a === void 0 ? void 0 : _a.createdAt) || admin.firestore.FieldValue.serverTimestamp()
+                : admin.firestore.FieldValue.serverTimestamp(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+        tx.update(userRef, {
+            hanyangEmail: email,
+            hanyangEmailVerified: true,
+            hanyangEmailVerifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+            schoolVerificationMethod: 'hanyang_email_code',
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        tx.delete(verificationRef);
+    });
+    return { success: true };
+});
 // 영어 소셜 회원가입 승인(한양메일 인증 우회 전용)
 // - Google/Apple 로그인 사용자만 허용
 // - users/{uid}.emailVerified=true 를 서버에서 확정 저장
@@ -571,6 +894,7 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
             throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
         }
         const uid = context.auth.uid;
+        const profile = parseCompletedRegistrationProfile(data === null || data === void 0 ? void 0 : data.profile);
         const signupLanguageRaw = typeof (data === null || data === void 0 ? void 0 : data.signupLanguage) === 'string'
             ? String(data.signupLanguage)
             : 'en';
@@ -597,15 +921,18 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
         if (providerId !== 'google.com' && providerId !== 'apple.com') {
             throw new functions.https.HttpsError('permission-denied', '영어 회원가입은 Google/Apple 계정으로만 가능합니다.');
         }
-        const normalizedAuthEmail = authEmail ? normalizeEmail(authEmail) : '';
+        const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
+            .where('nickname', '==', profile.nickname)
+            .get();
+        if (nicknameOwner.docs.some((doc) => doc.id !== uid && isCompletedRegistrationData(doc.data()))) {
+            throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
+        }
         const result = await db.runTransaction(async (tx) => {
             const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
             const userSnap = await tx.get(userRef);
             const existing = (userSnap.exists ? userSnap.data() : {}) || {};
             // 한양메일 인증 계정은 기존 정책 유지(충돌 방지)
-            const existingHanyangEmail = String((existing === null || existing === void 0 ? void 0 : existing.hanyangEmail) || '').trim();
-            const hasVerifiedHanyang = /^[^\s@]+@hanyang\.ac\.kr$/i.test(existingHanyangEmail)
-                && (existing === null || existing === void 0 ? void 0 : existing.emailVerified) === true;
+            const hasVerifiedHanyang = isHanyangEmailVerifiedData(existing);
             if (hasVerifiedHanyang) {
                 throw new functions.https.HttpsError('failed-precondition', '이미 한양메일 인증 계정이 등록되어 있습니다.');
             }
@@ -657,8 +984,7 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
                 schemaFill.termsAcceptedAt = admin.firestore.FieldValue.serverTimestamp();
             if (missing('createdAt'))
                 schemaFill.createdAt = admin.firestore.FieldValue.serverTimestamp();
-            const targetHanyangEmail = existingHanyangEmail || normalizedAuthEmail;
-            tx.set(userRef, Object.assign(Object.assign({}, schemaFill), { uid, email: authEmail, hanyangEmail: targetHanyangEmail, emailVerified: true, signupLanguage, verificationMethod: 'social_en_bypass', signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
+            tx.set(userRef, Object.assign(Object.assign(Object.assign({}, schemaFill), completedProfileFields(profile)), { uid, email: authEmail, hanyangEmail: '', hanyangEmailVerified: false, hanyangEmailVerifiedAt: null, schoolVerificationMethod: '', signupLanguage, verificationMethod: 'social_en_bypass', signupProvider: providerId, preferredLanguage: signupLanguage, preferredLanguageUpdatedAt: admin.firestore.FieldValue.serverTimestamp(), updatedAt: admin.firestore.FieldValue.serverTimestamp(), lastLogin: admin.firestore.FieldValue.serverTimestamp() }), { merge: true });
             return { success: true, provider: providerId };
         });
         return result;
@@ -669,6 +995,64 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
             throw error;
         throw new functions.https.HttpsError('internal', '영어 소셜 회원가입 승인 처리 중 오류가 발생했습니다.');
     }
+});
+/// 가입 완료 전 사용자가 흐름을 명시적으로 중단했을 때 임시 인증 상태를
+/// 정리합니다. 완성된 사용자 문서는 절대 삭제하지 않습니다.
+exports.discardIncompleteRegistration = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    }
+    const uid = context.auth.uid;
+    const userRef = db.collection(firestore_paths_1.COL.users).doc(uid);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data();
+    const completed = userSnap.exists && isCompletedRegistrationData(userData);
+    if (completed) {
+        throw new functions.https.HttpsError('failed-precondition', '완료된 계정은 회원가입 중단 처리할 수 없습니다.');
+    }
+    const claims = await db.collection(firestore_paths_1.COL.emailClaims).where('uid', '==', uid).get();
+    const batch = db.batch();
+    if (userSnap.exists)
+        batch.delete(userRef);
+    for (const claim of claims.docs)
+        batch.delete(claim.ref);
+    await batch.commit();
+    await admin.auth().deleteUser(uid).catch((error) => {
+        if ((error === null || error === void 0 ? void 0 : error.code) !== 'auth/user-not-found')
+            throw error;
+    });
+    return { success: true };
+});
+/// Auth 계정이 아직 생성되지 않은 이메일 가입 흐름의 일회성 인증 토큰을
+/// 취소합니다. 토큰 소유권이 일치할 때만 임시 문서를 삭제합니다.
+exports.cancelPendingEmailSignup = functions.https.onCall(async (data) => {
+    const email = typeof (data === null || data === void 0 ? void 0 : data.email) === 'string' ? normalizeEmail(data.email) : '';
+    const token = typeof (data === null || data === void 0 ? void 0 : data.verificationToken) === 'string'
+        ? data.verificationToken.trim()
+        : '';
+    if (!email || !token)
+        return { success: true };
+    const ref = db.collection(firestore_paths_1.COL.emailVerifications).doc(email);
+    await db.runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        if (!snap.exists)
+            return;
+        const verification = snap.data() || {};
+        const storedHashes = [
+            String(verification.verificationTokenHash || ''),
+            String(verification.cancellationTokenHash || ''),
+        ].filter((value) => value.length > 0);
+        const expectedHash = hashEmailVerificationToken(token);
+        const expected = Buffer.from(expectedHash);
+        const matches = storedHashes.some((hash) => {
+            const stored = Buffer.from(hash);
+            return stored.length === expected.length && crypto.timingSafeEqual(stored, expected);
+        });
+        if (matches) {
+            tx.delete(ref);
+        }
+    });
+    return { success: true };
 });
 // 기존 사용자 백필: emailVerified==true 인 사용자들의 email_claims 생성/정합성 보정 (관리자 전용)
 exports.backfillEmailClaims = functions.https.onCall(async (data, context) => {
@@ -888,9 +1272,8 @@ exports.onPrivatePostCreated = functions.firestore
         return null;
     }
 });
-// ===== 친구 카테고리 변경 시 게시글 allowedUserIds 동기화 =====
-// - posts/{postId}.allowedUserIds는 Firestore Rules의 접근 제어에 사용되므로,
-//   friend_categories/{categoryId}.friendIds 변경(추가/삭제)이 발생하면 관련 게시글의 allowedUserIds를 재계산해야 함.
+// 콘텐츠 audience 비교에만 쓰는 정규화 유틸입니다. 친구/그룹 변경으로
+// 이미 발행된 콘텐츠의 audience를 재계산하는 트리거는 두지 않습니다.
 function toUniqueStringArray(raw) {
     if (!Array.isArray(raw))
         return [];
@@ -914,190 +1297,143 @@ function sameStringSet(a, b) {
     }
     return true;
 }
-async function fetchFriendIdsByCategoryIds(categoryIds) {
-    const result = new Map();
-    const ids = toUniqueStringArray(categoryIds);
-    if (ids.length === 0)
-        return result;
-    const chunkSize = 10; // Firestore whereIn 제한
-    for (let i = 0; i < ids.length; i += chunkSize) {
-        const chunk = ids.slice(i, i + chunkSize);
-        const snap = await db
-            .collection('friend_categories')
-            .where(admin.firestore.FieldPath.documentId(), 'in', chunk)
-            .get();
-        for (const doc of snap.docs) {
-            const data = doc.data();
-            const friendIds = toUniqueStringArray(data === null || data === void 0 ? void 0 : data.friendIds);
-            result.set(doc.id, friendIds);
-        }
+function resolveStoredMeetupAudience(viewerId, meetup) {
+    const ownerId = normalizeUidLoose(meetup.ownerId || meetup.userId);
+    const visibility = toStr(meetup.visibilityMode || meetup.visibility).trim();
+    if (!ownerId || !['public', 'friends', 'category'].includes(visibility)) {
+        return { allowedUserIds: [], canAccess: false };
     }
-    return result;
+    const rawAudience = toInt(meetup.visibilitySchemaVersion) >= 2
+        ? meetup.audienceUserIdsFrozen
+        : meetup.allowedUserIds;
+    const allowed = new Set(toUniqueStringArray(rawAudience));
+    allowed.add(ownerId);
+    if (visibility === 'public') {
+        return { allowedUserIds: Array.from(allowed), canAccess: true };
+    }
+    const allowedUserIds = Array.from(allowed).filter(Boolean).sort();
+    return {
+        allowedUserIds,
+        canAccess: allowed.has(viewerId),
+    };
 }
-exports.onFriendCategoryUpdatedSyncPostAllowedUsers = functions.firestore
-    .document('friend_categories/{categoryId}')
-    .onUpdate(async (change, context) => {
-    var _a, _b, _c, _d, _e;
-    const categoryId = context.params.categoryId;
-    try {
-        const before = change.before.data();
-        const after = change.after.data();
-        const beforeFriendIds = toUniqueStringArray(before === null || before === void 0 ? void 0 : before.friendIds);
-        const afterFriendIds = toUniqueStringArray(after === null || after === void 0 ? void 0 : after.friendIds);
-        // friendIds가 변하지 않았다면 스킵
-        if (sameStringSet(beforeFriendIds, afterFriendIds)) {
-            return null;
-        }
-        const postsSnap = await db
-            .collection('posts')
-            .where('visibleToCategoryIds', 'array-contains', categoryId)
-            .get();
-        if (postsSnap.empty) {
-            console.log(`onFriendCategoryUpdatedSyncPostAllowedUsers: 대상 게시글 없음 (categoryId=${categoryId})`);
-            return null;
-        }
-        const posts = postsSnap.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() }));
-        // 관련 게시글들이 참조하는 모든 카테고리 ID를 모아 한번에 조회
-        const allCategoryIds = new Set();
-        for (const p of posts) {
-            const ids = toUniqueStringArray((_a = p.data) === null || _a === void 0 ? void 0 : _a.visibleToCategoryIds);
-            for (const id of ids)
-                allCategoryIds.add(id);
-        }
-        const friendIdsByCategoryId = await fetchFriendIdsByCategoryIds(Array.from(allCategoryIds));
-        // 배치 업데이트 (최대 500)
-        let batch = db.batch();
-        let ops = 0;
-        let updated = 0;
-        let skipped = 0;
-        for (const p of posts) {
-            const visibility = (((_b = p.data) === null || _b === void 0 ? void 0 : _b.visibility) || 'public').toString();
-            if (visibility !== 'category') {
-                skipped += 1;
-                continue;
-            }
-            const authorId = (((_c = p.data) === null || _c === void 0 ? void 0 : _c.userId) || '').toString().trim();
-            if (!authorId) {
-                skipped += 1;
-                continue;
-            }
-            const visibleCategoryIds = toUniqueStringArray((_d = p.data) === null || _d === void 0 ? void 0 : _d.visibleToCategoryIds);
-            const allowedSet = new Set();
-            allowedSet.add(authorId);
-            for (const cid of visibleCategoryIds) {
-                const ids = friendIdsByCategoryId.get(cid) || [];
-                for (const fid of ids)
-                    allowedSet.add(fid);
-            }
-            const newAllowed = Array.from(allowedSet).filter((s) => s.trim().length > 0).sort();
-            const currentAllowed = toUniqueStringArray((_e = p.data) === null || _e === void 0 ? void 0 : _e.allowedUserIds);
-            if (sameStringSet(currentAllowed, newAllowed)) {
-                skipped += 1;
-                continue;
-            }
-            batch.update(p.ref, {
-                allowedUserIds: newAllowed,
-                allowedUserIdsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            ops += 1;
-            updated += 1;
-            if (ops >= 450) {
-                await batch.commit();
-                batch = db.batch();
-                ops = 0;
-            }
-        }
-        if (ops > 0) {
-            await batch.commit();
-        }
-        console.log(`onFriendCategoryUpdatedSyncPostAllowedUsers: 업데이트 완료 (categoryId=${categoryId}, updated=${updated}, skipped=${skipped}, posts=${posts.length})`);
-        return null;
+function meetupHasEnded(meetup) {
+    const nowMs = Date.now();
+    const endsAt = meetup.endsAt;
+    if (endsAt instanceof admin.firestore.Timestamp) {
+        return endsAt.toMillis() < nowMs;
     }
-    catch (error) {
-        console.error(`onFriendCategoryUpdatedSyncPostAllowedUsers 오류 (categoryId=${categoryId}):`, error);
-        return null;
+    const date = meetup.date;
+    if (date instanceof admin.firestore.Timestamp) {
+        return date.toMillis() + 24 * 60 * 60 * 1000 < nowMs;
     }
+    return true;
+}
+/**
+ * 밋업 참여의 최종 권한 판정은 생성 시 저장된 frozen audience로 수행한다.
+ * 현재 친구/그룹 원본은 과거 콘텐츠 권한 계산에 사용하지 않는다.
+ */
+exports.joinMeetupSecure = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', '로그인이 필요합니다.');
+    }
+    const userId = context.auth.uid;
+    const meetupId = toStr(data === null || data === void 0 ? void 0 : data.meetupId).trim();
+    if (!meetupId) {
+        throw new functions.https.HttpsError('invalid-argument', '밋업 ID가 필요합니다.');
+    }
+    const meetupRef = db.collection(firestore_paths_1.COL.meetups).doc(meetupId);
+    const initialMeetup = await meetupRef.get();
+    if (!initialMeetup.exists) {
+        throw new functions.https.HttpsError('not-found', '밋업을 찾을 수 없습니다.');
+    }
+    const initialData = (initialMeetup.data() || {});
+    const ownerId = normalizeUidLoose(initialData.userId);
+    if (userId === ownerId) {
+        throw new functions.https.HttpsError('already-exists', '주최자는 이미 참여 중입니다.');
+    }
+    if (await hasBlockRelationship(userId, ownerId)) {
+        throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
+    }
+    const resolvedAudience = resolveStoredMeetupAudience(userId, initialData);
+    if (!resolvedAudience.canAccess) {
+        throw new functions.https.HttpsError('permission-denied', '이 밋업의 공개 대상에 포함되어 있지 않습니다.');
+    }
+    if (meetupHasEnded(initialData)) {
+        throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
+    }
+    const participantRef = db
+        .collection(firestore_paths_1.COL.meetupParticipants)
+        .doc(`${meetupId}_${userId}`);
+    const userRef = db.collection(firestore_paths_1.COL.users).doc(userId);
+    const result = await db.runTransaction(async (tx) => {
+        var _a, _b;
+        const [meetupDoc, participantDoc, userDoc] = await Promise.all([
+            tx.get(meetupRef),
+            tx.get(participantRef),
+            tx.get(userRef),
+        ]);
+        if (!meetupDoc.exists) {
+            throw new functions.https.HttpsError('not-found', '밋업을 찾을 수 없습니다.');
+        }
+        if (participantDoc.exists) {
+            throw new functions.https.HttpsError('already-exists', '이미 참여한 밋업입니다.');
+        }
+        if (!userDoc.exists) {
+            throw new functions.https.HttpsError('failed-precondition', '사용자 정보를 찾을 수 없습니다.');
+        }
+        const meetup = (meetupDoc.data() || {});
+        if (toStr(meetup.visibilityMode || meetup.visibility) !==
+            toStr(initialData.visibilityMode || initialData.visibility)
+            || !sameStringSet(meetup.audienceUserIdsFrozen || meetup.allowedUserIds, initialData.audienceUserIdsFrozen || initialData.allowedUserIds)) {
+            throw new functions.https.HttpsError('aborted', '공개범위가 변경되었습니다. 다시 시도해 주세요.');
+        }
+        if (meetupHasEnded(meetup)) {
+            throw new functions.https.HttpsError('failed-precondition', '종료된 밋업입니다.');
+        }
+        if (toUniqueStringArray(meetup.kickedUserIds).includes(userId)) {
+            throw new functions.https.HttpsError('permission-denied', '참여할 수 없는 밋업입니다.');
+        }
+        const maxParticipants = Math.max(1, toInt(meetup.maxParticipants));
+        const currentParticipants = Math.max(1, toInt(meetup.currentParticipants));
+        if (currentParticipants >= maxParticipants) {
+            throw new functions.https.HttpsError('resource-exhausted', '밋업 정원이 가득 찼습니다.');
+        }
+        const profile = (userDoc.data() || {});
+        const userName = toStr(profile.nickname).trim() || '익명';
+        tx.create(participantRef, {
+            id: participantRef.id,
+            meetupId,
+            userId,
+            userName,
+            userEmail: toStr((_b = (_a = context.auth) === null || _a === void 0 ? void 0 : _a.token) === null || _b === void 0 ? void 0 : _b.email),
+            userProfileImage: toStr(profile.photoURL),
+            userCountry: toStr(profile.nationality),
+            joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'approved',
+            message: null,
+        });
+        tx.update(meetupRef, {
+            currentParticipants: currentParticipants + 1,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        tx.create(db.collection('meetup_participant_events').doc(), {
+            meetupId,
+            meetupTitle: toStr(meetup.title),
+            type: 'join',
+            actorId: userId,
+            actorName: userName,
+            targetUserId: userId,
+            targetUserName: userName,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return { userName };
+    });
+    return { joined: true, userName: result.userName };
 });
-exports.onFriendCategoryDeletedSyncPostAllowedUsers = functions.firestore
-    .document('friend_categories/{categoryId}')
-    .onDelete(async (_snapshot, context) => {
-    var _a, _b, _c, _d, _e, _f;
-    const categoryId = context.params.categoryId;
-    try {
-        const postsSnap = await db
-            .collection('posts')
-            .where('visibleToCategoryIds', 'array-contains', categoryId)
-            .get();
-        if (postsSnap.empty) {
-            console.log(`onFriendCategoryDeletedSyncPostAllowedUsers: 대상 게시글 없음 (categoryId=${categoryId})`);
-            return null;
-        }
-        const posts = postsSnap.docs.map((d) => ({ id: d.id, ref: d.ref, data: d.data() }));
-        // 삭제된 카테고리를 제외한 remaining categoryIds들을 모아 조회
-        const allCategoryIds = new Set();
-        for (const p of posts) {
-            const ids = toUniqueStringArray((_a = p.data) === null || _a === void 0 ? void 0 : _a.visibleToCategoryIds).filter((id) => id !== categoryId);
-            for (const id of ids)
-                allCategoryIds.add(id);
-        }
-        const friendIdsByCategoryId = await fetchFriendIdsByCategoryIds(Array.from(allCategoryIds));
-        let batch = db.batch();
-        let ops = 0;
-        let updated = 0;
-        let skipped = 0;
-        for (const p of posts) {
-            const visibility = (((_b = p.data) === null || _b === void 0 ? void 0 : _b.visibility) || 'public').toString();
-            if (visibility !== 'category') {
-                skipped += 1;
-                continue;
-            }
-            const authorId = (((_c = p.data) === null || _c === void 0 ? void 0 : _c.userId) || '').toString().trim();
-            if (!authorId) {
-                skipped += 1;
-                continue;
-            }
-            const remainingCategoryIds = toUniqueStringArray((_d = p.data) === null || _d === void 0 ? void 0 : _d.visibleToCategoryIds).filter((id) => id !== categoryId);
-            const allowedSet = new Set();
-            allowedSet.add(authorId);
-            for (const cid of remainingCategoryIds) {
-                const ids = friendIdsByCategoryId.get(cid) || [];
-                for (const fid of ids)
-                    allowedSet.add(fid);
-            }
-            const newAllowed = Array.from(allowedSet).filter((s) => s.trim().length > 0).sort();
-            const currentAllowed = toUniqueStringArray((_e = p.data) === null || _e === void 0 ? void 0 : _e.allowedUserIds);
-            const needUpdateAllowed = !sameStringSet(currentAllowed, newAllowed);
-            const needUpdateVisibleIds = !sameStringSet(toUniqueStringArray((_f = p.data) === null || _f === void 0 ? void 0 : _f.visibleToCategoryIds), remainingCategoryIds);
-            if (!needUpdateAllowed && !needUpdateVisibleIds) {
-                skipped += 1;
-                continue;
-            }
-            batch.update(p.ref, {
-                visibleToCategoryIds: remainingCategoryIds,
-                allowedUserIds: newAllowed,
-                allowedUserIdsUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            ops += 1;
-            updated += 1;
-            if (ops >= 450) {
-                await batch.commit();
-                batch = db.batch();
-                ops = 0;
-            }
-        }
-        if (ops > 0) {
-            await batch.commit();
-        }
-        console.log(`onFriendCategoryDeletedSyncPostAllowedUsers: 업데이트 완료 (categoryId=${categoryId}, updated=${updated}, skipped=${skipped}, posts=${posts.length})`);
-        return null;
-    }
-    catch (error) {
-        console.error(`onFriendCategoryDeletedSyncPostAllowedUsers 오류 (categoryId=${categoryId}):`, error);
-        return null;
-    }
-});
+// TypeScript noUnusedLocals를 만족시키되 Firebase export 목록에는 올리지 않는다.
+// 배포 시 기존 동적 동기화 함수들은 제거되고 이후 그룹 변경은 과거 콘텐츠를
+// 수정하지 않는다.
 // 친구요청 생성 시 수신자에게 알림 생성
 exports.onFriendRequestCreated = functions.firestore
     .document('friend_requests/{requestId}')
@@ -1720,37 +2056,103 @@ exports.onPostLiked = functions.firestore
 });
 // 이메일 인증번호 전송 함수
 exports.sendEmailVerificationCode = functions.https.onCall(async (data, context) => {
+    var _a, _b;
     try {
         const { email, locale } = data;
+        const requestedPurpose = data === null || data === void 0 ? void 0 : data.purpose;
+        if (requestedPurpose != null &&
+            requestedPurpose !== GENERAL_EMAIL_SIGNUP_PURPOSE &&
+            requestedPurpose !== HANYANG_EMAIL_SIGNUP_PURPOSE) {
+            throw new functions.https.HttpsError('invalid-argument', '지원하지 않는 이메일 인증 방식입니다.');
+        }
+        // 구버전 한국어 클라이언트는 purpose를 보내지 않았으므로 한양메일 정책을
+        // 기본값으로 유지한다. 영어 가입은 general_signup을 반드시 명시한다.
+        const purpose = requestedPurpose || HANYANG_EMAIL_SIGNUP_PURPOSE;
+        const isGeneralSignup = purpose === GENERAL_EMAIL_SIGNUP_PURPOSE;
         // 입력 검증
         if (!email || typeof email !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '이메일 주소를 입력해주세요.');
         }
-        // hanyang.ac.kr 도메인 검증
-        if (!email.endsWith('@hanyang.ac.kr')) {
+        const emailTrimmed = String(email).trim();
+        const emailNormalized = normalizeEmail(emailTrimmed);
+        // 한국어 가입 경로는 기존 한양메일 정책을 유지한다. 영어 이메일 가입만
+        // 일반 이메일 주소를 허용하며, 이후 일회성 검증 토큰으로 계정 생성과 결합한다.
+        if (!isGeneralSignup && !/^[^\s@]+@hanyang\.ac\.kr$/i.test(emailTrimmed)) {
             throw new functions.https.HttpsError('invalid-argument', '한양대학교 이메일 주소만 사용할 수 있습니다.');
         }
         // 이메일 형식 검증
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
+        if (!emailRegex.test(emailTrimmed)) {
             throw new functions.https.HttpsError('invalid-argument', '올바른 이메일 형식이 아닙니다.');
         }
-        // 🔥 이미 사용 중인 한양메일인지 선제 체크
-        try {
-            const normalized = normalizeEmail(email);
-            const claimSnap = await db.collection(firestore_paths_1.COL.emailClaims).doc(normalized).get();
-            if (claimSnap.exists) {
-                const claim = claimSnap.data();
-                if (((claim === null || claim === void 0 ? void 0 : claim.status) || 'active') === 'active') {
-                    throw new functions.https.HttpsError('already-exists', '이미 사용 중인 한양메일입니다. 다른 메일을 사용해주세요.');
+        if (isGeneralSignup) {
+            // Firebase Auth 레코드만 있고 프로필 가입이 끝나지 않은 계정은 소유권
+            // 인증 후 이어서 가입할 수 있다. 실제 가입 완료 프로필만 차단한다.
+            try {
+                const authUser = await admin.auth().getUserByEmail(emailNormalized);
+                const userSnap = await db.collection(firestore_paths_1.COL.users).doc(authUser.uid).get();
+                const userData = userSnap.data();
+                const registrationComplete = userSnap.exists &&
+                    isCompletedRegistrationData(userData);
+                if (registrationComplete) {
+                    throw new functions.https.HttpsError('already-exists', '이미 가입된 이메일입니다. 로그인 화면에서 로그인해주세요.');
                 }
             }
+            catch (error) {
+                if (error instanceof functions.https.HttpsError)
+                    throw error;
+                if ((error === null || error === void 0 ? void 0 : error.code) !== 'auth/user-not-found')
+                    throw error;
+            }
         }
-        catch (e) {
-            if (e instanceof functions.https.HttpsError)
-                throw e;
-            // 조회 실패는 인증 절차를 막지 않음(서버 장애 대비)
-            console.warn('email_claims 조회 실패(무시):', e);
+        else {
+            // 이미 사용 중인 한양메일인지 선제 체크한다. 예전 가입 흐름에서
+            // 마지막 프로필 단계 전에 남은 claim은 정상 회원 점유가 아니므로 정리한다.
+            try {
+                const claimSnap = await db.collection(firestore_paths_1.COL.emailClaims).doc(emailNormalized).get();
+                if (claimSnap.exists) {
+                    const claim = claimSnap.data();
+                    if (((claim === null || claim === void 0 ? void 0 : claim.status) || 'active') === 'active') {
+                        const claimedUid = String((claim === null || claim === void 0 ? void 0 : claim.uid) || '');
+                        const claimedUser = claimedUid
+                            ? await db.collection(firestore_paths_1.COL.users).doc(claimedUid).get()
+                            : null;
+                        const claimedData = claimedUser === null || claimedUser === void 0 ? void 0 : claimedUser.data();
+                        const completedClaim = (claimedUser === null || claimedUser === void 0 ? void 0 : claimedUser.exists) === true &&
+                            isCompletedRegistrationData(claimedData);
+                        if (completedClaim && claimedUid !== ((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+                            throw new functions.https.HttpsError('already-exists', '이미 사용 중인 한양메일입니다. 다른 메일을 사용해주세요.');
+                        }
+                        if (!completedClaim)
+                            await claimSnap.ref.delete();
+                    }
+                }
+                // 영어 일반 이메일 가입으로 완료된 한양메일도 중복 인증할 수 없다.
+                try {
+                    const authUser = await admin.auth().getUserByEmail(emailNormalized);
+                    const authUserSnap = await db.collection(firestore_paths_1.COL.users).doc(authUser.uid).get();
+                    const authUserData = authUserSnap.data();
+                    const completedAuthUser = authUserSnap.exists &&
+                        isCompletedRegistrationData(authUserData);
+                    if (completedAuthUser && authUser.uid !== ((_b = context.auth) === null || _b === void 0 ? void 0 : _b.uid)) {
+                        throw new functions.https.HttpsError('already-exists', '이미 가입에 사용된 이메일입니다.');
+                    }
+                }
+                catch (authLookupError) {
+                    if (authLookupError instanceof functions.https.HttpsError) {
+                        throw authLookupError;
+                    }
+                    if ((authLookupError === null || authLookupError === void 0 ? void 0 : authLookupError.code) !== 'auth/user-not-found') {
+                        throw authLookupError;
+                    }
+                }
+            }
+            catch (e) {
+                if (e instanceof functions.https.HttpsError)
+                    throw e;
+                // 조회 실패는 인증 절차를 막지 않음(서버 장애 대비)
+                console.warn('email_claims 조회 실패(무시):', e);
+            }
         }
         // Gmail 비밀번호가 설정되어 있는지 확인 (미설정이면 실패 처리)
         const gmailPassword = getGmailPasswordSanitized();
@@ -1759,17 +2161,21 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
         }
         const gmailUser = getGmailUser();
         // 문서 키는 정규화(소문자/trim)해서 저장: 대소문자/공백 차이로 검증 실패(INTERNAL) 방지
-        const emailDocId = normalizeEmail(email);
+        const emailDocId = emailNormalized;
         // 4자리 랜덤 인증번호 생성 (메일 발송 가능할 때만 생성/저장)
         const verificationCode = Math.floor(1000 + Math.random() * 9000).toString();
+        const cancellationToken = crypto.randomBytes(32).toString('hex');
         // 만료 시간 (5분 후)
         const expiresAt = new Date();
         expiresAt.setMinutes(expiresAt.getMinutes() + 5);
         // Firestore에 인증번호 저장
         await db.collection(firestore_paths_1.COL.emailVerifications).doc(emailDocId).set({
             code: verificationCode,
-            email: email, // 원본 이메일(표시/메일 발송용)
+            email: emailTrimmed, // 원본 이메일(표시/메일 발송용)
             emailNormalized: emailDocId, // 조회/정합성용
+            purpose,
+            status: 'issued',
+            cancellationTokenHash: hashEmailVerificationToken(cancellationToken),
             expiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             attempts: 0, // 시도 횟수
@@ -1845,15 +2251,16 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
         </div>`;
         const mailOptions = {
             from: gmailUser,
-            to: email,
+            to: emailTrimmed,
             subject,
             html: isKo ? htmlKo : htmlEn,
         };
         await mailTransporter.sendMail(mailOptions);
-        console.log(`✅ 인증번호 이메일 전송 완료: ${email}`);
+        console.log(`✅ 인증번호 이메일 전송 완료: purpose=${purpose}, email=${emailNormalized}`);
         return {
             success: true,
-            message: '인증번호가 전송되었습니다. 이메일을 확인해주세요.'
+            message: '인증번호가 전송되었습니다. 이메일을 확인해주세요.',
+            cancellationToken,
         };
     }
     catch (error) {
@@ -1871,16 +2278,27 @@ exports.sendEmailVerificationCode = functions.https.onCall(async (data, context)
 });
 // 이메일 인증번호 검증 함수
 exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
-    var _a;
+    var _a, _b;
     try {
         const { email, code } = data;
+        const requestedPurpose = data === null || data === void 0 ? void 0 : data.purpose;
+        if (requestedPurpose != null &&
+            requestedPurpose !== GENERAL_EMAIL_SIGNUP_PURPOSE &&
+            requestedPurpose !== HANYANG_EMAIL_SIGNUP_PURPOSE) {
+            throw new functions.https.HttpsError('invalid-argument', '지원하지 않는 이메일 인증 방식입니다.');
+        }
+        const purpose = requestedPurpose || HANYANG_EMAIL_SIGNUP_PURPOSE;
+        const isGeneralSignup = purpose === GENERAL_EMAIL_SIGNUP_PURPOSE;
         // 입력 검증
         if (!email || !code || typeof email !== 'string' || typeof code !== 'string') {
             throw new functions.https.HttpsError('invalid-argument', '이메일과 인증번호를 입력해주세요.');
         }
-        // hanyang.ac.kr 도메인 검증 (대소문자/공백 방지)
         const emailTrimmed = String(email).trim();
-        if (!/^[^\s@]+@hanyang\.ac\.kr$/i.test(emailTrimmed)) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(emailTrimmed)) {
+            throw new functions.https.HttpsError('invalid-argument', '올바른 이메일 형식이 아닙니다.');
+        }
+        if (!isGeneralSignup && !/^[^\s@]+@hanyang\.ac\.kr$/i.test(emailTrimmed)) {
             throw new functions.https.HttpsError('invalid-argument', '한양대학교 이메일 주소만 사용할 수 있습니다.');
         }
         // -----------------------------------------------------------------------
@@ -1890,32 +2308,42 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
         // -----------------------------------------------------------------------
         const demoEmail = 'review_demo@hanyang.ac.kr';
         const demoCode = '0000';
-        if (emailTrimmed.toLowerCase() === demoEmail && String(code) === demoCode) {
-            // Best-effort cleanup: avoid leaving stale verification docs around.
+        if (!isGeneralSignup && emailTrimmed.toLowerCase() === demoEmail && String(code) === demoCode) {
             const normalizedEmail = normalizeEmail(emailTrimmed);
-            await db
-                .collection(firestore_paths_1.COL.emailVerifications)
-                .doc(normalizedEmail)
-                .delete()
-                .catch(() => { });
-            return { success: true };
+            const verificationToken = crypto.randomBytes(32).toString('hex');
+            const verifiedExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+            await db.collection(firestore_paths_1.COL.emailVerifications).doc(normalizedEmail).set({
+                email: emailTrimmed,
+                emailNormalized: normalizedEmail,
+                purpose: HANYANG_EMAIL_SIGNUP_PURPOSE,
+                status: 'verified',
+                verificationTokenHash: hashEmailVerificationToken(verificationToken),
+                verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+                verifiedExpiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+                expiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+                attempts: 0,
+            });
+            return { success: true, verificationToken };
         }
         // 기존 점유 여부 확인 (이미 사용 중이면 코드 확인 전에 차단)
-        try {
-            const normalized = normalizeEmail(emailTrimmed);
-            const claimSnap = await db.collection(firestore_paths_1.COL.emailClaims).doc(normalized).get();
-            if (claimSnap.exists) {
-                const claim = claimSnap.data();
-                if (((claim === null || claim === void 0 ? void 0 : claim.status) || 'active') === 'active') {
-                    throw new functions.https.HttpsError('already-exists', '이미 사용 중인 한양메일입니다.');
+        if (!isGeneralSignup) {
+            try {
+                const normalized = normalizeEmail(emailTrimmed);
+                const claimSnap = await db.collection(firestore_paths_1.COL.emailClaims).doc(normalized).get();
+                if (claimSnap.exists) {
+                    const claim = claimSnap.data();
+                    if (((claim === null || claim === void 0 ? void 0 : claim.status) || 'active') === 'active' &&
+                        (claim === null || claim === void 0 ? void 0 : claim.uid) !== ((_a = context.auth) === null || _a === void 0 ? void 0 : _a.uid)) {
+                        throw new functions.https.HttpsError('already-exists', '이미 사용 중인 한양메일입니다.');
+                    }
                 }
             }
-        }
-        catch (e) {
-            if (e instanceof functions.https.HttpsError)
-                throw e;
-            // 조회 실패는 인증 절차를 막지 않음(서버 장애 대비)
-            console.warn('email_claims 조회 실패(무시):', e);
+            catch (e) {
+                if (e instanceof functions.https.HttpsError)
+                    throw e;
+                // 조회 실패는 인증 절차를 막지 않음(서버 장애 대비)
+                console.warn('email_claims 조회 실패(무시):', e);
+            }
         }
         // 인증번호 조회
         // - 최신: 정규화된 docId 사용
@@ -1935,6 +2363,11 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
         }
         const verificationData = verificationDoc.data();
         const currentTime = new Date();
+        // 다른 가입 경로에서 발급한 코드를 재사용할 수 없도록 용도를 결합한다.
+        const storedPurpose = (verificationData === null || verificationData === void 0 ? void 0 : verificationData.purpose) || HANYANG_EMAIL_SIGNUP_PURPOSE;
+        if (storedPurpose !== purpose || (verificationData === null || verificationData === void 0 ? void 0 : verificationData.status) !== 'issued') {
+            throw new functions.https.HttpsError('failed-precondition', '인증 요청이 현재 가입 방식과 일치하지 않습니다. 인증번호를 다시 요청해주세요.');
+        }
         // expiresAt 타입 방어 (구버전/데이터 손상 케이스에서 INTERNAL 방지)
         const rawExpiresAt = verificationData === null || verificationData === void 0 ? void 0 : verificationData.expiresAt;
         let expiresAt = null;
@@ -1977,7 +2410,7 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
             throw new functions.https.HttpsError('resource-exhausted', '인증번호 입력 횟수를 초과했습니다. 다시 요청해주세요.');
         }
         // 인증번호 확인
-        if (String((_a = verificationData === null || verificationData === void 0 ? void 0 : verificationData.code) !== null && _a !== void 0 ? _a : '') !== String(code)) {
+        if (String((_b = verificationData === null || verificationData === void 0 ? void 0 : verificationData.code) !== null && _b !== void 0 ? _b : '') !== String(code)) {
             // 시도 횟수 증가
             await db.collection(firestore_paths_1.COL.emailVerifications).doc(verificationDocId).update({
                 attempts: admin.firestore.FieldValue.increment(1),
@@ -1985,9 +2418,21 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
             const remainingAttempts = 3 - (attempts + 1);
             throw new functions.https.HttpsError('invalid-argument', `인증번호가 일치하지 않습니다. (남은 시도: ${remainingAttempts}회)`);
         }
-        // 인증 성공 시 인증번호 삭제
-        await db.collection(firestore_paths_1.COL.emailVerifications).doc(verificationDocId).delete();
-        return { success: true };
+        // 인증 성공만으로 계정/사용자 문서/메일 점유를 만들지 않는다. 두 가입
+        // 경로 모두 짧게 유효한 일회성 토큰만 발급하고 마지막 프로필 제출에서
+        // 토큰을 소비한다.
+        const verificationToken = crypto.randomBytes(32).toString('hex');
+        const verifiedExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000);
+        await db.collection(firestore_paths_1.COL.emailVerifications).doc(verificationDocId).update({
+            code: admin.firestore.FieldValue.delete(),
+            status: 'verified',
+            verificationTokenHash: hashEmailVerificationToken(verificationToken),
+            verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+            verifiedExpiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+            expiresAt: admin.firestore.Timestamp.fromDate(verifiedExpiresAt),
+            attempts: 0,
+        });
+        return { success: true, verificationToken };
     }
     catch (error) {
         console.error('이메일 인증번호 검증 오류:', error);
@@ -1998,6 +2443,144 @@ exports.verifyEmailCode = functions.https.onCall(async (data, context) => {
             throw error;
         }
         throw new functions.https.HttpsError('internal', '인증번호 검증 중 오류가 발생했습니다.');
+    }
+});
+/**
+ * 4자리 이메일 인증을 마친 영어 가입 사용자의 이메일/비밀번호 계정을 만든다.
+ *
+ * Auth 레코드만 생긴 채 가입이 중단된 경우 새 UID를 만들지 않고 기존 계정을
+ * 복구한다. 반대로 프로필 가입까지 완료된 계정은 명확히 차단한다.
+ */
+exports.createGeneralEmailSignup = functions.https.onCall(async (data, context) => {
+    const email = typeof (data === null || data === void 0 ? void 0 : data.email) === 'string' ? data.email.trim() : '';
+    const password = typeof (data === null || data === void 0 ? void 0 : data.password) === 'string' ? data.password : '';
+    const verificationToken = typeof (data === null || data === void 0 ? void 0 : data.verificationToken) === 'string'
+        ? data.verificationToken.trim()
+        : '';
+    const profile = parseCompletedRegistrationProfile(data === null || data === void 0 ? void 0 : data.profile);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new functions.https.HttpsError('invalid-argument', '올바른 이메일 형식이 아닙니다.');
+    }
+    if (password.length < 8 || password.length > 128) {
+        throw new functions.https.HttpsError('invalid-argument', '비밀번호는 8자 이상이어야 합니다.');
+    }
+    if (!verificationToken) {
+        throw new functions.https.HttpsError('failed-precondition', '이메일 인증을 먼저 완료해주세요.');
+    }
+    const nicknameOwner = await db.collection(firestore_paths_1.COL.users)
+        .where('nickname', '==', profile.nickname)
+        .get();
+    if (nicknameOwner.docs.some((doc) => isCompletedRegistrationData(doc.data()))) {
+        throw new functions.https.HttpsError('already-exists', '이미 사용 중인 닉네임입니다.');
+    }
+    const normalizedEmail = normalizeEmail(email);
+    const verificationRef = db.collection(firestore_paths_1.COL.emailVerifications).doc(normalizedEmail);
+    const consumeId = crypto.randomBytes(16).toString('hex');
+    const expectedTokenHash = hashEmailVerificationToken(verificationToken);
+    // 인증 토큰을 원자적으로 잠가 동시 요청/재사용을 차단한다.
+    await db.runTransaction(async (transaction) => {
+        const snap = await transaction.get(verificationRef);
+        if (!snap.exists) {
+            throw new functions.https.HttpsError('not-found', '이메일 인증 정보가 없습니다. 다시 인증해주세요.');
+        }
+        const verification = snap.data();
+        const verifiedExpiresAt = timestampLikeToDate(verification === null || verification === void 0 ? void 0 : verification.verifiedExpiresAt);
+        const consumeExpiresAt = timestampLikeToDate(verification === null || verification === void 0 ? void 0 : verification.consumeExpiresAt);
+        const storedHash = String((verification === null || verification === void 0 ? void 0 : verification.verificationTokenHash) || '');
+        const storedBuffer = Buffer.from(storedHash);
+        const expectedBuffer = Buffer.from(expectedTokenHash);
+        const tokenMatches = storedBuffer.length === expectedBuffer.length &&
+            crypto.timingSafeEqual(storedBuffer, expectedBuffer);
+        const tokenAvailable = (verification === null || verification === void 0 ? void 0 : verification.status) === 'verified' ||
+            ((verification === null || verification === void 0 ? void 0 : verification.status) === 'consuming' &&
+                consumeExpiresAt != null &&
+                consumeExpiresAt.getTime() <= Date.now());
+        if ((verification === null || verification === void 0 ? void 0 : verification.purpose) !== GENERAL_EMAIL_SIGNUP_PURPOSE ||
+            !tokenAvailable ||
+            !verifiedExpiresAt ||
+            verifiedExpiresAt.getTime() <= Date.now() ||
+            !tokenMatches) {
+            throw new functions.https.HttpsError('failed-precondition', '이메일 인증이 만료되었거나 유효하지 않습니다. 다시 인증해주세요.');
+        }
+        transaction.update(verificationRef, {
+            status: 'consuming',
+            consumeId,
+            consumeExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + 2 * 60 * 1000),
+        });
+    });
+    let authUser = null;
+    let createdNewAuthUser = false;
+    try {
+        try {
+            authUser = await admin.auth().getUserByEmail(normalizedEmail);
+        }
+        catch (error) {
+            if ((error === null || error === void 0 ? void 0 : error.code) !== 'auth/user-not-found')
+                throw error;
+        }
+        let existingUserData = {};
+        if (authUser) {
+            const existingUserSnap = await db.collection(firestore_paths_1.COL.users).doc(authUser.uid).get();
+            existingUserData = existingUserSnap.data() || {};
+            const registrationComplete = existingUserSnap.exists &&
+                isCompletedRegistrationData(existingUserData);
+            if (registrationComplete) {
+                throw new functions.https.HttpsError('already-exists', '이미 가입된 이메일입니다. 로그인 화면에서 로그인해주세요.');
+            }
+            authUser = await admin.auth().updateUser(authUser.uid, {
+                password,
+                emailVerified: true,
+            });
+        }
+        else {
+            authUser = await admin.auth().createUser({
+                email: normalizedEmail,
+                password,
+                emailVerified: true,
+            });
+            createdNewAuthUser = true;
+        }
+        const uid = authUser.uid;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        await db.collection(firestore_paths_1.COL.users).doc(uid).set(Object.assign(Object.assign({ uid, email: normalizedEmail, hanyangEmail: '', hanyangEmailVerified: false, hanyangEmailVerifiedAt: null, schoolVerificationMethod: '' }, completedProfileFields(profile)), { photoURL: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoURL) || ''), photoPath: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoPath) || ''), photoAccessToken: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.photoAccessToken) || ''), postCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.postCount) || 0), friendCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.friendCount) || 0), reviewCount: Number((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.reviewCount) || 0), preferredLanguage: String((existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.preferredLanguage) || 'en'), signupLanguage: 'en', signupProvider: 'password', verificationMethod: 'email_code', termsAccepted: true, termsAcceptedAt: (existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.termsAcceptedAt) || now, createdAt: (existingUserData === null || existingUserData === void 0 ? void 0 : existingUserData.createdAt) || now, updatedAt: now, lastLogin: now }), { merge: true });
+        // Custom token 서명은 런타임 서비스 계정의 signBlob 권한에 의존한다.
+        // 권한이 일시적으로 누락돼도 이미 검증된 이메일/비밀번호 계정 가입 자체가
+        // 실패하지 않도록 클라이언트가 비밀번호 로그인으로 이어갈 수 있게 한다.
+        let customToken = '';
+        try {
+            customToken = await admin.auth().createCustomToken(uid);
+        }
+        catch (tokenError) {
+            console.warn('createGeneralEmailSignup custom token 생성 실패; 비밀번호 로그인으로 대체합니다.', { uid, code: (tokenError === null || tokenError === void 0 ? void 0 : tokenError.code) || 'unknown' });
+        }
+        await verificationRef.delete();
+        return {
+            success: true,
+            customToken,
+            signInWithPassword: customToken.length === 0,
+        };
+    }
+    catch (error) {
+        if (createdNewAuthUser && authUser) {
+            await admin.auth().deleteUser(authUser.uid).catch(() => { });
+            await db.collection(firestore_paths_1.COL.users).doc(authUser.uid).delete().catch(() => { });
+        }
+        // 일시적 실패라면 동일 인증 토큰으로 다시 시도할 수 있게 잠금을 되돌린다.
+        await db.runTransaction(async (transaction) => {
+            var _a;
+            const snap = await transaction.get(verificationRef);
+            if (!snap.exists || ((_a = snap.data()) === null || _a === void 0 ? void 0 : _a.consumeId) !== consumeId)
+                return;
+            transaction.update(verificationRef, {
+                status: 'verified',
+                consumeId: admin.firestore.FieldValue.delete(),
+                consumeExpiresAt: admin.firestore.FieldValue.delete(),
+            });
+        }).catch(() => { });
+        if (error instanceof functions.https.HttpsError)
+            throw error;
+        console.error('createGeneralEmailSignup 오류:', error);
+        throw new functions.https.HttpsError('internal', '이메일 회원가입 중 오류가 발생했습니다.');
     }
 });
 /**
@@ -3368,6 +3951,52 @@ function buildLocalizedNotificationText(params) {
                 ? { title: '포스트에 좋아요가 추가되었습니다', body: `${liker}님이 회원님의 포스트를 좋아해요.` }
                 : { title: 'New like', body: `${liker} liked your post.` };
         }
+        case 'snapshot_reaction': {
+            const reaction = safeStringLoose(data === null || data === void 0 ? void 0 : data.reaction, '❤️');
+            if (reaction === '👏') {
+                return lang === 'ko'
+                    ? {
+                        title: '스낵에 박수가 도착했어요',
+                        body: `${name}님이 회원님의 스낵에 박수를 보냈어요.`,
+                    }
+                    : {
+                        title: 'Applause for your Snack',
+                        body: `${name} applauded your Snack.`,
+                    };
+            }
+            if (reaction === '😊') {
+                return lang === 'ko'
+                    ? {
+                        title: '스낵에 미소가 도착했어요',
+                        body: `${name}님이 회원님의 스낵을 보고 미소 지었어요.`,
+                    }
+                    : {
+                        title: 'A smile for your Snack',
+                        body: `${name} smiled at your Snack.`,
+                    };
+            }
+            return lang === 'ko'
+                ? {
+                    title: '스낵을 좋아해요',
+                    body: `${name}님이 회원님의 스낵을 좋아해요.`,
+                }
+                : {
+                    title: 'Someone liked your Snack',
+                    body: `${name} liked your Snack.`,
+                };
+        }
+        case 'snapshot_comment': {
+            const comment = safeStringLoose(data === null || data === void 0 ? void 0 : data.comment, bodyFallback).trim();
+            return lang === 'ko'
+                ? {
+                    title: '스낵에 코멘트가 도착했어요',
+                    body: comment ? `${name}님: ${comment}` : `${name}님이 코멘트를 보냈어요.`,
+                }
+                : {
+                    title: 'New Snack comment',
+                    body: comment ? `${name}: ${comment}` : `${name} sent a comment on your Snack.`,
+                };
+        }
         case 'comment_like': {
             const postIsAnonymous = toBool(data === null || data === void 0 ? void 0 : data.postIsAnonymous);
             if (postIsAnonymous) {
@@ -3449,6 +4078,8 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
     const platform = normalizePlatform(data === null || data === void 0 ? void 0 : data.platform);
     const tokenRef = db.collection('fcm_tokens').doc(token);
     const userRef = db.collection('users').doc(uid);
+    const deviceId = crypto.createHash('sha256').update(token).digest('hex');
+    const deviceRef = userRef.collection('devices').doc(deviceId);
     let previousOwnerUid = '';
     // 1) 토큰 레지스트리를 우선 갱신하고 이전 소유자를 확인 (idempotent)
     await db.runTransaction(async (tx) => {
@@ -3468,6 +4099,13 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
             updates.platform = admin.firestore.FieldValue.delete();
         }
         tx.set(tokenRef, updates, { merge: true });
+        tx.set(deviceRef, {
+            token,
+            lang,
+            locale,
+            platform: platform || admin.firestore.FieldValue.delete(),
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
         // 현재 사용자 문서 업데이트 (레거시 호환 유지)
         tx.set(userRef, {
             fcmToken: token,
@@ -3502,6 +4140,7 @@ exports.registerFcmToken = functions.https.onCall(async (data, context) => {
         const batch = db.batch();
         for (const [otherUid, opt] of cleanMap.entries()) {
             const ref = db.collection('users').doc(otherUid);
+            batch.delete(ref.collection('devices').doc(deviceId));
             const updates = {
                 fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
                 fcmTokenUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -3531,18 +4170,19 @@ exports.unregisterFcmToken = functions.https.onCall(async (data, context) => {
     }
     const tokenRef = db.collection('fcm_tokens').doc(token);
     const userRef = db.collection('users').doc(uid);
+    const deviceId = crypto.createHash('sha256').update(token).digest('hex');
+    const deviceRef = userRef.collection('devices').doc(deviceId);
     let deleted = false;
     await db.runTransaction(async (tx) => {
         var _a;
         const snap = await tx.get(tokenRef);
-        if (!snap.exists) {
-            return;
-        }
-        const d = snap.data();
-        if (((_a = d === null || d === void 0 ? void 0 : d.userId) !== null && _a !== void 0 ? _a : '') !== uid) {
-            return;
-        }
-        tx.delete(tokenRef);
+        const d = snap.exists ? snap.data() : {};
+        const ownsRegistryToken = snap.exists && ((_a = d === null || d === void 0 ? void 0 : d.userId) !== null && _a !== void 0 ? _a : '') === uid;
+        if (ownsRegistryToken)
+            tx.delete(tokenRef);
+        // 레지스트리 문서가 이미 사라졌거나 다른 계정으로 이관되었더라도
+        // 현재 사용자의 로컬 기기/레거시 토큰 참조는 반드시 정리한다.
+        tx.delete(deviceRef);
         deleted = true;
         tx.set(userRef, {
             fcmTokens: admin.firestore.FieldValue.arrayRemove(token),
@@ -3648,33 +4288,15 @@ exports.onNotificationCreated = functions.firestore
                 }
             });
         }
-        // 안전장치:
-        // - 레거시 토큰(또는 잘못된 상태)에서 "다른 사용자 소유"로 등록된 토큰은 제외
-        //   (잘못된 계정으로 푸시 발송/이중 발송 방지)
+        // 계정 전환 뒤 남은 레거시 토큰까지 중앙 소유권 정책으로 검증한다.
         const allCandidateTokens = [...tokenGroups.ko, ...tokenGroups.en];
         if (allCandidateTokens.length > 0) {
-            try {
-                const refs = allCandidateTokens.map((t) => db.collection('fcm_tokens').doc(t));
-                const snaps = await db.getAll(...refs);
-                const banned = new Set();
-                snaps.forEach((s) => {
-                    var _a;
-                    if (!s.exists)
-                        return;
-                    const d = s.data();
-                    const owner = ((_a = d === null || d === void 0 ? void 0 : d.userId) !== null && _a !== void 0 ? _a : '').toString();
-                    if (owner && owner !== String(userId)) {
-                        banned.add(s.id);
-                    }
-                });
-                if (banned.size > 0) {
-                    tokenGroups.ko = tokenGroups.ko.filter((t) => !banned.has(t));
-                    tokenGroups.en = tokenGroups.en.filter((t) => !banned.has(t));
-                    console.log(`🧹 다른 사용자 소유 토큰 제외: ${banned.size}개 (userId=${userId})`);
-                }
-            }
-            catch (e) {
-                console.warn('⚠️ 토큰 소유자 검증 실패(무시)', e);
+            const ownedTokens = new Set(await filterPushTokensOwnedByUser(String(userId), allCandidateTokens));
+            const excludedCount = allCandidateTokens.length - ownedTokens.size;
+            tokenGroups.ko = tokenGroups.ko.filter((token) => ownedTokens.has(token));
+            tokenGroups.en = tokenGroups.en.filter((token) => ownedTokens.has(token));
+            if (excludedCount > 0) {
+                console.log(`🧹 다른 계정/중복 소유 토큰 제외: ${excludedCount}개 (userId=${userId})`);
             }
         }
         const totalTokens = tokenGroups.ko.length + tokenGroups.en.length;
@@ -3682,7 +4304,7 @@ exports.onNotificationCreated = functions.firestore
             console.log('FCM 토큰이 없어 알림을 전송하지 않습니다.');
             return null;
         }
-        // iOS 앱 아이콘 배지: "읽지 않은 알림 수 + 안 읽은 DM 수"
+        // 앱 아이콘 배지: "읽지 않은 알림 + DM + 화면에 보이는 Snack Chat"
         // - 일반 알림: dm_received 타입 제외 (Notifications 탭 기준)
         // - DM: users/{uid}.dmUnreadTotal
         //
@@ -3707,8 +4329,9 @@ exports.onNotificationCreated = functions.firestore
                     tx.set(userRef, { notificationUnreadTotal: nextNoti }, { merge: true });
                     return { notiUnreadTotal: nextNoti, dmUnreadTotal: curDm };
                 });
-                badgeCount = notiUnreadTotal + dmUnreadTotal;
-                console.log(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) = ${badgeCount}`);
+                const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(String(userId));
+                badgeCount = notiUnreadTotal + dmUnreadTotal + snackChatUnreadTotal;
+                console.log(`📊 배지 계산(카운터): 알림(${notiUnreadTotal}) + DM(${dmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 break; // 성공하면 즉시 종료
             }
             catch (e) {
@@ -3737,8 +4360,9 @@ exports.onNotificationCreated = functions.firestore
                     const unreadDm = unreadDmSnap.data().count || 0;
                     const notificationCount = Math.max(0, unreadAll - unreadDm);
                     const dmUnreadCount = toNonNegativeInt(userData === null || userData === void 0 ? void 0 : userData.dmUnreadTotal);
-                    badgeCount = notificationCount + dmUnreadCount;
-                    console.log(`📊 배지 계산(count fallback): 알림(${notificationCount}) + DM(${dmUnreadCount}) = ${badgeCount}`);
+                    const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(String(userId));
+                    badgeCount = notificationCount + dmUnreadCount + snackChatUnreadTotal;
+                    console.log(`📊 배지 계산(count fallback): 알림(${notificationCount}) + DM(${dmUnreadCount}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 }
                 catch (e2) {
                     console.warn('⚠️ badgeCount(count fallback)도 실패: badge 생략', e2);
@@ -3751,7 +4375,7 @@ exports.onNotificationCreated = functions.firestore
         const hasBadge = badgeCount !== null;
         const finalBadge = hasBadge ? Math.max(0, badgeCount) : 0;
         console.log(`📊 최종 badge = ${finalBadge} (raw badgeCount = ${badgeCount})`);
-        const commonData = Object.assign({ type: String(type || ''), notificationId: String(notificationId || ''), postId: String(notificationData.postId || ''), meetupId: String(notificationData.meetupId || ''), actorId: String(notificationData.actorId || ''), actorName: String(notificationData.actorName || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
+        const commonData = Object.assign({ type: String(type || ''), recipientUserId: String(userId || ''), notificationId: String(notificationId || ''), postId: String(notificationData.postId || ''), meetupId: String(notificationData.meetupId || ''), snapshotId: String(notificationData.snapshotId || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.snapshotId) || ''), reaction: String(notificationData.reaction || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.reaction) || ''), comment: String(notificationData.comment || (dataSafe === null || dataSafe === void 0 ? void 0 : dataSafe.comment) || ''), actorId: String(notificationData.actorId || ''), actorName: String(notificationData.actorName || '') }, (hasBadge ? { badge: String(finalBadge) } : {}));
         const sendForLang = async (lang, tokens) => {
             const localized = buildLocalizedNotificationText({
                 lang,
@@ -4022,64 +4646,16 @@ exports.onMeetupCreated = functions.firestore
                 }
             });
         }
-        else if (visibility === 'friends') {
-            // 친구 공개: 친구들에게만 알림
-            console.log('친구 공개 모임 - 친구들에게만 알림');
-            const friendshipsSnapshot = await db
-                .collection('friendships')
-                .where('uids', 'array-contains', hostId)
-                .get();
-            friendshipsSnapshot.forEach((doc) => {
-                const friendship = doc.data();
-                const otherUid = friendship.uids.find((uid) => uid !== hostId);
-                if (otherUid) {
-                    targetUserIds.push(otherUid);
-                }
-            });
-        }
         else {
-            // 카테고리별 공개 (기본값): 해당 카테고리 모임에 관심있는 사용자들에게 알림
-            console.log(`카테고리별 공개 - ${category} 카테고리 사용자에게 알림`);
-            // 1. 해당 카테고리 모임에 참여한 적 있는 사용자 찾기
-            const categoryMeetupsSnapshot = await db
-                .collection('meetups')
-                .where('category', '==', category)
-                .limit(50)
-                .get();
-            const participantIds = new Set();
-            categoryMeetupsSnapshot.forEach((doc) => {
-                const data = doc.data();
-                if (data.participants && Array.isArray(data.participants)) {
-                    data.participants.forEach((uid) => {
-                        if (uid !== hostId) {
-                            participantIds.add(uid);
-                        }
-                    });
-                }
-                // 주최자도 추가
-                if (data.userId && data.userId !== hostId) {
-                    participantIds.add(data.userId);
-                }
-            });
-            // 2. 사용자 프로필에 관심 카테고리가 있다면 그것도 확인
-            try {
-                const usersWithInterestSnapshot = await db
-                    .collection('users')
-                    .where('interestedCategories', 'array-contains', category)
-                    .limit(100)
-                    .get();
-                usersWithInterestSnapshot.forEach((doc) => {
-                    if (doc.id !== hostId) {
-                        participantIds.add(doc.id);
-                    }
-                });
-            }
-            catch (e) {
-                // interestedCategories 필드가 없을 수 있으므로 무시
-                console.log('interestedCategories 필드 없음 - 참여 이력만 사용');
-            }
-            targetUserIds = Array.from(participantIds);
-            console.log(`카테고리 관심 사용자: ${targetUserIds.length}명`);
+            // 친구/그룹 공개 알림도 생성 당시 문서에 고정된 대상만 사용한다.
+            // 현재 친구나 현재 그룹을 다시 조회하면 과거/신규 접근 정책과 알림
+            // 수신자가 달라져 비공개 제목이 노출될 수 있다.
+            const frozen = toInt(meetupData.visibilitySchemaVersion) >= 2
+                ? meetupData.audienceUserIdsFrozen
+                : meetupData.allowedUserIds;
+            targetUserIds = toUniqueStringArray(frozen)
+                .filter((uid) => uid !== hostId);
+            console.log(`비공개 모임 알림 대상 확정: mode=${visibility}, count=${targetUserIds.length}`);
         }
         targetUserIds = await filterTargetUserIdsByBlockRelationship(hostId, targetUserIds);
         if (targetUserIds.length === 0) {
@@ -4645,7 +5221,7 @@ exports.onDMMessageCreated = functions.firestore
                 }
             });
         }
-        const tokens = Array.from(tokenSet);
+        const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
         const hasTokens = tokens.length > 0;
         console.log('🔍 [FCM 진단 - Functions] 수신자 토큰 확인:');
         console.log(`  - fcmToken: ${(recipientData === null || recipientData === void 0 ? void 0 : recipientData.fcmToken) ? '있음' : '없음'}`);
@@ -4743,7 +5319,7 @@ exports.onDMMessageCreated = functions.firestore
             console.log('  ⏭️ FCM 토큰 없음 - push 스킵 (unreadCount는 정상 처리됨)');
             return null;
         }
-        // 배지 계산: (카운터 기반) 일반 알림 + (증분 기반) DM 총 안읽음
+        // 배지 계산: 일반 알림 + DM + 현재 화면에 표시되는 Snack Chat
         // - 일반 알림 카운트: users/{uid}.notificationUnreadTotal 사용(없으면 0으로 간주)
         // - DM 푸시는 배지 반영이 최우선이므로 재시도 로직 추가
         let badgeCount = null;
@@ -4755,8 +5331,10 @@ exports.onDMMessageCreated = functions.firestore
                 if (typeof vNoti === 'number' && Number.isFinite(vNoti)) {
                     notificationCount = Math.max(0, Math.trunc(vNoti));
                 }
-                badgeCount = (notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0) + Math.max(0, newDmUnreadTotal);
-                console.log(`  📊 배지 계산 (시도 ${attempt + 1}): 일반 알림(${notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0}) + DM총안읽음(${newDmUnreadTotal}) = ${badgeCount}`);
+                const snackChatUnreadTotal = await getVisibleSnackChatUnreadTotal(recipientId);
+                badgeCount = (notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0) +
+                    Math.max(0, newDmUnreadTotal) + snackChatUnreadTotal;
+                console.log(`  📊 배지 계산 (시도 ${attempt + 1}): 일반 알림(${notificationCount !== null && notificationCount !== void 0 ? notificationCount : 0}) + DM총안읽음(${newDmUnreadTotal}) + SC(${snackChatUnreadTotal}) = ${badgeCount}`);
                 break; // 성공하면 즉시 종료
             }
             catch (e) {
@@ -4794,7 +5372,7 @@ exports.onDMMessageCreated = functions.firestore
                 title: `From '${senderName}'`,
                 body: messagePreview,
             },
-            data: Object.assign({ type: 'dm_received', conversationId: conversationId, senderId: senderId, senderName: senderName }, (hasBadge && { badge: String(finalBadge) })),
+            data: Object.assign({ type: 'dm_received', recipientUserId: recipientId, conversationId: conversationId, senderId: senderId, senderName: senderName }, (hasBadge && { badge: String(finalBadge) })),
             apns: {
                 headers: {
                     'apns-push-type': 'alert',
@@ -4870,12 +5448,13 @@ exports.onSnackChatMessageCreated = functions.firestore
         const roomData = roomDoc.data();
         const participantIds = Array.isArray(roomData.participantIds) ? roomData.participantIds : [];
         const participants = Array.from(new Set(participantIds.filter((id) => typeof id === 'string' && id.length > 0)));
-        const recipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
+        const allRecipients = Array.from(new Set(participants.filter((id) => id !== senderId)));
+        const recipients = allRecipients.filter((recipientId) => isSnackChatVisibleForUser(roomData, recipientId));
         if (recipients.length === 0) {
-            console.log('⚠️ 수신자를 찾을 수 없음');
+            console.log('⚠️ 현재 목록에 표시되는 수신자 방이 없어 unread/푸시를 건너뜀');
             return null;
         }
-        console.log(`  - 수신자: ${recipients.length}명`);
+        console.log(`  - 수신자: ${recipients.length}명 (숨김 방 제외=${allRecipients.length - recipients.length}명)`);
         // 발신자 정보 조회
         const senderDoc = await db.collection('users').doc(senderId).get();
         const senderData = senderDoc.data();
@@ -4925,7 +5504,7 @@ exports.onSnackChatMessageCreated = functions.firestore
                             tokenSet.add(t);
                     });
                 }
-                const tokens = Array.from(tokenSet);
+                const tokens = await filterPushTokensOwnedByUser(recipientId, Array.from(tokenSet));
                 if (tokens.length === 0) {
                     console.log(`  ⚠️ 수신자 ${recipientId} FCM 토큰 없음`);
                     continue;
@@ -4939,19 +5518,8 @@ exports.onSnackChatMessageCreated = functions.firestore
                     const dmUnreadTotal = typeof (recipientData === null || recipientData === void 0 ? void 0 : recipientData.dmUnreadTotal) === 'number'
                         ? Math.max(0, Math.trunc(recipientData.dmUnreadTotal))
                         : 0;
-                    // SnackChat 안 읽은 수: 모든 참여 중인 방의 unreadCount[recipientId] 합산
-                    const scSnap = await db.collection('snack_chats')
-                        .where('participantIds', 'array-contains', recipientId)
-                        .get();
-                    let scUnreadTotal = 0;
-                    for (const doc of scSnap.docs) {
-                        const data = doc.data();
-                        const unreadMap = (data === null || data === void 0 ? void 0 : data.unreadCount) || {};
-                        const val = unreadMap[recipientId];
-                        const v = typeof val === 'number' ? val : 0;
-                        if (v > 0)
-                            scUnreadTotal += v;
-                    }
+                    // SnackChat 목록과 동일한 가시성 정책으로만 합산한다.
+                    const scUnreadTotal = await getVisibleSnackChatUnreadTotal(recipientId);
                     badgeCount = notificationCount + dmUnreadTotal + scUnreadTotal;
                     console.log(`  📊 배지 계산 (${recipientId}): 알림=${notificationCount}, DM=${dmUnreadTotal}, SC=${scUnreadTotal} → ${badgeCount}`);
                 }
@@ -4987,7 +5555,7 @@ exports.onSnackChatMessageCreated = functions.firestore
                         title: notificationTitle,
                         body: notificationBody,
                     },
-                    data: Object.assign({ type: 'snack_chat_message', snackChatId: snackChatId, senderId: senderId, senderName: senderName, roomTitle: roomTitle }, (hasBadge && { badge: String(finalBadge) })),
+                    data: Object.assign({ type: 'snack_chat_message', recipientUserId: recipientId, snackChatId: snackChatId, senderId: senderId, senderName: senderName, roomTitle: roomTitle }, (hasBadge && { badge: String(finalBadge) })),
                     apns: {
                         headers: {
                             'apns-push-type': 'alert',

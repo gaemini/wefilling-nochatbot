@@ -26,7 +26,7 @@ import '../../ui/dialogs/report_dialog.dart';
 import '../../ui/snackbar/app_snackbar.dart';
 import '../../utils/logger.dart';
 import '../../utils/responsive_helper.dart';
-import 'friends_only_badge.dart';
+import 'audience_ring.dart';
 import 'post_action_group.dart';
 import 'poll_post_widget.dart';
 import 'user_avatar.dart';
@@ -618,26 +618,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     );
   }
 
-  // 테두리 색상 메서드 제거 - 색상으로만 구분
-
-  /// 공개 범위 인디케이터 위젯 (크고 명확하게)
-  Widget _buildVisibilityIndicator(Post post) {
-    // 친구 공개 전용 (통일된 크기)
-    if (post.visibility == 'category') {
-      return FriendsOnlyBadge(
-        label: AppLocalizations.of(context)!.friendsOnly,
-        iconSize: 11,
-        fontSize: 11,
-        gap: 3,
-        fontWeight: FontWeight.w600,
-        foregroundColor: BrandColors.textTertiary,
-      );
-    }
-
-    // 전체 공개 (일반): 표시 안 함
-    return const SizedBox.shrink();
-  }
-
   // 투표 배지는 제거됨: 카드 본문에 투표 항목을 직접 노출한다.
 
   @override
@@ -941,40 +921,42 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     child: SizedBox.square(
                       dimension: 44,
                       child: Center(
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                        child: AudienceRing(
+                          restricted: post.visibility == 'category',
+                          size: 38,
+                          ringWidth: 2.25,
+                          innerGap: 1.25,
+                          semanticLabel:
+                              Localizations.localeOf(context).languageCode ==
+                                      'ko'
+                                  ? '선택한 그룹에 공개된 포스트'
+                                  : 'Post shared with selected groups',
+                          child: ColoredBox(
                             color: Colors.grey.shade300,
-                          ),
-                          child: (resolvedImageUrl != null && !isAnonymous)
-                              ? ClipOval(
-                                  child: CachedNetworkImage(
+                            child: (resolvedImageUrl != null && !isAnonymous)
+                                ? CachedNetworkImage(
                                     imageUrl: resolvedImageUrl,
                                     cacheManager: AppImageCacheManager.instance,
-                                    width: 32,
-                                    height: 32,
                                     fit: BoxFit.cover,
                                     fadeInDuration:
                                         const Duration(milliseconds: 120),
                                     fadeOutDuration:
                                         const Duration(milliseconds: 120),
-                                    placeholder: (_, __) => Container(
+                                    placeholder: (_, __) => ColoredBox(
                                       color: Colors.grey.shade300,
                                     ),
-                                    errorWidget: (_, __, ___) => Icon(
+                                    errorWidget: (_, __, ___) => const Icon(
                                       Icons.person_outline_rounded,
-                                      size: 22,
+                                      size: 20,
                                       color: BrandColors.iconDefault,
                                     ),
+                                  )
+                                : const Icon(
+                                    Icons.person_outline_rounded,
+                                    size: 20,
+                                    color: BrandColors.iconDefault,
                                   ),
-                                )
-                              : Icon(
-                                  Icons.person_outline_rounded,
-                                  size: 22,
-                                  color: BrandColors.iconDefault,
-                                ),
+                          ),
                         ),
                       ),
                     ),
@@ -1057,8 +1039,6 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 ),
 
-                // 공개 범위 배지를 오른쪽 상단에 배치
-                _buildVisibilityIndicator(post),
                 if (canOpenActions)
                   Semantics(
                     button: true,

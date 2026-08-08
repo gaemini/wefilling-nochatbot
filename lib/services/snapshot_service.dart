@@ -647,6 +647,38 @@ class SnapshotService {
     }
   }
 
+  Future<bool> hasCommented(String snapshotId) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return true;
+
+    try {
+      final result = await _functions
+          .httpsCallable('getSnapshotCommentStatus')
+          .call(<String, dynamic>{'snapshotId': snapshotId}).timeout(
+              const Duration(seconds: 12));
+      final data = result.data;
+      return data is Map && data['commented'] == true;
+    } catch (error) {
+      Logger.warning(
+        '스낵 코멘트 상태 Callable 조회 실패, Firestore로 재확인 '
+        '(snapshotId=$snapshotId, error=$error)',
+      );
+      try {
+        final comment = await _firestore
+            .collection('snapshots')
+            .doc(snapshotId)
+            .collection('comments')
+            .doc(userId)
+            .get();
+        return comment.exists;
+      } catch (_) {
+        // 상태를 확인할 수 없을 때 입력창을 다시 노출하면 중복 전송될 수
+        // 있으므로 보수적으로 이미 보낸 상태로 처리한다.
+        return true;
+      }
+    }
+  }
+
   Stream<bool> watchMyReaction(String snapshotId) {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return Stream<bool>.value(true);

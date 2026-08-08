@@ -44,21 +44,88 @@ service firebase.storage {
 
     // Firestore snack_chats/{snackChatId}.participantIds 기반 참여자 여부 확인
     function isSnackChatParticipant(snackChatId) {
+      // Storage Rules may consult at most two Firestore documents. Account +
+      // room membership are the authoritative checks here. Meetup visibility
+      // is verified when the user joins the room; checking the Meetup and
+      // block documents again would exceed the cross-service access limit and
+      // reject valid uploads/downloads.
       return currentUserAccountAllowed()
         && firestore.exists(/databases/(default)/documents/snack_chats/$(snackChatId))
         && request.auth.uid in firestore.get(
           /databases/(default)/documents/snack_chats/$(snackChatId)
-        ).data.participantIds
+        ).data.participantIds;
+    }
+
+    function snackChatDocumentMimeAllowed(extension, mimeType) {
+      return (extension == 'pdf' && mimeType == 'application/pdf')
+        || (extension == 'hwp' && mimeType == 'application/x-hwp')
+        || (extension == 'hwpx' && mimeType == 'application/vnd.hancom.hwpx')
+        || (extension == 'doc' && mimeType == 'application/msword')
+        || (extension == 'docx' && mimeType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+        || (extension == 'ppt' && mimeType == 'application/vnd.ms-powerpoint')
+        || (extension == 'pptx' && mimeType == 'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+        || (extension == 'xls' && mimeType == 'application/vnd.ms-excel')
+        || (extension == 'xlsx' && mimeType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        || (extension == 'txt' && mimeType == 'text/plain')
+        || (extension == 'csv' && mimeType == 'text/csv');
+    }
+
+    function canCreateSnackChatFile(retentionMode, snackChatId, messageId, fileId) {
+      let roomPath = /databases/(default)/documents/snack_chats/$(snackChatId);
+      let jobPath = /databases/(default)/documents/snack_chats/$(snackChatId)/fileUploadJobs/$(request.resource.metadata.uploadId);
+      let room = firestore.get(roomPath);
+      let job = firestore.get(jobPath);
+      let expectedPath = 'snack_chat_files/' + retentionMode + '/'
+        + snackChatId + '/' + messageId + '/' + fileId;
+      return isSignedIn()
+        && firestore.exists(roomPath)
+        && request.auth.uid in room.data.participantIds
+        && firestore.exists(jobPath)
+        && job.data.senderId == request.auth.uid
+        && job.data.status == 'pending'
+        && job.data.uploadId == request.resource.metadata.uploadId
+        && job.data.messageId == messageId
+        && job.data.chatRoomId == snackChatId
+        && job.data.fileId == fileId
+        && job.data.retentionMode == retentionMode
+        && job.data.storagePath == expectedPath
+        && request.resource.metadata.senderId == request.auth.uid
+        && request.resource.metadata.chatRoomId == snackChatId
+        && request.resource.metadata.messageId == messageId
+        && request.resource.metadata.fileId == fileId
+        && request.resource.metadata.retentionMode == retentionMode
+        && job.data.fileExtension == request.resource.metadata.fileExtension
+        && job.data.mimeType == request.resource.contentType
+        && job.data.fileSize == request.resource.size
+        && request.resource.size > 0
+        && request.resource.size <= 20 * 1024 * 1024
+        && snackChatDocumentMimeAllowed(
+          request.resource.metadata.fileExtension,
+          request.resource.contentType
+        );
+    }
+
+    function canReadSnackChatFile(retentionMode, snackChatId, messageId, fileId) {
+      let roomPath = /databases/(default)/documents/snack_chats/$(snackChatId);
+      let messagePath = /databases/(default)/documents/snack_chats/$(snackChatId)/messages/$(messageId);
+      let room = firestore.get(roomPath);
+      let message = firestore.get(messagePath);
+      let expectedPath = 'snack_chat_files/' + retentionMode + '/'
+        + snackChatId + '/' + messageId + '/' + fileId;
+      return isSignedIn()
+        && firestore.exists(roomPath)
+        && request.auth.uid in room.data.participantIds
+        && firestore.exists(messagePath)
+        && message.data.type == 'file'
+        && message.data.get('isDeleted', false) != true
+        && message.data.storagePath == expectedPath
+        && message.data.retentionMode == retentionMode
         && (
-          !firestore.get(
-            /databases/(default)/documents/snack_chats/$(snackChatId)
-          ).data.keys().hasAll(['meetupId', 'allowMeetupJoin'])
-          || firestore.get(
-            /databases/(default)/documents/snack_chats/$(snackChatId)
-          ).data.allowMeetupJoin != true
-          || canReadMeetup(firestore.get(
-            /databases/(default)/documents/snack_chats/$(snackChatId)
-          ).data.meetupId)
+          retentionMode == 'permanent'
+          || (
+            message.data.expiresAt is timestamp
+            && request.time < message.data.expiresAt
+          )
         );
     }
 
@@ -191,6 +258,24 @@ service firebase.storage {
         && request.auth.uid == userId
         && resource.metadata.ownerUid == request.auth.uid
         && resource.metadata.snackChatId == snackChatId;
+    }
+
+    // Snack Chat documents use opaque object ids. The upload job authorizes
+    // one immutable create; the final message authorizes participant reads.
+    match /snack_chat_files/{retentionMode}/{snackChatId}/{messageId}/{fileId} {
+      allow read: if canReadSnackChatFile(
+        retentionMode,
+        snackChatId,
+        messageId,
+        fileId
+      );
+      allow create: if canCreateSnackChatFile(
+        retentionMode,
+        snackChatId,
+        messageId,
+        fileId
+      );
+      allow update, delete: if false;
     }
 
     match /{allPaths=**} {

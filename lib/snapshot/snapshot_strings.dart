@@ -37,6 +37,8 @@ class SnapshotStrings {
   String get next => isKorean ? '다음' : 'Next';
   String get previousSnapshot => isKorean ? '이전 스낵' : 'Previous snack';
   String get nextSnapshot => isKorean ? '다음 스낵' : 'Next snack';
+  String feedPosition(int current, int total) =>
+      isKorean ? '전체 스낵샷 $current/$total' : 'All snapshots $current/$total';
   String get preview => isKorean ? '미리보기' : 'Preview';
   String get visibility => isKorean ? '공개 범위' : 'Visibility';
   String get visibilityRequired =>

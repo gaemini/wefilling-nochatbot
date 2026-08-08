@@ -1,6 +1,12 @@
 # Uncomment this line to define a global platform for your project
 platform :ios, '16.0'
 
+# Snack Chat uses the document picker only. Keeping the media/audio modules out
+# avoids pulling gallery frameworks into the iOS build for a document feature.
+Pod::PICKER_MEDIA = false
+Pod::PICKER_AUDIO = false
+Pod::PICKER_DOCUMENT = true
+
 # CocoaPods analytics sends network stats synchronously affecting flutter build latency.
 ENV['COCOAPODS_DISABLE_STATS'] = 'true'
 

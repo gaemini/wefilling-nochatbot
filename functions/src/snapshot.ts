@@ -12,7 +12,7 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 const SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const ORPHAN_UPLOAD_GRACE_MS = 2 * 60 * 60 * 1000;
 const ALLOWED_VISIBILITIES = new Set(['public', 'friends', 'category']);
-const ALLOWED_REACTIONS = new Set(['❤️', '👏', '😊']);
+const ALLOWED_REACTIONS = new Set(['❤️']);
 
 type SnapshotVisibility = 'public' | 'friends' | 'category';
 
@@ -673,6 +673,29 @@ export const getSnapshotReactionStatus = functions.https.onCall(async (raw, cont
   };
 });
 
+export const getSnapshotCommentStatus = functions.https.onCall(async (raw, context) => {
+  const uid = requireUid(context);
+  const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
+  const snapshotId = validSnapshotId(data.snapshotId);
+  const ref = db().collection(COL.snapshots).doc(snapshotId);
+  const snapshot = await ref.get();
+  if (!snapshot.exists || !(await canAccessSnapshot(uid, snapshot.data() ?? {}))) {
+    throw new functions.https.HttpsError('permission-denied', 'Snapshot is not accessible.');
+  }
+  const ownerId = text(snapshot.get('ownerId') ?? snapshot.get('authorId'));
+  if (ownerId === uid) return {commented: true};
+
+  const canonical = await ref.collection('comments').doc(uid).get();
+  if (canonical.exists) return {commented: true};
+
+  // UID 문서 방식을 적용하기 전에 생성된 코멘트도 1회 사용으로 인정한다.
+  const legacy = await ref.collection('comments')
+    .where('senderId', '==', uid)
+    .limit(1)
+    .get();
+  return {commented: !legacy.empty};
+});
+
 export const toggleSnapshotReaction = functions.https.onCall(async (raw, context) => {
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
@@ -781,7 +804,7 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
   const uid = requireUid(context);
   const data = raw && typeof raw === 'object' ? raw as Record<string, unknown> : {};
   const snapshotId = validSnapshotId(data.snapshotId);
-  const requestId = validRequestId(data.requestId);
+  validRequestId(data.requestId);
   const message = validSnapshotComment(data.message);
   const ref = db().collection(COL.snapshots).doc(snapshotId);
   const accessCheckedAt = admin.firestore.Timestamp.now();
@@ -798,6 +821,10 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
       'You cannot comment on your own Snapshot.',
     );
   }
+  const comments = ref.collection('comments');
+  const legacy = await comments.where('senderId', '==', uid).limit(1).get();
+  if (!legacy.empty) return {success: true, created: false};
+
   const [actorDocument, ownerDocument] = await Promise.all([
     db().collection(COL.users).doc(uid).get(),
     db().collection(COL.users).doc(ownerId).get(),
@@ -809,9 +836,11 @@ export const sendSnapshotComment = functions.https.onCall(async (raw, context) =
   const notificationMessage = isKorean
     ? `${actorName}님: ${message}`
     : `${actorName}: ${message}`;
-  const commentRef = ref.collection('comments').doc(requestId);
+  // 사용자 UID를 문서 ID로 사용해 빠른 연속 탭과 다른 기기에서의 요청도
+  // 스낵샷당 한 번만 저장되도록 한다.
+  const commentRef = comments.doc(uid);
   const notificationRef = db().collection(COL.notifications)
-    .doc(`snapshot_comment_${snapshotId}_${requestId}`);
+    .doc(`snapshot_comment_${snapshotId}_${uid}`);
   const result = await db().runTransaction(async (transaction) => {
     const [currentSnapshot, previous] = await Promise.all([
       transaction.get(ref),

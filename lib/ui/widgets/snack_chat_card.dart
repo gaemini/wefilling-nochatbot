@@ -59,11 +59,16 @@ class SnackChatCard extends StatelessWidget {
         currentUserId == null ? 0 : snackChat.getMyUnreadCount(currentUserId!);
     final hasUnread = unreadCount > 0;
     final rawLastMessage = snackChat.lastMessage.trim();
-    final lastMessage = rawLastMessage == '[이미지]'
-        ? (isKo ? '[이미지]' : '[Image]')
-        : rawLastMessage.isEmpty
-            ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
-            : rawLastMessage;
+    final fileSummaryExpired = snackChat.lastMessageType == 'file' &&
+        snackChat.lastMessageExpiresAt != null &&
+        !DateTime.now().isBefore(snackChat.lastMessageExpiresAt!);
+    final lastMessage = fileSummaryExpired
+        ? (isKo ? '만료된 파일입니다' : 'File expired')
+        : rawLastMessage == '[이미지]'
+            ? (isKo ? '[이미지]' : '[Image]')
+            : rawLastMessage.isEmpty
+                ? (isKo ? '아직 메시지가 없습니다' : 'No messages yet')
+                : rawLastMessage;
 
     return Material(
       color: BrandColors.surface,

@@ -1,9 +1,13 @@
 import Flutter
+import Photos
 import UIKit
 import UserNotifications
 
 @main
-@objc class AppDelegate: FlutterAppDelegate {
+@objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
+  private var mediaSaverChannel: FlutterMethodChannel?
+  private var isSavingMedia = false
+
   override func application(
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
@@ -21,8 +25,118 @@ import UserNotifications
     // 중요: iOS 앱 시작 시점에는 APNs 등록을 즉시 호출하지 않는다.
     // 푸시 활성화는 Flutter 레이어의 상태 머신(locale/session/active/권한) 이후에 진행한다.
     
-    GeneratedPluginRegistrant.register(with: self)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
+    GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    let channel = FlutterMethodChannel(
+      name: "com.wefilling.app/media_saver",
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    channel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "saveImage" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.saveImageToPhotos(call: call, result: result)
+    }
+    mediaSaverChannel = channel
+  }
+
+  private func saveImageToPhotos(call: FlutterMethodCall, result: @escaping FlutterResult) {
+    guard
+      let arguments = call.arguments as? [String: Any],
+      let typedData = arguments["bytes"] as? FlutterStandardTypedData,
+      !typedData.data.isEmpty
+    else {
+      result(FlutterError(
+        code: "invalid-image-data",
+        message: "Image bytes are required.",
+        details: nil
+      ))
+      return
+    }
+    let filename = (arguments["filename"] as? String)?.trimmingCharacters(
+      in: .whitespacesAndNewlines
+    ) ?? "wefilling.jpg"
+    guard !isSavingMedia else {
+      result(FlutterError(
+        code: "save-in-progress",
+        message: "Another image save is in progress.",
+        details: nil
+      ))
+      return
+    }
+    isSavingMedia = true
+
+    requestPhotoAddPermission { [weak self] granted in
+      guard granted else {
+        DispatchQueue.main.async {
+          self?.isSavingMedia = false
+          result(FlutterError(
+            code: "photo-permission-denied",
+            message: "Photo add permission was denied.",
+            details: nil
+          ))
+        }
+        return
+      }
+      self?.performPhotoSave(
+        data: typedData.data,
+        filename: filename.isEmpty ? "wefilling.jpg" : filename,
+        result: result
+      )
+    }
+  }
+
+  private func requestPhotoAddPermission(completion: @escaping (Bool) -> Void) {
+    if #available(iOS 14, *) {
+      let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
+      if status == .notDetermined {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { nextStatus in
+          completion(nextStatus == .authorized || nextStatus == .limited)
+        }
+      } else {
+        completion(status == .authorized || status == .limited)
+      }
+      return
+    }
+    let status = PHPhotoLibrary.authorizationStatus()
+    if status == .notDetermined {
+      PHPhotoLibrary.requestAuthorization { nextStatus in
+        completion(nextStatus == .authorized)
+      }
+    } else {
+      completion(status == .authorized)
+    }
+  }
+
+  private func performPhotoSave(
+    data: Data,
+    filename: String,
+    result: @escaping FlutterResult
+  ) {
+    let options = PHAssetResourceCreationOptions()
+    options.originalFilename = filename
+    PHPhotoLibrary.shared().performChanges({
+      let request = PHAssetCreationRequest.forAsset()
+      request.addResource(with: .photo, data: data, options: options)
+    }) { success, error in
+      DispatchQueue.main.async {
+        self.isSavingMedia = false
+        if success {
+          result(nil)
+        } else {
+          result(FlutterError(
+            code: "photo-save-failed",
+            message: error?.localizedDescription ?? "Could not save the image.",
+            details: nil
+          ))
+        }
+      }
+    }
   }
   
   

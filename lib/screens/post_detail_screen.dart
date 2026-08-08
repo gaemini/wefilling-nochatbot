@@ -1736,6 +1736,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
           widget.post.id,
           content,
           parentCommentId: _replyParentTopLevelId,
+          replyToCommentId: _replyTargetCommentId,
           replyToUserId: _replyToUserId,
           replyToUserNickname: _replyToUserName,
         );

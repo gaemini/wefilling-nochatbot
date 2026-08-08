@@ -14,11 +14,21 @@ class SnapshotStorageImage extends StatefulWidget {
     required this.snapshot,
     this.fit = BoxFit.cover,
     this.borderRadius,
+    this.placeholderColor = const Color(0xFFF1F2F4),
+    this.errorBackgroundColor = const Color(0xFFF1F2F4),
+    this.showLoadingIndicator = true,
+    this.fadeInDuration = Duration.zero,
+    this.onImageReady,
   });
 
   final SnapshotItem snapshot;
   final BoxFit fit;
   final BorderRadius? borderRadius;
+  final Color placeholderColor;
+  final Color errorBackgroundColor;
+  final bool showLoadingIndicator;
+  final Duration fadeInDuration;
+  final VoidCallback? onImageReady;
 
   @override
   State<SnapshotStorageImage> createState() => _SnapshotStorageImageState();
@@ -28,6 +38,7 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
   late Future<Uint8List> _future;
   Timer? _retryTimer;
   int _retryCount = 0;
+  String? _readyNotificationId;
 
   @override
   void initState() {
@@ -43,6 +54,7 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
       _retryTimer?.cancel();
       _retryTimer = null;
       _retryCount = 0;
+      _readyNotificationId = null;
       _future = SnapshotService.instance.loadImageBytes(widget.snapshot);
     }
   }
@@ -69,27 +81,44 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
     });
   }
 
+  void _notifyImageReady() {
+    final callback = widget.onImageReady;
+    final snapshotId = widget.snapshot.id;
+    if (callback == null || _readyNotificationId == snapshotId) return;
+    _readyNotificationId = snapshotId;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || widget.snapshot.id != snapshotId) return;
+      callback();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final placeholder = ColoredBox(
-      color: const Color(0xFFF1F2F4),
+      key: ValueKey<String>('snapshot-image-loading-${widget.snapshot.id}'),
+      color: widget.placeholderColor,
       child: Center(
-        child: SizedBox.square(
-          dimension: 20,
-          child: CircularProgressIndicator(
-            strokeWidth: 1.8,
-            color: Colors.grey.shade500,
-          ),
-        ),
+        child: widget.showLoadingIndicator
+            ? SizedBox.square(
+                dimension: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.8,
+                  color: Colors.grey.shade500,
+                ),
+              )
+            : null,
       ),
     );
 
     Widget image = FutureBuilder<Uint8List>(
       future: _future,
       builder: (context, snapshot) {
+        late final Widget content;
         if (snapshot.hasData) {
-          return Image.memory(
+          _notifyImageReady();
+          content = Image.memory(
             snapshot.data!,
+            key: ValueKey<String>('snapshot-image-ready-${widget.snapshot.id}'),
             fit: widget.fit,
             gaplessPlayback: true,
             filterQuality: FilterQuality.medium,
@@ -101,15 +130,40 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
                 error,
                 stackTrace,
               );
-              return const _ImageError();
+              return _ImageError(
+                key: ValueKey<String>(
+                  'snapshot-image-render-error-${widget.snapshot.id}',
+                ),
+                backgroundColor: widget.errorBackgroundColor,
+              );
             },
           );
-        }
-        if (snapshot.hasError) {
+        } else if (snapshot.hasError) {
           _scheduleRetry(snapshot.error!);
-          return const _ImageError();
+          content = _ImageError(
+            key: ValueKey<String>(
+              'snapshot-image-load-error-${widget.snapshot.id}',
+            ),
+            backgroundColor: widget.errorBackgroundColor,
+          );
+        } else {
+          content = placeholder;
         }
-        return placeholder;
+
+        if (widget.fadeInDuration == Duration.zero) return content;
+        return AnimatedSwitcher(
+          duration: widget.fadeInDuration,
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          layoutBuilder: (currentChild, previousChildren) => Stack(
+            fit: StackFit.expand,
+            children: [
+              ...previousChildren,
+              if (currentChild != null) currentChild,
+            ],
+          ),
+          child: content,
+        );
       },
     );
 
@@ -121,15 +175,19 @@ class _SnapshotStorageImageState extends State<SnapshotStorageImage> {
 }
 
 class _ImageError extends StatelessWidget {
-  const _ImageError();
+  const _ImageError({super.key, required this.backgroundColor});
+
+  final Color backgroundColor;
 
   @override
   Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFF1F2F4),
-      child: Center(
-        child:
-            Icon(Icons.image_not_supported_outlined, color: Color(0xFF98A2B3)),
+    return ColoredBox(
+      color: backgroundColor,
+      child: const Center(
+        child: Icon(
+          Icons.image_not_supported_outlined,
+          color: Color(0xFF98A2B3),
+        ),
       ),
     );
   }

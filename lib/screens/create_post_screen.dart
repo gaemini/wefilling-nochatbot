@@ -727,6 +727,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     final l10n = AppLocalizations.of(context)!;
     final imageLabel = l10n.imageAttachment;
     final screenSize = MediaQuery.sizeOf(context);
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final horizontalPadding = screenSize.width < 360 ? 12.0 : 16.0;
     final contentMinLines = screenSize.height < 700 ? 7 : 10;
 
@@ -737,7 +738,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         horizontalPadding,
         context.rs(8).clamp(6, 10).toDouble(),
         horizontalPadding,
-        24,
+        24 + systemBottomInset,
       ),
       child: Center(
         child: ConstrainedBox(
@@ -1132,6 +1133,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   Widget _buildVisibilityBody() {
     final l10n = AppLocalizations.of(context)!;
     final screenWidth = MediaQuery.sizeOf(context).width;
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
     final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
 
     return SingleChildScrollView(
@@ -1141,7 +1143,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
         horizontalPadding,
         context.rs(12).clamp(10, 16).toDouble(),
         horizontalPadding,
-        24,
+        24 + systemBottomInset,
       ),
       child: Center(
         child: ConstrainedBox(

@@ -29,6 +29,7 @@ class CommentService {
     String postId,
     String content, {
     String? parentCommentId,
+    String? replyToCommentId,
     String? replyToUserId,
     String? replyToUserNickname,
     // 리뷰 댓글 지원을 위한 선택 파라미터
@@ -54,9 +55,9 @@ class CommentService {
           postAuthorId = postDoc.data()!['userId'];
         }
       } catch (_) {}
-      
+
       postAuthorId ??= reviewOwnerUserId;
-      
+
       // 게시글 작성자와 차단 관계 확인
       if (postAuthorId != null && postAuthorId != user.uid) {
         // 네트워크 지연으로 전송이 무한 대기처럼 보이지 않도록 병렬 + 타임아웃 처리
@@ -75,7 +76,7 @@ class CommentService {
           // 차단 체크 실패는 "차단 아님"으로 처리(기존 정책: 조회 실패 시 빈 Set 반환과 동일)
           Logger.error('차단 관계 확인 실패(무시): $e');
         }
-        
+
         if (isBlocked || isBlockedBy) {
           Logger.error('댓글 작성 실패: 차단된 사용자의 게시글입니다.');
           throw Exception('차단된 사용자의 게시글에는 댓글을 작성할 수 없습니다.');
@@ -106,6 +107,7 @@ class CommentService {
         'createdAt': FieldValue.serverTimestamp(),
         'parentCommentId': parentCommentId,
         'depth': parentCommentId != null ? 1 : 0,
+        'replyToCommentId': replyToCommentId,
         'replyToUserId': replyToUserId,
         'replyToUserNickname': replyToUserNickname,
         'likeCount': 0,
@@ -133,6 +135,7 @@ class CommentService {
         if (t.isEmpty) return '';
         return t.length <= max ? t : '${t.substring(0, max)}...';
       }
+
       try {
         final postDoc = await _firestore.collection('posts').doc(postId).get();
         if (postDoc.exists && postDoc.data() != null) {
@@ -164,7 +167,8 @@ class CommentService {
       // 댓글 수 정합성 보정:
       // - posts/meetups의 commentCount는 Cloud Functions 트리거가 담당 (rules 이슈/중복 방지)
       // - 리뷰 프로필(users/{uid}/posts/{postId}) commentCount만 클라이언트에서 보정
-      unawaited(_updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
+      unawaited(
+          _updateCommentCount(postId, reviewOwnerUserId: reviewOwnerUserId));
 
       return true;
     } on FirebaseException catch (e) {
@@ -180,14 +184,14 @@ class CommentService {
   }
 
   // 게시글의 댓글 수 업데이트
-  Future<void> _updateCommentCount(String postId, {String? reviewOwnerUserId}) async {
+  Future<void> _updateCommentCount(String postId,
+      {String? reviewOwnerUserId}) async {
     try {
       // 해당 게시글의 댓글 수 계산
-      final querySnapshot =
-          await _firestore
-              .collection('comments')
-              .where('postId', isEqualTo: postId)
-              .get();
+      final querySnapshot = await _firestore
+          .collection('comments')
+          .where('postId', isEqualTo: postId)
+          .get();
 
       final commentCount = querySnapshot.docs.length;
 
@@ -213,7 +217,8 @@ class CommentService {
   Future<void> _updateMeetupCommentCount(String postId) async {
     try {
       // postId가 모임 ID인지 확인 (meetups 컬렉션에 해당 문서가 있는지 확인)
-      final meetupDoc = await _firestore.collection('meetups').doc(postId).get();
+      final meetupDoc =
+          await _firestore.collection('meetups').doc(postId).get();
       if (meetupDoc.exists) {
         // 모임이 존재하면 댓글수 업데이트
         await _meetupService.updateCommentCount(postId);
@@ -232,7 +237,7 @@ class CommentService {
     if (!CacheFeatureFlags.isCommentCacheEnabled) {
       return [];
     }
-    
+
     try {
       return await _cache.getComments(postId);
     } catch (e) {
@@ -244,7 +249,8 @@ class CommentService {
   /// 여러 게시글의 댓글 수를 한 번에 조회합니다. (수동 새로고침용)
   /// - Firestore whereIn(최대 10개) 제한 때문에 내부에서 청크 처리합니다.
   /// - 반환: { postId: count }
-  Future<Map<String, int>> fetchCommentCountsForPostIds(List<String> postIds) async {
+  Future<Map<String, int>> fetchCommentCountsForPostIds(
+      List<String> postIds) async {
     final ids = postIds.where((e) => e.trim().isNotEmpty).toSet().toList();
     if (ids.isEmpty) return {};
 
@@ -309,41 +315,42 @@ class CommentService {
           // .orderBy('createdAt', descending: false)
           .snapshots()
           .asyncMap((snapshot) async {
-            List<Comment> comments =
-                snapshot.docs.map((doc) {
-                  return Comment.fromFirestore(doc);
-                }).toList();
+        List<Comment> comments = snapshot.docs.map((doc) {
+          return Comment.fromFirestore(doc);
+        }).toList();
 
-            // 차단/차단당한 사용자의 댓글 필터링
-            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
-            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-              comments = comments.where((comment) => 
-                comment.userId != null && 
-                !blockedUserIds.contains(comment.userId) &&
-                !blockedByUserIds.contains(comment.userId)
-              ).toList();
-            }
+        // 차단/차단당한 사용자의 댓글 필터링
+        final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+        final blockedByUserIds =
+            await ContentFilterService.getBlockedByUserIds();
+        if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
+          comments = comments
+              .where((comment) =>
+                  comment.userId != null &&
+                  !blockedUserIds.contains(comment.userId) &&
+                  !blockedByUserIds.contains(comment.userId))
+              .toList();
+        }
 
-            // 신고/숨김 처리된 댓글/사용자 즉시 제외
-            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
-            comments = comments.where((comment) {
-              return !ContentHideService.shouldHideComment(
-                commentId: comment.id,
-                userId: comment.userId,
-              );
-            }).toList();
+        // 신고/숨김 처리된 댓글/사용자 즉시 제외
+        await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
+        comments = comments.where((comment) {
+          return !ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          );
+        }).toList();
 
-            // 클라이언트 측에서 정렬 수행
-            comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        // 클라이언트 측에서 정렬 수행
+        comments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-            // 캐시 업데이트 (백그라운드, 실패해도 무시)
-            if (CacheFeatureFlags.isCommentCacheEnabled) {
-              unawaited(_cache.saveComments(postId, comments));
-            }
+        // 캐시 업데이트 (백그라운드, 실패해도 무시)
+        if (CacheFeatureFlags.isCommentCacheEnabled) {
+          unawaited(_cache.saveComments(postId, comments));
+        }
 
-            return comments;
-          });
+        return comments;
+      });
     } catch (e) {
       Logger.error('댓글 불러오기 오류: $e');
       // 오류 발생 시 빈 리스트 반환
@@ -380,7 +387,7 @@ class CommentService {
 
       // 댓글 삭제
       await _firestore.collection('comments').doc(commentId).delete();
-      
+
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
 
@@ -404,25 +411,26 @@ class CommentService {
       Logger.log('댓글 좋아요 토글 시작');
       Logger.log('  - commentId: $commentId');
       Logger.log('  - userId: $userId');
-      
+
       final commentRef = _firestore.collection('comments').doc(commentId);
-      
+
       return await _firestore.runTransaction((transaction) async {
         final commentDoc = await transaction.get(commentRef);
-        
+
         if (!commentDoc.exists) {
           Logger.log('  ❌ 댓글을 찾을 수 없습니다.');
           throw Exception('댓글을 찾을 수 없습니다.');
         }
-        
+
         final commentData = commentDoc.data()!;
-        final List<String> likedBy = List<String>.from(commentData['likedBy'] ?? []);
+        final List<String> likedBy =
+            List<String>.from(commentData['likedBy'] ?? []);
         final int currentLikeCount = commentData['likeCount'] ?? 0;
-        
+
         Logger.log('  - 현재 좋아요 수: $currentLikeCount');
         Logger.log('  - 좋아요 누른 사용자: ${likedBy.length}명');
         Logger.log('  - 사용자가 이미 좋아요 눌렀는지: ${likedBy.contains(userId)}');
-        
+
         if (likedBy.contains(userId)) {
           // 좋아요 취소
           likedBy.remove(userId);
@@ -464,38 +472,38 @@ class CommentService {
           .where('postId', isEqualTo: postId)
           .snapshots(includeMetadataChanges: true)
           .handleError((e, st) {
-            Logger.error('댓글 스트림 오류(postId=$postId)', e);
-          })
-          .asyncMap((snapshot) async {
-            List<Comment> allComments = snapshot.docs.map((doc) {
-              return Comment.fromFirestore(doc);
-            }).toList();
+        Logger.error('댓글 스트림 오류(postId=$postId)', e);
+      }).asyncMap((snapshot) async {
+        List<Comment> allComments = snapshot.docs.map((doc) {
+          return Comment.fromFirestore(doc);
+        }).toList();
 
-            final blockedUserIds = await ContentFilterService.getBlockedUserIds();
-            final blockedByUserIds = await ContentFilterService.getBlockedByUserIds();
-            if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
-              allComments = allComments.where((comment) {
-                final uid = comment.userId;
-                return uid != null &&
-                    !blockedUserIds.contains(uid) &&
-                    !blockedByUserIds.contains(uid);
-              }).toList();
-            }
-            
-            // 클라이언트 측에서 정렬 수행
-            allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        final blockedUserIds = await ContentFilterService.getBlockedUserIds();
+        final blockedByUserIds =
+            await ContentFilterService.getBlockedByUserIds();
+        if (blockedUserIds.isNotEmpty || blockedByUserIds.isNotEmpty) {
+          allComments = allComments.where((comment) {
+            final uid = comment.userId;
+            return uid != null &&
+                !blockedUserIds.contains(uid) &&
+                !blockedByUserIds.contains(uid);
+          }).toList();
+        }
 
-            // 신고/숨김 처리된 댓글/사용자 즉시 제외
-            await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
-            allComments = allComments.where((comment) {
-              return !ContentHideService.shouldHideComment(
-                commentId: comment.id,
-                userId: comment.userId,
-              );
-            }).toList();
-            
-            return allComments;
-          });
+        // 클라이언트 측에서 정렬 수행
+        allComments.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+        // 신고/숨김 처리된 댓글/사용자 즉시 제외
+        await ReportService.getHiddenAnonymousCommentIdsForPost(postId);
+        allComments = allComments.where((comment) {
+          return !ContentHideService.shouldHideComment(
+            commentId: comment.id,
+            userId: comment.userId,
+          );
+        }).toList();
+
+        return allComments;
+      });
     } catch (e) {
       Logger.error('댓글 불러오기 오류: $e');
       return Stream.empty();
@@ -509,7 +517,8 @@ class CommentService {
       if (user == null) return false;
 
       // 댓글 정보 가져오기
-      final commentDoc = await _firestore.collection('comments').doc(commentId).get();
+      final commentDoc =
+          await _firestore.collection('comments').doc(commentId).get();
       if (!commentDoc.exists) return false;
 
       final commentData = commentDoc.data()!;
@@ -523,7 +532,7 @@ class CommentService {
       // - 따라서 여기서는 "부모 댓글"만 삭제하고,
       //   대댓글은 Cloud Functions(onDelete 트리거)에서 관리자 권한으로 연쇄 삭제한다.
       await _firestore.collection('comments').doc(commentId).delete();
-      
+
       // 댓글 수 정합성 보정 (리뷰 프로필용)
       unawaited(_updateCommentCount(postId));
 

@@ -17,17 +17,26 @@ class SnackChatTabView extends StatefulWidget {
 
 class _SnackChatTabViewState extends State<SnackChatTabView> {
   // 서비스 인스턴스를 State에 보관해 rebuild마다 재생성되지 않도록 함
-  final SnackChatService _service = SnackChatService();
-  late final Stream<List<SnackChat>> _todayStream;
-  late final Stream<List<SnackChat>> _allStream;
-  late final Stream<Set<String>> _mutedIdsStream;
+  late SnackChatService _service;
+  late Stream<List<SnackChat>> _todayStream;
+  late Stream<List<SnackChat>> _allStream;
+  late Stream<Set<String>> _mutedIdsStream;
 
   @override
   void initState() {
     super.initState();
+    _resetStreams();
+  }
+
+  void _resetStreams() {
+    _service = SnackChatService();
     _todayStream = _service.getTodaySnackChats();
     _allStream = _service.getAllSnackChats();
     _mutedIdsStream = _service.watchMutedSnackChatIds();
+  }
+
+  void _retryStreams() {
+    setState(_resetStreams);
   }
 
   Future<bool> _confirmUnfavorite() async {
@@ -66,6 +75,9 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                     !snapshot.hasData) {
                   return const _SectionLoading();
                 }
+                if (snapshot.hasError && items.isEmpty) {
+                  return _SectionError(onRetry: _retryStreams);
+                }
                 if (items.isEmpty) {
                   return _SectionEmpty(
                     message: isKo
@@ -73,29 +85,29 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         : 'No active Snack Chats.',
                   );
                 }
-                return Column(
-                  children: items
-                      .map(
-                        (chat) => SnackChatCard(
-                          snackChat: chat,
-                          currentUserId: currentUserId,
-                          isMuted: mutedIds.contains(chat.id),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    SnackChatScreen(snackChatId: chat.id),
-                              ),
-                            );
-                          },
-                          onToggleFavorite: () {
-                            _handleToggleFavorite(chat, currentUserId);
-                          },
-                        ),
-                      )
-                      .toList(),
-                );
+                return Column(children: [
+                  if (snapshot.hasError)
+                    _SectionError(onRetry: _retryStreams, compact: true),
+                  ...items.map(
+                    (chat) => SnackChatCard(
+                      snackChat: chat,
+                      currentUserId: currentUserId,
+                      isMuted: mutedIds.contains(chat.id),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                SnackChatScreen(snackChatId: chat.id),
+                          ),
+                        );
+                      },
+                      onToggleFavorite: () {
+                        _handleToggleFavorite(chat, currentUserId);
+                      },
+                    ),
+                  ),
+                ]);
               },
             ),
             const SizedBox(height: 6),
@@ -108,6 +120,9 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                     !snapshot.hasData) {
                   return const _SectionLoading();
                 }
+                if (snapshot.hasError && items.isEmpty) {
+                  return _SectionError(onRetry: _retryStreams);
+                }
                 if (items.isEmpty) {
                   return _SectionEmpty(
                     message: isKo
@@ -115,29 +130,29 @@ class _SnackChatTabViewState extends State<SnackChatTabView> {
                         : 'No archived Snack Chats.',
                   );
                 }
-                return Column(
-                  children: items
-                      .map(
-                        (chat) => SnackChatCard(
-                          snackChat: chat,
-                          currentUserId: currentUserId,
-                          isMuted: mutedIds.contains(chat.id),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) =>
-                                    SnackChatScreen(snackChatId: chat.id),
-                              ),
-                            );
-                          },
-                          onToggleFavorite: () {
-                            _handleToggleFavorite(chat, currentUserId);
-                          },
-                        ),
-                      )
-                      .toList(),
-                );
+                return Column(children: [
+                  if (snapshot.hasError)
+                    _SectionError(onRetry: _retryStreams, compact: true),
+                  ...items.map(
+                    (chat) => SnackChatCard(
+                      snackChat: chat,
+                      currentUserId: currentUserId,
+                      isMuted: mutedIds.contains(chat.id),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                SnackChatScreen(snackChatId: chat.id),
+                          ),
+                        );
+                      },
+                      onToggleFavorite: () {
+                        _handleToggleFavorite(chat, currentUserId);
+                      },
+                    ),
+                  ),
+                ]);
               },
             ),
           ],
@@ -154,9 +169,7 @@ class _SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontalPadding =
-        (MediaQuery.sizeOf(context).width * 0.045)
-            .clamp(14.0, 20.0)
-            .toDouble();
+        (MediaQuery.sizeOf(context).width * 0.045).clamp(14.0, 20.0).toDouble();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
@@ -196,9 +209,7 @@ class _SectionEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontalPadding =
-        (MediaQuery.sizeOf(context).width * 0.045)
-            .clamp(14.0, 20.0)
-            .toDouble();
+        (MediaQuery.sizeOf(context).width * 0.045).clamp(14.0, 20.0).toDouble();
     return Padding(
       padding: EdgeInsets.fromLTRB(
         horizontalPadding,
@@ -213,6 +224,28 @@ class _SectionEmpty extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w500,
           color: Color(0xFF6B7280),
+        ),
+      ),
+    );
+  }
+}
+
+class _SectionError extends StatelessWidget {
+  const _SectionError({required this.onRetry, this.compact = false});
+
+  final VoidCallback onRetry;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: compact ? 2 : 10),
+      child: TextButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh_rounded, size: 18),
+        label: Text(
+          isKo ? 'Snack Chat을 불러오지 못했습니다. 다시 시도' : 'Could not load. Retry',
         ),
       ),
     );

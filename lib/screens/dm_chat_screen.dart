@@ -91,6 +91,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
   bool _serverOtherUserInfoFetchInFlight = false;
   Timer? _autoMarkReadDebounce;
   bool _autoMarkReadInFlight = false;
+  bool _autoMarkReadQueued = false;
+  int _autoMarkReadRetryAttempt = 0;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
+      _conversationReadSub;
 
   // 대화방이 없을 수 있으므로 초기에 서버 구독을 시작하지 않는다.
   StreamSubscription<List<DMMessage>>? _recentMessagesSub;
@@ -137,6 +141,34 @@ class _DMChatScreenState extends State<DMChatScreen> {
     _activeConversationId = conversationId;
     // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
     DMActiveConversation.setActive(conversationId);
+    _watchConversationUnreadCounter(conversationId);
+  }
+
+  void _watchConversationUnreadCounter(String conversationId) {
+    unawaited(_conversationReadSub?.cancel() ?? Future<void>.value());
+    final me = _currentUser;
+    if (me == null) return;
+    _conversationReadSub = FirebaseFirestore.instance
+        .collection('conversations')
+        .doc(conversationId)
+        .snapshots(includeMetadataChanges: true)
+        .listen((snapshot) {
+      if (!mounted || conversationId != _activeConversationId) return;
+      final raw = snapshot.data()?['unreadCount'];
+      final value = raw is Map ? raw[me.uid] : null;
+      final myUnread = value is num ? value.toInt() : 0;
+      if (myUnread > 0) {
+        // The server's message-created trigger can finish after the message
+        // itself was already marked read. Watching the room counter closes
+        // that race and immediately reconciles a late increment back to zero.
+        _scheduleAutoMarkAsRead(
+          _messages,
+          forceCounterReconcile: true,
+        );
+      }
+    }, onError: (Object error) {
+      Logger.error('❌ [DM 읽음] 대화방 카운터 구독 오류: $error');
+    });
   }
 
   @override
@@ -510,6 +542,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       DMActiveConversation.setActive(null);
     }
     _autoMarkReadDebounce?.cancel();
+    _conversationReadSub?.cancel();
     _recentMessagesSub?.cancel();
     _messageController.dispose();
     _messageFocusNode.dispose();
@@ -518,12 +551,18 @@ class _DMChatScreenState extends State<DMChatScreen> {
     super.dispose();
   }
 
-  void _scheduleAutoMarkAsRead(List<DMMessage> messages) {
+  void _scheduleAutoMarkAsRead(
+    List<DMMessage> messages, {
+    bool forceCounterReconcile = false,
+  }) {
     if (!mounted) return;
     final me = _currentUser;
     if (me == null) return;
     if (_isLeaving) return;
-    if (_autoMarkReadInFlight) return;
+    if (_autoMarkReadInFlight) {
+      _autoMarkReadQueued = true;
+      return;
+    }
 
     // 상대방이 보낸 "안 읽음" 메시지가 있으면, 채팅 화면이 열려 있는 동안 즉시 읽음 처리
     final hasUnreadIncoming =
@@ -538,7 +577,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
     Logger.log('  - _isLeaving: $_isLeaving');
     Logger.log('  - _autoMarkReadInFlight: $_autoMarkReadInFlight');
 
-    if (!hasUnreadIncoming) {
+    if (!hasUnreadIncoming && !forceCounterReconcile) {
       Logger.log('  - markAsRead 스킵: 안읽은 수신 메시지 없음');
       Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       return;
@@ -553,12 +592,32 @@ class _DMChatScreenState extends State<DMChatScreen> {
           '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (스트림 기반 트리거)');
       try {
         await _dmService.markAsRead(_activeConversationId);
+        _autoMarkReadRetryAttempt = 0;
         Logger.log(
             '✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
       } catch (e) {
         Logger.error('❌ [markAsRead] 실패: $e');
+        _autoMarkReadRetryAttempt =
+            (_autoMarkReadRetryAttempt + 1).clamp(1, 5).toInt();
+        final retrySeconds =
+            (1 << _autoMarkReadRetryAttempt).clamp(2, 30).toInt();
+        _autoMarkReadDebounce?.cancel();
+        _autoMarkReadDebounce = Timer(
+          Duration(seconds: retrySeconds),
+          () => _scheduleAutoMarkAsRead(
+            _messages,
+            forceCounterReconcile: true,
+          ),
+        );
       } finally {
         _autoMarkReadInFlight = false;
+        if (_autoMarkReadQueued) {
+          _autoMarkReadQueued = false;
+          _scheduleAutoMarkAsRead(
+            _messages,
+            forceCounterReconcile: true,
+          );
+        }
         Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       }
     });

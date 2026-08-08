@@ -16,6 +16,51 @@ class ReportService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
+  static Future<bool> _reportSnackChatMessage({
+    required String reportedUserId,
+    required String targetId,
+    required String reason,
+    String? description,
+    String? targetTitle,
+  }) async {
+    final segments = targetId
+        .split('/')
+        .map((segment) => segment.trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList(growable: false);
+    if (segments.length != 2) {
+      Logger.error('❌ 잘못된 Snack Chat 신고 대상 ID: $targetId');
+      return false;
+    }
+
+    final result = await _functions
+        .httpsCallable('reportSnackChatMessage')
+        .call(<String, dynamic>{
+      'snackChatId': segments[0],
+      'messageId': segments[1],
+      // 서버가 메시지 원본에서 작성자를 다시 검증하지만, 구버전 함수
+      // 호환과 감사 로그를 위해 클라이언트 값도 힌트로 전달한다.
+      'reportedUserId': reportedUserId,
+      'reason': reason,
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      if (targetTitle != null && targetTitle.trim().isNotEmpty)
+        'targetTitle': targetTitle.trim(),
+    }).timeout(
+      // Server-side validation and snapshotting has a 15 second ceiling.
+      // Keep the client bound finite but longer so a successfully committed
+      // report is not shown as a false timeout.
+      const Duration(seconds: 20),
+      onTimeout: () => throw TimeoutException('Snack Chat 신고 시간 초과'),
+    );
+    final data = result.data;
+    final success = data is Map && data['success'] == true;
+    if (success) {
+      Logger.log('✅ Snack Chat 메시지 신고가 접수되었습니다: $targetId');
+    }
+    return success;
+  }
+
   // 신고하기
   static Future<bool> reportContent({
     required String reportedUserId,
@@ -28,6 +73,19 @@ class ReportService {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return false;
+
+      // Snack Chat 신고는 서버가 방 참여 여부와 메시지 원본을 검증하고
+      // 신고 시점 스냅샷을 보존한다. 일반 콘텐츠 신고처럼 사용자를
+      // 전역 숨김 처리하지 않는다.
+      if (targetType.trim() == 'snack_chat_message') {
+        return _reportSnackChatMessage(
+          reportedUserId: reportedUserId,
+          targetId: targetId,
+          reason: reason,
+          description: description,
+          targetTitle: targetTitle,
+        );
+      }
 
       // Firestore에 직접 저장
       final reportRef = _firestore.collection('reports').doc();
@@ -57,7 +115,7 @@ class ReportService {
         reportedUserId: reportedUserId,
       );
       PostService.instance.requestReemitWithCurrentFilters();
-      
+
       Logger.log('✅ 신고가 접수되었습니다: $targetType $targetId');
       return true;
     } catch (e) {
@@ -221,10 +279,8 @@ class ReportService {
           .map((doc) => AnonymousBlockedPost.fromFirestore(doc.id, doc.data()))
           .toList();
 
-      final ids = posts
-          .map((e) => e.postId.trim())
-          .where((e) => e.isNotEmpty)
-          .toSet();
+      final ids =
+          posts.map((e) => e.postId.trim()).where((e) => e.isNotEmpty).toSet();
       ContentFilterService.setBlockedAnonymousPostIds(ids);
       ContentHideService.addHiddenAnonymousPostIds(ids);
       return posts;
@@ -356,7 +412,7 @@ class ReportService {
 
       final blockId = '${currentUser.uid}_$userId';
       final doc = await _firestore.collection('blocks').doc(blockId).get();
-      
+
       return doc.exists;
     } catch (e) {
       Logger.error('❌ 차단 상태 확인 실패: $e');
@@ -385,4 +441,3 @@ class ReportService {
     }
   }
 }
-

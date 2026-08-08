@@ -50,6 +50,12 @@ class CacheManager {
       } catch (e) {
         Logger.error('⚠️ 마이페이지 캐시 박스 오픈 실패(무시): $e');
       }
+      try {
+        await Hive.openBox<dynamic>('snack_chat_state_v1');
+        await Hive.openBox<dynamic>('user_profiles_v2');
+      } catch (e) {
+        Logger.error('⚠️ 스낵챗 캐시 박스 오픈 실패(무시): $e');
+      }
       // 추가 박스는 다음 Phase에서 열기
       // await Hive.openBox<CachedMeetup>('meetups');
       // await Hive.openBox<CachedMessage>('messages');
@@ -75,6 +81,8 @@ class CacheManager {
       await Hive.deleteBoxFromDisk('comments');
       await Hive.deleteBoxFromDisk('dm_messages_v1');
       await Hive.deleteBoxFromDisk('my_page_tabs_v1');
+      await Hive.deleteBoxFromDisk('snack_chat_state_v1');
+      await Hive.deleteBoxFromDisk('user_profiles_v2');
       // 추가 박스는 다음 Phase에서 삭제
       // await Hive.deleteBoxFromDisk('meetups');
       // await Hive.deleteBoxFromDisk('messages');

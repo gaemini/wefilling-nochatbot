@@ -36,26 +36,72 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   bool _isInviteSheetOpen = false;
   bool _isLeaving = false;
   bool _isMuted = false;
+  bool _isUpdatingMute = false;
+  bool _isUpdatingFavorite = false;
+  int _muteMutationGeneration = 0;
+  bool _isUpdatingTitle = false;
+  bool _isSendingAnnouncement = false;
+  String? _pendingAnnouncementBody;
+  String? _pendingAnnouncementEventId;
   Future<List<UserProfile>>? _participantsFuture;
   String _participantsSignature = '';
   SnackChat? _lastRoom;
+  late Stream<SnackChat?> _roomStream;
   String? get _uid => FirebaseAuth.instance.currentUser?.uid;
 
   @override
   void initState() {
     super.initState();
+    _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _loadMuteState();
   }
 
   Future<void> _loadMuteState() async {
+    final generation = _muteMutationGeneration;
     final muted = await _snackChatService.isSnackChatMuted(widget.snackChatId);
-    if (mounted) setState(() => _isMuted = muted);
+    if (mounted && generation == _muteMutationGeneration) {
+      setState(() => _isMuted = muted);
+    }
+  }
+
+  void _retryRoomStream() {
+    if (!mounted || _isLeaving) return;
+    setState(() {
+      _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
+    });
   }
 
   Future<void> _toggleMute() async {
+    if (_isUpdatingMute) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final previous = _isMuted;
     final newVal = !_isMuted;
-    setState(() => _isMuted = newVal);
-    await _snackChatService.toggleMuteSnackChat(widget.snackChatId, newVal);
+    _muteMutationGeneration++;
+    setState(() {
+      _isUpdatingMute = true;
+      _isMuted = newVal;
+    });
+    try {
+      await _snackChatService.toggleMuteSnackChat(widget.snackChatId, newVal);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isMuted = previous);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo
+                ? '알림 설정을 저장하지 못했습니다.'
+                : 'Could not update notification settings.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingMute = false);
+      } else {
+        _isUpdatingMute = false;
+      }
+    }
   }
 
   Future<List<UserProfile>> _loadParticipants(SnackChat room) async {
@@ -80,7 +126,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     if (_uid == null ||
         _uid != room.creatorId ||
         _isInviting ||
-        _isInviteSheetOpen) {
+        _isInviteSheetOpen ||
+        room.allowMeetupJoin ||
+        (room.meetupId?.isNotEmpty ?? false)) {
       return;
     }
     _isInviteSheetOpen = true;
@@ -443,13 +491,230 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   }
 
   Future<void> _toggleFavorite(SnackChat room) async {
+    if (_isUpdatingFavorite) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
     final nextValue = !room.isFavoritedBy(currentUserId);
-    if (!nextValue) {
-      final confirmed = await showSnackChatUnfavoriteSheet(context);
-      if (!confirmed) return;
+    setState(() => _isUpdatingFavorite = true);
+    try {
+      if (!nextValue) {
+        final confirmed = await showSnackChatUnfavoriteSheet(context);
+        if (!mounted || !confirmed) return;
+      }
+      await _snackChatService.toggleFavorite(room.id, nextValue);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo
+                ? '즐겨찾기 설정을 저장하지 못했습니다.'
+                : 'Could not update favorite settings.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingFavorite = false);
+      } else {
+        _isUpdatingFavorite = false;
+      }
     }
-    await _snackChatService.toggleFavorite(room.id, nextValue);
+  }
+
+  Future<String?> _showCreatorTextDialog({
+    required String title,
+    required String hintText,
+    required String actionLabel,
+    required int maxLength,
+    required int maxLines,
+    String initialValue = '',
+  }) async {
+    final controller = TextEditingController(text: initialValue);
+    var canSubmit = initialValue.trim().isNotEmpty;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return MediaQuery.withClampedTextScaling(
+              maxScaleFactor: 1.3,
+              child: AlertDialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.white,
+                elevation: 0,
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: context.rs(24).clamp(18, 32).toDouble(),
+                ),
+                title: Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: 'Pretendard',
+                    fontSize: context.rf(18).clamp(17, 19).toDouble(),
+                    fontWeight: FontWeight.w700,
+                    color: const Color(0xFF111827),
+                  ),
+                ),
+                content: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 420),
+                  child: TextField(
+                    controller: controller,
+                    autofocus: true,
+                    minLines: maxLines == 1 ? 1 : 3,
+                    maxLines: maxLines,
+                    maxLength: maxLength,
+                    textInputAction: maxLines == 1
+                        ? TextInputAction.done
+                        : TextInputAction.newline,
+                    onChanged: (value) {
+                      final next = value.trim().isNotEmpty;
+                      if (next != canSubmit) {
+                        setDialogState(() => canSubmit = next);
+                      }
+                    },
+                    style: TextStyle(
+                      fontFamily: 'Pretendard',
+                      fontSize: context.rf(15).clamp(14, 16).toDouble(),
+                      height: 1.45,
+                      color: const Color(0xFF111827),
+                    ),
+                    decoration: InputDecoration(
+                      hintText: hintText,
+                      hintStyle: const TextStyle(
+                        fontFamily: 'Pretendard',
+                        color: Color(0xFF98A2B3),
+                      ),
+                      border: const UnderlineInputBorder(),
+                      enabledBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(color: Color(0xFFD0D5DD)),
+                      ),
+                      focusedBorder: const UnderlineInputBorder(
+                        borderSide: BorderSide(
+                          color: Color(0xFF475467),
+                          width: 1.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: Text(
+                      Localizations.localeOf(context).languageCode == 'ko'
+                          ? '취소'
+                          : 'Cancel',
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: canSubmit
+                        ? () => Navigator.of(dialogContext)
+                            .pop(controller.text.trim())
+                        : null,
+                    child: Text(actionLabel),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<void> _changeRoomTitle(SnackChat room) async {
+    if (_isUpdatingTitle || _uid != room.creatorId) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final nextTitle = await _showCreatorTextDialog(
+      title: isKo ? '스낵챗 이름 변경' : 'Rename Snack Chat',
+      hintText: isKo ? '새 이름을 입력해 주세요.' : 'Enter a new name.',
+      actionLabel: isKo ? '변경' : 'Rename',
+      maxLength: 40,
+      maxLines: 1,
+      initialValue: room.title,
+    );
+    if (!mounted || nextTitle == null || nextTitle == room.title.trim()) return;
+    setState(() => _isUpdatingTitle = true);
+    try {
+      await _snackChatService.updateSnackChatTitle(room.id, nextTitle);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo ? '스낵챗 이름을 변경했습니다.' : 'Snack Chat renamed.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo ? '이름을 변경하지 못했습니다.' : 'Could not rename the Snack Chat.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isUpdatingTitle = false);
+    }
+  }
+
+  Future<void> _createAnnouncement(SnackChat room) async {
+    if (_isSendingAnnouncement || _uid != room.creatorId) return;
+    final isKo = Localizations.localeOf(context).languageCode == 'ko';
+    final body = await _showCreatorTextDialog(
+      title: isKo ? '공지 등록' : 'Post announcement',
+      hintText: isKo ? '멤버에게 알릴 내용을 입력해 주세요.' : 'Write an announcement.',
+      actionLabel: isKo ? '등록' : 'Post',
+      maxLength: 500,
+      maxLines: 6,
+    );
+    if (!mounted || body == null) return;
+    final normalizedBody = body.trim();
+    final reusableEventId = _pendingAnnouncementBody == normalizedBody
+        ? _pendingAnnouncementEventId
+        : null;
+    final eventId =
+        reusableEventId ?? _snackChatService.createAnnouncementEventId(room.id);
+    // Preserve this pair across an error or a lost callable response. A
+    // manual retry of the same body then targets the deterministic server
+    // document instead of appending a duplicate announcement.
+    _pendingAnnouncementBody = normalizedBody;
+    _pendingAnnouncementEventId = eventId;
+    setState(() => _isSendingAnnouncement = true);
+    try {
+      await _snackChatService.createAnnouncement(
+        snackChatId: room.id,
+        text: normalizedBody,
+        eventId: eventId,
+      );
+      if (_pendingAnnouncementBody == normalizedBody &&
+          _pendingAnnouncementEventId == eventId) {
+        _pendingAnnouncementBody = null;
+        _pendingAnnouncementEventId = null;
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo ? '공지를 등록했습니다.' : 'Announcement posted.',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isKo ? '공지를 등록하지 못했습니다.' : 'Could not post announcement.',
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingAnnouncement = false);
+    }
   }
 
   Future<void> _leaveRoom(SnackChat room) async {
@@ -696,7 +961,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     required Color iconColor,
     required String title,
     required bool value,
-    required ValueChanged<bool> onChanged,
+    required ValueChanged<bool>? onChanged,
   }) {
     return Semantics(
       toggled: value,
@@ -762,14 +1027,18 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
     return PopScope(
       canPop: !_isLeaving,
       child: StreamBuilder<SnackChat?>(
-        stream: _isLeaving
-            ? null
-            : _snackChatService.watchSnackChat(widget.snackChatId),
+        stream: _isLeaving ? null : _roomStream,
         builder: (context, snap) {
           final incomingRoom = snap.data;
           if (incomingRoom != null) _lastRoom = incomingRoom;
           final room = incomingRoom ?? _lastRoom;
           if (room == null) {
+            if (snap.connectionState == ConnectionState.waiting &&
+                !snap.hasError) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
             return Scaffold(
               appBar: AppBar(
                 title: const Text(
@@ -781,10 +1050,23 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                 ),
               ),
               body: Center(
-                child: Text(
-                  isKo
-                      ? '채팅방 정보를 불러올 수 없습니다.'
-                      : 'Unable to load chat room information.',
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isKo
+                          ? '채팅방 정보를 불러올 수 없습니다.'
+                          : 'Unable to load chat room information.',
+                    ),
+                    if (snap.hasError) ...[
+                      const SizedBox(height: 8),
+                      TextButton.icon(
+                        onPressed: _retryRoomStream,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: Text(isKo ? '다시 시도' : 'Retry'),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             );
@@ -792,6 +1074,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
           _ensureParticipantsFuture(room);
 
           final isHost = _uid == room.creatorId;
+          final canInviteMembers = isHost &&
+              !room.allowMeetupJoin &&
+              !(room.meetupId?.isNotEmpty ?? false);
           final screenWidth = MediaQuery.sizeOf(context).width;
           final pagePadding = screenWidth < 360
               ? 16.0
@@ -847,6 +1132,84 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                       ),
                       children: [
                         _buildRoomSummary(context, room, l10n),
+                        if (isHost)
+                          Padding(
+                            padding: EdgeInsets.only(
+                              bottom: context.rs(10).clamp(8, 12).toDouble(),
+                            ),
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 2,
+                              children: [
+                                TextButton.icon(
+                                  onPressed: _isUpdatingTitle
+                                      ? null
+                                      : () => _changeRoomTitle(room),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: const Color(0xFF475467),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 7,
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  icon: _isUpdatingTitle
+                                      ? const SizedBox.square(
+                                          dimension: 15,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.8,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.edit_outlined,
+                                          size: 17,
+                                        ),
+                                  label: Text(
+                                    isKo ? '이름 변경' : 'Rename',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _isSendingAnnouncement
+                                      ? null
+                                      : () => _createAnnouncement(room),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: const Color(0xFF475467),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 7,
+                                    ),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                  ),
+                                  icon: _isSendingAnnouncement
+                                      ? const SizedBox.square(
+                                          dimension: 15,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 1.8,
+                                          ),
+                                        )
+                                      : const Icon(
+                                          Icons.campaign_outlined,
+                                          size: 18,
+                                        ),
+                                  label: Text(
+                                    isKo ? '공지 등록' : 'Announcement',
+                                    style: const TextStyle(
+                                      fontFamily: 'Pretendard',
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         const Divider(height: 1, color: Color(0xFFE5E7EB)),
                         _buildSettingRow(
                           context: context,
@@ -856,7 +1219,9 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           iconColor: const Color(0xFF667085),
                           title: isKo ? '채팅 즐겨찾기' : 'Favorite this chat',
                           value: room.isFavoritedBy(_uid),
-                          onChanged: (_) => _toggleFavorite(room),
+                          onChanged: _isUpdatingFavorite
+                              ? null
+                              : (_) => _toggleFavorite(room),
                         ),
                         const Divider(height: 1, color: Color(0xFFE5E7EB)),
                         _buildSettingRow(
@@ -867,7 +1232,8 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                           iconColor: const Color(0xFF667085),
                           title: isKo ? '알림' : 'Notifications',
                           value: !_isMuted,
-                          onChanged: (_) => _toggleMute(),
+                          onChanged:
+                              _isUpdatingMute ? null : (_) => _toggleMute(),
                         ),
                         SizedBox(
                             height: context.rs(18).clamp(16, 22).toDouble()),
@@ -886,7 +1252,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
                                 ),
                               ),
                             ),
-                            if (isHost)
+                            if (canInviteMembers)
                               SizedBox.square(
                                 dimension: 40,
                                 child: IconButton(

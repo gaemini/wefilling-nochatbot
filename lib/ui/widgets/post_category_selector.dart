@@ -34,6 +34,7 @@ class PostCategorySelector extends StatelessWidget {
   final bool showError;
 
   Future<void> _openPicker(BuildContext context) async {
+    FocusManager.instance.primaryFocus?.unfocus();
     final result = await showModalBottomSheet<PostCategory>(
       context: context,
       showDragHandle: true,
@@ -172,6 +173,7 @@ class _PostCategorySheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context)!;
+    final systemBottomInset = MediaQuery.viewPaddingOf(context).bottom;
 
     return ConstrainedBox(
       constraints: BoxConstraints(
@@ -203,7 +205,7 @@ class _PostCategorySheet extends StatelessWidget {
                 MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
                 0,
                 MediaQuery.sizeOf(context).width < 360 ? 12 : 16,
-                16,
+                16 + systemBottomInset,
               ),
               itemCount: PostCategory.ordered.length,
               itemBuilder: (context, index) {

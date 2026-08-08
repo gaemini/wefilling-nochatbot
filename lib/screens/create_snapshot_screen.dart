@@ -49,7 +49,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   double _overlayFontScale = 1;
   double _gestureStartFontScale = 1;
   bool _editingOverlay = false;
-  bool _overlayFocusRequestScheduled = false;
+  Completer<void>? _overlayCommitCompleter;
   bool _lightText = true;
   SnapshotVisibility _visibility = SnapshotVisibility.public;
   List<FriendCategory> _friendCategories = const <FriendCategory>[];
@@ -72,7 +72,6 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   @override
   void initState() {
     super.initState();
-    _overlayController.addListener(_syncOverlayText);
     _overlayFocusNode.addListener(_syncOverlayFocus);
     _categoriesSubscription =
         _friendCategoryService.getCategoriesStream().listen((categories) {
@@ -147,9 +146,12 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   void dispose() {
     _categoriesSubscription?.cancel();
     _friendCategoryService.dispose();
-    _overlayController
-      ..removeListener(_syncOverlayText)
-      ..dispose();
+    final pendingCommit = _overlayCommitCompleter;
+    _overlayCommitCompleter = null;
+    if (pendingCommit != null && !pendingCommit.isCompleted) {
+      pendingCommit.complete();
+    }
+    _overlayController.dispose();
     _overlayFocusNode
       ..removeListener(_syncOverlayFocus)
       ..dispose();
@@ -157,35 +159,77 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
     super.dispose();
   }
 
-  void _syncOverlayText() {
-    // The TextField renders controller changes itself. Rebuilding its parent
-    // while iOS is holding marked (composing) text can restart Korean input
-    // composition and duplicate the syllable being entered.
-    if (!mounted || _editingOverlay || _overlayFocusNode.hasFocus) return;
-    if (_overlayText == _overlayController.text) return;
-    setState(() => _overlayText = _overlayController.text);
-  }
-
   void _syncOverlayFocus() {
     if (!mounted) return;
-    final editing = _overlayFocusNode.hasFocus;
-    final text = _overlayController.text;
-    if (_editingOverlay == editing && (editing || _overlayText == text)) return;
-    setState(() {
-      _editingOverlay = editing;
-      if (!editing) _overlayText = text;
-    });
-    if (!editing) _clearOverlayCompositionAfterFocusLoss();
+    if (_overlayFocusNode.hasFocus) {
+      if (!_editingOverlay) setState(() => _editingOverlay = true);
+      return;
+    }
+    unawaited(_scheduleOverlayCommit());
   }
 
-  void _clearOverlayCompositionAfterFocusLoss() {
+  Future<void> _scheduleOverlayCommit() {
+    final pending = _overlayCommitCompleter;
+    if (pending != null) return pending.future;
+    final completer = Completer<void>();
+    _overlayCommitCompleter = completer;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _overlayFocusNode.hasFocus) return;
-      final composing = _overlayController.value.composing;
-      if (composing.isValid && !composing.isCollapsed) {
-        _overlayController.clearComposing();
+      if (!identical(_overlayCommitCompleter, completer)) return;
+      try {
+        if (!mounted || _overlayFocusNode.hasFocus) return;
+        final text = _overlayController.text;
+        var nextScale = _overlayFontScale;
+        var nextPosition = _overlayPosition;
+        final renderObject = _compositionKey.currentContext?.findRenderObject();
+        if (text.isNotEmpty &&
+            renderObject is RenderBox &&
+            renderObject.attached &&
+            renderObject.hasSize) {
+          nextScale = _fitOverlayFontScale(
+            nextScale,
+            renderObject.size.width,
+            renderObject.size.height,
+          );
+          nextPosition = _boundedOverlayPosition(
+            nextPosition,
+            renderObject.size.width,
+            renderObject.size.height,
+            fontScale: nextScale,
+          );
+        }
+        if (_editingOverlay ||
+            _overlayText != text ||
+            _overlayFontScale != nextScale ||
+            _overlayPosition != nextPosition) {
+          setState(() {
+            _overlayText = text;
+            _overlayFontScale = nextScale;
+            _overlayPosition = nextPosition;
+            _editingOverlay = false;
+          });
+        }
+      } catch (error, stackTrace) {
+        // A layout/measurement failure must not leave the next button waiting
+        // forever. Preserve the user's exact controller text as the fallback;
+        // capture can still proceed with the last safe transform values.
+        Logger.error('스낵 텍스트 오버레이 확정 실패', error, stackTrace);
+        if (mounted && !_overlayFocusNode.hasFocus) {
+          final text = _overlayController.text;
+          if (_editingOverlay || _overlayText != text) {
+            setState(() {
+              _overlayText = text;
+              _editingOverlay = false;
+            });
+          }
+        }
+      } finally {
+        if (identical(_overlayCommitCompleter, completer)) {
+          _overlayCommitCompleter = null;
+        }
+        if (!completer.isCompleted) completer.complete();
       }
     });
+    return completer.future;
   }
 
   Future<void> _pickImage(ImageSource source) async {
@@ -263,32 +307,174 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   }
 
   void _focusOverlayText() {
-    if (_overlayFocusNode.hasFocus) return;
     if (!_editingOverlay) setState(() => _editingOverlay = true);
-    if (_overlayFocusRequestScheduled) return;
-    _overlayFocusRequestScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _overlayFocusRequestScheduled = false;
-      if (!mounted || !_editingOverlay) return;
-      if (!_overlayFocusNode.hasFocus) _overlayFocusNode.requestFocus();
-    });
+    if (!_overlayFocusNode.hasFocus) _overlayFocusNode.requestFocus();
   }
 
-  void _finishOverlayEditing() {
+  Future<void> _finishOverlayEditing() {
+    if (_overlayFocusNode.hasFocus) _overlayFocusNode.unfocus();
+    return _scheduleOverlayCommit();
+  }
+
+  Future<bool> _waitForNextPaintedFrame() {
+    final completer = Completer<bool>();
+    final watchdog = Timer(const Duration(seconds: 2), () {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    // This callback is registered only after the focus-loss post-frame commit
+    // has completed. It therefore runs after the *following* frame's paint,
+    // which is the first frame containing the finalized non-editing overlay.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      watchdog.cancel();
+      if (!completer.isCompleted) completer.complete(mounted);
+    });
+    WidgetsBinding.instance.scheduleFrame();
+    return completer.future;
+  }
+
+  TextStyle _overlayTextStyle(
+    double imageWidth, {
+    double? fontScale,
+  }) {
+    return TextStyle(
+      fontFamily: 'Pretendard',
+      fontSize: (imageWidth * .066).clamp(19, 34).toDouble() *
+          (fontScale ?? _overlayFontScale),
+      fontWeight: FontWeight.w800,
+      height: 1.18,
+      color: _lightText ? Colors.white : const Color(0xFF111111),
+      shadows: _lightText
+          ? const [
+              Shadow(
+                color: Color(0x99000000),
+                blurRadius: 8,
+                offset: Offset(0, 1),
+              ),
+            ]
+          : const [
+              Shadow(
+                color: Color(0x77FFFFFF),
+                blurRadius: 8,
+                offset: Offset(0, 1),
+              ),
+            ],
+    );
+  }
+
+  Size _overlayPaintBounds(
+    double imageWidth, {
+    required double fontScale,
+  }) {
     final text = _overlayController.text;
-    _overlayFocusNode.unfocus();
-    if (!mounted) return;
-    if (_editingOverlay || _overlayText != text) {
-      setState(() {
-        _overlayText = text;
-        _editingOverlay = false;
-      });
+    if (text.isEmpty || imageWidth <= 0) return Size.zero;
+    final maxTextWidth = imageWidth * .82;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: _overlayTextStyle(imageWidth, fontScale: fontScale),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      textWidthBasis: TextWidthBasis.longestLine,
+      maxLines: 3,
+    )..layout(maxWidth: maxTextWidth);
+    // TextPainter does not include the blur extent of TextStyle.shadows.
+    const shadowSafety = 10.0;
+    final size = Size(
+      painter.width + shadowSafety * 2,
+      painter.height + shadowSafety * 2,
+    );
+    painter.dispose();
+    return size;
+  }
+
+  double _fitOverlayFontScale(
+    double requested,
+    double imageWidth,
+    double imageHeight,
+  ) {
+    var candidate = requested.clamp(.35, 1.75).toDouble();
+    if (_overlayController.text.isEmpty ||
+        imageWidth <= 0 ||
+        imageHeight <= 0) {
+      return candidate;
     }
-    _clearOverlayCompositionAfterFocusLoss();
+    for (var iteration = 0; iteration < 5; iteration++) {
+      final bounds = _overlayPaintBounds(
+        imageWidth,
+        fontScale: candidate,
+      );
+      if (bounds.width <= imageWidth && bounds.height <= imageHeight) {
+        break;
+      }
+      final widthRatio = imageWidth / bounds.width;
+      final heightRatio = imageHeight / bounds.height;
+      final fitRatio = widthRatio < heightRatio ? widthRatio : heightRatio;
+      if (fitRatio >= 1) break;
+      final fitted = (candidate * fitRatio * .98).clamp(.35, candidate);
+      if ((candidate - fitted).abs() < .001) break;
+      candidate = fitted.toDouble();
+    }
+    return candidate;
+  }
+
+  Offset _boundedOverlayPosition(
+    Offset requested,
+    double imageWidth,
+    double imageHeight, {
+    required double fontScale,
+  }) {
+    if (imageWidth <= 0 || imageHeight <= 0) return const Offset(.5, .5);
+    if (_overlayController.text.isEmpty) {
+      return Offset(
+        requested.dx.clamp(0.0, 1.0).toDouble(),
+        requested.dy.clamp(0.0, 1.0).toDouble(),
+      );
+    }
+    final bounds = _overlayPaintBounds(
+      imageWidth,
+      fontScale: fontScale,
+    );
+    final halfWidth = (bounds.width / imageWidth / 2).clamp(0.0, .5).toDouble();
+    final halfHeight =
+        (bounds.height / imageHeight / 2).clamp(0.0, .5).toDouble();
+    final x = halfWidth >= .5
+        ? .5
+        : requested.dx.clamp(halfWidth, 1 - halfWidth).toDouble();
+    final y = halfHeight >= .5
+        ? .5
+        : requested.dy.clamp(halfHeight, 1 - halfHeight).toDouble();
+    return Offset(x, y);
   }
 
   void _startOverlayTransform(ScaleStartDetails _) {
     _gestureStartFontScale = _overlayFontScale;
+  }
+
+  void _setOverlayFontScale(double requested) {
+    var nextScale = requested.clamp(.35, 1.75).toDouble();
+    var nextPosition = _overlayPosition;
+    final renderObject = _compositionKey.currentContext?.findRenderObject();
+    if (renderObject is RenderBox &&
+        renderObject.attached &&
+        renderObject.hasSize) {
+      nextScale = _fitOverlayFontScale(
+        nextScale,
+        renderObject.size.width,
+        renderObject.size.height,
+      );
+      nextPosition = _boundedOverlayPosition(
+        nextPosition,
+        renderObject.size.width,
+        renderObject.size.height,
+        fontScale: nextScale,
+      );
+    }
+    setState(() {
+      _overlayFontScale = nextScale;
+      _overlayPosition = nextPosition;
+    });
   }
 
   void _updateOverlayTransform(
@@ -297,15 +483,23 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
     double imageHeight,
   ) {
     if (_overlayText.isEmpty || imageWidth <= 0 || imageHeight <= 0) return;
+    final nextScale = _fitOverlayFontScale(
+      _gestureStartFontScale * details.scale,
+      imageWidth,
+      imageHeight,
+    );
+    final nextPosition = _boundedOverlayPosition(
+      Offset(
+        _overlayPosition.dx + details.focalPointDelta.dx / imageWidth,
+        _overlayPosition.dy + details.focalPointDelta.dy / imageHeight,
+      ),
+      imageWidth,
+      imageHeight,
+      fontScale: nextScale,
+    );
     setState(() {
-      _overlayPosition = Offset(
-        (_overlayPosition.dx + details.focalPointDelta.dx / imageWidth)
-            .clamp(.08, .92),
-        (_overlayPosition.dy + details.focalPointDelta.dy / imageHeight)
-            .clamp(.08, .92),
-      );
-      _overlayFontScale =
-          (_gestureStartFontScale * details.scale).clamp(.65, 1.75);
+      _overlayPosition = nextPosition;
+      _overlayFontScale = nextScale;
     });
   }
 
@@ -315,10 +509,16 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
       AppSnackBar.show(context, message: strings.photoRequired);
       return;
     }
-    _finishOverlayEditing();
+    if (_composing) return;
     setState(() => _composing = true);
     try {
-      await WidgetsBinding.instance.endOfFrame;
+      await _finishOverlayEditing();
+      if (!mounted) return;
+      final didPaintFinalOverlay = await _waitForNextPaintedFrame();
+      if (!mounted) return;
+      if (!didPaintFinalOverlay) {
+        throw StateError('composition-frame-not-painted');
+      }
       final boundary = _compositionKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
       if (boundary == null) throw StateError('composition-not-ready');
@@ -646,158 +846,137 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                                   builder: (context, imageConstraints) {
                                     final width = imageConstraints.maxWidth;
                                     final height = imageConstraints.maxHeight;
-                                    final textStyle = TextStyle(
-                                      fontFamily: 'Pretendard',
-                                      fontSize: (width * .066).clamp(19, 34) *
-                                          _overlayFontScale,
-                                      fontWeight: FontWeight.w800,
-                                      height: 1.18,
-                                      color: _lightText
-                                          ? Colors.white
-                                          : const Color(0xFF111111),
-                                      shadows: _lightText
-                                          ? const [
-                                              Shadow(
-                                                color: Color(0x99000000),
-                                                blurRadius: 8,
-                                                offset: Offset(0, 1),
+                                    final textStyle = _overlayTextStyle(width);
+                                    return Stack(
+                                      fit: StackFit.expand,
+                                      children: [
+                                        GestureDetector(
+                                          behavior: HitTestBehavior.opaque,
+                                          onTap: _editingOverlay
+                                              ? () => unawaited(
+                                                    _finishOverlayEditing(),
+                                                  )
+                                              : _focusOverlayText,
+                                          child: Stack(
+                                            fit: StackFit.expand,
+                                            children: [
+                                              Image.file(
+                                                _sourceFile!,
+                                                fit: BoxFit.cover,
                                               ),
-                                            ]
-                                          : const [
-                                              Shadow(
-                                                color: Color(0x77FFFFFF),
-                                                blurRadius: 8,
-                                                offset: Offset(0, 1),
-                                              ),
-                                            ],
-                                    );
-                                    return GestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      onTap: _editingOverlay
-                                          ? _finishOverlayEditing
-                                          : _focusOverlayText,
-                                      child: Stack(
-                                        fit: StackFit.expand,
-                                        children: [
-                                          Image.file(
-                                            _sourceFile!,
-                                            fit: BoxFit.cover,
-                                          ),
-                                          if (_overlayText.isEmpty &&
-                                              !_editingOverlay &&
-                                              !_composing)
-                                            Center(
-                                              child: Text(
-                                                strings.tapPhotoToType,
-                                                textAlign: TextAlign.center,
-                                                style: TextStyle(
-                                                  fontFamily: 'Pretendard',
-                                                  fontSize: (width * .043)
-                                                      .clamp(13, 17)
-                                                      .toDouble(),
-                                                  fontWeight: FontWeight.w700,
-                                                  color: Colors.white,
-                                                  shadows: const [
-                                                    Shadow(
-                                                      color: Color(0xB3000000),
-                                                      blurRadius: 8,
-                                                    ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          Positioned(
-                                            left: _overlayPosition.dx * width,
-                                            top: _overlayPosition.dy * height,
-                                            child: FractionalTranslation(
-                                              translation:
-                                                  const Offset(-.5, -.5),
-                                              child: GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.translucent,
-                                                onScaleStart: _editingOverlay
-                                                    ? null
-                                                    : _startOverlayTransform,
-                                                onScaleUpdate: _editingOverlay
-                                                    ? null
-                                                    : (details) =>
-                                                        _updateOverlayTransform(
-                                                          details,
-                                                          width,
-                                                          height,
-                                                        ),
-                                                child: IgnorePointer(
-                                                  ignoring: !_editingOverlay,
-                                                  child: SizedBox(
-                                                    width: width * .82,
-                                                    child: TextField(
-                                                      key: const ValueKey(
-                                                        'snapshot_overlay_text_field',
-                                                      ),
-                                                      controller:
-                                                          _overlayController,
-                                                      focusNode:
-                                                          _overlayFocusNode,
-                                                      readOnly:
-                                                          !_editingOverlay,
-                                                      showCursor:
-                                                          _editingOverlay,
-                                                      minLines: 1,
-                                                      maxLines: 3,
-                                                      maxLength: 60,
-                                                      maxLengthEnforcement:
-                                                          MaxLengthEnforcement
-                                                              .truncateAfterCompositionEnds,
-                                                      keyboardType:
-                                                          TextInputType
-                                                              .multiline,
-                                                      textInputAction:
-                                                          TextInputAction
-                                                              .newline,
-                                                      enableInteractiveSelection:
-                                                          _editingOverlay,
-                                                      scrollPhysics:
-                                                          const NeverScrollableScrollPhysics(),
-                                                      onTapOutside: (_) =>
-                                                          _finishOverlayEditing(),
-                                                      textAlign:
-                                                          TextAlign.center,
-                                                      cursorColor: _lightText
-                                                          ? Colors.white
-                                                          : const Color(
-                                                              0xFF111111),
-                                                      decoration:
-                                                          InputDecoration(
-                                                        hintText:
-                                                            _editingOverlay
-                                                                ? strings
-                                                                    .textHint
-                                                                : null,
-                                                        hintStyle:
-                                                            textStyle.copyWith(
+                                              if (_overlayText.isEmpty &&
+                                                  !_editingOverlay &&
+                                                  !_composing)
+                                                Center(
+                                                  child: Text(
+                                                    strings.tapPhotoToType,
+                                                    textAlign: TextAlign.center,
+                                                    style: TextStyle(
+                                                      fontFamily: 'Pretendard',
+                                                      fontSize: (width * .043)
+                                                          .clamp(13, 17)
+                                                          .toDouble(),
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: Colors.white,
+                                                      shadows: const [
+                                                        Shadow(
                                                           color:
-                                                              Colors.white70,
+                                                              Color(0xB3000000),
+                                                          blurRadius: 8,
                                                         ),
-                                                        border:
-                                                            InputBorder.none,
-                                                        enabledBorder:
-                                                            InputBorder.none,
-                                                        focusedBorder:
-                                                            InputBorder.none,
-                                                        isDense: true,
-                                                        counterText: '',
-                                                        contentPadding:
-                                                            EdgeInsets.zero,
-                                                      ),
-                                                      style: textStyle,
+                                                      ],
                                                     ),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                        Positioned(
+                                          left: _overlayPosition.dx * width,
+                                          top: _overlayPosition.dy * height,
+                                          child: FractionalTranslation(
+                                            translation: const Offset(-.5, -.5),
+                                            child: GestureDetector(
+                                              behavior:
+                                                  HitTestBehavior.translucent,
+                                              onTap: _editingOverlay
+                                                  ? null
+                                                  : _focusOverlayText,
+                                              onScaleStart: _editingOverlay
+                                                  ? null
+                                                  : _startOverlayTransform,
+                                              onScaleUpdate: _editingOverlay
+                                                  ? null
+                                                  : (details) =>
+                                                      _updateOverlayTransform(
+                                                        details,
+                                                        width,
+                                                        height,
+                                                      ),
+                                              child: IgnorePointer(
+                                                ignoring: !_editingOverlay,
+                                                child: SizedBox(
+                                                  width: width * .82,
+                                                  child: TextField(
+                                                    key: const ValueKey(
+                                                      'snapshot_overlay_text_field',
+                                                    ),
+                                                    controller:
+                                                        _overlayController,
+                                                    focusNode:
+                                                        _overlayFocusNode,
+                                                    readOnly: false,
+                                                    showCursor: true,
+                                                    minLines: 1,
+                                                    maxLines: 3,
+                                                    maxLength: 60,
+                                                    maxLengthEnforcement:
+                                                        MaxLengthEnforcement
+                                                            .truncateAfterCompositionEnds,
+                                                    keyboardType:
+                                                        TextInputType.multiline,
+                                                    textInputAction:
+                                                        TextInputAction.newline,
+                                                    enableInteractiveSelection:
+                                                        true,
+                                                    scrollPhysics:
+                                                        const NeverScrollableScrollPhysics(),
+                                                    onTapOutside: (_) =>
+                                                        unawaited(
+                                                      _finishOverlayEditing(),
+                                                    ),
+                                                    textAlign: TextAlign.center,
+                                                    cursorColor: _lightText
+                                                        ? Colors.white
+                                                        : const Color(
+                                                            0xFF111111),
+                                                    decoration: InputDecoration(
+                                                      hintText: _editingOverlay
+                                                          ? strings.textHint
+                                                          : null,
+                                                      hintStyle:
+                                                          textStyle.copyWith(
+                                                        color: Colors.white70,
+                                                      ),
+                                                      border: InputBorder.none,
+                                                      enabledBorder:
+                                                          InputBorder.none,
+                                                      focusedBorder:
+                                                          InputBorder.none,
+                                                      isDense: true,
+                                                      counterText: '',
+                                                      contentPadding:
+                                                          EdgeInsets.zero,
+                                                    ),
+                                                    style: textStyle,
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                      ],
                                     );
                                   },
                                 ),
@@ -815,7 +994,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                     children: [
                       TextButton.icon(
                         onPressed: () async {
-                          _finishOverlayEditing();
+                          await _finishOverlayEditing();
                           await _deleteTemporaryComposition();
                           if (!mounted) return;
                           setState(() {
@@ -847,7 +1026,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                           tooltip: strings.deleteText,
                           onPressed: () {
                             _overlayController.clear();
-                            _finishOverlayEditing();
+                            unawaited(_finishOverlayEditing());
                           },
                           icon: const Icon(Icons.delete_outline_rounded,
                               size: 20),
@@ -868,11 +1047,10 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                         Expanded(
                           child: Slider(
                             value: _overlayFontScale,
-                            min: .65,
+                            min: .35,
                             max: 1.75,
-                            divisions: 11,
-                            onChanged: (value) =>
-                                setState(() => _overlayFontScale = value),
+                            divisions: 14,
+                            onChanged: _setOverlayFontScale,
                           ),
                         ),
                         Icon(

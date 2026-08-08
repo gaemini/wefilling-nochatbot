@@ -2,7 +2,7 @@ name: wefilling
 description: "함께하면 즐거운 대학 생활 - 위필링"
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.52+64
+version: 1.0.54+66
 
 environment:
   sdk: ^3.6.0
@@ -38,6 +38,9 @@ dependencies:
   timezone: ^0.10.1
   webview_flutter: ^4.4.2
   image_picker: ^1.0.4
+  file_picker: ^11.0.2
+  open_filex: ^4.7.0
+  visibility_detector: 0.4.0+2
   uuid: ^4.5.1
   flutter_image_compress: ^2.1.0
   path_provider: ^2.1.1

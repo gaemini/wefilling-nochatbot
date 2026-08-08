@@ -4,6 +4,9 @@ import 'package:intl/intl.dart';
 
 import '../l10n/app_localizations.dart';
 
+List<Object?> _safeSnackChatList(Object? raw) =>
+    raw is List ? List<Object?>.from(raw) : const <Object?>[];
+
 class SnackChat {
   static final DateTime noExpirationDate = DateTime.utc(9999, 12, 31);
 
@@ -17,8 +20,12 @@ class SnackChat {
   final DateTime expiresAt;
   final List<String> favoriteUserIds;
   final String lastMessage;
+  final String lastMessageId;
   final DateTime lastMessageTime;
   final String lastMessageSenderId;
+  final String? lastMessageType;
+  final DateTime? lastMessageExpiresAt;
+  final int lastMessageSequence;
   final Map<String, int> unreadCount;
   final DateTime updatedAt;
   final String? meetupId;
@@ -35,8 +42,12 @@ class SnackChat {
     required this.expiresAt,
     required this.favoriteUserIds,
     required this.lastMessage,
+    this.lastMessageId = '',
     required this.lastMessageTime,
     required this.lastMessageSenderId,
+    this.lastMessageType,
+    this.lastMessageExpiresAt,
+    this.lastMessageSequence = 0,
     required this.unreadCount,
     required this.updatedAt,
     this.meetupId,
@@ -76,18 +87,28 @@ class SnackChat {
       return fallback;
     }
 
+    Map<String, int> parseUnreadCount(Object? raw) {
+      if (raw is! Map) return const <String, int>{};
+      final result = <String, int>{};
+      for (final entry in raw.entries) {
+        final key = entry.key.toString().trim();
+        final value = entry.value;
+        if (key.isEmpty || value is! num || !value.isFinite) continue;
+        result[key] = value.toInt().clamp(0, 1 << 30).toInt();
+      }
+      return result;
+    }
+
     return SnackChat(
       id: doc.id,
       title: (data['title'] ?? '').toString(),
       creatorId: (data['creatorId'] ?? '').toString(),
-      participantIds: (data['participantIds'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const <String>[],
-      visibleToCategoryIds: (data['visibleToCategoryIds'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const <String>[],
+      participantIds: _safeSnackChatList(data['participantIds'])
+          .map((e) => e.toString())
+          .toList(),
+      visibleToCategoryIds: _safeSnackChatList(data['visibleToCategoryIds'])
+          .map((e) => e.toString())
+          .toList(),
       createdAt: parseDate(data['createdAt'], DateTime.now()),
       activeDurationHours: (() {
         final raw = data['activeDurationHours'];
@@ -99,17 +120,32 @@ class SnackChat {
             ? noExpirationDate
             : DateTime.now().add(const Duration(days: 1)),
       ),
-      favoriteUserIds: (data['favoriteUserIds'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          ((data['isFavorited'] == true &&
+      favoriteUserIds: data['favoriteUserIds'] is List
+          ? _safeSnackChatList(data['favoriteUserIds'])
+              .map((e) => e.toString())
+              .toList()
+          : ((data['isFavorited'] == true &&
                   (data['creatorId'] ?? '').toString().isNotEmpty)
               ? <String>[(data['creatorId'] ?? '').toString()]
               : const <String>[]),
       lastMessage: (data['lastMessage'] ?? '').toString(),
+      lastMessageId: (data['lastMessageId'] ?? '').toString().trim(),
       lastMessageTime: parseDate(data['lastMessageTime'], DateTime.now()),
       lastMessageSenderId: (data['lastMessageSenderId'] ?? '').toString(),
-      unreadCount: Map<String, int>.from(data['unreadCount'] ?? const {}),
+      lastMessageType: (data['lastMessageType'] ?? '').toString().trim().isEmpty
+          ? null
+          : data['lastMessageType'].toString().trim(),
+      lastMessageExpiresAt: data['lastMessageExpiresAt'] is Timestamp
+          ? (data['lastMessageExpiresAt'] as Timestamp).toDate()
+          : null,
+      lastMessageSequence: data['lastMessageSequence'] is num
+          ? (data['lastMessageSequence'] as num)
+              .toInt()
+              .clamp(0, 1 << 30)
+              .toInt()
+          : 0,
+      // One malformed legacy counter must not make the entire room disappear.
+      unreadCount: parseUnreadCount(data['unreadCount']),
       updatedAt: parseDate(data['updatedAt'], DateTime.now()),
       meetupId: (data['meetupId'] ?? '').toString().trim().isEmpty
           ? null
@@ -129,8 +165,13 @@ class SnackChat {
       'expiresAt': Timestamp.fromDate(expiresAt),
       'favoriteUserIds': favoriteUserIds,
       'lastMessage': lastMessage,
+      'lastMessageId': lastMessageId,
       'lastMessageTime': Timestamp.fromDate(lastMessageTime),
       'lastMessageSenderId': lastMessageSenderId,
+      if (lastMessageType != null) 'lastMessageType': lastMessageType,
+      if (lastMessageExpiresAt != null)
+        'lastMessageExpiresAt': Timestamp.fromDate(lastMessageExpiresAt!),
+      'lastMessageSequence': lastMessageSequence,
       'unreadCount': unreadCount,
       'updatedAt': Timestamp.fromDate(updatedAt),
       if (meetupId != null && meetupId!.isNotEmpty) 'meetupId': meetupId,
@@ -142,8 +183,12 @@ class SnackChat {
     String? title,
     List<String>? favoriteUserIds,
     String? lastMessage,
+    String? lastMessageId,
     DateTime? lastMessageTime,
     String? lastMessageSenderId,
+    String? lastMessageType,
+    DateTime? lastMessageExpiresAt,
+    int? lastMessageSequence,
     Map<String, int>? unreadCount,
     DateTime? updatedAt,
     String? meetupId,
@@ -160,8 +205,12 @@ class SnackChat {
       expiresAt: expiresAt,
       favoriteUserIds: favoriteUserIds ?? this.favoriteUserIds,
       lastMessage: lastMessage ?? this.lastMessage,
+      lastMessageId: lastMessageId ?? this.lastMessageId,
       lastMessageTime: lastMessageTime ?? this.lastMessageTime,
       lastMessageSenderId: lastMessageSenderId ?? this.lastMessageSenderId,
+      lastMessageType: lastMessageType ?? this.lastMessageType,
+      lastMessageExpiresAt: lastMessageExpiresAt ?? this.lastMessageExpiresAt,
+      lastMessageSequence: lastMessageSequence ?? this.lastMessageSequence,
       unreadCount: unreadCount ?? this.unreadCount,
       updatedAt: updatedAt ?? this.updatedAt,
       meetupId: meetupId ?? this.meetupId,

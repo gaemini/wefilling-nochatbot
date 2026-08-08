@@ -11,6 +11,8 @@ import '../utils/logger.dart';
 /// - downloadUrl: 액세스 토큰 포함 URL
 /// - path: Storage object path (profile_images/{uid}/{file}.jpg)
 typedef ProfileUploadResult = ({String downloadUrl, String path});
+typedef SnackChatImageUploadResult = ({String storagePath, String? imageUrl});
+typedef _ChatImageUploadResult = ({String storagePath, String? downloadUrl});
 
 class StorageService {
   // 일반 이미지(posts/dm)는 기본 Storage 설정을 사용
@@ -225,7 +227,7 @@ class StorageService {
     required String conversationId,
     void Function(double progress)? onProgress, // 0.0 ~ 1.0
   }) async {
-    return _uploadChatImage(
+    final result = await _uploadChatImage(
       imageFile,
       userId: userId,
       entityId: conversationId,
@@ -233,7 +235,9 @@ class StorageService {
       entityMetadataKey: 'conversationId',
       logLabel: 'DM',
       onProgress: onProgress,
+      createDownloadUrl: true,
     );
+    return result?.downloadUrl;
   }
 
   /// Snack Chat 이미지 업로드.
@@ -244,7 +248,7 @@ class StorageService {
     required String snackChatId,
     void Function(double progress)? onProgress,
   }) async {
-    return _uploadChatImage(
+    final result = await _uploadChatImage(
       imageFile,
       userId: userId,
       entityId: snackChatId,
@@ -252,10 +256,82 @@ class StorageService {
       entityMetadataKey: 'snackChatId',
       logLabel: 'Snack Chat',
       onProgress: onProgress,
+      createDownloadUrl: true,
+    );
+    return result?.downloadUrl;
+  }
+
+  /// Authenticated-path upload for new Snack Chat messages. It deliberately
+  /// skips getDownloadURL so a bearer token is not created or persisted.
+  Future<SnackChatImageUploadResult?> uploadPrivateSnackChatImage(
+    File imageFile, {
+    required String userId,
+    required String snackChatId,
+    void Function(double progress)? onProgress,
+  }) async {
+    final result = await _uploadChatImage(
+      imageFile,
+      userId: userId,
+      entityId: snackChatId,
+      folderName: 'snack_chat_images',
+      entityMetadataKey: 'snackChatId',
+      logLabel: 'Snack Chat',
+      onProgress: onProgress,
+      createDownloadUrl: false,
+    );
+    if (result == null) return null;
+    return (
+      storagePath: result.storagePath,
+      imageUrl: result.downloadUrl,
     );
   }
 
-  Future<String?> _uploadChatImage(
+  /// Removes only an upload owned by the signed-in sender and scoped to the
+  /// current Snack Chat. Callers must first confirm that no message document
+  /// exists on the server, otherwise a late Firestore commit could leave a
+  /// valid message pointing at a deleted object.
+  Future<void> deletePrivateSnackChatImage(
+    String storagePath, {
+    required String userId,
+    required String snackChatId,
+  }) async {
+    final normalized = storagePath.trim();
+    final expectedPrefix = 'snack_chat_images/$userId/$snackChatId/';
+    if (!normalized.startsWith(expectedPrefix) ||
+        normalized.length <= expectedPrefix.length ||
+        normalized.contains('..')) {
+      throw ArgumentError.value(
+        storagePath,
+        'storagePath',
+        '현재 사용자와 스낵챗 범위의 이미지 경로가 아닙니다.',
+      );
+    }
+    try {
+      await _storage
+          .ref(normalized)
+          .delete()
+          .timeout(const Duration(seconds: 10));
+    } on FirebaseException catch (error) {
+      if (error.code != 'object-not-found') rethrow;
+    }
+  }
+
+  /// Returns the authenticated Storage object path for a Firebase download
+  /// URL. New Snack Chat messages persist this path as the durable identifier;
+  /// legacy clients can continue using the URL fallback.
+  String? storagePathFromDownloadUrl(String downloadUrl) {
+    final normalized = downloadUrl.trim();
+    if (normalized.isEmpty) return null;
+    try {
+      final path = _storage.refFromURL(normalized).fullPath.trim();
+      return path.isEmpty ? null : path;
+    } catch (error) {
+      Logger.warning('Storage URL 경로 변환 실패: $error');
+      return null;
+    }
+  }
+
+  Future<_ChatImageUploadResult?> _uploadChatImage(
     File imageFile, {
     required String userId,
     required String entityId,
@@ -263,6 +339,7 @@ class StorageService {
     required String entityMetadataKey,
     required String logLabel,
     void Function(double progress)? onProgress,
+    required bool createDownloadUrl,
   }) async {
     File? compressedFile;
     try {
@@ -326,10 +403,11 @@ class StorageService {
       );
       Logger.log('$logLabel 이미지 업로드 완료: $fullPath');
 
-      final String downloadUrl = await taskSnapshot.ref.getDownloadURL();
-      Logger.log('$logLabel 이미지 다운로드 URL 획득');
+      final String? downloadUrl =
+          createDownloadUrl ? await taskSnapshot.ref.getDownloadURL() : null;
+      if (downloadUrl != null) Logger.log('$logLabel 이미지 다운로드 URL 획득');
 
-      return downloadUrl;
+      return (storagePath: fullPath, downloadUrl: downloadUrl);
     } on TimeoutException catch (e) {
       Logger.error('$logLabel 이미지 업로드 타임아웃', e);
       return null;

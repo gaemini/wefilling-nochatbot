@@ -16,6 +16,7 @@ export {
   syncMySnapshotFeed,
   updateSnapshotVisibility,
   getSnapshotReactionStatus,
+  getSnapshotCommentStatus,
   toggleSnapshotReaction,
   sendSnapshotComment,
   deleteSnapshot,
@@ -23,6 +24,29 @@ export {
   cleanupOrphanSnapshotUploads,
   onSnapshotBlockChanged,
 } from './snapshot';
+
+export {
+  createSnackChatSecure,
+  createMeetupSnackChatSecure,
+  inviteSnackChatParticipants,
+  joinMeetupSnackChatSecure,
+  ensureSnackChatMembershipSecure,
+  leaveSnackChatSecure,
+  updateSnackChatTitleSecure,
+  createSnackChatAnnouncementSecure,
+  fetchSnackChatLinkPreview,
+  reportSnackChatMessage,
+  prepareSnackChatFileUpload,
+  commitSnackChatFileUpload,
+  cancelSnackChatFileUpload,
+  onSnackChatFileMessageDeleted,
+  onSnackChatFileUploadJobDeleted,
+  onSnackChatRoomWrittenSecure as onSnackChatRoomWritten,
+  onSnackChatMessageCreatedSecure as onSnackChatMessageCreated,
+  notifyClosedSnackChatPolls,
+  onSnackChatReactionWritten,
+  onSnackChatVoteWritten,
+} from './snack_chat';
 
 // Firebase Admin 초기화
 admin.initializeApp();
@@ -35,6 +59,27 @@ const db = admin.firestore();
 // - 클라이언트에서 대량 배치 업데이트를 수행하면 UX가 급격히 느려지므로 서버 트리거로 분리한다.
 function toStr(v: unknown): string {
   return (v ?? '').toString();
+}
+
+function escapeHtml(value: unknown): string {
+  return toStr(value).replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#39;';
+      default: return character;
+    }
+  });
+}
+
+function emailSubjectValue(value: unknown, maxLength = 80): string {
+  return toStr(value)
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
 }
 
 function toInt(v: unknown): number {
@@ -1583,17 +1628,76 @@ export const joinMeetupSecure = functions.https.onCall(async (data, context) => 
 // TypeScript noUnusedLocals를 만족시키되 Firebase export 목록에는 올리지 않는다.
 // 배포 시 기존 동적 동기화 함수들은 제거되고 이후 그룹 변경은 과거 콘텐츠를
 // 수정하지 않는다.
-// 친구요청 생성 시 수신자에게 알림 생성
+// 친구요청이 PENDING으로 전이될 때 수신자에게 알림 생성.
+// 거절/취소된 결정적 friend_requests 문서를 다시 사용해도 onCreate는
+// 발생하지 않으므로 onWrite에서 상태 전이를 감지한다.
 export const onFriendRequestCreated = functions.firestore
   .document('friend_requests/{requestId}')
-  .onCreate(async (snapshot, context) => {
+  .onWrite(async (change, context) => {
     try {
+      const snapshot = change.after.exists ? change.after : change.before;
       const req = snapshot.data();
+      if (!req) return null;
       const fromUid = req.fromUid;
       const toUid = req.toUid;
       if (!fromUid || !toUid) return null;
+
+      // Firestore events can arrive out of order. Only the event matching the
+      // current request version may create/delete its notification; otherwise
+      // a delayed CANCELLED event could erase a newer re-request alert.
+      const currentRequest = await snapshot.ref.get();
+      if (change.after.exists) {
+        const eventVersion = snapshot.updateTime?.toMillis() ?? -1;
+        const currentVersion = currentRequest.updateTime?.toMillis() ?? -2;
+        if (!currentRequest.exists || eventVersion !== currentVersion) {
+          return null;
+        }
+      } else if (currentRequest.exists) {
+        return null;
+      }
+
+      const beforeStatus = change.before.exists
+        ? String(change.before.data()?.status || '')
+        : '';
+      const afterStatus = change.after.exists ? String(req.status || '') : 'DELETED';
+      const notificationId = 'friend_request_' + crypto
+        .createHash('sha256')
+        // One deterministic id per PENDING transition: retries remain
+        // idempotent, while a later re-request still creates a fresh alert.
+        .update(`${String(context.params.requestId)}:${context.eventId}`)
+        .digest('hex');
+      const notificationRef = db.collection('notifications').doc(notificationId);
+
+      const deleteExistingFriendAlerts = async () => {
+        const existing = await db.collection('notifications')
+          .where('userId', '==', toUid)
+          .limit(500)
+          .get();
+        const batch = db.batch();
+        let changed = false;
+        existing.docs.forEach((document) => {
+          const data = document.data();
+          const dataFromUid = String(data?.data?.fromUid || '');
+          if (data.type === 'friend_request' &&
+              (data.actorId === fromUid || dataFromUid === fromUid)) {
+            batch.delete(document.ref);
+            changed = true;
+          }
+        });
+        if (changed) await batch.commit();
+      };
+
+      if (afterStatus !== 'PENDING') {
+        // 수락/거절/취소된 요청은 알림 목록과 배지에서도 즉시 제거한다.
+        await deleteExistingFriendAlerts();
+        return null;
+      }
+
+      // 이미 PENDING인 문서의 unrelated update/트리거 재시도는 무시한다.
+      if (beforeStatus === 'PENDING') return null;
       if (await hasBlockRelationship(fromUid, toUid)) {
         console.log('⏭️ 차단 관계(friend_request) - 알림 스킵');
+        await deleteExistingFriendAlerts();
         return null;
       }
 
@@ -1603,12 +1707,32 @@ export const onFriendRequestCreated = functions.firestore
       
       // 통합 키 사용 (friend_alerts), 레거시 키(friend_request) 폴백
       const friendOn = noti.friend_alerts !== false && noti.friend_request !== false;
-      if (!allOn || !friendOn) return null;
+      if (!allOn || !friendOn) {
+        await deleteExistingFriendAlerts();
+        return null;
+      }
 
       const fromUser = await db.collection('users').doc(fromUid).get();
       const fromName = fromUser.exists ? (fromUser.data()?.nickname || 'User') : 'User';
 
-      await db.collection('notifications').add({
+      // Remove legacy/random ids and the previous request generation before
+      // creating the current generation. 499 + this set stays within a
+      // Firestore batch's 500-write maximum.
+      const existing = await db.collection('notifications')
+        .where('userId', '==', toUid)
+        .limit(499)
+        .get();
+      const batch = db.batch();
+      existing.docs.forEach((document) => {
+        const data = document.data();
+        const dataFromUid = String(data?.data?.fromUid || '');
+        if (document.ref.path !== notificationRef.path &&
+            data.type === 'friend_request' &&
+            (data.actorId === fromUid || dataFromUid === fromUid)) {
+          batch.delete(document.ref);
+        }
+      });
+      batch.set(notificationRef, {
         userId: toUid,
         title: 'friend_request',
         message: '',
@@ -1618,15 +1742,17 @@ export const onFriendRequestCreated = functions.firestore
         data: {
           fromUid: fromUid,
           fromName: fromName,
+          friendRequestId: String(context.params.requestId),
         },
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         isRead: false,
       });
+      await batch.commit();
       console.log('onFriendRequestCreated: 알림 생성 완료');
       return null;
     } catch (error) {
       console.error('onFriendRequestCreated 오류:', error);
-      return null;
+      throw error;
     }
   });
 
@@ -1806,6 +1932,117 @@ export const onMeetupDeleted = functions.firestore
     }
   });
 
+type VerifiedCommentReplyRecipient = {
+  userId: string;
+  parentCommentId: string;
+  targetCommentId: string;
+};
+
+async function createNotificationOnce(
+  reference: FirebaseFirestore.DocumentReference,
+  data: FirebaseFirestore.DocumentData
+): Promise<boolean> {
+  return db.runTransaction(async (tx) => {
+    const current = await tx.get(reference);
+    if (current.exists) return false;
+    tx.create(reference, data);
+    return true;
+  });
+}
+
+// A reply is displayed under its top-level parent, but the push must go to
+// the exact comment that the user tapped. Validate both documents so a stale
+// UI state or a forged replyToUserId cannot notify somebody outside the
+// current post/thread.
+async function resolveVerifiedCommentReplyRecipient(
+  comment: Record<string, any>,
+  postId: string
+): Promise<VerifiedCommentReplyRecipient | null> {
+  const parentCommentId = normalizeUidLoose(comment.parentCommentId);
+  if (!parentCommentId) return null;
+
+  const parentRef = db.collection('comments').doc(parentCommentId);
+  const parentDoc = await parentRef.get();
+  if (!parentDoc.exists) return null;
+  const parent = (parentDoc.data() || {}) as Record<string, any>;
+  if (normalizeUidLoose(parent.postId) !== postId ||
+      normalizeUidLoose(parent.parentCommentId)) {
+    return null;
+  }
+
+  const requestedTargetId = normalizeUidLoose(comment.replyToCommentId);
+  const requestedUserId = normalizeUidLoose(comment.replyToUserId);
+
+  // Legacy clients did not persist replyToCommentId. They are safe only when
+  // replying directly to the top-level comment; nested legacy targets cannot
+  // be proven and therefore receive no reply push.
+  if (!requestedTargetId) {
+    const parentAuthorId = normalizeUidLoose(parent.userId);
+    if (!parentAuthorId ||
+        (requestedUserId && requestedUserId !== parentAuthorId)) {
+      return null;
+    }
+    return {
+      userId: parentAuthorId,
+      parentCommentId,
+      targetCommentId: parentCommentId,
+    };
+  }
+
+  const targetDoc = requestedTargetId === parentCommentId
+    ? parentDoc
+    : await db.collection('comments').doc(requestedTargetId).get();
+  if (!targetDoc.exists) return null;
+  const target = (targetDoc.data() || {}) as Record<string, any>;
+  const targetBelongsToThread = requestedTargetId === parentCommentId ||
+    normalizeUidLoose(target.parentCommentId) === parentCommentId;
+  const targetUserId = normalizeUidLoose(target.userId);
+  if (!targetBelongsToThread ||
+      normalizeUidLoose(target.postId) !== postId ||
+      !targetUserId ||
+      (requestedUserId && requestedUserId !== targetUserId)) {
+    return null;
+  }
+
+  return {
+    userId: targetUserId,
+    parentCommentId,
+    targetCommentId: requestedTargetId,
+  };
+}
+
+async function isVerifiedCommentNotificationRecipient(
+  notification: Record<string, any>
+): Promise<boolean> {
+  const type = normalizeUidLoose(notification.type);
+  if (type !== 'new_comment' && type !== 'comment_reply') return true;
+
+  const recipientId = normalizeUidLoose(notification.userId);
+  const data = notification.data && typeof notification.data === 'object'
+    ? notification.data as Record<string, any>
+    : {};
+  const postId = normalizeUidLoose(notification.postId || data.postId);
+  if (!recipientId || !postId) return false;
+
+  if (type === 'new_comment') {
+    const post = await db.collection('posts').doc(postId).get();
+    return post.exists &&
+      normalizeUidLoose(post.data()?.userId) === recipientId;
+  }
+
+  const commentId = normalizeUidLoose(data.commentId);
+  if (!commentId) return false;
+  const commentDoc = await db.collection('comments').doc(commentId).get();
+  if (!commentDoc.exists) return false;
+  const comment = (commentDoc.data() || {}) as Record<string, any>;
+  if (normalizeUidLoose(comment.postId) !== postId) return false;
+  const verifiedReply = await resolveVerifiedCommentReplyRecipient(
+    comment,
+    postId
+  );
+  return verifiedReply?.userId === recipientId;
+}
+
 // 댓글 생성 시 게시글 작성자에게 알림 (new_comment)
 export const onCommentCreated = functions.firestore
   .document('comments/{commentId}')
@@ -1815,7 +2052,7 @@ export const onCommentCreated = functions.firestore
       const postId = comment.postId;
       const commenterId = comment.userId;
       const commenterName = comment.authorNickname || 'User';
-      const parentCommentId = (comment as any)?.parentCommentId as string | undefined;
+      const parentCommentId = normalizeUidLoose(comment.parentCommentId);
       if (!postId) return null;
 
       // ✅ 댓글 수 업데이트 (posts / meetups)
@@ -1845,17 +2082,23 @@ export const onCommentCreated = functions.firestore
       const postImages: any[] = Array.isArray((post as any).imageUrls) ? (post as any).imageUrls : [];
       const thumbnailUrl = postImages.length > 0 ? String(postImages[0]) : '';
 
-      // 대댓글(답글)인 경우: 부모 댓글 작성자를 확인
-      let parentAuthorId: string | undefined;
-      const isReply = !!(parentCommentId && parentCommentId.trim().length > 0);
+      // 대댓글은 최상위 댓글 작성자가 아니라 사용자가 실제로 누른 댓글
+      // 작성자에게 전달한다.
+      let verifiedReply: VerifiedCommentReplyRecipient | null = null;
+      const isReply = parentCommentId.length > 0;
       if (isReply) {
         try {
-          const parentDoc = await db.collection('comments').doc(parentCommentId!).get();
-          if (parentDoc.exists) {
-            const parent = parentDoc.data() as any;
-            parentAuthorId = parent?.userId as string | undefined;
+          verifiedReply = await resolveVerifiedCommentReplyRecipient(
+            comment as Record<string, any>,
+            postId
+          );
+          if (!verifiedReply) {
+            console.warn(
+              `⏭️ 검증할 수 없는 대댓글 대상 - reply push 스킵 (commentId=${context.params.commentId})`
+            );
           }
-        } catch (_) {
+        } catch (error) {
+          console.warn('대댓글 대상 검증 실패 - reply push 스킵:', error);
           // 부모 댓글 조회 실패는 reply 알림을 건너뛰되, 전체 흐름은 유지
         }
       }
@@ -1863,7 +2106,8 @@ export const onCommentCreated = functions.firestore
       // ✅ (A) 게시글 새 댓글 알림: 게시글 작성자에게
       // - 자기 게시글에 자신이 댓글을 단 경우는 알림 제외
       // - 답글(parentCommentId)이고, 부모 댓글 작성자=게시글 작성자라면 중복 알림을 피하기 위해 new_comment는 생략
-      const skipPostAuthorNewComment = isReply && parentAuthorId && parentAuthorId === postAuthorId;
+      const skipPostAuthorNewComment =
+        verifiedReply?.userId === postAuthorId;
       if (postAuthorId && postAuthorId !== commenterId && !skipPostAuthorNewComment) {
         if (await hasBlockRelationship(postAuthorId, commenterId)) {
           console.log('⏭️ 차단 관계(new_comment) - 알림 스킵');
@@ -1880,79 +2124,93 @@ export const onCommentCreated = functions.firestore
               ? 'A new comment was added to your post.'
               : `${commenterName}님이 회원님의 포스트에 댓글을 남겼습니다.`;
 
-            await db.collection('notifications').add({
-              userId: postAuthorId,
-              title: notificationTitle,
-              message: notificationMessage,
-              type: 'new_comment',
-              postId,
-              actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
-              actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
-              data: {
-                postId: postId,
-                postTitle: postTitle,
-                commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
-                thumbnailUrl,
-                postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
-              },
-              createdAt: admin.firestore.FieldValue.serverTimestamp(),
-              isRead: false,
-            });
-            console.log('onCommentCreated: 댓글 알림 생성 완료');
+            const notificationId = 'new_comment_' + crypto
+              .createHash('sha256')
+              .update(`${String(context.params.commentId)}:${postAuthorId}`)
+              .digest('hex');
+            const notificationCreated = await createNotificationOnce(
+              db.collection('notifications').doc(notificationId),
+              {
+                userId: postAuthorId,
+                title: notificationTitle,
+                message: notificationMessage,
+                type: 'new_comment',
+                postId,
+                actorId: postIsAnonymous ? null : commenterId, // 익명이면 actorId 제거
+                actorName: postIsAnonymous ? null : commenterName, // 익명이면 이름도 제거
+                data: {
+                  postId: postId,
+                  commentId: String(context.params.commentId),
+                  postTitle: postTitle,
+                  commenterName: postIsAnonymous ? null : commenterName, // 익명이면 이름 제거
+                  thumbnailUrl,
+                  postIsAnonymous: postIsAnonymous, // 클라이언트에서 익명 처리 참고용
+                },
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                isRead: false,
+              }
+            );
+            console.log(notificationCreated
+              ? 'onCommentCreated: 댓글 알림 생성 완료'
+              : 'onCommentCreated: 이미 처리된 댓글 알림 - 스킵');
           }
         }
       }
 
-      // ✅ (B) 댓글 대댓글 알림: "내 댓글에 답글"이 달리면 원댓글 작성자에게
+      // ✅ (B) 댓글 대댓글 알림: 실제 답글 대상 댓글 작성자에게
       // - parentCommentId가 있는 경우만(=대댓글)
-      if (parentCommentId && parentCommentId.trim().length > 0) {
+      if (verifiedReply) {
         try {
+          const replyRecipientId = verifiedReply.userId;
           // 자기 댓글에 자신이 답글을 단 경우는 알림 제외
-          if (parentAuthorId && parentAuthorId !== commenterId) {
-            if (await hasBlockRelationship(parentAuthorId, commenterId)) {
+          if (replyRecipientId !== commenterId) {
+            if (await hasBlockRelationship(replyRecipientId, commenterId)) {
               console.log('⏭️ 차단 관계(comment_reply) - 알림 스킵');
             } else {
-              const settingsDoc = await db.collection('user_settings').doc(parentAuthorId).get();
+              const settingsDoc = await db.collection('user_settings').doc(replyRecipientId).get();
               const noti = settingsDoc.exists ? (settingsDoc.data()?.notifications || {}) : {};
               const allOn = noti.all_notifications !== false;
               // 별도 설정 키가 없을 수 있으므로(new_comment와 묶어서) 기본 허용
               const replyOn = noti.new_comment !== false;
               if (allOn && replyOn) {
-                // 중복 알림 방지: 최근 5분 내 동일 알림이 있으면 스킵
-                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-                const recent = await db.collection('notifications')
-                  .where('userId', '==', parentAuthorId)
-                  .where('type', '==', 'comment_reply')
-                  .where('parentCommentId', '==', parentCommentId)
-                  .where('createdAt', '>', fiveMinutesAgo)
-                  .limit(1)
-                  .get();
-                if (!recent.empty) {
-                  console.log('onCommentCreated: 대댓글 알림 중복 방지 - 최근 알림 존재');
-                } else {
-                  await db.collection('notifications').add({
-                    userId: parentAuthorId,
+                // A deterministic document per comment/recipient makes
+                // Firestore trigger retries idempotent without suppressing a
+                // different reply in the same thread.
+                const notificationId = 'comment_reply_' + crypto
+                  .createHash('sha256')
+                  .update(
+                    `${String(context.params.commentId)}:${replyRecipientId}`
+                  )
+                  .digest('hex');
+                const notificationCreated = await createNotificationOnce(
+                  db.collection('notifications').doc(notificationId),
+                  {
+                    userId: replyRecipientId,
                     title: 'comment_reply',
                     message: '',
                     type: 'comment_reply',
                     postId,
                     actorId: postIsAnonymous ? null : commenterId,
                     actorName: postIsAnonymous ? null : commenterName,
-                    parentCommentId,
+                    parentCommentId: verifiedReply.parentCommentId,
                     data: {
                       postId: postId,
                       postTitle: postTitle,
                       thumbnailUrl,
                       postIsAnonymous: postIsAnonymous,
-                      parentCommentId,
+                      parentCommentId: verifiedReply.parentCommentId,
+                      replyToCommentId: verifiedReply.targetCommentId,
+                      replyToUserId: replyRecipientId,
                       commentId: context.params.commentId,
                       replierName: postIsAnonymous ? null : commenterName,
                     },
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     isRead: false,
-                  });
-                  console.log('onCommentCreated: 대댓글 알림 생성 완료');
-                }
+                  }
+                );
+                console.log(notificationCreated
+                  ? 'onCommentCreated: 대댓글 알림 생성 완료'
+                  : 'onCommentCreated: 이미 처리된 대댓글 알림 - 스킵');
               }
             }
           }
@@ -2909,46 +3167,6 @@ export const cleanupExpiredEmailVerifications = functions.pubsub
     return null;
   });
 
-/**
- * Snack Chat 만료 처리
- * - 즐겨찾기하지 않은 채팅방이 만료되면 movedToAllAt 타임스탬프를 기록합니다.
- * - 클라이언트는 expiresAt 기준으로 Today/All을 나누지만, 관리용 필드로 이동 시점을 남깁니다.
- */
-export const expireSnackChats = functions.pubsub
-  .schedule('every 1 hours')
-  .timeZone('Asia/Seoul')
-  .onRun(async () => {
-    const now = admin.firestore.Timestamp.now();
-    const col = db.collection('snack_chats');
-    let updated = 0;
-
-    while (true) {
-      const snap = await col
-        .where('expiresAt', '<=', now)
-        .where('isFavorited', '==', false)
-        .where('movedToAllAt', '==', null)
-        .limit(300)
-        .get();
-
-      if (snap.empty) break;
-
-      const batch = db.batch();
-      snap.docs.forEach((doc) => {
-        batch.update(doc.ref, {
-          movedToAllAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-      });
-      await batch.commit();
-      updated += snap.size;
-
-      if (snap.size < 300) break;
-    }
-
-    console.log(`expireSnackChats: updated=${updated}`);
-    return null;
-  });
-
 // 친구요청 보내기
 export const sendFriendRequest = functions.https.onCall(async (data, context) => {
   try {
@@ -3497,6 +3715,10 @@ export const blockUser = functions.https.onCall(async (data, context) => {
     // 트랜잭션으로 사용자 차단
     const result = await db.runTransaction(async (transaction) => {
       // ⚠️ 중요: 모든 읽기 작업을 먼저 실행해야 함
+      const directBlockRef = db.collection('blocks')
+        .doc(`${blockerUid}_${targetUid}`);
+      const reverseBlockRef = db.collection('blocks')
+        .doc(`${targetUid}_${blockerUid}`);
       
       // 1. 기존 친구 관계 확인
       const sortedIds = [blockerUid, targetUid].sort();
@@ -3517,11 +3739,16 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         db.collection('friend_requests').doc(reverseRequestId)
       );
 
+      // 3. 기존 양방향 차단 소유권 확인. 상대방이 먼저 설정한 explicit
+      // 차단을 현재 호출자의 implicit 문서로 덮어쓰면 피차단자가 차단
+      // 소유권을 뒤집은 뒤 스스로 해제할 수 있다.
+      const reverseBlockDoc = await transaction.get(reverseBlockRef);
+
       // ✅ 모든 읽기 완료, 이제 쓰기 작업 시작
       
-      // 3. A → B 차단 관계 생성 (실제 차단)
+      // 4. A → B 차단 관계 생성 (현재 호출자가 설정한 실제 차단)
       transaction.set(
-        db.collection('blocks').doc(`${blockerUid}_${targetUid}`),
+        directBlockRef,
         {
           blocker: blockerUid,
           blocked: targetUid,
@@ -3531,17 +3758,24 @@ export const blockUser = functions.https.onCall(async (data, context) => {
         }
       );
 
-      // 4. B → A 차단 효과 생성 (암묵적 차단)
-      transaction.set(
-        db.collection('blocks').doc(`${targetUid}_${blockerUid}`),
-        {
-          blocker: targetUid,
-          blocked: blockerUid,
-          isImplicit: true, // 암묵적 차단임을 명시
-          mutualBlock: true,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        }
-      );
+      const reverseData = reverseBlockDoc.data();
+      const reverseIsExplicit = reverseBlockDoc.exists
+        && reverseData?.blocker === targetUid
+        && reverseData?.blocked === blockerUid
+        && reverseData?.isImplicit !== true;
+      if (!reverseIsExplicit) {
+        // 상대방도 명시적으로 차단한 상태라면 그 소유 차단은 보존한다.
+        transaction.set(
+          reverseBlockRef,
+          {
+            blocker: targetUid,
+            blocked: blockerUid,
+            isImplicit: true, // 암묵적 차단임을 명시
+            mutualBlock: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          }
+        );
+      }
 
       // 5. 기존 친구 관계가 있다면 삭제
       if (friendshipDoc.exists) {
@@ -3689,21 +3923,38 @@ export const unblockUser = functions.https.onCall(async (data, context) => {
 
     // 양방향 차단 관계 모두 삭제
     await db.runTransaction(async (transaction) => {
-      // A → B 차단 삭제
-      const blockId = `${blockerUid}_${targetUid}`;
-      const blockDoc = await transaction.get(db.collection('blocks').doc(blockId));
+      const directBlockRef = db.collection('blocks')
+        .doc(`${blockerUid}_${targetUid}`);
+      const reverseBlockRef = db.collection('blocks')
+        .doc(`${targetUid}_${blockerUid}`);
+      const [blockDoc, reverseBlockDoc] = await transaction.getAll(
+        directBlockRef,
+        reverseBlockRef
+      );
+      const blockData = blockDoc.data();
 
-      if (!blockDoc.exists) {
+      // Only the caller's own explicit block can be removed. A mirrored
+      // implicit document belongs to the other user's block and must not let
+      // the blocked party undo it.
+      if (!blockDoc.exists
+          || blockData?.blocker !== blockerUid
+          || blockData?.blocked !== targetUid
+          || blockData?.isImplicit === true) {
         throw new functions.https.HttpsError(
           'not-found',
-          '차단 관계를 찾을 수 없습니다.'
+          '본인이 설정한 차단 관계를 찾을 수 없습니다.'
         );
       }
 
-      transaction.delete(db.collection('blocks').doc(blockId));
-      
-      // B → A 암묵적 차단 삭제
-      transaction.delete(db.collection('blocks').doc(`${targetUid}_${blockerUid}`));
+      transaction.delete(directBlockRef);
+
+      const reverseData = reverseBlockDoc.data();
+      if (reverseBlockDoc.exists
+          && reverseData?.blocker === targetUid
+          && reverseData?.blocked === blockerUid
+          && reverseData?.isImplicit === true) {
+        transaction.delete(reverseBlockRef);
+      }
     });
 
     return { success: true };
@@ -3950,13 +4201,13 @@ export const reportUser = functions.https.onCall(async (data, context) => {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #333;">신고 접수 알림</h2>
             <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>신고자:</strong> ${reporterName} (${reporterUid})</p>
-              <p><strong>신고 대상 사용자:</strong> ${reportedUserId}</p>
-              <p><strong>신고 유형:</strong> ${targetType}</p>
-              <p><strong>신고 대상 ID:</strong> ${targetId}</p>
-              <p><strong>신고 대상 제목:</strong> ${targetTitle}</p>
-              <p><strong>신고 사유:</strong> ${reason}</p>
-              ${description ? `<p><strong>상세 설명:</strong> ${description}</p>` : ''}
+              <p><strong>신고자:</strong> ${escapeHtml(reporterName)} (${escapeHtml(reporterUid)})</p>
+              <p><strong>신고 대상 사용자:</strong> ${escapeHtml(reportedUserId)}</p>
+              <p><strong>신고 유형:</strong> ${escapeHtml(targetType)}</p>
+              <p><strong>신고 대상 ID:</strong> ${escapeHtml(targetId)}</p>
+              <p><strong>신고 대상 제목:</strong> ${escapeHtml(targetTitle)}</p>
+              <p><strong>신고 사유:</strong> ${escapeHtml(reason)}</p>
+              ${description ? `<p><strong>상세 설명:</strong> ${escapeHtml(description)}</p>` : ''}
               <p><strong>신고 시각:</strong> ${new Date().toLocaleString('ko-KR')}</p>
             </div>
             <p style="color: #666; font-size: 12px;">
@@ -4013,25 +4264,34 @@ export const onReportCreated = functions.region('asia-northeast3').firestore
         reporterName = userDoc.data()?.nickname || '익명';
       }
 
+      const safeTargetTypeForSubject =
+        emailSubjectValue(targetType) || 'unknown';
+      const consoleProjectId = escapeHtml(encodeURIComponent(
+        emailSubjectValue(projectId, 200)
+      ));
+      const consoleReportId = escapeHtml(encodeURIComponent(
+        emailSubjectValue(reportId, 200)
+      ));
+
       const mailOptions = {
         from: getGmailUser(),
         to: ADMIN_EMAIL,
-        subject: `[Wefilling] 신고 접수 알림 (${targetType})`,
+        subject: `[Wefilling] 신고 접수 알림 (${safeTargetTypeForSubject})`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #d32f2f;">🚨 신고가 접수되었습니다</h2>
             <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>신고 ID:</strong> ${reportId}</p>
-              <p><strong>신고자:</strong> ${reporterName} (${reporterId})</p>
-              <p><strong>신고 대상 사용자:</strong> ${reportedUserId}</p>
-              <p><strong>신고 유형:</strong> ${targetType}</p>
-              <p><strong>신고 사유:</strong> ${reason}</p>
-              ${targetTitle ? `<p><strong>대상 제목:</strong> ${targetTitle}</p>` : ''}
-              ${description ? `<p><strong>상세 설명:</strong><br/>${description}</p>` : ''}
+              <p><strong>신고 ID:</strong> ${escapeHtml(reportId)}</p>
+              <p><strong>신고자:</strong> ${escapeHtml(reporterName)} (${escapeHtml(reporterId)})</p>
+              <p><strong>신고 대상 사용자:</strong> ${escapeHtml(reportedUserId)}</p>
+              <p><strong>신고 유형:</strong> ${escapeHtml(targetType)}</p>
+              <p><strong>신고 사유:</strong> ${escapeHtml(reason)}</p>
+              ${targetTitle ? `<p><strong>대상 제목:</strong> ${escapeHtml(targetTitle)}</p>` : ''}
+              ${description ? `<p><strong>상세 설명:</strong><br/>${escapeHtml(description)}</p>` : ''}
               <p><strong>접수 시간:</strong> ${new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</p>
             </div>
             <div style="text-align: center;">
-              <a href="https://console.firebase.google.com/u/0/project/${projectId}/firestore/data/~2Freports~2F${reportId}" 
+              <a href="https://console.firebase.google.com/u/0/project/${consoleProjectId}/firestore/data/~2Freports~2F${consoleReportId}"
                  style="background-color: #1976d2; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
                 Firestore에서 확인하기
               </a>
@@ -4102,12 +4362,15 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     }
 
     // 1) Firestore 업데이트/삭제
-    const batch = db.batch();
+    // A long-lived account can easily exceed Firestore's 500-operation batch
+    // limit. BulkWriter keeps this cleanup scalable while all operations remain
+    // individually idempotent for a callable retry.
+    const accountWriter = db.bulkWriter();
 
     // 1-1. 게시글 익명 처리
     const postsSnap = await db.collection('posts').where('userId', '==', uid).get();
     postsSnap.forEach((doc) => {
-      batch.update(doc.ref, {
+      accountWriter.update(doc.ref, {
         userId: 'deleted',
         authorNickname: 'Deleted',  // 한/영 모두 "Deleted"로 통일
         authorPhotoURL: '',
@@ -4118,7 +4381,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     // 1-2. 댓글 익명 처리 (최상위 comments)
     const commentsTopSnap = await db.collection('comments').where('userId', '==', uid).get();
     commentsTopSnap.forEach((doc) => {
-      batch.update(doc.ref, {
+      accountWriter.update(doc.ref, {
         userId: 'deleted',
         authorNickname: 'Deleted',  // 한/영 모두 "Deleted"로 통일
         authorPhotoUrl: '',
@@ -4127,35 +4390,35 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
 
     // 1-3. 모임 삭제/탈퇴 처리: 내가 만든 모임 삭제
     const meetupsSnap = await db.collection('meetups').where('userId', '==', uid).get();
-    meetupsSnap.forEach((doc) => batch.delete(doc.ref));
+    meetupsSnap.forEach((doc) => accountWriter.delete(doc.ref));
 
     // 1-4. 참여자 목록 컬렉션에서 내 항목 제거
     const participantsSnap = await db
       .collection('meetup_participants')
       .where('userId', '==', uid)
       .get();
-    participantsSnap.forEach((doc) => batch.delete(doc.ref));
+    participantsSnap.forEach((doc) => accountWriter.delete(doc.ref));
 
     // 1-5. 친구요청/친구관계/차단/알림 정리
     const friendReqFrom = await db.collection('friend_requests').where('fromUid', '==', uid).get();
-    friendReqFrom.forEach((doc) => batch.delete(doc.ref));
+    friendReqFrom.forEach((doc) => accountWriter.delete(doc.ref));
     const friendReqTo = await db.collection('friend_requests').where('toUid', '==', uid).get();
-    friendReqTo.forEach((doc) => batch.delete(doc.ref));
+    friendReqTo.forEach((doc) => accountWriter.delete(doc.ref));
 
     const friendships = await db.collection('friendships').where('uids', 'array-contains', uid).get();
-    friendships.forEach((doc) => batch.delete(doc.ref));
+    friendships.forEach((doc) => accountWriter.delete(doc.ref));
 
     const blocks1 = await db.collection('blocks').where('blocker', '==', uid).get();
-    blocks1.forEach((doc) => batch.delete(doc.ref));
+    blocks1.forEach((doc) => accountWriter.delete(doc.ref));
     const blocks2 = await db.collection('blocks').where('blocked', '==', uid).get();
-    blocks2.forEach((doc) => batch.delete(doc.ref));
+    blocks2.forEach((doc) => accountWriter.delete(doc.ref));
 
     const notis = await db.collection('notifications').where('userId', '==', uid).get();
-    notis.forEach((doc) => batch.delete(doc.ref));
+    notis.forEach((doc) => accountWriter.delete(doc.ref));
 
     // 1-6. 인증메일 컬렉션 정리
     const emailVer = await db.collection('email_verifications').doc(context.auth.token.email || 'unknown').get();
-    if (emailVer.exists) batch.delete(emailVer.ref);
+    if (emailVer.exists) accountWriter.delete(emailVer.ref);
 
     // 1-7. DM 대화방의 participantNames 업데이트 (탈퇴한 사용자 표시)
     const conversationsSnap = await db.collection('conversations')
@@ -4175,7 +4438,7 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       participantPhotos[uid] = '';
       participantStatus[uid] = 'deleted';
       
-      batch.update(doc.ref, {
+      accountWriter.update(doc.ref, {
         participantNames,
         participantPhotos,
         participantStatus,
@@ -4183,10 +4446,58 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
       });
     });
 
-    // 1-8. 사용자 문서 삭제
-    batch.delete(db.collection('users').doc(uid));
+    // 1-8. Snack Chat 현재 멤버십 종료. 과거 메시지는 보존하되 현재
+    // participant/unread 대상에서는 제거한다. 이 room update는 서버의
+    // membership trigger가 열린 period를 닫고 leave system message를 만든다.
+    const snackChatsSnap = await db.collection('snack_chats')
+      .where('participantIds', 'array-contains', uid)
+      .get();
+    snackChatsSnap.forEach((doc) => {
+      const room = doc.data() || {};
+      const currentParticipants = Array.isArray(room.participantIds)
+        ? room.participantIds.map((value: unknown) => String(value))
+        : [];
+      const nextParticipants = currentParticipants.filter((id: string) => id !== uid);
+      const unreadCount = room.unreadCount && typeof room.unreadCount === 'object'
+        ? { ...room.unreadCount }
+        : {};
+      delete unreadCount[uid];
 
-    await batch.commit();
+      const update: Record<string, unknown> = {
+        participantIds: nextParticipants,
+        unreadCount,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      };
+      if (String(room.creatorId || '') === uid) {
+        update.creatorId = nextParticipants.length > 0 ? nextParticipants[0] : '';
+      }
+      accountWriter.update(doc.ref, update);
+    });
+
+    // 1-9. 사용자 문서 삭제
+    accountWriter.delete(db.collection('users').doc(uid));
+
+    await accountWriter.close();
+
+    // 메시지/멤버십 이력은 읽음 대상 계산과 대화 문맥을 위해 보존한다.
+    // 반응/투표는 탈퇴 사용자의 개인 선택 데이터이므로 best-effort로
+    // 제거하고, 각 onWrite aggregate trigger가 부모 메시지 수치를 보정한다.
+    try {
+      const [reactionDocs, voteDocs] = await Promise.all([
+        db.collectionGroup('reactions').where('userId', '==', uid).get(),
+        db.collectionGroup('votes').where('userId', '==', uid).get(),
+      ]);
+      const writer = db.bulkWriter();
+      reactionDocs.docs
+        .filter((doc) => doc.ref.path.startsWith('snack_chats/'))
+        .forEach((doc) => writer.delete(doc.ref));
+      voteDocs.docs
+        .filter((doc) => doc.ref.path.startsWith('snack_chats/'))
+        .forEach((doc) => writer.delete(doc.ref));
+      await writer.close();
+    } catch (e) {
+      console.warn('⚠️ Snack Chat 반응/투표 정리 실패(계속 진행):', e);
+    }
 
     // 1-9. 한양메일 claim 해제 (탈퇴 시 재사용 가능하도록 email_claims 문서 삭제)
     try {
@@ -4212,9 +4523,13 @@ export const deleteAccountImmediately = functions.https.onCall(async (data, cont
     // 2) Storage 정리 (best-effort)
     try {
       const bucket = admin.storage().bucket();
-      await bucket.deleteFiles({ prefix: `profile_images/${uid}` });
-      await bucket.deleteFiles({ prefix: `post_images/${uid}` });
-      await bucket.deleteFiles({ prefix: `dm_images/${uid}` });
+      // Keep the trailing slash: Cloud Storage prefix matching is textual, so
+      // omitting it could also match a different custom UID that merely starts
+      // with the deleted account's UID.
+      await bucket.deleteFiles({ prefix: `profile_images/${uid}/` });
+      await bucket.deleteFiles({ prefix: `post_images/${uid}/` });
+      await bucket.deleteFiles({ prefix: `dm_images/${uid}/` });
+      await bucket.deleteFiles({ prefix: `snack_chat_images/${uid}/` });
     } catch (e) {
       console.warn('⚠️ Storage 삭제 중 오류(무시):', e);
     }
@@ -4926,6 +5241,23 @@ export const onNotificationCreated = functions.firestore
 
       console.log(`📢 새 알림 생성 감지: ${notificationId}, 유형: ${type}`);
 
+      // Comment notifications are revalidated at the final push boundary.
+      // Even if a stale client or an older trigger writes the wrong userId,
+      // no unrelated account receives the document or its FCM push.
+      if (!await isVerifiedCommentNotificationRecipient(
+        notificationData as Record<string, any>
+      )) {
+        console.warn(
+          `⏭️ 댓글 알림 수신자 검증 실패 - 삭제/푸시 스킵 (notification=${notificationId})`
+        );
+        // This invalid notification is removed before onNotificationCreated
+        // applies the unread counter. Tag it so the delete trigger does not
+        // subtract an unrelated valid notification from the user's total.
+        await snapshot.ref.set({skipUnreadCounterSync: true}, {merge: true});
+        await snapshot.ref.delete();
+        return null;
+      }
+
       if (actorId && await hasBlockRelationship(userId, actorId)) {
         console.log(`⏭️ 차단 관계(notification=${notificationId}) - 알림/푸시 삭제`);
         await snapshot.ref.delete();
@@ -5258,7 +5590,10 @@ export const onNotificationDeletedSyncUnreadCounter = functions.firestore
     const userId = (data as any).userId;
     const type = (data as any).type;
     const isRead = (data as any).isRead === true;
-    if (!userId || type === 'dm_received' || isRead) return null;
+    const skipUnreadCounterSync =
+      (data as any).skipUnreadCounterSync === true;
+    if (!userId || type === 'dm_received' || isRead ||
+        skipUnreadCounterSync) return null;
 
     const userRef = db.collection('users').doc(String(userId));
     try {
@@ -6082,17 +6417,43 @@ export const onDMMessageCreated = functions.firestore
       // - 중요: push 가능 여부(토큰 유무)와 무관하게 항상 실행
       // -----------------------------------------------------------------------
       let newDmUnreadTotal = 0;
+      let shouldSendNotification = false;
+      const dmCreateEventRef = db.collection('_dm_function_events').doc(
+        crypto.createHash('sha256')
+          .update(`message-created:${context.eventId}`)
+          .digest('hex')
+      );
       try {
-        await db.runTransaction(async (tx) => {
+        const transactionResult = await db.runTransaction(async (tx) => {
           // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
+          const eventSnap = await tx.get(dmCreateEventRef);
+          if (eventSnap.exists) {
+            return {shouldSend: false, dmUnreadTotal: 0};
+          }
+
+          const currentMessageSnap = await tx.get(snapshot.ref);
           const convSnap = await tx.get(convRef);
-          if (!convSnap.exists) return;
 
           // recipients의 user 문서도 미리 읽기 (dmUnreadTotal 음수 보정 위해)
           const userRefs = recipients.filter(Boolean).map((rid) => db.collection('users').doc(rid));
           const userSnaps: FirebaseFirestore.DocumentSnapshot[] = [];
           for (const ref of userRefs) {
             userSnaps.push(await tx.get(ref));
+          }
+
+          // The receiver can open the room and mark this message read before
+          // this asynchronous create trigger starts. In that case an unread
+          // increment would resurrect the Kakao-style "1" after it vanished.
+          if (!convSnap.exists || !currentMessageSnap.exists ||
+              currentMessageSnap.get('isRead') === true) {
+            tx.create(dmCreateEventRef, {
+              type: 'dm_message_created',
+              conversationId,
+              messageId,
+              applied: false,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return {shouldSend: false, dmUnreadTotal: 0};
           }
 
           const data = convSnap.data() as any;
@@ -6140,20 +6501,38 @@ export const onDMMessageCreated = functions.firestore
           tx.set(convRef, update, { merge: true });
 
           // 배지 계산용
+          let nextDmUnreadTotal = 0;
           if (validRecipients.length > 0 && userSnaps.length > 0) {
             const recipientUserData = userSnaps[0]?.exists ? userSnaps[0].data() : null;
             const curTotal = typeof recipientUserData?.dmUnreadTotal === 'number'
               ? recipientUserData.dmUnreadTotal
               : 0;
-            newDmUnreadTotal = Math.max(0, curTotal) + 1;
+            nextDmUnreadTotal = Math.max(0, curTotal) + 1;
           }
+          tx.create(dmCreateEventRef, {
+            type: 'dm_message_created',
+            conversationId,
+            messageId,
+            applied: true,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return {
+            shouldSend: true,
+            dmUnreadTotal: nextDmUnreadTotal,
+          };
         });
+        shouldSendNotification = transactionResult.shouldSend;
+        newDmUnreadTotal = transactionResult.dmUnreadTotal;
       } catch (e) {
-        console.warn('⚠️ DM unreadCount/dmUnreadTotal 증분 업데이트 실패(푸시 계속):', e);
-        // 실패 시에도 푸시는 전송하되, badge는 fallback 계산을 사용
-        newDmUnreadTotal = typeof (recipientData as any)?.dmUnreadTotal === 'number'
-          ? (recipientData as any).dmUnreadTotal
-          : 0;
+        console.warn('⚠️ DM unreadCount/dmUnreadTotal 증분 업데이트 실패:', e);
+        // A push without the matching counter creates a badge that cannot be
+        // cleared reliably, so do not send one for an uncommitted event.
+        return null;
+      }
+
+      if (!shouldSendNotification) {
+        console.log('⏭️ 이미 읽음 처리되었거나 처리 완료된 DM 이벤트 - 증분/푸시 스킵');
+        return null;
       }
 
       // unreadCount 증분 완료 로그
@@ -6292,8 +6671,98 @@ export const onDMMessageCreated = functions.firestore
     }
   });
 
-// SnackChat 메시지 생성 시 푸시 알림 전송
-export const onSnackChatMessageCreated = functions.firestore
+// DM 메시지가 수신자에 의해 false→true로 바뀐 시점을 읽음
+// 카운터의 단일 감소 소스로 사용한다. message-created 트리거가
+// 늦게 실행되더라도 현재 message.isRead를 확인하므로 카운터 1이
+// 다시 살아나지 않는다.
+export const onDMMessageRead = functions.firestore
+  .document('conversations/{conversationId}/messages/{messageId}')
+  .onUpdate(async (change, context) => {
+    const before = change.before.data();
+    const after = change.after.data();
+    if (before.isRead === true || after.isRead !== true) return null;
+
+    const conversationId = context.params.conversationId;
+    const messageId = context.params.messageId;
+    const senderId = String(after.senderId || '');
+    if (!senderId) return null;
+
+    const convRef = db.collection('conversations').doc(conversationId);
+    const markerRef = db.collection('_dm_function_events').doc(
+      crypto.createHash('sha256')
+        .update(`message-read:${context.eventId}`)
+        .digest('hex')
+    );
+
+    try {
+      await db.runTransaction(async (tx) => {
+        const marker = await tx.get(markerRef);
+        if (marker.exists) return;
+        const conversation = await tx.get(convRef);
+        if (!conversation.exists) {
+          tx.create(markerRef, {
+            type: 'dm_message_read',
+            conversationId,
+            messageId,
+            applied: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          return;
+        }
+
+        const data = conversation.data() || {};
+        const participants = Array.from(new Set(
+          (Array.isArray(data.participants) ? data.participants : [])
+            .filter((id: unknown): id is string =>
+              typeof id === 'string' && id.length > 0)
+        ));
+        const recipientIds = participants.filter((id) => id !== senderId);
+        const userRefs = recipientIds.map((id) =>
+          db.collection('users').doc(id));
+        const userSnaps: FirebaseFirestore.DocumentSnapshot[] = [];
+        for (const ref of userRefs) userSnaps.push(await tx.get(ref));
+
+        const unreadCount: Record<string, number> =
+          data.unreadCount && typeof data.unreadCount === 'object'
+            ? {...data.unreadCount}
+            : {};
+        recipientIds.forEach((recipientId, index) => {
+          unreadCount[recipientId] = Math.max(
+            0,
+            toNonNegativeInt(unreadCount[recipientId]) - 1
+          );
+          const userData = userSnaps[index]?.data() || {};
+          tx.set(userRefs[index], {
+            dmUnreadTotal: Math.max(
+              0,
+              toNonNegativeInt((userData as any).dmUnreadTotal) - 1
+            ),
+          }, {merge: true});
+        });
+        tx.set(convRef, {
+          unreadCount,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, {merge: true});
+        tx.create(markerRef, {
+          type: 'dm_message_read',
+          conversationId,
+          messageId,
+          recipientIds,
+          applied: true,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+    } catch (error) {
+      console.error('onDMMessageRead 오류:', error);
+      throw error;
+    }
+    return null;
+  });
+
+// Legacy SnackChat trigger implementation retained as a non-exported
+// deployment artifact reference. The exported onSnackChatMessageCreated at
+// the top of this file is the idempotent implementation in snack_chat.ts.
+void functions.firestore
   .document('snack_chats/{snackChatId}/messages/{messageId}')
   .onCreate(async (snapshot, context) => {
     try {

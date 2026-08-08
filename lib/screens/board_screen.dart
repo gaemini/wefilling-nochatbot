@@ -22,7 +22,6 @@ import '../ui/widgets/post_category_explorer.dart';
 import '../ui/snackbar/app_snackbar.dart';
 import '../snapshot/snapshot_today_section.dart';
 import 'create_post_screen.dart';
-import 'create_snapshot_screen.dart';
 import 'post_detail_screen.dart';
 import 'post_category_feed_screen.dart';
 import 'meetup_detail_screen.dart';
@@ -36,76 +35,6 @@ class BoardScreen extends StatefulWidget {
 
   @override
   State<BoardScreen> createState() => BoardScreenState();
-}
-
-class _CreateMenuRow extends StatelessWidget {
-  const _CreateMenuRow({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String description;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 72),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              Icon(icon, size: 23, color: const Color(0xFF475467)),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF111827),
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      description,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontFamily: 'Pretendard',
-                        fontSize: 12.5,
-                        height: 1.3,
-                        color: Color(0xFF667085),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                size: 21,
-                color: Color(0xFF98A2B3),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class BoardScreenState extends State<BoardScreen> {
@@ -419,7 +348,7 @@ class BoardScreenState extends State<BoardScreen> {
         top: false,
         minimum: const EdgeInsets.only(bottom: 8),
         child: AppFab.write(
-          onPressed: _openCreateMenu,
+          onPressed: _openCreatePost,
           heroTag: 'board_write_fab',
         ),
       ),
@@ -1302,52 +1231,6 @@ class BoardScreenState extends State<BoardScreen> {
         ),
       ),
     );
-  }
-
-  Future<void> _openCreateMenu() async {
-    final isKorean = Localizations.localeOf(context).languageCode == 'ko';
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.white,
-      barrierColor: Colors.black.withValues(alpha: 0.46),
-      showDragHandle: true,
-      useSafeArea: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _CreateMenuRow(
-              icon: Icons.add_a_photo_outlined,
-              title: isKorean ? '스낵' : 'Snack',
-              description:
-                  isKorean ? '24시간 동안 공유되는 사진' : 'A photo shared for 24 hours',
-              onTap: () => Navigator.pop(sheetContext, 'snapshot'),
-            ),
-            const Divider(height: 1, indent: 42, color: Color(0xFFEAECF0)),
-            _CreateMenuRow(
-              icon: Icons.article_outlined,
-              title: isKorean ? '포스트' : 'Post',
-              description:
-                  isKorean ? '계속 남겨두고 싶은 이야기' : 'A story you want to keep',
-              onTap: () => Navigator.pop(sheetContext, 'post'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted || selected == null) return;
-    if (selected == 'snapshot') {
-      await Navigator.of(context).push<bool>(
-        MaterialPageRoute(builder: (_) => const CreateSnapshotScreen()),
-      );
-      return;
-    }
-    _openCreatePost();
   }
 
   /// 에러 위젯 빌드

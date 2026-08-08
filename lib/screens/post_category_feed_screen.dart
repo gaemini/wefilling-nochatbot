@@ -154,11 +154,50 @@ class _PostCategoryFeedScreenState extends State<PostCategoryFeedScreen> {
   }
 
   Future<void> _openPost(Post post) async {
-    await Navigator.push<void>(
+    final preservedOffset =
+        _scrollController.hasClients ? _scrollController.offset : null;
+    final wasDeleted = await Navigator.push<bool>(
       context,
       MaterialPageRoute(builder: (_) => PostDetailScreen(post: post)),
     );
-    if (mounted) await _loadInitial(forceRefresh: true);
+    if (!mounted) return;
+
+    if (wasDeleted == true) {
+      setState(() => _posts.removeWhere((item) => item.id == post.id));
+    } else {
+      // 상세 화면에서 수정된 한 건만 반영한다. 이미 불러온 페이지와 스크롤
+      // 상태를 유지해 복귀 시 목록이 최신 글부터 다시 시작되지 않게 한다.
+      final refreshed =
+          await (_postService ??= PostService()).getPostById(post.id);
+      if (!mounted) return;
+
+      final index = _posts.indexWhere((item) => item.id == post.id);
+      if (refreshed != null && index >= 0) {
+        setState(() {
+          if (refreshed.categoryKey == widget.category.key) {
+            _posts[index] = refreshed;
+          } else {
+            _posts.removeAt(index);
+          }
+        });
+      }
+    }
+
+    _restoreScrollOffset(preservedOffset);
+  }
+
+  void _restoreScrollOffset(double? offset) {
+    if (offset == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final target = offset
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((_scrollController.offset - target).abs() > 0.5) {
+        _scrollController.jumpTo(target);
+      }
+    });
   }
 
   @override

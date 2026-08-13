@@ -98,7 +98,13 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
       });
       unawaited(_refreshSelectedAudienceUsers());
     });
-    unawaited(_loadRecentPhotos());
+    if (Platform.isAndroid) {
+      // Android uses the system Photo Picker instead of enumerating the
+      // device photo library through photo_manager.
+      _loadingGallery = false;
+    } else {
+      unawaited(_loadRecentPhotos());
+    }
   }
 
   Set<String> _selectedAudienceIds() {
@@ -149,6 +155,10 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
   }
 
   Future<void> _loadRecentPhotos() async {
+    if (Platform.isAndroid) {
+      if (mounted) setState(() => _loadingGallery = false);
+      return;
+    }
     if (mounted) {
       setState(() {
         _loadingGallery = true;
@@ -936,21 +946,30 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
             children: [
               Expanded(
                 child: _sourceFile == null
-                    ? _RecentPhotoGallery(
-                        loading: _loadingGallery,
-                        selecting: _loadingPhoto,
-                        permissionDenied: _galleryPermissionDenied,
-                        photos: _recentPhotos,
-                        hasMore: _recentPhotos.length < _galleryTotalCount,
-                        loadingMore: _loadingMoreGallery,
-                        cameraLabel: strings.camera,
-                        permissionMessage: strings.galleryPermissionRequired,
-                        retryLabel: strings.retry,
-                        onCamera: () => _pickImage(ImageSource.camera),
-                        onRetry: _loadRecentPhotos,
-                        onLoadMore: _loadMoreRecentPhotos,
-                        onPhotoTap: _selectRecentPhoto,
-                      )
+                    ? (Platform.isAndroid
+                        ? _SystemPhotoPickerGallery(
+                            selecting: _loadingPhoto,
+                            cameraLabel: strings.camera,
+                            galleryLabel: strings.choosePhoto,
+                            onCamera: () => _pickImage(ImageSource.camera),
+                            onGallery: () => _pickImage(ImageSource.gallery),
+                          )
+                        : _RecentPhotoGallery(
+                            loading: _loadingGallery,
+                            selecting: _loadingPhoto,
+                            permissionDenied: _galleryPermissionDenied,
+                            photos: _recentPhotos,
+                            hasMore: _recentPhotos.length < _galleryTotalCount,
+                            loadingMore: _loadingMoreGallery,
+                            cameraLabel: strings.camera,
+                            permissionMessage:
+                                strings.galleryPermissionRequired,
+                            retryLabel: strings.retry,
+                            onCamera: () => _pickImage(ImageSource.camera),
+                            onRetry: _loadRecentPhotos,
+                            onLoadMore: _loadMoreRecentPhotos,
+                            onPhotoTap: _selectRecentPhoto,
+                          ))
                     : Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 640),
@@ -1120,7 +1139,7 @@ class _CreateSnapshotScreenState extends State<CreateSnapshotScreen> {
                             _sourceWidth = 0;
                             _sourceHeight = 0;
                           });
-                          if (_recentPhotos.isEmpty) {
+                          if (!Platform.isAndroid && _recentPhotos.isEmpty) {
                             unawaited(_loadRecentPhotos());
                           }
                         },
@@ -1474,6 +1493,85 @@ class _RecentPhotoGallery extends StatelessWidget {
               );
             },
           ),
+        ),
+        if (selecting)
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.white.withValues(alpha: .6),
+              child: const Center(
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _SystemPhotoPickerGallery extends StatelessWidget {
+  const _SystemPhotoPickerGallery({
+    required this.selecting,
+    required this.cameraLabel,
+    required this.galleryLabel,
+    required this.onCamera,
+    required this.onGallery,
+  });
+
+  final bool selecting;
+  final String cameraLabel;
+  final String galleryLabel;
+  final VoidCallback onCamera;
+  final VoidCallback onGallery;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        GridView.count(
+          padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
+          physics: const BouncingScrollPhysics(),
+          crossAxisCount: 3,
+          mainAxisSpacing: 3,
+          crossAxisSpacing: 3,
+          children: [
+            _CameraButton(
+              label: cameraLabel,
+              enabled: !selecting,
+              onPressed: onCamera,
+              fillCell: true,
+            ),
+            Material(
+              color: const Color(0xFFF2F4F7),
+              borderRadius: BorderRadius.circular(10),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: selecting ? null : onGallery,
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.photo_library_outlined,
+                        size: 27,
+                        color: Color(0xFF111827),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        galleryLabel,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Pretendard',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF344054),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         if (selecting)
           Positioned.fill(

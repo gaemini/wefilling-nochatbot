@@ -3,8 +3,8 @@
 // Cloud Functions 메인 진입점
 // 친구요청 관련 함수들을 export
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.onPrivatePostCreated = exports.onUserCreated = exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.createMeetupSecure = exports.createPostSecure = void 0;
-exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = void 0;
+exports.backfillEmailClaims = exports.cancelPendingEmailSignup = exports.discardIncompleteRegistration = exports.finalizeEnglishSocialSignup = exports.completeHanyangProfileVerification = exports.finalizeHanyangEmailVerification = exports.migrateEmailVerified = exports.initializeAds = exports.onUserProfileUpdatedPropagateAuthorInfo = exports.onSnackChatVoteWritten = exports.onSnackChatReactionWritten = exports.notifyClosedSnackChatPolls = exports.onSnackChatMessageCreated = exports.onSnackChatRoomWritten = exports.cleanupExpiredSnackChatFiles = exports.onSnackChatFileUploadJobDeleted = exports.onSnackChatFileMessageDeleted = exports.cancelSnackChatFileUpload = exports.commitSnackChatFileUpload = exports.prepareSnackChatFileUpload = exports.reportSnackChatMessage = exports.fetchSnackChatLinkPreview = exports.createSnackChatAnnouncementSecure = exports.updateSnackChatTitleSecure = exports.leaveSnackChatSecure = exports.ensureSnackChatMembershipSecure = exports.joinMeetupSnackChatSecure = exports.inviteSnackChatParticipants = exports.createMeetupSnackChatSecure = exports.createSnackChatSecure = exports.onSnapshotBlockChanged = exports.cleanupOrphanSnapshotUploads = exports.cleanupExpiredSnapshots = exports.deleteSnapshot = exports.replySnapshotComment = exports.sendSnapshotComment = exports.toggleSnapshotReaction = exports.getSnapshotCommentLetter = exports.getSnapshotCommentStatus = exports.getSnapshotReactionStatus = exports.getSnapshotViewers = exports.recordSnapshotView = exports.updateSnapshotVisibility = exports.syncMySnapshotFeed = exports.createSnapshot = exports.getSnapshotServerTime = exports.reconcileDMUnreadTotalSecure = exports.markDMConversationReadSecure = exports.createMeetupSecure = exports.createPostSecure = void 0;
+exports.fixNegativeUnreadCounts = exports.onDMMessageRead = exports.onDMMessageCreated = exports.onMeetupReviewCreatedDeleteMeetupChat = exports.onMeetupReviewDeleted = exports.onMeetupReviewUpdated = exports.onReviewRequestUpdated = exports.onReviewRequestCreated = exports.onMeetupCreated = exports.onMeetupParticipantJoined = exports.onNotificationDeletedSyncUnreadCounter = exports.onNotificationUpdatedSyncUnreadCounter = exports.onNotificationCreated = exports.unregisterFcmToken = exports.registerFcmToken = exports.fixDeletedAccountsInConversations = exports.deleteAccountImmediately = exports.onReportCreated = exports.reportUser = exports.unhideAnonymousComment = exports.hideAnonymousComment = exports.unblockAnonymousPost = exports.blockAnonymousPost = exports.unblockUser = exports.blockUser = exports.unfriend = exports.rejectFriendRequest = exports.acceptFriendRequest = exports.cancelFriendRequest = exports.sendFriendRequest = exports.cleanupExpiredEmailVerifications = exports.createGeneralEmailSignup = exports.verifyEmailCode = exports.sendEmailVerificationCode = exports.onPostLiked = exports.onCommentLiked = exports.onCommentSoftDeleted = exports.onCommentDeleted = exports.onCommentCreated = exports.onMeetupDeleted = exports.onMeetupUpdated = exports.onAdBannerChanged = exports.onFriendRequestCreated = exports.joinMeetupSecure = exports.onPrivatePostCreated = exports.onUserCreated = void 0;
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
@@ -14,6 +14,9 @@ const frozen_audience_1 = require("./frozen_audience");
 var content_creation_1 = require("./content_creation");
 Object.defineProperty(exports, "createPostSecure", { enumerable: true, get: function () { return content_creation_1.createPostSecure; } });
 Object.defineProperty(exports, "createMeetupSecure", { enumerable: true, get: function () { return content_creation_1.createMeetupSecure; } });
+var dm_chat_1 = require("./dm_chat");
+Object.defineProperty(exports, "markDMConversationReadSecure", { enumerable: true, get: function () { return dm_chat_1.markDMConversationReadSecure; } });
+Object.defineProperty(exports, "reconcileDMUnreadTotalSecure", { enumerable: true, get: function () { return dm_chat_1.reconcileDMUnreadTotalSecure; } });
 var snapshot_1 = require("./snapshot");
 Object.defineProperty(exports, "getSnapshotServerTime", { enumerable: true, get: function () { return snapshot_1.getSnapshotServerTime; } });
 Object.defineProperty(exports, "createSnapshot", { enumerable: true, get: function () { return snapshot_1.createSnapshot; } });
@@ -822,6 +825,8 @@ exports.finalizeHanyangEmailVerification = functions.https.onCall(async (data, c
                 schemaFill.outgoingCount = 0;
             if (missing('dmUnreadTotal'))
                 schemaFill.dmUnreadTotal = 0;
+            if (missing('dmUnreadCounterVersion'))
+                schemaFill.dmUnreadCounterVersion = 2;
             if (missing('notificationUnreadTotal'))
                 schemaFill.notificationUnreadTotal = 0;
             if (missing('fcmToken'))
@@ -1013,6 +1018,8 @@ exports.finalizeEnglishSocialSignup = functions.https.onCall(async (data, contex
                 schemaFill.outgoingCount = 0;
             if (missing('dmUnreadTotal'))
                 schemaFill.dmUnreadTotal = 0;
+            if (missing('dmUnreadCounterVersion'))
+                schemaFill.dmUnreadCounterVersion = 2;
             if (missing('notificationUnreadTotal'))
                 schemaFill.notificationUnreadTotal = 0;
             if (missing('fcmToken'))
@@ -5752,7 +5759,7 @@ exports.onDMMessageCreated = functions
             .digest('hex'));
         try {
             const transactionResult = await db.runTransaction(async (tx) => {
-                var _a;
+                var _a, _b;
                 // 트랜잭션 규칙: 모든 get()을 set()/update() 전에 수행해야 함
                 const eventSnap = await tx.get(dmCreateEventRef);
                 if (eventSnap.exists) {
@@ -5781,6 +5788,34 @@ exports.onDMMessageCreated = functions
                     return { shouldSend: false, dmUnreadTotal: 0 };
                 }
                 const data = convSnap.data();
+                // A receiver can open the room after the message write but before
+                // this create trigger acquires the transaction. The callable stores
+                // a server read-through watermark with the counter reset, so an old
+                // create event must not resurrect unread=1 or send a stale push.
+                const messageCreatedAt = currentMessageSnap.get('createdAt');
+                const messageCreatedAtMs = (_a = firestoreTimeToMillis(messageCreatedAt)) !== null && _a !== void 0 ? _a : 0;
+                const lastReadAtBy = (data === null || data === void 0 ? void 0 : data.lastReadAtBy) &&
+                    typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
+                const alreadyReadThrough = recipients.length > 0 &&
+                    messageCreatedAtMs > 0 && recipients.every((rid) => {
+                    const watermark = firestoreTimeToMillis(lastReadAtBy[rid]);
+                    return watermark != null && watermark >= messageCreatedAtMs;
+                });
+                if (alreadyReadThrough) {
+                    tx.update(snapshot.ref, {
+                        isRead: true,
+                        readAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    tx.create(dmCreateEventRef, {
+                        type: 'dm_message_created',
+                        conversationId,
+                        messageId,
+                        applied: false,
+                        skippedByReadWatermark: true,
+                        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                    return { shouldSend: false, dmUnreadTotal: 0 };
+                }
                 const archivedBy = Array.isArray(data === null || data === void 0 ? void 0 : data.archivedBy)
                     ? data.archivedBy.filter((v) => typeof v === 'string')
                     : [];
@@ -5805,7 +5840,10 @@ exports.onDMMessageCreated = functions
                     const userData = (userSnap === null || userSnap === void 0 ? void 0 : userSnap.exists) ? userSnap.data() : null;
                     const curDmTotal = typeof (userData === null || userData === void 0 ? void 0 : userData.dmUnreadTotal) === 'number' ? userData.dmUnreadTotal : 0;
                     const safeDmTotal = Math.max(0, curDmTotal) + 1;
-                    tx.set(userRefs[i], { dmUnreadTotal: safeDmTotal }, { merge: true });
+                    tx.set(userRefs[i], {
+                        dmUnreadTotal: safeDmTotal,
+                        dmUnreadCounterVersion: 2,
+                    }, { merge: true });
                     console.log(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
                 }
                 const update = {
@@ -5819,7 +5857,7 @@ exports.onDMMessageCreated = functions
                 // 배지 계산용
                 let nextDmUnreadTotal = 0;
                 if (validRecipients.length > 0 && userSnaps.length > 0) {
-                    const recipientUserData = ((_a = userSnaps[0]) === null || _a === void 0 ? void 0 : _a.exists) ? userSnaps[0].data() : null;
+                    const recipientUserData = ((_b = userSnaps[0]) === null || _b === void 0 ? void 0 : _b.exists) ? userSnaps[0].data() : null;
                     const curTotal = typeof (recipientUserData === null || recipientUserData === void 0 ? void 0 : recipientUserData.dmUnreadTotal) === 'number'
                         ? recipientUserData.dmUnreadTotal
                         : 0;
@@ -5991,6 +6029,7 @@ exports.onDMMessageRead = functions
         .digest('hex'));
     try {
         await db.runTransaction(async (tx) => {
+            var _a;
             const marker = await tx.get(markerRef);
             if (marker.exists)
                 return;
@@ -6009,13 +6048,25 @@ exports.onDMMessageRead = functions
             const participants = Array.from(new Set((Array.isArray(data.participants) ? data.participants : [])
                 .filter((id) => typeof id === 'string' && id.length > 0)));
             const recipientIds = participants.filter((id) => id !== senderId);
-            const userRefs = recipientIds.map((id) => db.collection('users').doc(id));
+            const messageCreatedAtMs = (_a = firestoreTimeToMillis(after.createdAt)) !== null && _a !== void 0 ? _a : 0;
+            const lastReadAtBy = data.lastReadAtBy &&
+                typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
+            // The room-level callable may already have cleared this exact
+            // message. Its later per-message receipt trigger must not subtract a
+            // newly arrived message that incremented the room in the meantime.
+            const alreadyClearedRecipientIds = recipientIds.filter((id) => {
+                const watermark = firestoreTimeToMillis(lastReadAtBy[id]);
+                return messageCreatedAtMs > 0 && watermark != null &&
+                    watermark >= messageCreatedAtMs;
+            });
+            const recipientsToDecrement = recipientIds.filter((id) => !alreadyClearedRecipientIds.includes(id));
+            const userRefs = recipientsToDecrement.map((id) => db.collection('users').doc(id));
             const userSnaps = [];
             for (const ref of userRefs)
                 userSnaps.push(await tx.get(ref));
             const unreadCount = data.unreadCount && typeof data.unreadCount === 'object'
                 ? Object.assign({}, data.unreadCount) : {};
-            recipientIds.forEach((recipientId, index) => {
+            recipientsToDecrement.forEach((recipientId, index) => {
                 var _a;
                 const roomUnreadBefore = toNonNegativeInt(unreadCount[recipientId]);
                 unreadCount[recipientId] = Math.max(0, roomUnreadBefore - 1);
@@ -6027,6 +6078,7 @@ exports.onDMMessageRead = functions
                     dmUnreadTotal: roomUnreadBefore > 0
                         ? Math.max(0, toNonNegativeInt(userData.dmUnreadTotal) - 1)
                         : toNonNegativeInt(userData.dmUnreadTotal),
+                    dmUnreadCounterVersion: 2,
                 }, { merge: true });
             });
             tx.set(convRef, {
@@ -6038,7 +6090,9 @@ exports.onDMMessageRead = functions
                 conversationId,
                 messageId,
                 recipientIds,
-                applied: true,
+                decrementedRecipientIds: recipientsToDecrement,
+                skippedByReadWatermark: alreadyClearedRecipientIds,
+                applied: recipientsToDecrement.length > 0,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
             });
         });

@@ -153,6 +153,67 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('interactive zero-comment action remains visible',
+      (tester) async {
+    var tapped = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PostActionGroup(
+            likes: 0,
+            comments: 0,
+            views: 0,
+            isLiked: false,
+            likeLabel: 'Like',
+            commentLabel: 'Comments',
+            viewsLabel: 'Views',
+            hideEmptyMetrics: true,
+            onCommentTap: () => tapped = true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byIcon(Icons.chat_bubble_outline_rounded), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.chat_bubble_outline_rounded));
+    expect(tapped, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('heart comment and views stay in a left-aligned row',
+      (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 390,
+            child: PostActionGroup(
+              likes: 0,
+              comments: 0,
+              views: 0,
+              isLiked: false,
+              likeLabel: 'Like',
+              commentLabel: 'Comments',
+              viewsLabel: 'Views',
+              compact: true,
+              hideEmptyMetrics: false,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final heart = tester.getCenter(find.byIcon(Icons.favorite_border_rounded));
+    final comment =
+        tester.getCenter(find.byIcon(Icons.chat_bubble_outline_rounded));
+    final views = tester.getCenter(find.byIcon(Icons.visibility_outlined));
+
+    expect(heart.dx, lessThan(comment.dx));
+    expect(comment.dx, lessThan(views.dx));
+    expect(views.dx, lessThan(150));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('detail mode keeps DM and save actions at the right edge',
       (tester) async {
     await tester.pumpWidget(

@@ -52,6 +52,7 @@ class PostDetailScreen extends StatefulWidget {
 }
 
 class _PostDetailScreenState extends State<PostDetailScreen> {
+  static const double _threadContentInset = 64;
   final PostService _postService = PostService();
   final CommentService _commentService = CommentService();
   final DMService _dmService = DMService();
@@ -363,6 +364,27 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
+  Widget _buildPostCategoryTags(AppLocalizations l10n) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 4,
+      children: [
+        for (final category in _currentPost.postCategories)
+          Text(
+            '#${category.label(l10n)}',
+            style: const TextStyle(
+              fontFamily: 'Pretendard',
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: AppColors.pointColor,
+              height: 1.25,
+              letterSpacing: -0.2,
+            ),
+          ),
+      ],
+    );
+  }
+
   void _scrollToTop() {
     if (!_scrollController.hasClients) return;
     _scrollController.animateTo(
@@ -554,8 +576,9 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
       saveLabel: _isSaved ? l10n.saved : l10n.save,
       onSaveTap: _toggleSave,
       compact: true,
-      hideEmptyMetrics: true,
+      hideEmptyMetrics: false,
       trailingActionsAtEnd: true,
+      prioritizeComments: false,
     );
   }
 
@@ -2192,138 +2215,149 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     final body = _getUnifiedBodyText(_currentPost);
     final hasTitle = title.isNotEmpty;
     final hasBody = body.isNotEmpty;
-    final bodyFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
+    final bodyFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final titleFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        const SizedBox(height: DesignTokens.s4),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            DesignTokens.s20,
-            DesignTokens.s16,
-            DesignTokens.s20,
-            0,
+          padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s16),
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              _buildEditorialAuthorRow(l10n),
+              if (hasTitle || hasBody)
+                Padding(
+                  padding: const EdgeInsets.only(left: 48, top: 33),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasTitle)
+                        Text(
+                          title,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: titleFontSize,
+                            fontWeight: FontWeight.w600,
+                            color: BrandColors.textPrimary,
+                            height: 1.36,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                      if (hasTitle && hasBody) const SizedBox(height: 3),
+                      if (hasBody)
+                        Text(
+                          body,
+                          style: TextStyle(
+                            fontFamily: 'Pretendard',
+                            fontSize: bodyFontSize,
+                            fontWeight: FontWeight.w400,
+                            color: BrandColors.textPrimary,
+                            height: 1.38,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-          child: Text(
-            _currentPost.postCategory.label(l10n),
-            style: const TextStyle(
-              fontFamily: 'Pretendard',
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: AppColors.pointColor,
-              height: 1.2,
-            ),
-          ),
-        ),
-        if (hasTitle || hasBody)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s20,
-              DesignTokens.s8,
-              DesignTokens.s20,
-              0,
-            ),
-            child: Text(
-              hasTitle ? title : body,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: hasTitle ? 28 : bodyFontSize,
-                fontWeight: hasTitle ? FontWeight.w800 : FontWeight.w500,
-                color: BrandColors.textPrimary,
-                height: hasTitle ? 1.22 : 1.5,
-                letterSpacing: hasTitle ? -0.65 : 0,
-              ),
-            ),
-          ),
-        Padding(
-          padding: EdgeInsets.fromLTRB(
-            DesignTokens.s20,
-            hasTitle || hasBody ? DesignTokens.s20 : DesignTokens.s16,
-            DesignTokens.s20,
-            DesignTokens.s16,
-          ),
-          child: _buildEditorialAuthorRow(l10n),
         ),
         if (_currentPost.imageUrls.isNotEmpty) ...[
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: DesignTokens.s20),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(DesignTokens.r12),
-              child: AspectRatio(
-                aspectRatio: 3 / 4,
-                child: Stack(
-                  children: [
-                    PageView.builder(
-                      controller: _imagePageController,
-                      onPageChanged: (index) {
-                        setState(() => _currentImageIndex = index);
-                        _prefetchPostImages(
-                          initial: false,
-                          aroundIndex: index,
-                        );
-                      },
-                      itemCount: _currentPost.imageUrls.length,
-                      itemBuilder: (context, index) {
-                        final imageUrl = _currentPost.imageUrls[index];
-                        return Semantics(
-                          button: true,
-                          label: Localizations.localeOf(context).languageCode ==
-                                  'ko'
-                              ? '게시글 이미지 확대'
-                              : 'Open post image',
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              showFullscreenImageViewer(
-                                context,
-                                imageUrls: _currentPost.imageUrls,
-                                initialIndex: index,
-                                heroTag: 'post_image_$index',
-                              );
-                            },
-                            child: Hero(
-                              tag: 'post_image_$index',
-                              child: ColoredBox(
-                                color: BrandColors.imagePlaceholder,
-                                child: _buildRetryableImage(
-                                  imageUrl,
-                                  fit: BoxFit.cover,
-                                  isFullScreen: false,
+            padding: const EdgeInsets.fromLTRB(
+              DesignTokens.s16,
+              6,
+              DesignTokens.s16,
+              0,
+            ),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(DesignTokens.r12),
+                  child: AspectRatio(
+                    aspectRatio: 3 / 4,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        PageView.builder(
+                          controller: _imagePageController,
+                          onPageChanged: (index) {
+                            setState(() => _currentImageIndex = index);
+                            _prefetchPostImages(
+                              initial: false,
+                              aroundIndex: index,
+                            );
+                          },
+                          itemCount: _currentPost.imageUrls.length,
+                          itemBuilder: (context, index) {
+                            final imageUrl = _currentPost.imageUrls[index];
+                            return Semantics(
+                              button: true,
+                              label: Localizations.localeOf(context)
+                                          .languageCode ==
+                                      'ko'
+                                  ? '게시글 이미지 확대'
+                                  : 'Open post image',
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  showFullscreenImageViewer(
+                                    context,
+                                    imageUrls: _currentPost.imageUrls,
+                                    initialIndex: index,
+                                    heroTag: 'post_image_$index',
+                                  );
+                                },
+                                child: Hero(
+                                  tag: 'post_image_$index',
+                                  child: ColoredBox(
+                                    color: BrandColors.imagePlaceholder,
+                                    child: SizedBox.expand(
+                                      child: _buildRetryableImage(
+                                        imageUrl,
+                                        fit: BoxFit.cover,
+                                        isFullScreen: false,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        if (_currentPost.imageUrls.length > 1)
+                          Positioned(
+                            top: DesignTokens.s8,
+                            right: DesignTokens.s8,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: DesignTokens.s8,
+                                vertical: DesignTokens.s4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.5),
+                                borderRadius:
+                                    BorderRadius.circular(DesignTokens.r12),
+                              ),
+                              child: Text(
+                                '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
+                                style: const TextStyle(
+                                  fontFamily: 'Pretendard',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  height: 1,
                                 ),
                               ),
                             ),
                           ),
-                        );
-                      },
+                      ],
                     ),
-                    if (_currentPost.imageUrls.length > 1)
-                      Positioned(
-                        top: DesignTokens.s8,
-                        right: DesignTokens.s8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: DesignTokens.s8,
-                            vertical: DesignTokens.s4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(
-                              DesignTokens.r12,
-                            ),
-                          ),
-                          child: Text(
-                            '${_currentImageIndex + 1}/${_currentPost.imageUrls.length}',
-                            style: const TextStyle(
-                              fontFamily: 'Pretendard',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                              height: 1,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -2335,50 +2369,42 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 count: _currentPost.imageUrls.length,
               ),
             ),
-        ],
-        if (hasTitle && hasBody)
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s20,
-              DesignTokens.s20,
-              DesignTokens.s20,
-              0,
-            ),
-            child: Text(
-              body,
-              style: TextStyle(
-                fontFamily: 'Pretendard',
-                fontSize: bodyFontSize,
-                fontWeight: FontWeight.w500,
-                color: BrandColors.textPrimary,
-                height: 1.5,
-                letterSpacing: 0,
+            padding: const EdgeInsets.fromLTRB(16, 5, 16, 0),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 640),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _buildPostCategoryTags(l10n),
+                ),
               ),
             ),
           ),
+        ],
+        if (_currentPost.imageUrls.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(_threadContentInset, 5, 16, 0),
+            child: _buildPostCategoryTags(l10n),
+          ),
         if (_currentPost.type == 'poll')
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              DesignTokens.s20,
-              DesignTokens.s16,
-              DesignTokens.s20,
-              0,
-            ),
+            padding: const EdgeInsets.fromLTRB(_threadContentInset, 8, 16, 0),
             child: PollPostWidget(postId: _currentPost.id),
           ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            DesignTokens.s20,
-            DesignTokens.s12,
-            DesignTokens.s20,
-            0,
-          ),
-          child: _buildStatsRow(
-            likes: _currentPost.likes,
-            commentCount: _currentPost.commentCount,
-            viewCount: _currentPost.viewCount,
-            isLiked: _isLiked,
-            likedBy: _currentPost.likedBy,
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 0),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 640),
+              child: _buildStatsRow(
+                likes: _currentPost.likes,
+                commentCount: _currentPost.commentCount,
+                viewCount: _currentPost.viewCount,
+                isLiked: _isLiked,
+                likedBy: _currentPost.likedBy,
+              ),
+            ),
           ),
         ),
         _buildAudienceSection(),
@@ -2403,11 +2429,11 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
             behavior: HitTestBehavior.opaque,
             onTap: canOpenProfile ? _openAuthorProfile : null,
             child: SizedBox.square(
-              dimension: 44,
+              dimension: 40,
               child: Center(
                 child: AudienceRing(
                   restricted: _currentPost.visibility == 'category',
-                  size: 40,
+                  size: 36,
                   ringWidth: 2.25,
                   innerGap: 1.25,
                   semanticLabel:
@@ -2419,7 +2445,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                     photoUrl: _currentPost.authorPhotoURL,
                     photoVersion: 0,
                     isAnonymous: isAnonymous,
-                    size: 40,
+                    size: 36,
                   ),
                 ),
               ),
@@ -2437,12 +2463,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                 onTap: canOpenProfile ? _openAuthorProfile : null,
                 child: Text(
                   authorName,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Pretendard',
-                    fontSize: 15,
+                    fontSize: context.rf(16).clamp(15.0, 16.5).toDouble(),
                     fontWeight: FontWeight.w700,
                     color: BrandColors.textPrimary,
-                    height: 1.25,
+                    height: 1.22,
+                    letterSpacing: -0.25,
                   ),
                 ),
               ),
@@ -2452,12 +2479,13 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
               ),
               Text(
                 _currentPost.getFormattedTime(context),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'Pretendard',
-                  fontSize: 13,
+                  fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
                   fontWeight: FontWeight.w400,
                   color: BrandColors.textTertiary,
-                  height: 1.25,
+                  height: 1.22,
+                  letterSpacing: -0.15,
                 ),
               ),
               if (!isAnonymous &&
@@ -2467,6 +2495,18 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
                   size: 15,
                 ),
             ],
+          ),
+        ),
+        IconButton(
+          tooltip: l10n.moreOptions,
+          onPressed: _openPostActionsSheet,
+          padding: EdgeInsets.zero,
+          visualDensity: VisualDensity.compact,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          icon: const Icon(
+            Icons.more_vert_rounded,
+            size: 22,
+            color: BrandColors.iconDefault,
           ),
         ),
       ],
@@ -2510,13 +2550,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         ),
         title: const SizedBox.shrink(),
         centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Color(0xFF111827)),
-            tooltip: AppLocalizations.of(context)!.moreOptions,
-            onPressed: _openPostActionsSheet,
-          ),
-        ],
       ),
       body: Stack(
         children: [

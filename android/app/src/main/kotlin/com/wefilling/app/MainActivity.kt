@@ -1,16 +1,13 @@
 package com.wefilling.app
 
-import android.Manifest
+import android.app.Activity
 import android.content.ContentValues
-import android.content.pm.PackageManager
-import android.media.MediaScannerConnection
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.annotation.NonNull
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -26,9 +23,8 @@ class MainActivity : FlutterActivity() {
     private val mediaSaverChannelName = "com.wefilling.app/media_saver"
     private val documentImportChannelName = "com.wefilling.app/document_import"
     private val maxDocumentBytes = 20L * 1024L * 1024L
-    private val photoWritePermissionRequest = 7241
+    private val legacyPhotoSaveRequest = 7241
     private var pendingImageBytes: ByteArray? = null
-    private var pendingImageFilename: String? = null
     private var pendingSaveResult: MethodChannel.Result? = null
     private val mediaSaveInProgress = AtomicBoolean(false)
 
@@ -53,21 +49,8 @@ class MainActivity : FlutterActivity() {
                 return@setMethodCallHandler
             }
             val safeFilename = if (filename.isEmpty()) "wefilling.jpg" else filename
-            if (
-                Build.VERSION.SDK_INT <= Build.VERSION_CODES.P &&
-                ContextCompat.checkSelfPermission(
-                    this,
-                    Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                pendingImageBytes = bytes
-                pendingImageFilename = safeFilename
-                pendingSaveResult = result
-                ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
-                    photoWritePermissionRequest,
-                )
+            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P) {
+                chooseLegacyImageDestination(bytes, safeFilename, result)
                 return@setMethodCallHandler
             }
             saveImage(bytes, safeFilename, result)
@@ -164,29 +147,100 @@ class MainActivity : FlutterActivity() {
         }.start()
     }
 
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<out String>,
-        grantResults: IntArray,
+    private fun chooseLegacyImageDestination(
+        bytes: ByteArray,
+        filename: String,
+        result: MethodChannel.Result,
     ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != photoWritePermissionRequest) return
-        val result = pendingSaveResult
-        val bytes = pendingImageBytes
-        val filename = pendingImageFilename
-        pendingSaveResult = null
-        pendingImageBytes = null
-        pendingImageFilename = null
-        if (result == null || bytes == null || filename == null) return
-        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
-            saveImage(bytes, filename, result)
-        } else {
+        pendingImageBytes = bytes
+        pendingSaveResult = result
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = imageMimeType(filename)
+            putExtra(Intent.EXTRA_TITLE, filename)
+        }
+        try {
+            startActivityForResult(intent, legacyPhotoSaveRequest)
+        } catch (error: Throwable) {
+            clearPendingLegacySave()
             mediaSaveInProgress.set(false)
             result.error(
-                "photo-permission-denied",
-                "Photo write permission was denied.",
+                "photo-save-failed",
+                error.localizedMessage ?: "Could not open the system file picker.",
                 null,
             )
+        }
+    }
+
+    @Deprecated("Deprecated in Android SDK; required for the API 24-28 SAF result.")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != legacyPhotoSaveRequest) return
+        val result = pendingSaveResult
+        val bytes = pendingImageBytes
+        clearPendingLegacySave()
+        if (result == null || bytes == null) {
+            mediaSaveInProgress.set(false)
+            return
+        }
+        val destination = data?.data
+        if (resultCode != Activity.RESULT_OK || destination == null) {
+            mediaSaveInProgress.set(false)
+            result.error(
+                "photo-save-canceled",
+                "Image save was canceled.",
+                null,
+            )
+            return
+        }
+        saveImageToUri(bytes, destination, result)
+    }
+
+    private fun clearPendingLegacySave() {
+        pendingSaveResult = null
+        pendingImageBytes = null
+    }
+
+    private fun saveImageToUri(
+        bytes: ByteArray,
+        destination: Uri,
+        result: MethodChannel.Result,
+    ) {
+        Thread {
+            try {
+                contentResolver.openOutputStream(destination, "w")?.use { output ->
+                    output.write(bytes)
+                    output.flush()
+                } ?: throw IllegalStateException("Could not open image output stream.")
+                runOnUiThread {
+                    mediaSaveInProgress.set(false)
+                    result.success(null)
+                }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    mediaSaveInProgress.set(false)
+                    result.error(
+                        "photo-save-failed",
+                        error.localizedMessage ?: "Could not save the image.",
+                        null,
+                    )
+                }
+            }
+        }.start()
+    }
+
+    private fun imageMimeType(filename: String): String {
+        return when (filename.substringAfterLast('.', "jpg").lowercase()) {
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "heic", "heif" -> "image/heic"
+            "tif", "tiff" -> "image/tiff"
+            else -> "image/jpeg"
         }
     }
 
@@ -197,74 +251,38 @@ class MainActivity : FlutterActivity() {
     ) {
         Thread {
             try {
-                val mimeType = when (filename.substringAfterLast('.', "jpg").lowercase()) {
-                    "png" -> "image/png"
-                    "gif" -> "image/gif"
-                    "webp" -> "image/webp"
-                    "heic", "heif" -> "image/heic"
-                    "tif", "tiff" -> "image/tiff"
-                    else -> "image/jpeg"
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+                    throw IllegalStateException("Legacy image saves must use the system file picker.")
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    val values = ContentValues().apply {
-                        put(MediaStore.Images.Media.DISPLAY_NAME, filename)
-                        put(MediaStore.Images.Media.MIME_TYPE, mimeType)
-                        put(
-                            MediaStore.Images.Media.RELATIVE_PATH,
-                            Environment.DIRECTORY_PICTURES + "/Wefilling",
-                        )
-                        put(MediaStore.Images.Media.IS_PENDING, 1)
-                    }
-                    val uri = contentResolver.insert(
-                        MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                        values,
-                    ) ?: throw IllegalStateException("Could not create MediaStore item.")
-                    try {
-                        contentResolver.openOutputStream(uri, "w")?.use { output ->
-                            output.write(bytes)
-                            output.flush()
-                        } ?: throw IllegalStateException("Could not open image output stream.")
-                        values.clear()
-                        values.put(MediaStore.Images.Media.IS_PENDING, 0)
-                        val updated = contentResolver.update(uri, values, null, null)
-                        if (updated != 1) {
-                            throw IllegalStateException(
-                                "Could not publish the MediaStore image.",
-                            )
-                        }
-                    } catch (error: Throwable) {
-                        contentResolver.delete(uri, null, null)
-                        throw error
-                    }
-                } else {
-                    @Suppress("DEPRECATION")
-                    val directory = File(
-                        Environment.getExternalStoragePublicDirectory(
-                            Environment.DIRECTORY_PICTURES,
-                        ),
-                        "Wefilling",
+                val values = ContentValues().apply {
+                    put(MediaStore.Images.Media.DISPLAY_NAME, filename)
+                    put(MediaStore.Images.Media.MIME_TYPE, imageMimeType(filename))
+                    put(
+                        MediaStore.Images.Media.RELATIVE_PATH,
+                        Environment.DIRECTORY_PICTURES + "/Wefilling",
                     )
-                    if (!directory.exists() && !directory.mkdirs()) {
-                        throw IllegalStateException("Could not create Pictures directory.")
-                    }
-                    var outputFile = File(directory, filename)
-                    if (outputFile.exists()) {
-                        outputFile = File(
-                            directory,
-                            outputFile.nameWithoutExtension + "_" +
-                                System.currentTimeMillis() + "." + outputFile.extension,
-                        )
-                    }
-                    outputFile.outputStream().use { output ->
+                    put(MediaStore.Images.Media.IS_PENDING, 1)
+                }
+                val uri = contentResolver.insert(
+                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                    values,
+                ) ?: throw IllegalStateException("Could not create MediaStore item.")
+                try {
+                    contentResolver.openOutputStream(uri, "w")?.use { output ->
                         output.write(bytes)
                         output.flush()
+                    } ?: throw IllegalStateException("Could not open image output stream.")
+                    values.clear()
+                    values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                    val updated = contentResolver.update(uri, values, null, null)
+                    if (updated != 1) {
+                        throw IllegalStateException(
+                            "Could not publish the MediaStore image.",
+                        )
                     }
-                    MediaScannerConnection.scanFile(
-                        this,
-                        arrayOf(outputFile.absolutePath),
-                        arrayOf(mimeType),
-                        null,
-                    )
+                } catch (error: Throwable) {
+                    contentResolver.delete(uri, null, null)
+                    throw error
                 }
                 runOnUiThread {
                     mediaSaveInProgress.set(false)
@@ -283,4 +301,3 @@ class MainActivity : FlutterActivity() {
         }.start()
     }
 }
-

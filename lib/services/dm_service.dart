@@ -3,6 +3,7 @@
 // 대화방 생성, 메시지 전송, 읽음 처리 등
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/conversation.dart';
@@ -14,6 +15,7 @@ import '../utils/logger.dart';
 
 class DMService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final DMMessageCacheService _localMessageCache = DMMessageCacheService();
   static bool _rulesTestDone = false;
@@ -1446,29 +1448,13 @@ class DMService {
 
       // ✅ 나가기 시 정책:
       // - archivedBy + userLeftAt 기록
-      // - 내 unreadCount는 0으로 리셋
-      // - users/{me}.dmUnreadTotal은 "이 대화방에서 사라지는 unread"만큼 감소
-      final unreadCount = Map<String, int>.from(data['unreadCount'] ?? {});
-      final myUnread = unreadCount[currentUser.uid] ?? 0;
-      unreadCount[currentUser.uid] = 0;
-
-      final batch = _firestore.batch();
-      batch.update(convRef, {
+      // - 읽음 카운터/총합은 trusted callable에서 먼저 원자적으로 리셋
+      await markAsRead(conversationId);
+      await convRef.update({
         'archivedBy': FieldValue.arrayUnion([currentUser.uid]),
         'userLeftAt.${currentUser.uid}': Timestamp.fromDate(now),
-        'unreadCount': unreadCount,
         'updatedAt': Timestamp.fromDate(now),
       });
-      if (myUnread > 0) {
-        final userRef = _firestore.collection('users').doc(currentUser.uid);
-        batch.set(
-            userRef,
-            {
-              'dmUnreadTotal': FieldValue.increment(-myUnread),
-            },
-            SetOptions(merge: true));
-      }
-      await batch.commit();
 
       // 로컬에 leave 시점을 저장하여 재진입 시 즉시 필터링되도록 한다 (best-effort)
       try {
@@ -1492,118 +1478,39 @@ class DMService {
     }
   }
 
-  /// 메시지 읽음 처리
-  Future<void> markAsRead(String conversationId) async {
+  /// 방/사용자 카운터는 서버 트랜잭션으로 즉시 정합화하고, 개별 메시지
+  /// 영수증은 서버가 bounded batch로 처리한다. 대화 길이에 비례하는
+  /// 클라이언트 N+1 읽기/쓰기를 만들지 않는다.
+  Future<DMReadResult> markAsRead(String conversationId) async {
     try {
       final currentUser = _auth.currentUser;
-      if (currentUser == null) {
-        return;
+      if (currentUser == null || conversationId.trim().isEmpty) {
+        return const DMReadResult();
       }
-
-      // 대화방 정보 가져오기
-      final convDoc = await _firestore
-          .collection('conversations')
-          .doc(conversationId)
-          .get();
-      if (!convDoc.exists) {
-        return;
+      final response = await _functions
+          .httpsCallable('markDMConversationReadSecure')
+          .call(<String, dynamic>{'conversationId': conversationId}).timeout(
+              const Duration(seconds: 120));
+      final data = response.data;
+      if (data is! Map || data['success'] != true) {
+        throw StateError('DM 읽음 상태를 동기화하지 못했습니다.');
       }
-
-      final convData = convDoc.data()!;
-      final unreadCount = Map<String, int>.from(convData['unreadCount'] ?? {});
-      final prevMyUnread = unreadCount[currentUser.uid] ?? 0;
-
-      // unreadCount 필드만 믿지 않고 실제 메시지를 끝까지 확인한다.
-      // 과거 200개 제한은 장기간 미접속 계정에서 뒤쪽 메시지를 영원히
-      // 안 읽음으로 남길 수 있었다. 문서 ID 커서로 페이지를 순회하고,
-      // 각 페이지를 400개 이하 batch로 즉시 확정한다.
-      int actualReadCount = 0;
-      for (var pass = 0; pass < 2; pass++) {
-        int readInPass = 0;
-        DocumentSnapshot<Map<String, dynamic>>? cursor;
-        while (true) {
-          Query<Map<String, dynamic>> query = convDoc.reference
-              .collection('messages')
-              .where('isRead', isEqualTo: false)
-              .orderBy(FieldPath.documentId)
-              .limit(400);
-          if (cursor != null) query = query.startAfterDocument(cursor);
-          final page = await query.get();
-          if (page.docs.isEmpty) break;
-
-          final incoming = page.docs.where((doc) {
-            final senderId = (doc.data()['senderId'] ?? '').toString().trim();
-            return senderId.isNotEmpty && senderId != currentUser.uid;
-          }).toList(growable: false);
-          if (incoming.isNotEmpty) {
-            final batch = _firestore.batch();
-            final now = Timestamp.now();
-            for (final doc in incoming) {
-              batch.update(doc.reference, {
-                'isRead': true,
-                'readAt': now,
-              });
-            }
-            await batch.commit();
-            readInPass += incoming.length;
-            actualReadCount += incoming.length;
-          }
-
-          if (page.docs.length < 400) break;
-          cursor = page.docs.last;
-        }
-
-        // 두 번째 순회는 첫 순회 도중 도착한 메시지를 닫기 위한 것이다.
-        // 첫 순회에서 변경이 없었다면 불필요한 재스캔을 하지 않는다.
-        if (readInPass == 0) break;
-      }
-
-      // 실제 메시지가 없으면 skip (정확한 확인)
-      //
-      // ⚠️ 중요한 보정:
-      // - DM 목록 배지는 conversations.unreadCount를 단일 소스로 사용한다.
-      // - 그런데 unreadCount가 드리프트(늦은 반영/중복 증가/클라-서버 불일치 등)한 상태에서
-      //   실제 messages에는 isRead=false가 0개가 될 수 있다.
-      // - 이 경우 조기 return을 해버리면 목록 배지가 "영원히" 남는다.
-      // - 따라서 "실제 unread=0"이라도, 기존 unreadCount가 0이 아니면 0으로 강제 정합화한다.
-      if (actualReadCount == 0) {
-        if (prevMyUnread != 0) {
-          final now = DateTime.now();
-          Logger.log(
-              '🔧 [markAsRead] 보정 경로 실행 - prevMyUnread=$prevMyUnread, 실제 메시지 없음');
-          final batch = _firestore.batch();
-          batch.update(convDoc.reference, {
-            'unreadCount.${currentUser.uid}': 0,
-            'updatedAt': Timestamp.fromDate(now),
-          });
-          // dmUnreadTotal: prevMyUnread가 양수일 때만 감소 (음수일 때 increment(-음수)=증가 방지)
-          if (prevMyUnread > 0) {
-            final userRef = _firestore.collection('users').doc(currentUser.uid);
-            batch.set(
-                userRef,
-                {
-                  'dmUnreadTotal': FieldValue.increment(-prevMyUnread),
-                },
-                SetOptions(merge: true));
-          }
-          await batch.commit();
-          Logger.log('✅ [markAsRead] 보정 완료 - unreadCount 0으로 정합화');
-
-          _conversationCache.remove(conversationId);
-          _messageCache.remove(conversationId);
-        }
-        return;
-      }
+      int readInt(Object? value) => value is num ? value.toInt() : 0;
+      final result = DMReadResult(
+        clearedCount: readInt(data['clearedCount']),
+        newDmUnreadTotal: readInt(data['newDmUnreadTotal']),
+        receiptsUpdated: readInt(data['receiptsUpdated']),
+        cleanupComplete: data['cleanupComplete'] != false,
+      );
       Logger.log(
-          '📖 [markAsRead] 읽음 처리 시작 - conversationId=$conversationId, count=$actualReadCount, prevMyUnread=$prevMyUnread');
-      Logger.log(
-          '✅ [markAsRead] 완료 - conversationId=$conversationId, count=$actualReadCount');
+        '✅ [markAsRead] 서버 정합화 완료 - conversationId=$conversationId, '
+        'cleared=${result.clearedCount}, receipts=${result.receiptsUpdated}',
+      );
 
       // 캐시 클리어 - 스트림 리스너가 변경사항을 감지하도록
       _conversationCache.remove(conversationId);
       _messageCache.remove(conversationId);
-
-      // 실시간 리스너가 자동으로 배지를 업데이트하므로 수동 호출 불필요
+      return result;
     } catch (e) {
       Logger.error('메시지 읽음 처리 오류', e);
       rethrow;
@@ -1617,8 +1524,8 @@ class DMService {
   ///   (dm_list_screen의 리스너와 main_screen 배지용 리스너 2개 → 비효율)
   /// - 현재 방식: users 문서의 dmUnreadTotal 필드를 직접 구독
   ///   - Cloud Function: 메시지 생성 시 +1 증분
-  ///   - onDMMessageRead: 메시지별 false→true 전이 시 -1 감소
-  ///   - BadgeService: 앱 시작 시 실제 값으로 재계산 (드리프트 복구)
+  ///   - secure callable: 방 읽음 시 방/사용자 카운터를 한 트랜잭션으로 0 수렴
+  ///   - BadgeService: 카운터 버전 마이그레이션 때만 방별 집계값을 1회 합산
   Stream<int> getTotalUnreadCount() {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return Stream.value(0);
@@ -1672,4 +1579,18 @@ class DMService {
       return count;
     }).distinct(); // 중복 값 제거로 불필요한 리빌드 방지
   }
+}
+
+class DMReadResult {
+  const DMReadResult({
+    this.clearedCount = 0,
+    this.newDmUnreadTotal = 0,
+    this.receiptsUpdated = 0,
+    this.cleanupComplete = true,
+  });
+
+  final int clearedCount;
+  final int newDmUnreadTotal;
+  final int receiptsUpdated;
+  final bool cleanupComplete;
 }

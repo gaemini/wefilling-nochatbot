@@ -52,7 +52,7 @@ class OptimizedPostCard extends StatefulWidget {
     this.preloadImage = false,
     this.useGlassmorphism = false,
     this.margin = EdgeInsets.zero,
-    this.contentPadding = const EdgeInsets.fromLTRB(20, 12, 20, 14),
+    this.contentPadding = const EdgeInsets.fromLTRB(16, 7, 16, 3),
   });
 
   factory OptimizedPostCard.glassmorphism({
@@ -87,6 +87,7 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
   bool _likeSheetOpenedByHold = false;
 
   static const double _imageRadius = DesignTokens.r12;
+  static const double _threadContentOffset = 48;
   static const String _overflowSuffix = '\u00A0\u00A0....'; // 2칸 + ....
 
   @override
@@ -576,12 +577,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final hasBody = unifiedText.isNotEmpty;
     final contentInsets =
         widget.contentPadding.resolve(Directionality.of(context));
-    final imageGap = context.rs(10).clamp(8.0, 10.0).toDouble();
-    final contentTopGap = context.rs(12).clamp(9.0, 12.0).toDouble();
-    final titleSize = context.rf(20).clamp(18.0, 22.0).toDouble();
-    // 포스트 생성 화면의 본문 타이포그래피와 같은 크기 범위를 사용한다.
-    // 카드 본문이 작성자 정보보다 과하게 강조되지 않도록 14–16sp로 제한한다.
-    final bodySize = context.rf(15).clamp(14.0, 16.0).toDouble();
+    final imageGap = context.rs(4).clamp(3.0, 5.0).toDouble();
+    final contentTopGap = context.rs(2).clamp(1.0, 3.0).toDouble();
+    // Threads의 비율처럼 작성자명과 본문은 거의 같은 크기를 쓰고,
+    // 작성자명은 굵기로만 위계를 만든다.
+    final titleSize = context.rf(16).clamp(15.5, 17.0).toDouble();
+    final bodySize = context.rf(16).clamp(15.5, 17.0).toDouble();
     final hasPrimaryContent = hasTitle || hasBody || post.type == 'poll';
 
     return Container(
@@ -599,83 +600,69 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   contentInsets.left,
                   contentInsets.top,
                   contentInsets.right,
-                  0,
-                ),
-                child: _buildAuthorInfoWithTitle(post, theme, colorScheme),
-              ),
-              if (hasPrimaryContent)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    contentInsets.left,
-                    contentTopGap,
-                    contentInsets.right,
-                    0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (hasTitle)
-                        _buildSmartEllipsizedText(
-                          text: title,
-                          maxLines: 3,
-                          style: TextStyle(
-                            color: BrandColors.textPrimary,
-                            fontFamily: 'Pretendard',
-                            fontWeight: FontWeight.w700,
-                            fontSize: titleSize,
-                            height: 1.2,
-                            letterSpacing: -0.45,
-                          ),
-                        ),
-                      if (hasTitle && hasBody) const SizedBox(height: 6),
-                      if (hasBody && hasTitle)
-                        _buildSmartEllipsizedText(
-                          text: unifiedText,
-                          maxLines: 2,
-                          style: TextStyle(
-                            color: BrandColors.textSecondary,
-                            fontFamily: 'Pretendard',
-                            fontWeight: FontWeight.w400,
-                            fontSize: bodySize,
-                            height: 1.45,
-                            letterSpacing: -0.2,
-                          ),
-                        ),
-                      if (hasBody && !hasTitle)
-                        _buildTextOnlyPreview(
-                          unifiedText,
-                          theme,
-                          colorScheme,
-                        ),
-                      if (post.type == 'poll') ...[
-                        if (hasTitle || hasBody)
-                          const SizedBox(height: DesignTokens.s12),
-                        PollPostWidget(postId: post.id),
-                      ],
-                    ],
-                  ),
-                ),
-              if (post.imageUrls.isNotEmpty) ...[
-                SizedBox(height: imageGap),
-                Padding(
-                  padding: EdgeInsets.only(
-                    left: contentInsets.left,
-                    right: contentInsets.right,
-                  ),
-                  child: _buildPostImages(post.imageUrls),
-                ),
-              ],
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  contentInsets.left,
-                  DesignTokens.s4,
-                  contentInsets.right,
                   contentInsets.bottom,
                 ),
-                child: _buildPostMeta(
-                  post.copyWith(
-                    commentCount: widget.externalCommentCountOverride ??
-                        post.commentCount,
+                child: _buildAuthorInfoWithTitle(
+                  post,
+                  theme,
+                  colorScheme,
+                  threadContent: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (hasPrimaryContent) ...[
+                        SizedBox(height: contentTopGap),
+                        if (hasTitle)
+                          _buildSmartEllipsizedText(
+                            text: title,
+                            maxLines: 3,
+                            style: TextStyle(
+                              color: BrandColors.textPrimary,
+                              fontFamily: 'Pretendard',
+                              fontWeight: FontWeight.w600,
+                              fontSize: titleSize,
+                              height: 1.24,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        if (hasBody && hasTitle)
+                          _buildSmartEllipsizedText(
+                            text: unifiedText,
+                            maxLines: 2,
+                            style: TextStyle(
+                              color: BrandColors.textPrimary,
+                              fontFamily: 'Pretendard',
+                              fontWeight: FontWeight.w400,
+                              fontSize: bodySize,
+                              height: 1.24,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        if (hasBody && !hasTitle)
+                          _buildTextOnlyPreview(
+                            unifiedText,
+                            theme,
+                            colorScheme,
+                          ),
+                        if (post.type == 'poll') ...[
+                          if (hasTitle || hasBody)
+                            const SizedBox(height: DesignTokens.s8),
+                          PollPostWidget(postId: post.id),
+                        ],
+                      ],
+                      if (post.imageUrls.isNotEmpty) ...[
+                        SizedBox(height: imageGap),
+                        _buildPostImages(post.imageUrls),
+                      ],
+                      Padding(
+                        padding: const EdgeInsets.only(top: DesignTokens.s2),
+                        child: _buildPostMeta(
+                          post.copyWith(
+                            commentCount: widget.externalCommentCountOverride ??
+                                post.commentCount,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -787,22 +774,22 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
     final trimmed = preview.trim();
     if (trimmed.isEmpty) return const SizedBox.shrink();
 
-    final responsiveFontSize = context.rf(15).clamp(14.0, 16.0).toDouble();
+    final responsiveFontSize = context.rf(16).clamp(15.5, 17.0).toDouble();
     final style = theme.textTheme.bodyLarge?.copyWith(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w500,
-          height: 1.5,
-          letterSpacing: 0,
+          fontWeight: FontWeight.w400,
+          height: 1.38,
+          letterSpacing: -0.3,
         ) ??
         TextStyle(
           color: BrandColors.textPrimary,
           fontFamily: 'Pretendard',
           fontSize: responsiveFontSize,
-          fontWeight: FontWeight.w500,
-          height: 1.5,
-          letterSpacing: 0,
+          fontWeight: FontWeight.w400,
+          height: 1.38,
+          letterSpacing: -0.3,
         );
 
     return _buildSmartEllipsizedText(
@@ -815,7 +802,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
 
   /// 작성자 정보 행. 익명/탈퇴 계정과 프로필 이동 정책은 그대로 유지한다.
   Widget _buildAuthorInfoWithTitle(
-      Post post, ThemeData theme, ColorScheme colorScheme) {
+    Post post,
+    ThemeData theme,
+    ColorScheme colorScheme, {
+    required Widget threadContent,
+  }) {
     // 익명 여부에 따라 작성자 정보 결정
     final bool isAnonymous = post.isAnonymous;
     // 작성자 이름이 비어있거나 "Deleted"인 경우 탈퇴한 계정으로 표시
@@ -850,12 +841,12 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ? resolvedPhotoURL.trim()
               : authorImageUrl;
 
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      return Stack(
+        clipBehavior: Clip.none,
         children: [
           // 프로필 정보 (프로필 이미지 + 작성자 이름 + 국적 + 시간)
           ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
+            constraints: const BoxConstraints(minHeight: 40),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
@@ -875,11 +866,11 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                           }
                         : null,
                     child: SizedBox.square(
-                      dimension: 44,
+                      dimension: 40,
                       child: Center(
                         child: AudienceRing(
                           restricted: post.visibility == 'category',
-                          size: 38,
+                          size: 36,
                           ringWidth: 2.25,
                           innerGap: 1.25,
                           semanticLabel:
@@ -919,77 +910,63 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                   ),
                 ),
 
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
 
                 // 작성자 이름과 시간
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: GestureDetector(
-                              onTap: canOpenProfile
-                                  ? () {
-                                      _openProfileOrMyPage(
-                                        userId: post.userId,
-                                        nickname: resolvedNickname,
-                                        photoURL: resolvedPhotoURL,
-                                      );
-                                    }
-                                  : null,
-                              child: Text(
-                                resolvedNickname,
-                                style: TextStyle(
-                                  fontFamily: 'Pretendard',
-                                  fontSize: context
-                                      .rf(14.5)
-                                      .clamp(13.5, 15.0)
-                                      .toDouble(),
-                                  fontWeight: FontWeight.w600,
-                                  color: BrandColors.textPrimary,
-                                  height: 1.2,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                      Flexible(
+                        child: GestureDetector(
+                          onTap: canOpenProfile
+                              ? () => _openProfileOrMyPage(
+                                    userId: post.userId,
+                                    nickname: resolvedNickname,
+                                    photoURL: resolvedPhotoURL,
+                                  )
+                              : null,
+                          child: Text(
+                            resolvedNickname,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Pretendard',
+                              fontSize:
+                                  context.rf(16).clamp(15.0, 16.5).toDouble(),
+                              fontWeight: FontWeight.w700,
+                              color: BrandColors.textPrimary,
+                              height: 1.22,
+                              letterSpacing: -0.25,
                             ),
                           ),
-                          if (!isAnonymous &&
-                              post.authorNationality.trim().isNotEmpty) ...[
-                            const SizedBox(width: 3),
-                            Padding(
-                              padding: const EdgeInsets.only(top: 1),
-                              child: CountryFlagCircle(
-                                nationality: post.authorNationality,
-                                size: 16,
-                              ),
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
-                      const SizedBox(height: DesignTokens.s2),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              _formatTimeAgo(post.createdAt),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: BrandColors.textTertiary,
-                                fontFamily: 'Pretendard',
-                                fontSize: context
-                                    .rf(12.5)
-                                    .clamp(12.0, 13.0)
-                                    .toDouble(),
-                                height: 1.2,
-                              ),
-                            ),
-                          ),
-                        ],
+                      if (!isAnonymous &&
+                          post.authorNationality.trim().isNotEmpty) ...[
+                        const SizedBox(width: 4),
+                        CountryFlagCircle(
+                          nationality: post.authorNationality,
+                          size: 15,
+                        ),
+                      ],
+                      const SizedBox(width: 4),
+                      const Text(
+                        '·',
+                        style: TextStyle(color: BrandColors.textTertiary),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatTimeAgo(post.createdAt),
+                        maxLines: 1,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: BrandColors.textTertiary,
+                          fontFamily: 'Pretendard',
+                          fontSize: context.rf(14).clamp(13.0, 14.5).toDouble(),
+                          fontWeight: FontWeight.w400,
+                          height: 1.22,
+                          letterSpacing: -0.15,
+                        ),
                       ),
                     ],
                   ),
@@ -1002,8 +979,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                     child: IconButton(
                       tooltip: AppLocalizations.of(context)!.moreOptions,
                       constraints: const BoxConstraints.tightFor(
-                        width: 44,
-                        height: 44,
+                        width: 32,
+                        height: 32,
                       ),
                       padding: EdgeInsets.zero,
                       visualDensity: VisualDensity.compact,
@@ -1012,8 +989,8 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
                         authorName: resolvedNickname,
                       ),
                       icon: const Icon(
-                        Icons.more_horiz_rounded,
-                        size: 24,
+                        Icons.more_vert_rounded,
+                        size: 22,
                         color: BrandColors.iconDefault,
                       ),
                     ),
@@ -1021,8 +998,15 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
               ],
             ),
           ),
-
-          // 제목 영역 제거 (요구사항: 제목을 없애고, 기존 title은 본문으로 인식)
+          // 아바타(40px)가 끝날 때까지 기다리지 않고, Threads처럼
+          // 아이디 행 바로 아래에서 본문을 시작한다.
+          Padding(
+            padding: const EdgeInsets.only(
+              left: _threadContentOffset,
+              top: 32,
+            ),
+            child: threadContent,
+          ),
         ],
       );
     }
@@ -1118,8 +1102,9 @@ class _OptimizedPostCardState extends State<OptimizedPostCard> {
       },
       onCommentTap: widget.onTap,
       compact: true,
-      hideEmptyMetrics: true,
-      showCommentLabel: true,
+      hideEmptyMetrics: false,
+      prioritizeComments: false,
+      spreadMetrics: false,
     );
   }
 

@@ -38,6 +38,9 @@ dependencies:
   timezone: ^0.10.1
   webview_flutter: ^4.4.2
   image_picker: ^1.0.4
+  # Android gallery actions are forced through the system Photo Picker.
+  image_picker_android: ^0.8.13+3
+  image_picker_platform_interface: ^2.11.0
   file_picker: ^11.0.2
   open_filex: ^4.7.0
   visibility_detector: 0.4.0+2

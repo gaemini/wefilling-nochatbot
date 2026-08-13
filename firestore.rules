@@ -224,7 +224,13 @@ service cloud.firestore {
         && request.resource.data.nickname.size() >= 2;
       allow update: if request.auth != null
         && request.auth.uid == userId
-        && accountRestrictionFieldsUnchanged();
+        && accountRestrictionFieldsUnchanged()
+        // 읽지 않은 수는 Cloud Functions만 유지한다. 본인 문서라도
+        // 클라이언트가 배지/메시지 카운터를 임의 변경할 수 없다.
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'dmUnreadTotal', 'dmUnreadCounterVersion',
+          'notificationUnreadTotal'
+        ]);
       allow delete: if false; // 사용자 삭제는 금지
       
       // 저장된 게시글 서브컬렉션
@@ -1825,18 +1831,20 @@ service cloud.firestore {
             // 일반 메시지 관련 변경 + 보관 + 나가기 기록
             request.resource.data.participants == resource.data.participants &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'unreadCount', 'updatedAt', 'archivedBy', 'userLeftAt'])
+              .hasOnly(['lastMessage', 'lastMessageTime', 'lastMessageSenderId', 'updatedAt', 'archivedBy', 'userLeftAt'])
           ) ||
           (
-            // '나가기': participants에서 본인만 제거 (N → N-1), 기타 필드는 unreadCount/updatedAt만 변경 가능
+            // 레거시 '나가기': participants에서 본인만 제거 (N → N-1).
+            // unreadCount는 callable/trigger만 변경할 수 있다.
             request.auth.uid in resource.data.participants &&
             !(request.auth.uid in request.resource.data.participants) &&
             request.resource.data.participants.size() == resource.data.participants.size() - 1 &&
             // 남아있는 모든 참여자는 기존 참여자 중 일부여야 함 (여기서는 1명만 남는 구조)
             request.resource.data.participants.size() == 1 &&
             request.resource.data.participants[0] in resource.data.participants &&
+            request.resource.data.unreadCount == resource.data.unreadCount &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['participants','unreadCount','updatedAt'])
+              .hasOnly(['participants','updatedAt'])
           )
         );
       

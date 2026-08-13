@@ -17,6 +17,7 @@ import '../models/snack_chat_message.dart';
 import '../config/snack_chat_file_policy.dart';
 import '../l10n/app_localizations.dart';
 import '../services/cache/app_image_cache_manager.dart';
+import '../services/badge_service.dart';
 import '../services/snack_chat_active_conversation.dart';
 import '../services/snack_chat_document_import_service.dart';
 import '../services/snack_chat_local_cache_service.dart';
@@ -199,12 +200,14 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     WidgetsBinding.instance.addObserver(this);
     _appLifecycleState =
         WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
-    SnackChatActiveConversation.setActive(widget.snackChatId);
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      SnackChatActiveConversation.setActive(widget.snackChatId);
+    }
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
     _scrollController.addListener(_onScroll);
     _messageController.addListener(_onDraftChanged);
     unawaited(_hydrateLocalState());
-    unawaited(_ensureMyMembershipReady().catchError((_) {}));
+    unawaited(_markWholeRoomAsRead());
     _subscribeToMessages();
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -226,6 +229,13 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     if (SnackChatActiveConversation.isActive(oldWidget.snackChatId)) {
       SnackChatActiveConversation.setActive(null);
     }
+    unawaited(
+      _snackChatService.markAsRead(oldWidget.snackChatId).then((cleared) {
+        if (cleared > 0) return BadgeService.refreshNow();
+      }).catchError((Object error) {
+        Logger.error('Snack Chat 이전 화면 읽음 동기화 실패', error);
+      }),
+    );
     _messageSubscriptionGeneration++;
     _auxiliarySubscriptionGeneration++;
     unawaited(_msgSub?.cancel() ?? Future<void>.value());
@@ -293,9 +303,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _cachedRoomWriteToken = null;
     _lastOptimisticCreatedAt = null;
     _roomStream = _snackChatService.watchSnackChat(widget.snackChatId);
-    SnackChatActiveConversation.setActive(widget.snackChatId);
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      SnackChatActiveConversation.setActive(widget.snackChatId);
+    }
     unawaited(_hydrateLocalState());
-    unawaited(_ensureMyMembershipReady().catchError((_) {}));
+    unawaited(_markWholeRoomAsRead());
     _subscribeToMessages();
     _subscribeToAuxiliaryState();
     _subscribeToFileTransfers();
@@ -539,7 +551,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _appLifecycleState = state;
     if (state == AppLifecycleState.resumed) {
-      _scheduleMarkAsRead();
+      SnackChatActiveConversation.setActive(widget.snackChatId);
+      unawaited(_markWholeRoomAsRead());
       if (_messageStreamError != null && _messageRetryTimer == null) {
         _subscribeToMessages();
       }
@@ -550,6 +563,9 @@ class _SnackChatScreenState extends State<SnackChatScreen>
       if (mounted) setState(() {});
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
+      if (SnackChatActiveConversation.isActive(widget.snackChatId)) {
+        SnackChatActiveConversation.setActive(null);
+      }
       unawaited(
         _localCache.saveDraft(widget.snackChatId, _messageController.text),
       );
@@ -629,10 +645,11 @@ class _SnackChatScreenState extends State<SnackChatScreen>
     _autoMarkReadInFlight = true;
     final operation = () async {
       await _ensureMyMembershipReady();
-      await _snackChatService.markAsRead(
+      final cleared = await _snackChatService.markAsRead(
         widget.snackChatId,
         lastReadSequence: target,
       );
+      if (cleared > 0) await BadgeService.refreshNow();
     }();
     _markAsReadOperation = operation;
     var didSucceed = false;
@@ -677,25 +694,30 @@ class _SnackChatScreenState extends State<SnackChatScreen>
   }
 
   void _flushReadOnDispose() {
-    final target = _highestVisibleSequence;
-    final needsLegacyReset = _legacyReadResetPending && !_legacyReadResetSent;
-    if (_roomWasLeft ||
-        _roomAccessTerminated ||
-        (target <= 0 && !needsLegacyReset)) {
+    if (_roomWasLeft || _roomAccessTerminated) {
       return;
     }
     unawaited(
       (() async {
         await _ensureMyMembershipReady();
-        await _snackChatService.markAsRead(
-          widget.snackChatId,
-          lastReadSequence: target,
-        );
+        final cleared = await _snackChatService.markAsRead(widget.snackChatId);
+        if (cleared > 0) await BadgeService.refreshNow();
       })()
           .catchError((Object error) {
         Logger.error('Snack Chat 화면 종료 읽음 동기화 실패', error);
       }),
     );
+  }
+
+  Future<void> _markWholeRoomAsRead() async {
+    if (_roomWasLeft || _roomAccessTerminated || _isLeavingRoom) return;
+    try {
+      await _ensureMyMembershipReady();
+      final cleared = await _snackChatService.markAsRead(widget.snackChatId);
+      if (cleared > 0) await BadgeService.refreshNow();
+    } catch (error) {
+      Logger.error('Snack Chat 전체 읽음 동기화 실패', error);
+    }
   }
 
   void _subscribeToMessages() {
@@ -1200,8 +1222,8 @@ class _SnackChatScreenState extends State<SnackChatScreen>
 
   @override
   void dispose() {
-    // 빠르게 뒤로 가더라도 이미 화면에 노출된 마지막 sequence를 서버에
-    // 먼저 전달한다. 커서는 단조 증가하므로 진행 중 작업과 중복되어도 안전하다.
+    // 빠르게 뒤로 가더라도 방의 최신 sequence까지 먼저 읽음 처리한다.
+    // 커서는 단조 증가하므로 진행 중인 가시성 기반 작업과 중복되어도 안전하다.
     _flushReadOnDispose();
     _isLeavingRoom = true;
     _cacheHydrationGeneration++;
@@ -2836,6 +2858,10 @@ class _SnackChatScreenState extends State<SnackChatScreen>
           // 나가기 자체를 막거나 무한 대기시키지 않는다.
         }
       }
+      final cleared = await _snackChatService
+          .markAsRead(widget.snackChatId)
+          .timeout(const Duration(seconds: 10));
+      if (cleared > 0) await BadgeService.refreshNow();
       await _snackChatService.leaveRoom(widget.snackChatId);
       await _localCache.clearRoom(widget.snackChatId);
       _roomWasLeft = true;

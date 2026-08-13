@@ -462,12 +462,12 @@ class SnackChatService {
     if (uid == null) return <String>[];
     if (participantIds.isEmpty) return <String>[];
 
-    // 방장은 초대 대상 모두와 친구 관계여야 함
+    // 초대하는 참여자는 초대 대상 모두와 친구 관계여야 한다.
     final myFriendIds = await _getMyFriendIdSet(uid);
     final requested = participantIds.toSet()..remove(uid);
     final hasNonFriend = requested.any((id) => !myFriendIds.contains(id));
     if (hasNonFriend) {
-      throw StateError('방장은 친구만 초대할 수 있습니다.');
+      throw StateError('내 친구만 초대할 수 있습니다.');
     }
     final result = await _functions
         .httpsCallable('inviteSnackChatParticipants')
@@ -998,22 +998,23 @@ class SnackChatService {
   }
 
   /// 방 배지와 사용자별 마지막 읽은 sequence를 함께 단조 증가시킨다.
-  Future<void> markAsRead(
+  Future<int> markAsRead(
     String snackChatId, {
     int? lastReadSequence,
   }) async {
     final uid = _uid;
-    if (uid == null) return;
+    if (uid == null) return 0;
 
     try {
       Logger.log('📖 [SnackChat] markAsRead: room=$snackChatId, uid=$uid');
       final roomRef = _collection.doc(snackChatId);
       final memberRef = roomRef.collection('members').doc(uid);
-      await _firestore.runTransaction((transaction) async {
+      final clearedCount =
+          await _firestore.runTransaction<int>((transaction) async {
         final roomDoc = await transaction.get(roomRef);
-        if (!roomDoc.exists) return;
+        if (!roomDoc.exists) return 0;
         final room = SnackChat.fromFirestore(roomDoc);
-        if (!room.participantIds.contains(uid)) return;
+        if (!room.participantIds.contains(uid)) return 0;
         final memberDoc = await transaction.get(memberRef);
         if (!memberDoc.exists) {
           // A missing member document means the monotonic read cursor cannot
@@ -1021,12 +1022,16 @@ class SnackChatService {
           // the screen retries when the membership stream catches up.
           throw StateError('Snack Chat 멤버십 정보를 아직 준비하지 못했습니다.');
         }
-        final requested = lastReadSequence ?? 0;
+        // null is the explicit "read the whole room" operation used when a
+        // route closes. Visibility-driven updates still pass their high-water
+        // sequence and therefore never over-report while the user scrolls.
+        final requested = lastReadSequence ?? room.lastMessageSequence;
         final bounded = requested.clamp(0, room.lastMessageSequence).toInt();
         final memberData = memberDoc.data();
         final previousRaw = memberData?['lastReadSequence'];
         final previous = previousRaw is num ? previousRaw.toInt() : 0;
 
+        final unreadBefore = room.unreadCount[uid] ?? 0;
         // A user looking at an older part of the history has not necessarily
         // seen newer messages. Only clear the room badge after the latest
         // sequence was actually visible.
@@ -1040,9 +1045,13 @@ class SnackChatService {
             'lastReadAt': FieldValue.serverTimestamp(),
           });
         }
+        return bounded >= room.lastMessageSequence && unreadBefore > 0
+            ? unreadBefore
+            : 0;
       }).timeout(const Duration(seconds: 10));
 
       Logger.log('✅ [SnackChat] markAsRead 완료');
+      return clearedCount;
     } catch (e) {
       Logger.error('Snack Chat 읽음 처리 실패: $e');
       rethrow;

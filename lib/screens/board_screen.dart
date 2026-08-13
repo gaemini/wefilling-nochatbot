@@ -64,9 +64,9 @@ class BoardScreenState extends State<BoardScreen> {
   static const EdgeInsets _boardPostCardMargin = EdgeInsets.zero;
 
   EdgeInsets get _boardPostCardContentPadding {
-    final horizontal = context.rs(18).clamp(14.0, 20.0).toDouble();
-    final top = context.rs(11).clamp(9.0, 12.0).toDouble();
-    final bottom = context.rs(13).clamp(11.0, 14.0).toDouble();
+    final horizontal = context.rs(16).clamp(14.0, 18.0).toDouble();
+    final top = context.rs(7).clamp(6.0, 8.0).toDouble();
+    final bottom = context.rs(3).clamp(2.0, 4.0).toDouble();
     return EdgeInsets.fromLTRB(horizontal, top, horizontal, bottom);
   }
 

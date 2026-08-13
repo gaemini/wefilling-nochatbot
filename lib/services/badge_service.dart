@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:app_badge_plus/app_badge_plus.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/app_notification.dart';
 import 'content_filter_service.dart';
@@ -19,6 +19,7 @@ import '../utils/snack_chat_list_policy.dart';
 class BadgeService {
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   static final FirebaseAuth _auth = FirebaseAuth.instance;
+  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   static StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _userDocSubscription;
@@ -42,8 +43,7 @@ class BadgeService {
   static int? _pendingBadgeGeneration;
   static int _debugBadgeUpdateLogs = 0;
 
-  static const Duration _dmRecountInterval = Duration(hours: 12);
-  static const String _dmRecountPreferencePrefix = 'badge_dm_recount_v2__';
+  static const int _dmUnreadCounterVersion = 2;
 
   /// 실시간 배지 리스너 시작
   static Future<void> startRealtimeBadgeSync() async {
@@ -73,7 +73,7 @@ class BadgeService {
     if (!supported || !_isActiveSession(userId, generation)) return;
 
     try {
-      // 서버 카운터 동기화 (앱 시작 시 1회)
+      // 서버 카운터 점검 (구버전 계정만 trusted callable로 1회 마이그레이션)
       await _syncServerCounters(userId);
       if (!_isActiveSession(userId, generation)) return;
 
@@ -152,31 +152,12 @@ class BadgeService {
         final rawDmTotal = userSnapshot.data()?['dmUnreadTotal'];
         final storedDmTotal =
             rawDmTotal is num && rawDmTotal >= 0 ? rawDmTotal.toInt() : null;
-        final preferences = await SharedPreferences.getInstance();
-        final recountKey = '$_dmRecountPreferencePrefix$userId';
-        final lastRecountMillis = preferences.getInt(recountKey);
-        final isRecentRecount = lastRecountMillis != null &&
-            DateTime.now().difference(
-                  DateTime.fromMillisecondsSinceEpoch(lastRecountMillis),
-                ) <
-                _dmRecountInterval;
-        final shouldRecountDm = storedDmTotal == null || !isRecentRecount;
-        final actualDmUnreadCount = shouldRecountDm
-            ? await _recountAndRepairDmUnread(userId: userId)
-            : storedDmTotal;
-
-        // users 문서의 카운터를 실제 값으로 업데이트
-        // ⚠️ merge set은 문서를 "부분 필드만 가진 상태로 생성"할 수 있으므로 update만 허용한다.
-        await userRef.update({
-          'notificationUnreadTotal': actualNotificationCount,
-          'dmUnreadTotal': actualDmUnreadCount,
-        });
-        if (shouldRecountDm) {
-          await preferences.setInt(
-            recountKey,
-            DateTime.now().millisecondsSinceEpoch,
-          );
-        }
+        final storedVersion = userSnapshot.data()?['dmUnreadCounterVersion'];
+        final hasTrustedDmTotal = storedDmTotal != null &&
+            storedVersion is num &&
+            storedVersion.toInt() == _dmUnreadCounterVersion;
+        final actualDmUnreadCount =
+            hasTrustedDmTotal ? storedDmTotal : await _reconcileDmUnreadTotal();
 
         Logger.log(
             '✅ 서버 카운터 동기화 완료: 알림=$actualNotificationCount, DM=$actualDmUnreadCount');
@@ -197,130 +178,17 @@ class BadgeService {
     }
   }
 
-  /// DM unread를 실제 메시지(isRead=false)로 재계산하고, conversations.unreadCount[userId]도 함께 복구한다.
-  ///
-  /// 왜 필요한가?
-  /// - 과거 버그/중복 participants/경쟁 조건으로 `conversations.unreadCount` 또는 `users.dmUnreadTotal`이 드리프트하면
-  ///   앱 아이콘 배지가 "0이 아닌 값"으로 고정될 수 있다.
-  /// - 앱 시작 시 1회 "진짜 값"으로 되돌려 배지/카운터를 안정화한다.
-  static Future<int> _recountAndRepairDmUnread({required String userId}) async {
-    // conversations 스캔 (타임아웃 포함)
-    final convSnap = await _firestore
-        .collection('conversations')
-        .where('participants', arrayContains: userId)
-        .get()
-        .timeout(const Duration(seconds: 15));
-
-    bool shouldInclude(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
-      try {
-        final data = doc.data();
-        final archivedBy = List<String>.from(data['archivedBy'] ?? []);
-        if (archivedBy.contains(userId)) return false;
-
-        final userLeftAt = (data['userLeftAt'] as Map?) ?? const {};
-        final lastMessageTime = data['lastMessageTime'];
-        if (userLeftAt[userId] is Timestamp && lastMessageTime is Timestamp) {
-          final left = (userLeftAt[userId] as Timestamp).toDate();
-          if (!lastMessageTime.toDate().isAfter(left)) return false;
-        }
-
-        final participants = (data['participants'] as List?)
-                ?.map((e) => e.toString())
-                .where((s) => s.isNotEmpty)
-                .toSet() ??
-            <String>{};
-        if (doc.id.startsWith('anon_') && participants.isNotEmpty) {
-          final others = participants.where((id) => id != userId).toSet();
-          if (others.isNotEmpty &&
-              others.every((otherId) => userLeftAt[otherId] != null)) {
-            return false;
-          }
-        }
-
-        final unreadMap = (data['unreadCount'] as Map?) ?? const {};
-        final rawClaimed = unreadMap[userId];
-        final claimed = rawClaimed is num ? rawClaimed.toInt() : 0;
-        // 기존 정책처럼 0인 방은 스캔하지 않는다. 실시간 트리거가 0을
-        // 단일 진실로 유지하고, 과거 양수/음수 드리프트만 복구한다.
-        return claimed != 0;
-      } catch (_) {
-        return false;
-      }
+  static Future<int> _reconcileDmUnreadTotal() async {
+    final response = await _functions
+        .httpsCallable('reconcileDMUnreadTotalSecure')
+        .call()
+        .timeout(const Duration(seconds: 60));
+    final data = response.data;
+    if (data is! Map || data['success'] != true) {
+      throw StateError('DM 미읽음 총합을 마이그레이션하지 못했습니다.');
     }
-
-    Future<
-        ({
-          DocumentReference<Map<String, dynamic>> reference,
-          String id,
-          int claimed,
-          int actual,
-        })> recountRoom(QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
-      final unreadMap = (doc.data()['unreadCount'] as Map?) ?? const {};
-      final rawClaimed = unreadMap[userId];
-      final claimed = rawClaimed is num ? rawClaimed.toInt() : 0;
-      int actual = 0;
-      DocumentSnapshot<Map<String, dynamic>>? cursor;
-
-      while (true) {
-        Query<Map<String, dynamic>> query = doc.reference
-            .collection('messages')
-            .where('isRead', isEqualTo: false)
-            .orderBy(FieldPath.documentId)
-            .limit(400);
-        if (cursor != null) query = query.startAfterDocument(cursor);
-        final page = await query.get().timeout(const Duration(seconds: 10));
-        for (final message in page.docs) {
-          final senderId = (message.data()['senderId'] ?? '').toString();
-          if (senderId.isNotEmpty && senderId != userId) actual++;
-        }
-        if (page.docs.length < 400) break;
-        cursor = page.docs.last;
-      }
-
-      return (
-        reference: doc.reference,
-        id: doc.id,
-        claimed: claimed,
-        actual: actual,
-      );
-    }
-
-    final eligible = convSnap.docs.where(shouldInclude).toList(growable: false);
-    final results = <({
-      DocumentReference<Map<String, dynamic>> reference,
-      String id,
-      int claimed,
-      int actual,
-    })>[];
-    // 방이 많은 계정에서도 직렬 N+1 지연을 만들지 않되, 모바일
-    // 네트워크와 Firestore에 순간 부하가 몰리지 않도록 동시성을 제한한다.
-    for (var i = 0; i < eligible.length; i += 6) {
-      final end = (i + 6).clamp(0, eligible.length);
-      results.addAll(
-        await Future.wait(eligible.sublist(i, end).map(recountRoom)),
-      );
-    }
-
-    var total = 0;
-    final repairs = <Future<void>>[];
-    for (final result in results) {
-      total += result.actual;
-      if (result.actual == result.claimed) continue;
-      repairs.add(result.reference.set({
-        'unreadCount': {userId: result.actual},
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)));
-      Logger.log(
-          '🔧 [BadgeService] unreadCount 복구: ${result.id} claimed=${result.claimed} → actual=${result.actual}');
-    }
-
-    // repairs는 best-effort 병렬 처리 (과도 동시성 방지: 10개씩)
-    for (var i = 0; i < repairs.length; i += 10) {
-      final batch = repairs.sublist(i, (i + 10).clamp(0, repairs.length));
-      await Future.wait(batch);
-    }
-
-    return total < 0 ? 0 : total;
+    final value = data['dmUnreadTotal'];
+    return value is num && value >= 0 ? value.toInt() : 0;
   }
 
   /// 실시간 배지 리스너 중지
@@ -668,6 +536,38 @@ class BadgeService {
     // 실시간 리스너가 없으면 한 번 업데이트
     await _updateBadge();
   }
+
+  /// 읽음 트랜잭션 직후 리스너 전달 순서와 무관하게 아이콘 배지를 다시 계산한다.
+  static Future<void> refreshNow() async {
+    final userId = _auth.currentUser?.uid;
+    final generation = _sessionGeneration;
+    await _updateBadge(
+      expectedUserId: userId,
+      expectedGeneration:
+          userId != null && _activeUserId == userId ? generation : null,
+    );
+  }
+
+  /// DM 서버 트랜잭션이 반환한 정확한 총합을 사용해 Firestore user listener가
+  /// 도착하기 전에도 앱 아이콘을 즉시 수렴시킨다.
+  static Future<void> syncAfterDmRead(int dmUnreadTotal) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final counts = await Future.wait<int>([
+        _getVisibleUnreadNotificationCount(userId: userId),
+        _getSnackChatUnreadCount(userId: userId),
+      ]);
+      final total = counts[0] + mathMaxZero(dmUnreadTotal) + counts[1];
+      await _setBadge(total);
+      _currentBadgeCount = total;
+    } catch (error) {
+      Logger.error('DM 읽음 후 배지 즉시 동기화 실패', error);
+      await refreshNow();
+    }
+  }
+
+  static int mathMaxZero(int value) => value < 0 ? 0 : value;
 
   static Future<void> _setBadge(int count) async {
     try {

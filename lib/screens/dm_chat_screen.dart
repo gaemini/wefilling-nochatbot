@@ -17,6 +17,7 @@ import '../models/conversation.dart';
 import '../models/dm_message.dart';
 import '../services/dm_service.dart';
 import '../services/dm_active_conversation.dart';
+import '../services/badge_service.dart';
 import '../services/post_service.dart';
 import '../services/content_filter_service.dart';
 import '../services/report_service.dart';
@@ -75,7 +76,8 @@ class DMChatScreen extends StatefulWidget {
   State<DMChatScreen> createState() => _DMChatScreenState();
 }
 
-class _DMChatScreenState extends State<DMChatScreen> {
+class _DMChatScreenState extends State<DMChatScreen>
+    with WidgetsBindingObserver {
   final DMService _dmService = DMService();
   final StorageService _storageService = StorageService();
   final UserInfoCacheService _userInfoCacheService = UserInfoCacheService();
@@ -95,6 +97,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
   int _autoMarkReadRetryAttempt = 0;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>?
       _conversationReadSub;
+  AppLifecycleState _appLifecycleState = AppLifecycleState.detached;
 
   // 대화방이 없을 수 있으므로 초기에 서버 구독을 시작하지 않는다.
   StreamSubscription<List<DMMessage>>? _recentMessagesSub;
@@ -140,7 +143,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   void _setActiveConversationId(String conversationId) {
     _activeConversationId = conversationId;
     // 포그라운드 DM 배너 억제를 위해 현재 화면의 실제 대화방 ID를 항상 동기화한다.
-    DMActiveConversation.setActive(conversationId);
+    if (_appLifecycleState == AppLifecycleState.resumed) {
+      DMActiveConversation.setActive(conversationId);
+    }
     _watchConversationUnreadCounter(conversationId);
   }
 
@@ -174,6 +179,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _appLifecycleState =
+        WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.detached;
 
     Logger.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     Logger.log('🔍 [FCM 진단 2단계] DMChatScreen.initState 호출');
@@ -198,6 +206,17 @@ class _DMChatScreenState extends State<DMChatScreen> {
       if (_isAnonymous) return;
       _ensureServerOtherUserInfo(widget.otherUserId);
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _appLifecycleState = state;
+    if (state == AppLifecycleState.resumed) {
+      DMActiveConversation.setActive(_activeConversationId);
+      _scheduleAutoMarkAsRead(_messages, forceCounterReconcile: true);
+    } else if (DMActiveConversation.isActive(_activeConversationId)) {
+      DMActiveConversation.setActive(null);
+    }
   }
 
   void _ensureServerOtherUserInfo(String userId) {
@@ -421,8 +440,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
         unawaited(
             _initializeMessagesStream(conversationId: _activeConversationId));
         unawaited(_loadConversation());
-        // markAsRead는 메시지 스트림이 수신된 후 _scheduleAutoMarkAsRead에서 처리한다.
-        // 고정 딜레이 방식은 Cloud Function의 unreadCount 증분과 경쟁 조건을 유발하므로 제거.
+        _scheduleAutoMarkAsRead(
+          _messages,
+          forceCounterReconcile: true,
+        );
       }
 
       // 1) 서버로 최종 확인 (권한/참여자 검증 포함)
@@ -508,7 +529,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
               _initializeMessagesStream(conversationId: _activeConversationId));
         }
         unawaited(_loadConversation());
-        // markAsRead는 메시지 스트림 수신 후 _scheduleAutoMarkAsRead에서 처리한다.
+        _scheduleAutoMarkAsRead(
+          _messages,
+          forceCounterReconcile: true,
+        );
       }
     } catch (e) {
       Logger.error('대화 초기화 오류: $e');
@@ -542,7 +566,9 @@ class _DMChatScreenState extends State<DMChatScreen> {
     // 다시 처리해도 false→true 전이만 서버 카운터에 반영되어 멱등하다.
     if (_activeConversationId.isNotEmpty && !_isLeaving) {
       unawaited(
-        _dmService.markAsRead(_activeConversationId).catchError((Object error) {
+        _dmService.markAsRead(_activeConversationId).then((result) {
+          return BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
+        }).catchError((Object error) {
           Logger.error('❌ [DM 읽음] 화면 종료 동기화 실패: $error');
         }),
       );
@@ -552,6 +578,7 @@ class _DMChatScreenState extends State<DMChatScreen> {
       DMActiveConversation.setActive(null);
     }
     _autoMarkReadDebounce?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _conversationReadSub?.cancel();
     _recentMessagesSub?.cancel();
     _messageController.dispose();
@@ -566,6 +593,10 @@ class _DMChatScreenState extends State<DMChatScreen> {
     bool forceCounterReconcile = false,
   }) {
     if (!mounted) return;
+    if (_appLifecycleState != AppLifecycleState.resumed ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
+    }
     final me = _currentUser;
     if (me == null) return;
     if (_isLeaving) return;
@@ -603,7 +634,8 @@ class _DMChatScreenState extends State<DMChatScreen> {
     Logger.log(
         '📖 [markAsRead] 실행 - conversationId: $_activeConversationId (즉시 트리거)');
     try {
-      await _dmService.markAsRead(_activeConversationId);
+      final result = await _dmService.markAsRead(_activeConversationId);
+      await BadgeService.syncAfterDmRead(result.newDmUnreadTotal);
       _autoMarkReadRetryAttempt = 0;
       Logger.log('✅ [markAsRead] 완료 - conversationId: $_activeConversationId');
     } catch (e) {

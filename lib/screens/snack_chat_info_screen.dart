@@ -6,7 +6,6 @@ import '../l10n/app_localizations.dart';
 import '../models/snack_chat.dart';
 import '../models/user_profile.dart';
 import '../repositories/users_repository.dart';
-import '../services/notification_service.dart';
 import '../services/snack_chat_service.dart';
 import '../ui/sheets/snack_chat_unfavorite_sheet.dart';
 import '../utils/country_flag_helper.dart';
@@ -30,7 +29,6 @@ class SnackChatInfoScreen extends StatefulWidget {
 class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
   final SnackChatService _snackChatService = SnackChatService();
   final UsersRepository _usersRepository = UsersRepository();
-  final NotificationService _notificationService = NotificationService();
 
   bool _isInviting = false;
   bool _isInviteSheetOpen = false;
@@ -124,7 +122,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
 
   Future<void> _openInviteSheet(SnackChat room) async {
     if (_uid == null ||
-        _uid != room.creatorId ||
+        !room.participantIds.contains(_uid) ||
         _isInviting ||
         _isInviteSheetOpen ||
         room.allowMeetupJoin ||
@@ -441,30 +439,6 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
         participantIds: result.toList(),
       );
       if (invited.isEmpty || !mounted) return;
-
-      // 닉네임을 Firestore에서 직접 조회 (Firebase Auth displayName은 동기화 안 될 수 있음)
-      String creatorName = '';
-      try {
-        final profiles =
-            await _usersRepository.getUserProfilesBatch([_uid ?? '']);
-        if (profiles.isNotEmpty) {
-          creatorName = profiles.first.nickname?.trim() ?? '';
-          if (creatorName.isEmpty) {
-            creatorName = profiles.first.displayNameOrNickname.trim();
-          }
-        }
-      } catch (_) {}
-      if (creatorName.isEmpty) {
-        creatorName =
-            FirebaseAuth.instance.currentUser?.displayName?.trim() ?? '';
-      }
-      await _notificationService.sendSnackChatInviteNotification(
-        participantIds: invited,
-        snackChatId: room.id,
-        snackChatName: room.title,
-        creatorId: _uid ?? '',
-        creatorName: creatorName,
-      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -993,7 +967,7 @@ class _SnackChatInfoScreenState extends State<SnackChatInfoScreen> {
           _ensureParticipantsFuture(room);
 
           final isHost = _uid == room.creatorId;
-          final canInviteMembers = isHost &&
+          final canInviteMembers = room.participantIds.contains(_uid) &&
               !room.allowMeetupJoin &&
               !(room.meetupId?.isNotEmpty ?? false);
           final screenWidth = MediaQuery.sizeOf(context).width;

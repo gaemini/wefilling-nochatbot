@@ -33,6 +33,7 @@ class PostActionGroup extends StatelessWidget {
   final bool trailingActionsAtEnd;
   final bool prioritizeComments;
   final bool showCommentLabel;
+  final bool spreadMetrics;
 
   const PostActionGroup({
     super.key,
@@ -60,6 +61,7 @@ class PostActionGroup extends StatelessWidget {
     this.trailingActionsAtEnd = false,
     this.prioritizeComments = false,
     this.showCommentLabel = false,
+    this.spreadMetrics = false,
   });
 
   String _labelWithCount(String label, int count) {
@@ -78,8 +80,8 @@ class PostActionGroup extends StatelessWidget {
         .clamp(compact ? 12 : 13, compact ? 13.5 : 15)
         .toDouble();
     final responsiveMinExtent = context
-        .spacingToken(compact ? 40 : 44)
-        .clamp(compact ? 38 : 42, compact ? 42 : 46)
+        .spacingToken(compact ? 36 : 42)
+        .clamp(compact ? 34 : 40, compact ? 38 : 44)
         .toDouble();
 
     final likeAction = Semantics(
@@ -105,8 +107,10 @@ class PostActionGroup extends StatelessWidget {
       ),
     );
 
-    final showComments =
-        prioritizeComments || !hideEmptyMetrics || comments > 0;
+    final showComments = prioritizeComments ||
+        !hideEmptyMetrics ||
+        comments > 0 ||
+        onCommentTap != null;
     final commentAction = Semantics(
       button: onCommentTap != null,
       label: _labelWithCount(commentLabel, comments),
@@ -220,11 +224,16 @@ class PostActionGroup extends StatelessWidget {
       );
     }
 
-    return Wrap(
-      spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
-      runSpacing: DesignTokens.s4,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [...metricActions, ...trailingActions],
+    return SizedBox(
+      width: spreadMetrics ? double.infinity : null,
+      child: Wrap(
+        alignment:
+            spreadMetrics ? WrapAlignment.spaceBetween : WrapAlignment.start,
+        spacing: compact ? DesignTokens.s2 : DesignTokens.s8,
+        runSpacing: DesignTokens.s2,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [...metricActions, ...trailingActions],
+      ),
     );
   }
 }

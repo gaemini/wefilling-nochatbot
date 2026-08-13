@@ -10,6 +10,10 @@ import { COL } from './firestore_paths';
 import {resolveFriendNotificationAudience} from './frozen_audience';
 
 export {createPostSecure, createMeetupSecure} from './content_creation';
+export {
+  markDMConversationReadSecure,
+  reconcileDMUnreadTotalSecure,
+} from './dm_chat';
 
 export {
   getSnapshotServerTime,
@@ -913,6 +917,7 @@ export const finalizeHanyangEmailVerification = functions.https.onCall(async (da
       if (missing('incomingCount')) schemaFill.incomingCount = 0;
       if (missing('outgoingCount')) schemaFill.outgoingCount = 0;
       if (missing('dmUnreadTotal')) schemaFill.dmUnreadTotal = 0;
+      if (missing('dmUnreadCounterVersion')) schemaFill.dmUnreadCounterVersion = 2;
       if (missing('notificationUnreadTotal')) schemaFill.notificationUnreadTotal = 0;
       if (missing('fcmToken')) schemaFill.fcmToken = '';
       if (missing('fcmTokens')) schemaFill.fcmTokens = [];
@@ -1124,6 +1129,7 @@ export const finalizeEnglishSocialSignup = functions.https.onCall(async (data, c
       if (missing('incomingCount')) schemaFill.incomingCount = 0;
       if (missing('outgoingCount')) schemaFill.outgoingCount = 0;
       if (missing('dmUnreadTotal')) schemaFill.dmUnreadTotal = 0;
+      if (missing('dmUnreadCounterVersion')) schemaFill.dmUnreadCounterVersion = 2;
       if (missing('notificationUnreadTotal')) schemaFill.notificationUnreadTotal = 0;
       if (missing('fcmToken')) schemaFill.fcmToken = '';
       if (missing('fcmTokens')) schemaFill.fcmTokens = [];
@@ -6732,6 +6738,35 @@ export const onDMMessageCreated = functions
 
           const data = convSnap.data() as any;
 
+          // A receiver can open the room after the message write but before
+          // this create trigger acquires the transaction. The callable stores
+          // a server read-through watermark with the counter reset, so an old
+          // create event must not resurrect unread=1 or send a stale push.
+          const messageCreatedAt = currentMessageSnap.get('createdAt');
+          const messageCreatedAtMs = firestoreTimeToMillis(messageCreatedAt) ?? 0;
+          const lastReadAtBy = data?.lastReadAtBy &&
+            typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
+          const alreadyReadThrough = recipients.length > 0 &&
+            messageCreatedAtMs > 0 && recipients.every((rid) => {
+              const watermark = firestoreTimeToMillis(lastReadAtBy[rid]);
+              return watermark != null && watermark >= messageCreatedAtMs;
+            });
+          if (alreadyReadThrough) {
+            tx.update(snapshot.ref, {
+              isRead: true,
+              readAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            tx.create(dmCreateEventRef, {
+              type: 'dm_message_created',
+              conversationId,
+              messageId,
+              applied: false,
+              skippedByReadWatermark: true,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return {shouldSend: false, dmUnreadTotal: 0};
+          }
+
           const archivedBy: string[] = Array.isArray(data?.archivedBy)
             ? data.archivedBy.filter((v: any) => typeof v === 'string')
             : [];
@@ -6761,7 +6796,10 @@ export const onDMMessageCreated = functions
             const userData = userSnap?.exists ? userSnap.data() : null;
             const curDmTotal = typeof userData?.dmUnreadTotal === 'number' ? userData.dmUnreadTotal : 0;
             const safeDmTotal = Math.max(0, curDmTotal) + 1;
-            tx.set(userRefs[i], { dmUnreadTotal: safeDmTotal }, { merge: true });
+            tx.set(userRefs[i], {
+              dmUnreadTotal: safeDmTotal,
+              dmUnreadCounterVersion: 2,
+            }, { merge: true });
             console.log(`  📈 [dmUnreadTotal] ${rid}: ${curDmTotal} → ${safeDmTotal}`);
           }
 
@@ -6993,7 +7031,21 @@ export const onDMMessageRead = functions
               typeof id === 'string' && id.length > 0)
         ));
         const recipientIds = participants.filter((id) => id !== senderId);
-        const userRefs = recipientIds.map((id) =>
+        const messageCreatedAtMs = firestoreTimeToMillis(after.createdAt) ?? 0;
+        const lastReadAtBy = data.lastReadAtBy &&
+          typeof data.lastReadAtBy === 'object' ? data.lastReadAtBy : {};
+        // The room-level callable may already have cleared this exact
+        // message. Its later per-message receipt trigger must not subtract a
+        // newly arrived message that incremented the room in the meantime.
+        const alreadyClearedRecipientIds = recipientIds.filter((id) => {
+          const watermark = firestoreTimeToMillis(lastReadAtBy[id]);
+          return messageCreatedAtMs > 0 && watermark != null &&
+            watermark >= messageCreatedAtMs;
+        });
+        const recipientsToDecrement = recipientIds.filter(
+          (id) => !alreadyClearedRecipientIds.includes(id)
+        );
+        const userRefs = recipientsToDecrement.map((id) =>
           db.collection('users').doc(id));
         const userSnaps: FirebaseFirestore.DocumentSnapshot[] = [];
         for (const ref of userRefs) userSnaps.push(await tx.get(ref));
@@ -7002,7 +7054,7 @@ export const onDMMessageRead = functions
           data.unreadCount && typeof data.unreadCount === 'object'
             ? {...data.unreadCount}
             : {};
-        recipientIds.forEach((recipientId, index) => {
+        recipientsToDecrement.forEach((recipientId, index) => {
           const roomUnreadBefore = toNonNegativeInt(unreadCount[recipientId]);
           unreadCount[recipientId] = Math.max(
             0,
@@ -7019,6 +7071,7 @@ export const onDMMessageRead = functions
                 toNonNegativeInt((userData as any).dmUnreadTotal) - 1
               )
               : toNonNegativeInt((userData as any).dmUnreadTotal),
+            dmUnreadCounterVersion: 2,
           }, {merge: true});
         });
         tx.set(convRef, {
@@ -7030,7 +7083,9 @@ export const onDMMessageRead = functions
           conversationId,
           messageId,
           recipientIds,
-          applied: true,
+          decrementedRecipientIds: recipientsToDecrement,
+          skippedByReadWatermark: alreadyClearedRecipientIds,
+          applied: recipientsToDecrement.length > 0,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
       });

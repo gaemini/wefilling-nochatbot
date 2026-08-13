@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../constants/app_constants.dart';
@@ -115,7 +116,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
 
   void _checkCanProceed() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final hasImages = _selectedAssets.isNotEmpty;
+    final hasImages = _selectedImages.isNotEmpty;
     final canProceed =
         _selectedPostTags.isNotEmpty && (contentNotEmpty || hasImages);
 
@@ -215,6 +216,34 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _selectImages() async {
+    if (Platform.isAndroid) {
+      final remaining = 15 - _selectedImages.length;
+      if (remaining <= 0) return;
+      final picker = ImagePicker();
+      final picked = remaining == 1
+          ? <XFile>[
+              if (await picker.pickImage(
+                source: ImageSource.gallery,
+                requestFullMetadata: false,
+              )
+                  case final image?)
+                image,
+            ]
+          : await picker.pickMultiImage(
+              limit: remaining,
+              requestFullMetadata: false,
+            );
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _selectedImages.addAll(
+          picked.take(remaining).map((image) => File(image.path)),
+        );
+      });
+      await _checkImagesSize();
+      _checkCanProceed();
+      return;
+    }
+
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
@@ -262,9 +291,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _previewSelectedImages({int initialIndex = 0}) async {
-    if (!mounted || _selectedAssets.isEmpty) return;
+    if (!mounted || _selectedImages.isEmpty) return;
 
-    if (_selectedImages.length != _selectedAssets.length) {
+    if (_selectedAssets.isNotEmpty &&
+        _selectedImages.length != _selectedAssets.length) {
       await _syncSelectedImagesFromAssets();
     }
     if (!mounted || _selectedImages.isEmpty) return;
@@ -279,6 +309,12 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
   }
 
   Future<void> _removeImage(int index) async {
+    if (index < 0 || index >= _selectedImages.length) return;
+    if (Platform.isAndroid) {
+      setState(() => _selectedImages.removeAt(index));
+      _checkCanProceed();
+      return;
+    }
     setState(() {
       if (index >= 0 && index < _selectedAssets.length) {
         _selectedAssets.removeAt(index);
@@ -459,7 +495,7 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
     });
 
     try {
-      if (_selectedAssets.isNotEmpty) {
+      if (_selectedImages.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(l10n.postImageUploading),
@@ -717,22 +753,18 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
       height: thumbnailExtent,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: _selectedAssets.length,
+        itemCount: _selectedImages.length,
         separatorBuilder: (_, __) => SizedBox(width: context.rs(8)),
         itemBuilder: (context, index) {
-          final asset = _selectedAssets[index];
+          final image = _selectedImages[index];
           return GestureDetector(
             onTap: () => _previewSelectedImages(initialIndex: index),
             child: Stack(
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image(
-                    image: AssetEntityImageProvider(
-                      asset,
-                      isOriginal: false,
-                      thumbnailSize: const ThumbnailSize.square(256),
-                    ),
+                  child: Image.file(
+                    image,
                     width: thumbnailExtent,
                     height: thumbnailExtent,
                     fit: BoxFit.cover,
@@ -810,10 +842,10 @@ class _CreatePostScreenState extends State<CreatePostScreen> {
               SizedBox(height: context.rs(20).clamp(16, 22).toDouble()),
               _buildSectionLabel(
                 imageLabel,
-                trailing: '${_selectedAssets.length}/15',
+                trailing: '${_selectedImages.length}/15',
               ),
               _buildAddImageButton(l10n),
-              if (_selectedAssets.isNotEmpty) ...[
+              if (_selectedImages.isNotEmpty) ...[
                 SizedBox(height: context.rs(4)),
                 _buildSelectedImagesStrip(),
                 SizedBox(height: context.rs(6)),

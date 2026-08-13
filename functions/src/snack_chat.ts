@@ -1845,19 +1845,19 @@ export const createMeetupSnackChatSecure = functions
     };
   });
 
-/** Adds active friends to an existing room. Only the current creator may call. */
+/** Adds the caller's active friends to a room the caller currently belongs to. */
 export const inviteSnackChatParticipants = functions
   .runWith({timeoutSeconds: 30, memory: '256MB'})
   .https.onCall(async (raw, context) => {
-    const creatorId = requireUid(context);
-    await requireActiveUser(creatorId);
+    const inviterId = requireUid(context);
+    await requireActiveUser(inviterId);
     const request = objectValue(raw);
     const snackChatId = firestoreId(request.snackChatId, 'Snack Chat id');
     const requestedIds = firestoreIdList(
       request.participantIds,
       'participantIds',
       MAX_ROOM_PARTICIPANTS,
-    ).filter((id) => id !== creatorId);
+    ).filter((id) => id !== inviterId);
     const roomRef = db().collection(SNACK_CHATS).doc(snackChatId);
 
     const invitedUserIds = await db().runTransaction(async (transaction) => {
@@ -1869,11 +1869,10 @@ export const inviteSnackChatParticipants = functions
         );
       }
       const current = uniqueStrings(room.get('participantIds'));
-      if (stringValue(room.get('creatorId')) !== creatorId ||
-          !current.includes(creatorId)) {
+      if (!current.includes(inviterId)) {
         throw new functions.https.HttpsError(
           'permission-denied',
-          'Only the current room creator can invite participants.',
+          'Only current room participants can invite participants.',
         );
       }
       if (room.get('allowMeetupJoin') === true ||
@@ -1893,15 +1892,15 @@ export const inviteSnackChatParticipants = functions
         );
       }
 
-      const userRefs = [creatorId, ...toAdd].map((id) =>
+      const userRefs = [inviterId, ...toAdd].map((id) =>
         db().collection(USERS).doc(id));
       const friendshipRefs = toAdd.map((id) =>
-        db().collection(FRIENDSHIPS).doc(friendshipId(creatorId, id)));
+        db().collection(FRIENDSHIPS).doc(friendshipId(inviterId, id)));
       const userDocs = await transaction.getAll(...userRefs);
       const friendshipDocs = await transaction.getAll(...friendshipRefs);
       userDocs.forEach(assertActiveUserSnapshot);
       friendshipDocs.forEach((snapshot, index) =>
-        assertFriendshipSnapshot(snapshot, creatorId, toAdd[index]));
+        assertFriendshipSnapshot(snapshot, inviterId, toAdd[index]));
 
       const nextParticipants = [...current, ...toAdd];
       const previousUnread = normalizedCountMap(room.get('unreadCount'));
@@ -1916,6 +1915,35 @@ export const inviteSnackChatParticipants = functions
         participantIds: nextParticipants,
         unreadCount,
         updatedAt: FieldValue.serverTimestamp(),
+      });
+      // Invitation records are authored in the same trusted transaction as
+      // membership. This prevents clients from forging an invite notification
+      // for a room they do not belong to and avoids one client write per user.
+      const inviter = userDocs[0];
+      const inviterName = boundedString(
+        inviter.get('nickname') ?? inviter.get('name') ?? 'User',
+        80,
+      ) || 'User';
+      const roomTitle = boundedString(room.get('title'), 80) || 'Snack Chat';
+      toAdd.forEach((recipientId) => {
+        const notificationRef = db().collection('notifications').doc();
+        transaction.create(notificationRef, {
+          userId: recipientId,
+          title: 'Snack Chat invite',
+          message: `${inviterName} invited you to "${roomTitle}".`,
+          type: 'snack_chat_invite',
+          meetupId: null,
+          postId: null,
+          actorId: inviterId,
+          actorName: inviterName,
+          data: {
+            snackChatId,
+            snackChatName: roomTitle,
+            creatorName: inviterName,
+          },
+          createdAt: FieldValue.serverTimestamp(),
+          isRead: false,
+        });
       });
       return toAdd;
     });

@@ -498,8 +498,8 @@ class _FullscreenImageViewerState extends State<FullscreenImageViewer>
           'wefilling_${DateTime.now().millisecondsSinceEpoch}.$extension';
       if (Platform.isIOS || Platform.isAndroid) {
         // Native save paths use PHAssetCreationRequest on iOS and MediaStore on
-        // Android, reporting the real transaction result without broad media
-        // read access. Android 9 and below request only legacy write access.
+        // modern Android without broad media read access. Android 9 and below
+        // use the system Create Document flow instead of storage permission.
         await _mediaSaverChannel.invokeMethod<void>('saveImage', {
           'bytes': bytes,
           'filename': filename,

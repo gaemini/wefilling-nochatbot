@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:wechat_assets_picker/wechat_assets_picker.dart';
 
 import '../l10n/app_localizations.dart';
@@ -58,7 +59,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
 
   void _checkCanSubmit() {
     final contentNotEmpty = _contentController.text.trim().isNotEmpty;
-    final hasAnyImage = _keptImageUrls.isNotEmpty || _selectedAssets.isNotEmpty;
+    final hasAnyImage = _keptImageUrls.isNotEmpty || _selectedImages.isNotEmpty;
 
     final can = !_isSubmitting &&
         !_isResolvingSelectedImages &&
@@ -110,15 +111,42 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Future<void> _selectImages() async {
-    final remaining = (15 - _keptImageUrls.length).clamp(0, 15);
-    if (remaining <= 0) return;
+    final maxNewImages = (15 - _keptImageUrls.length).clamp(0, 15);
+    if (maxNewImages <= 0) return;
+
+    if (Platform.isAndroid) {
+      final remaining = maxNewImages - _selectedImages.length;
+      if (remaining <= 0) return;
+      final picker = ImagePicker();
+      final picked = remaining == 1
+          ? <XFile>[
+              if (await picker.pickImage(
+                source: ImageSource.gallery,
+                requestFullMetadata: false,
+              )
+                  case final image?)
+                image,
+            ]
+          : await picker.pickMultiImage(
+              limit: remaining,
+              requestFullMetadata: false,
+            );
+      if (!mounted || picked.isEmpty) return;
+      setState(() {
+        _selectedImages.addAll(
+          picked.take(remaining).map((image) => File(image.path)),
+        );
+      });
+      _checkCanSubmit();
+      return;
+    }
 
     final pickedAssets = await AssetPicker.pickAssets(
       context,
       pickerConfig: AssetPickerConfig(
         requestType: RequestType.image,
         selectedAssets: _selectedAssets,
-        maxAssets: remaining,
+        maxAssets: maxNewImages,
         dragToSelect: false,
       ),
     );
@@ -129,7 +157,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
     setState(() {
       _selectedAssets
         ..clear()
-        ..addAll(pickedAssets.take(remaining));
+        ..addAll(pickedAssets.take(maxNewImages));
     });
     await _syncSelectedImagesFromAssets();
   }
@@ -143,7 +171,12 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Future<void> _removeNewAsset(int index) async {
-    if (index < 0 || index >= _selectedAssets.length) return;
+    if (index < 0 || index >= _selectedImages.length) return;
+    if (Platform.isAndroid) {
+      setState(() => _selectedImages.removeAt(index));
+      _checkCanSubmit();
+      return;
+    }
     setState(() {
       _selectedAssets.removeAt(index);
     });
@@ -279,7 +312,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
   }
 
   Widget _buildNewImages() {
-    if (_selectedAssets.isEmpty) return const SizedBox.shrink();
+    if (_selectedImages.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -288,9 +321,9 @@ class _EditPostScreenState extends State<EditPostScreen> {
           height: 112,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
-            itemCount: _selectedAssets.length,
+            itemCount: _selectedImages.length,
             itemBuilder: (context, index) {
-              final asset = _selectedAssets[index];
+              final image = _selectedImages[index];
               return Container(
                 margin: const EdgeInsets.only(right: 8),
                 width: 96,
@@ -303,12 +336,8 @@ class _EditPostScreenState extends State<EditPostScreen> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(10),
-                      child: Image(
-                        image: AssetEntityImageProvider(
-                          asset,
-                          isOriginal: false,
-                          thumbnailSize: const ThumbnailSize.square(256),
-                        ),
+                      child: Image.file(
+                        image,
                         width: 96,
                         height: 96,
                         fit: BoxFit.cover,
@@ -499,7 +528,7 @@ class _EditPostScreenState extends State<EditPostScreen> {
                       border: Border.all(color: const Color(0xFFE5E7EB)),
                     ),
                     child: Text(
-                      '${(_keptImageUrls.length + _selectedAssets.length).clamp(0, 10)}/10',
+                      '${(_keptImageUrls.length + _selectedImages.length).clamp(0, 10)}/10',
                       style: const TextStyle(
                         fontFamily: 'Pretendard',
                         fontSize: 12,

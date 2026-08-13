@@ -17,6 +17,8 @@ import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:provider/provider.dart';
 import 'design/theme.dart';
 import 'screens/main_screen.dart';
@@ -40,6 +42,16 @@ void main() {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // Android gallery actions must only expose media explicitly selected by
+      // the user. This enables Android's system Photo Picker for every
+      // image_picker call while leaving the iOS implementation untouched.
+      if (!kIsWeb && Platform.isAndroid) {
+        final imagePickerImplementation = ImagePickerPlatform.instance;
+        if (imagePickerImplementation is ImagePickerAndroid) {
+          imagePickerImplementation.useAndroidPhotoPicker = true;
+        }
+      }
 
       // 시스템 UI 최적화 (갤럭시 S23 등 최신 Android 기기 대응)
       SystemChrome.setSystemUIOverlayStyle(

@@ -2339,9 +2339,7 @@ class AuthProvider with ChangeNotifier implements WidgetsBindingObserver {
     if (missing('friendsCount')) updates['friendsCount'] = 0;
     if (missing('incomingCount')) updates['incomingCount'] = 0;
     if (missing('outgoingCount')) updates['outgoingCount'] = 0;
-    if (missing('dmUnreadTotal')) updates['dmUnreadTotal'] = 0;
-    if (missing('notificationUnreadTotal'))
-      updates['notificationUnreadTotal'] = 0;
+    // 미읽음 카운터는 Cloud Functions만 생성/수정한다.
 
     // FCM
     if (missing('fcmToken')) updates['fcmToken'] = '';
